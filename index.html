@@ -13455,6 +13455,137 @@ const DEV={
     return true;
   },
 
+/* ------------------- PLAYER ↔ ECHO (PR 10) -------------------------
+   Todas as ferramentas passam pelos MESMOS caminhos de produção
+   (evaluateEchoReaction / applyEchoReaction / echoSetDis / changeEchoTrust).
+   Todas contaminam a run (devTaint) — nenhum teste artificial vira save,
+   progresso ou Echo legítimo. Os INSPETORES são leitura pura. */
+  /* leitura pura: nada é escrito, nada é contaminado */
+  relationOf(slot){
+    const e=DEV.echo(slot);
+    if(!e||!e.rel||!e.dis)return null;
+    const st=echoRelState(e);
+    return {
+      slot:e.slot,
+      personality:e.pers?e.pers.id:(e.ps&&e.ps.id)||null,
+      traits:(e.ps&&Array.isArray(e.ps.tr))?e.ps.tr.slice():[],
+      moralOrigin:{c:(e.moralSrc&&e.moralSrc.comp)|0,
+        g:(e.moralSrc&&e.moralSrc.greed)|0,v:(e.moralSrc&&e.moralSrc.viol)|0},
+      trust:Math.round(e.trust*10)/10,
+      approval:Math.round(e.rel.ap*10)/10,
+      rejection:Math.round(e.rel.rj*10)/10,
+      streak:e.rel.streak|0,
+      score:Math.round(echoRelScore(e)*10)/10,
+      state:st.id,stateLabel:st.lab,
+      lastReaction:e.rel.last?Object.assign({},e.rel.last):null,
+      lastTrust:e.rel.lastTrust?Object.assign({},e.rel.lastTrust):null,
+      pressure:Math.round(e.dis.p*10)/10,
+      pressurePct:Math.round(relPressurePct(e)*100),
+      fractureAt:relFractureAt(e),
+      dissonance:e.dis.st,dissonanceLabel:DIS_LABEL[e.dis.st],
+      timer:Math.round(Math.max(0,e.dis.t)*100)/100,
+      grace:Math.round(Math.max(0,e.dis.grace)*10)/10,
+      integrity:Math.round(e.dis.integ),integrityMax:Math.round(e.dis.integMax),
+      count:e.dis.count|0,
+      moments:(e.rel.mm||[]).map(m=>({k:m.k,v:m.v,w:m.w,txt:relMomentText(m)}))
+    };
+  },
+  /* prévia determinística de como CADA Echo julgaria um vetor moral */
+  previewReaction(c,g,v){
+    const out=[];
+    for(const e of echoes){
+      if(!e||!e.alive)continue;
+      const r=evaluateEchoReaction(e,{kind:'moral',
+        vec:{comp:Number(c)||0,greed:Number(g)||0,viol:Number(v)||0}});
+      out.push({slot:e.slot,personality:e.pers?e.pers.id:null,
+        value:r.value,type:r.type,reason:r.reason,
+        intensity:r.intensity,align:r.align});
+    }
+    return out;
+  },
+  /* PRESETS DE RELAÇÃO — trust + memória + pressão coerentes entre si */
+  relationPreset(kind){
+    if(!devReady())return false;
+    const K=String(kind||'neutral');
+    let n=0;
+    for(const e of echoes){
+      if(!e)continue;
+      echoRelInit(e);
+      if(K==='high'){setEchoTrust(e,88,'dev_preset');e.rel.ap=18;e.rel.rj=1;
+        e.rel.streak=4;e.dis.p=0;}
+      else if(K==='low'){setEchoTrust(e,14,'dev_preset');e.rel.ap=1;e.rel.rj=20;
+        e.rel.streak=-4;e.dis.p=70;}
+      else{setEchoTrust(e,55,'dev_preset');e.rel.ap=0;e.rel.rj=0;
+        e.rel.streak=0;e.dis.p=0;}
+      e.rel.seen={};e.rel.last=null;
+      n++;
+    }
+    devTaint();devLog('RELAÇÃO PRESET '+K.toUpperCase()+' ('+n+' ECHO)');
+    return n>0;
+  },
+  /* pressão em % do limiar real do Echo */
+  setPressure(slot,pct){
+    if(!devReady())return false;
+    const e=DEV.echo(slot);if(!e)return false;
+    echoRelInit(e);
+    const k=clamp(Number(pct)||0,0,100)/100;
+    e.dis.p=k*relFractureAt(e);
+    devTaint();devLog('ECHO·0'+e.slot+' PRESSÃO = '+Math.round(k*100)+'%');
+    return Math.round(e.dis.p*10)/10;
+  },
+  /* força uma reação PELO caminho real (avaliação → aplicação) */
+  forceReaction(slot,type){
+    if(!devReady())return false;
+    const e=DEV.echo(slot);if(!e||!e.alive)return false;
+    echoRelInit(e);
+    const approve=String(type)==='approve';
+    const r={value:approve?2:-2,type:approve?'approve':'reject',
+      reason:approve?'moral_compassion':'moral_violence',intensity:1,align:approve?1:-1};
+    const ap=applyEchoReaction(e,r,{force:true});
+    if(!ap)return false;
+    relFeedback(e,ap);
+    const l=pickRelationLine(e,{type:r.type,reason:r.reason,state:echoRelState(e).id});
+    echoSpeak(e,l.txt,approve?'#8ff6ff':'#ff8095');
+    devTaint();devLog('REAÇÃO FORÇADA '+r.type+' ('+ap.trust.toFixed(1)+' CONF)');
+    return ap;
+  },
+  /* leva o Echo diretamente a QUALQUER estado da máquina (debug visual) */
+  disState(slot,st){
+    if(!devReady())return false;
+    const e=DEV.echo(slot);if(!e||!e.alive)return false;
+    echoRelInit(e);
+    const S=String(st);
+    if(DIS_LABEL[S]==null)return false;
+    if(S==='hostile'){
+      if(e.dis.st==='hostile')return false;
+      enterDissonance(e);
+    }else if(S==='fracturing'){
+      if(echoInRupture(e))return false;
+      e.dis.p=relFractureAt(e);
+      echoSetDis(e,'fracturing');
+    }else if(S==='recovering'){
+      if(e.dis.st!=='hostile'&&e.dis.st!=='fracturing')e.dis.st='hostile';
+      echoSetDis(e,'recovering');
+    }else if(S==='unstable'){
+      e.dis.p=Math.max(e.dis.p,REL_BALANCE.pressure.unstableAt);
+      e.dis.st='stable';e.dis.warned=0;echoSetDis(e,'unstable');
+    }else if(S==='cooldown'){
+      echoSetDis(e,'cooldown');
+    }else{
+      e.dis.st='stable';e.dis.t=0;e.dis.grace=0;e.dis.integ=0;e.dis.integMax=0;
+    }
+    devTaint();devLog('ECHO·0'+e.slot+' ESTADO = '+DIS_LABEL[e.dis.st]);
+    return e.dis.st;
+  },
+  /* recuperação imediata pelo caminho real (contenção completa) */
+  forceRecovery(slot){
+    if(!devReady())return false;
+    const e=DEV.echo(slot);if(!e)return false;
+    if(!forceEchoRecovery(e))return false;
+    devTaint();devLog('RECUPERAÇÃO FORÇADA · ECHO·0'+e.slot);
+    return true;
+  },
+
 /* ---------------------- ECHO PERSONALITY (PR 8) ---------------------- */
   /* Previsão determinística: aplica o MESMO pipeline de produção
      (build→score→classify) às métricas vivas da run atual. Não grava
@@ -13832,6 +13963,58 @@ function devRender(){
     devBtn('diss1','DISSONÂNCIA 01','warn')+devBtn('diss2','DISSONÂNCIA 02','warn')+
     devBtn('dissend','ENCERRAR DISSONÂNCIA')+'</div>';
 
+  /* ---- PLAYER ↔ ECHO (PR 10): inspetor + presets + Dissonância ---- */
+  h+='<h4>PLAYER ↔ ECHO</h4><div class="dvrow">'+
+    devBtn('relhigh','RELAÇÃO ALTA')+devBtn('relneutral','RELAÇÃO NEUTRA')+
+    devBtn('rellow','RELAÇÃO BAIXA','warn')+'</div>'+
+    '<div class="dvrow" style="margin-top:5px">'+
+    devBtn('t100','CONF 100')+devBtn('t50','CONF 50')+devBtn('t0','CONF 0','warn')+
+    devBtn('p0','PRESSÃO 0')+devBtn('p50','PRESSÃO 50%')+
+    devBtn('pmax','PRESSÃO MÁX','warn')+'</div>'+
+    '<div class="dvrow" style="margin-top:5px">'+
+    devBtn('fapprove','FORÇAR APROVAÇÃO')+devBtn('freject','FORÇAR REJEIÇÃO','warn')+
+    devBtn('relpv','PRÉVIA C/G/V')+'</div>'+
+    '<div class="dvrow" style="margin-top:5px">'+
+    devBtn('dsunstable','→ INSTÁVEL')+devBtn('dsfrac','→ TELEGRAPH','warn')+
+    devBtn('dshost','→ HOSTIL','warn')+devBtn('dsrec','→ RECUPERAR')+
+    devBtn('dscool','→ GRAÇA')+devBtn('dsstable','→ ESTÁVEL')+'</div>';
+  /* DISSONANCE INSPECTOR — leitura pura, nunca contamina */
+  h+='<div class="insp">';
+  let _any=false;
+  for(const ec of [e1,e2]){
+    if(!ec)continue;
+    const ri=DEV.relationOf(ec.slot);
+    if(!ri)continue;
+    _any=true;
+    const lr=ri.lastReaction;
+    h+='<div class="row final"><span>ECHO·0'+ri.slot+' · '+
+      (ri.personality?ri.personality.toUpperCase():'—')+'</span>'+
+      '<b>'+ri.stateLabel+'</b></div>'+
+      '<div class="row"><span>TRUST</span><b>'+ri.trust+'</b></div>'+
+      '<div class="row mod"><span>MORAL ORIGEM</span><span class="val">C'+
+      ri.moralOrigin.c+' G'+ri.moralOrigin.g+' V'+ri.moralOrigin.v+'</span></div>'+
+      '<div class="row mod"><span>APROVAÇÃO / REJEIÇÃO</span><span class="val">'+
+      ri.approval+' / '+ri.rejection+' · streak '+ri.streak+'</span></div>'+
+      '<div class="row mod"><span>SCORE DE RELAÇÃO</span><span class="val">'+
+      ri.score+'</span></div>'+
+      '<div class="row"><span>PRESSURE</span><b>'+ri.pressurePct+'% ('+
+      ri.pressure+'/'+ri.fractureAt+')</b></div>'+
+      '<div class="row"><span>STATE</span><b>'+ri.dissonanceLabel+
+      (ri.timer>0?' · '+ri.timer+'s':'')+'</b></div>'+
+      '<div class="row mod"><span>RUPTURA / COOLDOWN</span><span class="val">'+
+      (ri.integrityMax>0?ri.integrity+'/'+ri.integrityMax:'—')+
+      ' · graça '+ri.grace+'s · ×'+ri.count+'</span></div>'+
+      '<div class="row mod"><span>LAST REACTION</span><span class="val">'+
+      (lr?(lr.t.toUpperCase()+' · '+lr.r+' · '+(lr.v>0?'+':'')+lr.v):'—')+
+      (ri.lastTrust?' ('+(ri.lastTrust.d>0?'+':'')+ri.lastTrust.d+' CONF)':'')+
+      '</span></div>';
+    for(const m of ri.moments)
+      h+='<div class="row mod inactive"><span>MEMÓRIA</span><span class="val">'+
+        (m.v>0?'+':'')+m.v+' · '+m.k+' · ONDA '+m.w+'</span></div>';
+  }
+  if(!_any)h+='<div class="row"><span>NENHUM ECHO EM CAMPO</span><b>—</b></div>';
+  h+='</div>';
+
   /* ---- PERSONALITY INSPECTOR (PR 8): mesmo pipeline da produção ---- */
   let pv=null;
   try{pv=DEV.personalityPreview();}catch(e){}
@@ -13987,6 +14170,32 @@ function devCommand(c){
     case 'diss1':      return DEV.dissonance(1);
     case 'diss2':      return DEV.dissonance(2);
     case 'dissend':    DEV.endDissonance(1);return DEV.endDissonance(2);
+    case 'relhigh':    return DEV.relationPreset('high');
+    case 'relneutral': return DEV.relationPreset('neutral');
+    case 'rellow':     return DEV.relationPreset('low');
+    case 't100':       {const a=DEV.setTrust(1,100),b=DEV.setTrust(2,100);
+                        return a!==false||b!==false;}
+    case 't50':        {const a=DEV.setTrust(1,50),b=DEV.setTrust(2,50);
+                        return a!==false||b!==false;}
+    case 't0':         {const a=DEV.setTrust(1,0),b=DEV.setTrust(2,0);
+                        return a!==false||b!==false;}
+    case 'p0':         {const a=DEV.setPressure(1,0),b=DEV.setPressure(2,0);
+                        return a!==false||b!==false;}
+    case 'p50':        {const a=DEV.setPressure(1,50),b=DEV.setPressure(2,50);
+                        return a!==false||b!==false;}
+    case 'pmax':       {const a=DEV.setPressure(1,100),b=DEV.setPressure(2,100);
+                        return a!==false||b!==false;}
+    case 'fapprove':   return DEV.forceReaction(1,'approve')||DEV.forceReaction(2,'approve');
+    case 'freject':    return DEV.forceReaction(1,'reject')||DEV.forceReaction(2,'reject');
+    case 'relpv':      return devLog('PRÉVIA V+3: '+
+                        JSON.stringify(DEV.previewReaction(0,0,3)));
+    case 'dsunstable': return DEV.disState(1,'unstable')||DEV.disState(2,'unstable');
+    case 'dsfrac':     return DEV.disState(1,'fracturing')||DEV.disState(2,'fracturing');
+    case 'dshost':     return DEV.disState(1,'hostile')||DEV.disState(2,'hostile');
+    case 'dsrec':      {const a=DEV.forceRecovery(1),b=DEV.forceRecovery(2);
+                        return a!==false||b!==false;}
+    case 'dscool':     return DEV.disState(1,'cooldown')||DEV.disState(2,'cooldown');
+    case 'dsstable':   return DEV.disState(1,'stable')||DEV.disState(2,'stable');
     case 'persforce1': return DEV.forcePersonality(1,persSelVal());
     case 'persforce2': return DEV.forcePersonality(2,persSelVal());
     case 'persauto':   DEV.forcePersonality(1,'auto');return DEV.forcePersonality(2,'auto');
@@ -14074,6 +14283,18 @@ function devTick(dt){
     (e.pers?' ['+e.pers.short+']':''):'—';
   ln.push('ECHO·01    '+fe(e1));
   ln.push('ECHO·02    '+fe(e2));
+  /* PR 10: relação + máquina de estados da Dissonância */
+  const fr=e=>{
+    const ri=e?DEV.relationOf(e.slot):null;
+    if(!ri)return '—';
+    return ri.stateLabel+' · '+ri.dissonanceLabel+' · P'+ri.pressurePct+'%'+
+      (ri.integrityMax>0?' · RUP'+ri.integrity:'')+
+      (ri.grace>0?' · g'+ri.grace.toFixed(0)+'s':'')+
+      (ri.lastReaction?' · '+ri.lastReaction.r+(ri.lastReaction.v>0?'+':'')+
+        ri.lastReaction.v:'');
+  };
+  ln.push('REL·01     '+fr(e1));
+  ln.push('REL·02     '+fr(e2));
   try{
     const pv=DEV.personalityPreview();
     ln.push('PERS PREV  '+pv.label+' c='+pv.conf.toFixed(2)+
