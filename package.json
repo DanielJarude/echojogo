@@ -1,0 +1,100 @@
+{
+  "name": "echo-roguelite",
+  "productName": "ECHO",
+  "version": "1.0.2",
+  "description": "ECHO — roguelite top-down de ressonância temporal. Suas runs anteriores voltam como Ecos e lutam ao seu lado.",
+  "main": "main.js",
+  "author": {
+    "name": "ECHO Game Studio"
+  },
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --enable-logging",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "predist": "npm run clean",
+    "predist:win": "npm run clean",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win --x64",
+    "dist:mac": "electron-builder --mac",
+    "dist:linux": "electron-builder --linux",
+    "dist:all": "electron-builder -mwl"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.echostudio.roguelite",
+    "productName": "ECHO",
+    "copyright": "Copyright © 2026 ECHO Game Studio",
+    "asar": true,
+    "compression": "maximum",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "index.html",
+      "main.js",
+      "preload.js",
+      "package.json",
+      "!dist/**",
+      "!**/*.map",
+      "!**/{.git,.github,.vscode,.idea}/**",
+      "!**/{README,readme,CHANGELOG}.md"
+    ],
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "${productName}-${version}-win-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ECHO",
+      "deleteAppDataOnUninstall": false,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable.${ext}"
+    },
+    "mac": {
+      "target": [
+        { "target": "dmg", "arch": ["x64", "arm64"] }
+      ],
+      "icon": "build/icon.icns",
+      "category": "public.app-category.games",
+      "darkModeSupport": true,
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false
+    },
+    "dmg": {
+      "backgroundColor": "#04070d",
+      "title": "ECHO ${version}"
+    },
+    "linux": {
+      "target": ["AppImage", "deb", "tar.gz"],
+      "icon": "build/icon.png",
+      "category": "Game",
+      "synopsis": "Roguelite top-down de ressonância temporal",
+      "desktop": {
+        "Name": "ECHO",
+        "Comment": "Roguelite top-down de ressonância temporal",
+        "Categories": "Game;ActionGame;"
+      }
+    },
+    "appImage": {
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    }
+  }
+}
