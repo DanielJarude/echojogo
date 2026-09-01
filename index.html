@@ -3240,6 +3240,12 @@ const MORAL_BALANCE={
     baseline:1/3,
     /* teto de bônus contextual por eixo (efeito máximo por item) */
     maxBonus:{comp:.05,greed:.08,viol:.05},
+    /* ORÇAMENTO GLOBAL por eixo: teto da SOMA de todas as contribuições
+       de sintonia da build. Vários itens afinados continuam contando,
+       mas a soma satura aqui (escala proporcional — nunca crescimento
+       linear/geométrico descontrolado). Auditoria PR 9: sem este cap,
+       22 módulos afinados chegavam a ×2.01 de dano só de sintonia. */
+    totalCaps:{comp:.10,greed:.14,viol:.10},
     /* cortes dos níveis de sintonia (sobre o match 0..1) */
     levels:{divergent:.22,neutral:.45,attuned:.72}
   },
@@ -3360,24 +3366,55 @@ function moralAffinityLevel(match){
 /* ---- efeitos derivados no Stat Pipeline (ids estáveis, recalculáveis) ---- */
 function moralTuneModId(itemId,stat){return 'moral:item:'+itemId+':'+stat;}
 function isMoralTuneModId(id){return typeof id==='string'&&id.indexOf('moral:item:')===0;}
-/* lista os modificadores que UM item geraria com o perfil atual */
+/* PLANO CENTRAL DE SINTONIA (auditoria de stacking do PR 9):
+   · cada item contribui ADITIVAMENTE (type:'add' no pipeline — os deltas
+     somam entre si, em vez de multiplicarem geometricamente);
+   · a soma por eixo satura no orçamento global (totalCaps) com ESCALA
+     PROPORCIONAL: todos os itens continuam contribuindo, cada um com a
+     sua fração — remover um item redistribui/reduz corretamente;
+   · o cap limita apenas a contribuição NOVA de sintonia; o sistema moral
+     legado (mEff) permanece intocado. */
+function calcMoralTuningPlan(itemIds,prof){
+  prof=prof||getMoralProfile();
+  const B=MORAL_BALANCE.affinity;
+  const per=[],totals={comp:0,greed:0,viol:0};
+  for(const id of (itemIds||[])){
+    const aff=getItemMoralAffinity(id);
+    if(!aff)continue;
+    const tune=moralTuneFactor(calcMoralAffinityMatch(aff,prof));
+    if(tune<=0)continue;
+    const raw={
+      comp:B.maxBonus.comp*aff.comp*tune,
+      greed:B.maxBonus.greed*aff.greed*tune,
+      viol:B.maxBonus.viol*aff.viol*tune};
+    per.push({id,raw});
+    totals.comp+=raw.comp;totals.greed+=raw.greed;totals.viol+=raw.viol;
+  }
+  const scale={},capped={};
+  for(const ax of MORAL_AXES){
+    const cap=B.totalCaps[ax];
+    scale[ax]=totals[ax]>cap?cap/totals[ax]:1;
+    capped[ax]=Math.min(totals[ax],cap);
+  }
+  const mods=[];
+  for(const e of per){
+    const it=itemById(e.id),nm=it?it.nm:e.id;
+    const mk=(stat,delta,lab)=>{
+      if(Math.abs(delta)<1e-4)return;
+      mods.push({id:moralTuneModId(e.id,stat),stat,type:'add',value:delta,
+        stacks:'replace',label:lab});
+    };
+    /* temática por eixo: proteção · economia · ofensiva */
+    if(e.raw.comp>0)mk('dmgTaken',-(e.raw.comp*scale.comp),'SINTONIA '+nm+' · PROTEÇÃO');
+    if(e.raw.greed>0)mk('coinMul',e.raw.greed*scale.greed,'SINTONIA '+nm+' · CRÉDITOS');
+    if(e.raw.viol>0)mk('damage',e.raw.viol*scale.viol,'SINTONIA '+nm+' · OFENSIVA');
+  }
+  return {per,totals,capped,scale,mods};
+}
+/* lista os modificadores que UM item geraria com o perfil atual
+   (isolado — sem concorrência de orçamento; usado por UI/DEV) */
 function moralTuneModsFor(itemId,prof){
-  const aff=getItemMoralAffinity(itemId);
-  if(!aff)return [];
-  const tune=moralTuneFactor(calcMoralAffinityMatch(aff,prof));
-  if(tune<=0)return [];
-  const it=itemById(itemId),nm=it?it.nm:itemId;
-  const B=MORAL_BALANCE.affinity.maxBonus,out=[];
-  const mk=(stat,mul,lab)=>{
-    if(Math.abs(mul-1)<1e-4)return;
-    out.push({id:moralTuneModId(itemId,stat),stat,type:'mult',value:mul,
-      stacks:'replace',label:lab});
-  };
-  /* temática por eixo: proteção · economia · ofensiva */
-  if(aff.comp>0)mk('dmgTaken',1-B.comp*aff.comp*tune,'SINTONIA '+nm+' · PROTEÇÃO');
-  if(aff.greed>0)mk('coinMul',1+B.greed*aff.greed*tune,'SINTONIA '+nm+' · CRÉDITOS');
-  if(aff.viol>0)mk('damage',1+B.viol*aff.viol*tune,'SINTONIA '+nm+' · OFENSIVA');
-  return out;
+  return calcMoralTuningPlan([itemId],prof).mods;
 }
 /* recalcula TODA a sintonia (chamado quando moral ou itens mudam;
    nunca por frame). Remove os derivados antigos e regenera do zero. */
@@ -3386,9 +3423,8 @@ function applyMoralTuning(p){
   if(!p)return false;
   smInit(p);
   p.sm=p.sm.filter(m=>!isMoralTuneModId(m.id));
-  const prof=getMoralProfile();
-  for(const id of (p.items||[]))
-    for(const mod of moralTuneModsFor(id,prof))p.sm.push(mod);
+  const plan=calcMoralTuningPlan(p.items||[],getMoralProfile());
+  for(const mod of plan.mods)p.sm.push(mod);
   smRefresh(p);
   return true;
 }
@@ -12664,7 +12700,14 @@ function devMoralInspectorHTML(){
   s+='<div class="row"><span>INTENSIDADE</span><b>'+f(prof.intensity)+
     '</b></div>'+
     '<div class="row"><span>BALANCED</span><b>'+(prof.balanced?'SIM':'NÃO')+'</b></div>';
+  const pct=x=>(x>=0?'+':'−')+(Math.round(Math.abs(x)*1000)/10).toFixed(1).replace('.',',')+'%';
   if(player&&player.items.length){
+    const plan=calcMoralTuningPlan(player.items,prof);
+    const caps=MORAL_BALANCE.affinity.totalCaps;
+    s+='<div class="row final"><span>ORÇAMENTO DE SINTONIA</span><b>'+
+      'C '+pct(-plan.capped.comp)+' / '+pct(-caps.comp)+
+      ' · G '+pct(plan.capped.greed)+' / '+pct(caps.greed)+
+      ' · V '+pct(plan.capped.viol)+' / '+pct(caps.viol)+'</b></div>';
     for(const id of player.items){
       const it=itemById(id);if(!it)continue;
       const aff=getItemMoralAffinity(id);
@@ -12674,12 +12717,12 @@ function devMoralInspectorHTML(){
       }
       const match=calcMoralAffinityMatch(aff,prof);
       const lv=moralAffinityLevel(match);
-      const mods=moralTuneModsFor(id,prof);
+      const mods=plan.mods.filter(m=>m.id.indexOf('moral:item:'+id+':')===0);
       s+='<div class="row mod"><span>'+it.nm+' · C'+aff.comp+'/G'+aff.greed+'/V'+aff.viol+
         '</span><span class="val" style="color:'+lv.c+'">'+lv.lab+' '+f(match)+'</span></div>';
       for(const m of mods)
-        s+='<div class="row mod"><span>&nbsp;&nbsp;'+m.stat+'</span><span class="val">×'+
-          f(m.value)+'</span></div>';
+        s+='<div class="row mod"><span>&nbsp;&nbsp;'+m.stat+'</span><span class="val">'+
+          pct(m.value)+'</span></div>';
     }
   }else{
     s+='<div class="row mod"><span>sem módulos instalados</span><span></span></div>';

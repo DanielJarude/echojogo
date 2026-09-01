@@ -23,7 +23,7 @@ const RAWSRC=m[1];   // fonte crua para auditorias estáticas
 src+=';globalThis.__t={'+
   'MORAL_BALANCE,MORAL_AFFINITY,MORAL_AXES,MORAL_AXIS_LABEL,MORAL_STATE_LABEL,'+
   'getMoralProfile,getItemMoralAffinity,calcMoralAffinityMatch,moralTuneFactor,'+
-  'moralAffinityLevel,moralTuneModsFor,applyMoralTuning,moralTuneModId,'+
+  'moralAffinityLevel,moralTuneModsFor,calcMoralTuningPlan,applyMoralTuning,moralTuneModId,'+
   'isMoralTuneModId,countAttunedItems,moralShopWeight,pickWeightedMoral,'+
   'moralEventWeight,pickEventKind,moralAffinityTagHTML,moralAffinityPhrase,'+
   'moralGain,applyMoral,moralDom,moralTier,'+
@@ -325,7 +325,7 @@ ok('mudar a moral atualiza o valor da sintonia (contínuo, não binário)',()=>{
   setMoralRaw(0,0,10);  // dominância total
   const full=p.sm.find(x=>x.id==='moral:item:nucleo:damage');
   assert(full.value>partial.value,'alinhamento maior → efeito maior');
-  assert(near(full.value,1+B.affinity.maxBonus.viol));
+  assert(near(full.value,B.affinity.maxBonus.viol),'delta aditivo no teto por item');
 });
 ok('sem itens → modificadores derivados desaparecem',()=>{
   const p=t.getPlayer();
@@ -357,19 +357,20 @@ ok('resume filtra sm moral legado e recalcula sem duplicar (migração)',()=>{
   const p=t.getPlayer();
   const mods=p.sm.filter(x=>x.id==='moral:item:nucleo:damage');
   assert.strictEqual(mods.length,1,'exatamente 1 (recalculado, não duplicado)');
-  assert(near(mods[0].value,1+B.affinity.maxBonus.viol));
+  assert(near(mods[0].value,B.affinity.maxBonus.viol));
 });
 ok('limites de poder: bônus nunca ultrapassa o teto e nunca vira malus',()=>{
   const profs=[[10,0,0],[0,10,0],[0,0,10],[8,7,1],[7,1,7],[1,7,7],[5,5,5]]
     .map(v=>t.getMoralProfile({comp:v[0],greed:v[1],viol:v[2]}));
   for(const id in t.MORAL_AFFINITY)for(const prof of profs){
     for(const mod of t.moralTuneModsFor(id,prof)){
+      assert.strictEqual(mod.type,'add','sintonia é aditiva (auditoria de stacking)');
       if(mod.stat==='damage'){
-        assert(mod.value>=1&&mod.value<=1+B.affinity.maxBonus.viol+EPS);
+        assert(mod.value>0&&mod.value<=B.affinity.maxBonus.viol+EPS);
       }else if(mod.stat==='coinMul'){
-        assert(mod.value>=1&&mod.value<=1+B.affinity.maxBonus.greed+EPS);
+        assert(mod.value>0&&mod.value<=B.affinity.maxBonus.greed+EPS);
       }else if(mod.stat==='dmgTaken'){
-        assert(mod.value<=1&&mod.value>=1-B.affinity.maxBonus.comp-EPS);
+        assert(mod.value<0&&mod.value>=-B.affinity.maxBonus.comp-EPS);
       }else assert.fail('stat inesperado na sintonia: '+mod.stat);
     }
   }
@@ -672,6 +673,173 @@ ok('runData do Echo preserva o snapshot moral da run (dado p/ PRs futuros)',()=>
   assert(/moral:\{comp:moral\.comp,greed:moral\.greed,viol:moral\.viol\},dom:moralDom\(\)/.test(RAWSRC),
     'onPlayerDeath continua fotografando a moral');
 });
+
+/* ========= K. AUDITORIA DE STACKING — ORÇAMENTO GLOBAL POR EIXO ========= */
+/* razão do stat causada SOMENTE pela sintonia (com mods ÷ sem mods) */
+function tuneRatio(p,stat){
+  const withM=t.smGet(p,stat);
+  const saved=p.sm.slice();
+  p.sm=p.sm.filter(x=>!t.isMoralTuneModId(x.id));
+  const without=t.smGet(p,stat);
+  p.sm=saved;
+  return withM/without;
+}
+function giveAll(ids){for(const id of ids)t.giveItem(t.itemById(id),true);}
+const VIOL_PURE=Object.keys(t.MORAL_AFFINITY).filter(id=>t.MORAL_AFFINITY[id].viol===1);
+const COMP_ALL=Object.keys(t.MORAL_AFFINITY).filter(id=>t.MORAL_AFFINITY[id].comp>0);
+const VIOL_ALL=Object.keys(t.MORAL_AFFINITY).filter(id=>t.MORAL_AFFINITY[id].viol>0);
+const GREED_ALL=Object.keys(t.MORAL_AFFINITY).filter(id=>t.MORAL_AFFINITY[id].greed>0);
+
+ok('stacking é ADITIVO: 1 item = teto por item, 2 itens = soma exata',()=>{
+  freshRun();setMoralRaw(0,0,10);
+  giveAll(VIOL_PURE.slice(0,1));
+  assert(near(tuneRatio(t.getPlayer(),'damage'),1+B.affinity.maxBonus.viol),'1 item → +5%');
+  freshRun();setMoralRaw(0,0,10);
+  giveAll(VIOL_PURE.slice(0,2));
+  const two=Math.min(2*B.affinity.maxBonus.viol,B.affinity.totalCaps.viol);
+  assert(near(tuneRatio(t.getPlayer(),'damage'),1+two),'2 itens somam (não multiplicam)');
+});
+ok('3, 4 e N itens: a soma SATURA no orçamento global (nunca cresce além)',()=>{
+  for(const n of [3,4,VIOL_PURE.length]){
+    freshRun();setMoralRaw(0,0,10);
+    giveAll(VIOL_PURE.slice(0,n));
+    assert(near(tuneRatio(t.getPlayer(),'damage'),1+B.affinity.totalCaps.viol),
+      n+' itens → exatamente o cap (+'+(B.affinity.totalCaps.viol*100)+'%)');
+  }
+});
+ok('VIOLENCE MAX BUILD (todos os itens afinados): sintonia ≤ cap global',()=>{
+  freshRun();setMoralRaw(0,0,12);   // tier 3 CONSUMIDO
+  giveAll(VIOL_ALL);
+  const r=tuneRatio(t.getPlayer(),'damage');
+  assert(r<=1+B.affinity.totalCaps.viol+EPS,'sintonia dano ×'+r.toFixed(4));
+  assert(r>1,'ainda perceptível');
+});
+ok('COMPASSION MAX BUILD: redução de dano recebido ≤ cap global',()=>{
+  freshRun();setMoralRaw(12,0,0);
+  giveAll(COMP_ALL);
+  const r=tuneRatio(t.getPlayer(),'dmgTaken');
+  assert(r>=1-B.affinity.totalCaps.comp-EPS,'dmgTaken ×'+r.toFixed(4));
+  assert(r<1,'ainda perceptível');
+});
+ok('GREED MAX BUILD: bônus de créditos ≤ cap global',()=>{
+  freshRun();setMoralRaw(0,12,0);
+  giveAll(GREED_ALL);
+  const r=tuneRatio(t.getPlayer(),'coinMul');
+  assert(r<=1+B.affinity.totalCaps.greed+EPS,'coinMul ×'+r.toFixed(4));
+  assert(r>1,'ainda perceptível');
+});
+ok('escala proporcional: acima do cap, cada item contribui a sua fração',()=>{
+  freshRun();setMoralRaw(0,0,10);
+  giveAll(VIOL_PURE.slice(0,4));    // raw 4×5% = 20% > cap 10% → scale 0.5
+  const p=t.getPlayer();
+  const mods=p.sm.filter(x=>t.isMoralTuneModId(x.id)&&x.stat==='damage');
+  assert.strictEqual(mods.length,4);
+  for(const m of mods)assert(near(m.value,B.affinity.totalCaps.viol/4),'fração igual');
+  const sum=mods.reduce((s,m)=>s+m.value,0);
+  assert(near(sum,B.affinity.totalCaps.viol),'soma == orçamento');
+});
+ok('remover item reduz a contribuição corretamente (total nunca sobe)',()=>{
+  freshRun();setMoralRaw(0,0,10);
+  giveAll(VIOL_PURE.slice(0,3));    // saturado no cap
+  const p=t.getPlayer();
+  const r3=tuneRatio(p,'damage');
+  p.items=VIOL_PURE.slice(0,2);t.applyMoralTuning(p);   // ainda 2×5% = cap
+  const r2=tuneRatio(p,'damage');
+  p.items=VIOL_PURE.slice(0,1);t.applyMoralTuning(p);   // abaixo do cap
+  const r1=tuneRatio(p,'damage');
+  assert(r2<=r3+EPS&&r1<r2,'monotônico: '+r3.toFixed(3)+' ≥ '+r2.toFixed(3)+' > '+r1.toFixed(3));
+  assert(near(r1,1+B.affinity.maxBonus.viol),'1 item volta ao valor individual');
+});
+ok('Continue Run com build MÁXIMA: total idêntico, nenhuma duplicação',()=>{
+  freshRun();setMoralRaw(0,0,10);
+  giveAll(VIOL_ALL);
+  const before=tuneRatio(t.getPlayer(),'damage');
+  t.setState('play');
+  assert(t.captureCheckpoint('teste',3));
+  t.resumeRun();
+  const p=t.getPlayer();
+  assert(near(tuneRatio(p,'damage'),before,1e-6),'resume reproduz o mesmo total');
+  const ids=p.sm.filter(x=>t.isMoralTuneModId(x.id)).map(x=>x.id);
+  assert.strictEqual(new Set(ids).size,ids.length,'nenhum id duplicado');
+});
+ok('reload triplo com build máxima: totais estáveis (recalcular ≠ acumular)',()=>{
+  const p=t.getPlayer();
+  const r=tuneRatio(p,'damage'),n=p.sm.length;
+  t.applyMoralTuning(p);t.applyMoralTuning(p);t.applyMoralTuning(p);
+  assert(near(tuneRatio(p,'damage'),r)&&p.sm.length===n);
+});
+ok('item misto NUNCA soma dois bônus máximos (orçamento por construção)',()=>{
+  for(const id in t.MORAL_AFFINITY){
+    const plan=t.calcMoralTuningPlan([id],t.getMoralProfile({comp:5,greed:0,viol:5}));
+    for(const e of plan.per){
+      const frac=e.raw.comp/B.affinity.maxBonus.comp+
+        e.raw.greed/B.affinity.maxBonus.greed+
+        e.raw.viol/B.affinity.maxBonus.viol;
+      assert(frac<=1+EPS,id+' excede o orçamento de item ('+frac+')');
+    }
+  }
+});
+ok('perfis mistos (C/V, G/V, C/G): cada eixo respeita o próprio cap',()=>{
+  const profs=[[7,0,7],[0,7,7],[7,7,0]];
+  const all=Object.keys(t.MORAL_AFFINITY);
+  for(const [c,g,v] of profs){
+    const plan=t.calcMoralTuningPlan(all,t.getMoralProfile({comp:c,greed:g,viol:v}));
+    assert(plan.capped.comp<=B.affinity.totalCaps.comp+EPS);
+    assert(plan.capped.greed<=B.affinity.totalCaps.greed+EPS);
+    assert(plan.capped.viol<=B.affinity.totalCaps.viol+EPS);
+  }
+});
+ok('item neutro no meio da build máxima segue sem gerar nada',()=>{
+  freshRun();setMoralRaw(0,0,10);
+  giveAll(['lente',...VIOL_PURE.slice(0,3)]);
+  const p=t.getPlayer();
+  assert.strictEqual(p.sm.filter(x=>x.id.indexOf('moral:item:lente:')===0).length,0);
+});
+ok('mEff legado INTOCADO: valores de tier idênticos ao PR 8 (snapshot)',()=>{
+  freshRun();
+  setMoralRaw(0,0,12);   // Violência tier 3 → escala 1.7
+  const e=t.getMEff();
+  assert(near(e.dmgMul,1+.26*1.7),'dmgMul 1.442');
+  assert(near(e.playerDmgTaken,1+.22*1.7),'playerDmgTaken 1.374');
+  assert(near(e.enemyHp,1+.20*1.7),'enemyHp 1.34');
+  setMoralRaw(0,12,0);   // Ganância tier 3
+  assert(near(t.getMEff().coinMul,1+.85*1.7),'coinMul 2.445');
+  assert(near(t.getMEff().shopMul,1+.34*1.7),'shopMul 1.578');
+  setMoralRaw(12,0,0);   // Compaixão tier 3
+  assert(near(t.getMEff().upgMul,1-.28*1.7),'upgMul 0.524');
+});
+ok('aplicar sintonia NÃO altera mEff (sistemas separados)',()=>{
+  freshRun();setMoralRaw(0,0,12);
+  const snap=JSON.stringify(t.getMEff());
+  giveAll(VIOL_ALL);
+  t.applyMoralTuning(t.getPlayer());
+  assert.strictEqual(JSON.stringify(t.getMEff()),snap);
+});
+ok('pior caso TOTAL (sintonia × mEff) fica em faixa saudável',()=>{
+  const worst=(1+B.affinity.totalCaps.viol)*(1+.26*1.7);
+  assert(worst<1.60,'dano moral total ×'+worst.toFixed(3)+' < ×1.60');
+  const worstCoin=(1+B.affinity.totalCaps.greed)*(1+.85*1.7);
+  assert(worstCoin<2.85,'coin moral total ×'+worstCoin.toFixed(3)+' < ×2.85');
+  const worstDef=1-B.affinity.totalCaps.comp;
+  assert(worstDef>=.90-EPS,'redução máx. de dano recebido ≤ 10%');
+});
+ok('feedback loop de eventos: nenhum eixo monopoliza o sorteio',()=>{
+  freshRun();setMoralRaw(0,0,30);   // Violência extrema
+  let k=0;
+  MathF._rng=()=>{k=(k+1)%9973;return k/9973;};
+  const N=20000,cnt={comp:0,greed:0,viol:0,neutro:0};
+  for(let i=0;i<N;i++){
+    const kind=t.pickEventKind();
+    cnt[t.EVENT_AFFINITY[kind]||'neutro']++;
+  }
+  MathF._rng=()=>0.4242;
+  const share=a=>cnt[a]/N;
+  assert(share('viol')<=.30,'eixo dominante ≤ 30% ('+(share('viol')*100).toFixed(1)+'%)');
+  assert(share('comp')>=.15,'Compaixão segue relevante ('+(share('comp')*100).toFixed(1)+'%)');
+  assert(share('greed')>=.15,'Ganância segue relevante ('+(share('greed')*100).toFixed(1)+'%)');
+  assert(share('neutro')>=.30,'eventos neutros seguem fortes em grupo');
+});
+
 
 console.log('---------------------------------------------');
 console.log('Resultado: '+passed+' passaram · '+failed+' falharam');

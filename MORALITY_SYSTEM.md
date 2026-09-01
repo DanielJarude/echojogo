@@ -96,6 +96,39 @@ tune  = clamp((match − baseline) / (1 − baseline), 0, 1)   // baseline = 1/3
   alinhamento total. **Divergência nunca pune o item** — o item base
   funciona sempre, independentemente da moral.
 
+### Stacking e orçamento global (auditoria de balanceamento)
+
+As contribuições de sintonia são **aditivas** (`type:'add'` no pipeline) e
+passam por um **orçamento global por eixo** (`MORAL_BALANCE.affinity.totalCaps`),
+calculado centralmente em `calcMoralTuningPlan()`:
+
+```
+raw(item, eixo) = maxBonus[eixo] × aff[eixo] × tune      // por item
+total(eixo)     = Σ raw                                   // da build
+scale(eixo)     = total > cap ? cap / total : 1           // escala proporcional
+delta(item)     = raw × scale                             // mod 'add' emitido
+```
+
+| Eixo | Teto por item | Orçamento global da build |
+|---|---|---|
+| Compaixão (dano recebido) | −5% | **−10%** |
+| Ganância (créditos) | +8% | **+14%** |
+| Violência (dano) | +5% | **+10%** |
+
+Consequências: 1 módulo afinado vale o teto individual; 2 módulos somam;
+a partir daí a soma **satura no orçamento** com escala proporcional
+(cada módulo mantém a sua fração — remover um reduz corretamente).
+Sem o cap, uma build com todos os módulos de Violência chegava a
+**×2.01 de dano só de sintonia**; com o cap, o pior caso real é **×1.10**.
+
+Interação com o sistema legado (`mEff`, intocado): pior caso total de
+"dano moral" = 1.10 × 1.442 (tier 3) = **×1.586** — contra ×1.442 que o
+jogo já dava antes do PR 9, e pago com os custos legados de Violência
+(inimigos +34% vida, você recebe +37% de dano). Economia: 1.14 ×
+2.445 = ×2.79 sobre o multiplicador de kills, dentro da identidade de
+Ganância já existente.
+
+
 ### Níveis (apenas rótulo de UI)
 
 `DIVERGENTE (<0.22) · NEUTRA (<0.45) · AFIM (<0.72) · HARMÔNICA (≥0.72)`
@@ -103,14 +136,14 @@ tune  = clamp((match − baseline) / (1 − baseline), 0, 1)   // baseline = 1/3
 
 ### Efeitos (via Stat Modifier Pipeline)
 
-Temáticos por eixo, escalados por `aff[eixo] × tune`, com tetos em
-`MORAL_BALANCE.affinity.maxBonus`:
+Temáticos por eixo, escalados por `aff[eixo] × tune` e limitados pelo
+orçamento global acima:
 
-| Eixo | Efeito | Teto |
-|---|---|---|
-| Compaixão | dano recebido ×(1 − x) | −5% |
-| Ganância | créditos ×(1 + x) | +8% |
-| Violência | dano ×(1 + x) | +5% |
+| Eixo | Efeito | Teto por item | Teto da build |
+|---|---|---|---|
+| Compaixão | dano recebido ×(1 − x) | −5% | −10% |
+| Ganância | créditos ×(1 + x) | +8% | +14% |
+| Violência | dano ×(1 + x) | +5% | +10% |
 
 - IDs estáveis: `moral:item:<itemId>:<stat>` (`stacks:'replace'`).
 - **Derivados**: excluídos do checkpoint (`smBuildCheckpoint` filtra
@@ -199,10 +232,14 @@ evento — `fn` aplica a consequência imediata e o vetor alimenta
 
 ## 12. Balanceamento
 
-Tudo em `MORAL_BALANCE` (sem magic numbers): tetos de bônus (3–8% de
-eficiência contextual), viés de loja (×1.10), viés de eventos (×1.30),
-cortes de nível e limiares de perfil. Testes garantem os limites
-(`limites de poder`, `peso de loja`, `peso de evento`).
+Tudo em `MORAL_BALANCE` (sem magic numbers): tetos por item (3–8%),
+**orçamento global por eixo** (`totalCaps`: −10% / +14% / +10%), viés de
+loja (×1.10), viés de eventos (×1.30), cortes de nível e limiares de
+perfil. Testes garantem: limites por item e por build, saturação aditiva,
+escala proporcional, `mEff` legado intocado (snapshot numérico) e ausência
+de monopólio no sorteio de eventos (simulação com 20k sorteios: perfil
+extremo de Violência gera ~24% de eventos afins vs 20% de base — sem
+feedback loop perigoso).
 
 ## 13. O que o PR 9 NÃO faz (limitações intencionais)
 
