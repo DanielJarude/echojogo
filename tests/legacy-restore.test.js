@@ -470,7 +470,10 @@ ok('curseT é decrementado no updatePlayer',()=>{
 });
 
 ok('curseT reduz dano do jogador',()=>{
-  assert(src.includes('p.curseT>0)mul*=.70'),'curse deve reduzir dano em 30%');
+  /* PR 7: a maldição agora é um MODIFICADOR TEMPORÁRIO do pipeline
+     (id status.oracle_curse.damage) com multiplicador ×0.70 (−30%). */
+  assert(src.includes('status.oracle_curse.damage'),'curse deve registrar modificador de dano');
+  assert(src.includes(',.70)'),'curse deve reduzir dano em 30% (×0.70)');
 });
 
 /* ====================== ECO SPEAK COOLDOWN ====================== */
