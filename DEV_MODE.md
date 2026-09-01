@@ -98,6 +98,23 @@ entram no arquivo permanente. Confiança é sempre normalizada em `0..100`.
 A Dissonância chama `enterDissonance()` — nenhuma lógica de produção é
 duplicada.
 
+### Echo Personality (PR 8)
+`DEV.personalityPreview()` · `DEV.personalityOf(slot)` ·
+`DEV.forcePersonality(slot, pid|'auto')` · `DEV.spawnEcho(slot, pid)`
+
+- **PERSONALITY INSPECTOR** no painel: mostra a personalidade prevista da run
+  viva (id, confidence, os 6 scores, traços) usando o MESMO pipeline da
+  produção (`buildPersonalityMetrics → scorePersonalities → classifyPersonality`)
+  — nada é recalculado em paralelo nem gravado.
+- `forcePersonality` altera **apenas o runtime** do Echo (`e.pers`, marcado
+  com `e.persDev`): o registro salvo em `echoQueue`/`saveEchoes` não é tocado,
+  e `devTainted` impede que a run depurada gere Echo legítimo.
+- `spawnEcho(slot, pid)` aceita um pid de personalidade (ex.: `'opportunist'`)
+  para gerar um Echo de teste com identidade específica; pid inválido gera o
+  Echo base, sem identidade forjada.
+- O HUD de debug (`toggleInfo`) exibe a tag de personalidade de cada Echo em
+  campo e a linha `PERS PREV` com o estado-vivo da classificação.
+
 ### Status
 `DEV.applyStatus(kind, all?)` com `burn · bleed · corrode · chill · shock ·
 stun` · `DEV.clearStatus()` · `DEV.curse(s)` (maldição do Oráculo).

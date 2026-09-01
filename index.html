@@ -1220,7 +1220,7 @@ const LS_KEY='echoRuns.v1';
    ECHO_VERSION deve permanecer igual ao "version" do package.json.
    O teste tests/devmode.test.js falha se os dois divergirem.
    ===================================================================== */
-const ECHO_VERSION='0.6.5-alpha';
+const ECHO_VERSION='0.6.6-alpha';
 const ECHO_VERSION_LABEL='ECHO  v'+ECHO_VERSION+'  ·  PLAYTEST';
 
 /* =====================================================================
@@ -1813,7 +1813,8 @@ function saveEchoes(){
       frMul:r.frMul,wave:r.wave,level:r.level,trail:r.trail,
       crit:r.crit,critMul:r.critMul,pierce:r.pierce,aoeMul:r.aoeMul,rangeMul:r.rangeMul,
       projSpdMul:r.projSpdMul,longRangeBonus:r.longRangeBonus,
-      coins:r.coins,items:r.items,upg:r.upg,owned:r.owned,moral:r.moral,dom:r.dom}));
+      coins:r.coins,items:r.items,upg:r.upg,owned:r.owned,moral:r.moral,dom:r.dom,
+      k:r.kills|0,mh:r.mh||0,st:r.st||null,ps:r.ps||null}));   // PR 8: ps + sinais
     smRoot.slots[curSlot].echoes=slim;
     smCommit();
   }catch(e){/* cota excedida: mantém apenas em memória */}
@@ -1825,7 +1826,12 @@ function loadEchoes(){
     const q=smRoot.slots[curSlot].echoes;
     if(!Array.isArray(q))return [];
     // Ecos marcados como debug nunca voltam para uma run normal
-    return q.filter(r=>r&&!r.dev&&Array.isArray(r.trail)&&r.trail.length>4).slice(0,2);
+    const out=q.filter(r=>r&&!r.dev&&Array.isArray(r.trail)&&r.trail.length>4).slice(0,2)
+      .map(r=>Object.assign({},r));   // cópia rasa: migração NÃO regrava o save
+    // PR 8: migração — Echo antigo sem .ps deriva personalidade do que
+    // existe (trail/dur/wave). Sem dados suficientes → FRAGMENTADO.
+    for(const r of out)ensureEchoPersonality(r);
+    return out;
   }catch(e){return [];}
 }
 
@@ -2273,12 +2279,417 @@ function makeEcho(data,slot){
     itemIds:(data.items||[]).slice(),upgLog:(data.upg||[]).slice(),
     ownedW:(data.owned||STARTER_WEAPONS).slice(),
     dom:data.dom||'neutro',moralSrc:data.moral||{comp:0,greed:0,viol:0},
+    /* PR 8: identidade comportamental derivada da RUN DE ORIGEM.
+       Fixa no nascimento; nunca evolui por trust/Dissonância neste PR.
+       É CAMADA ADICIONAL: não substitui o papel tático (role) nem a
+       moralidade — e não altera dano/cadência (ECHO_MUL/ECHO_RATE intactos). */
+    ps:data.ps||null,
+    pers:(data.ps&&PERSONALITIES[data.ps.id])?PERSONALITIES[data.ps.id]:null,
     trust:slot===1?60:46,trustFx:0,fleeT:0,
     roleCd:slot===1?6:8,roleT:0,roleFx:0,shieldPot:0,   // papéis táticos
     hostile:false,hostileT:0,curW:0,beamT:0,beamRamp:1,beamTarget:null,
     beamLen:0,recoil:0,swingDir:1,
     mul:(data.dmgMul||1)*ECHO_MUL[slot]*boost*mEff.echoPower,
     hue:slot===1?'#46e0ff':'#ff4df0'};
+}
+
+/* =====================================================================
+   PR 8 — PERSONALIDADE DOS ECOS (derivada da run de origem)
+   ---------------------------------------------------------------------
+   Princípios:
+   · DETERMINÍSTICA: mesma run salva → mesma personalidade, SEMPRE.
+     Nenhum Math.random toca a classificação (só a escolha de fala
+     equivalente pode ser aleatória, como já era antes).
+   · PROPORCIONAL: todas as métricas são taxas/durações proporcionais
+     — runs de 2 e 20 minutos são comparáveis (kills/min, não kills).
+   · LEVE: contadores O(1) na coleta; o cálculo completo acontece UMA
+     ÚNICA VEZ ao consolidar o Echo no fim da run (onPlayerDeath).
+   · ADITIVA: só spacing (raio de órbita) e prioridade de alvo; dano
+     bruto, cadência, papéis, Dissonância e Ressonância intocados.
+   · COMPACTA no save: ps={id,tr,c,s,v} + st (contadores arredondados).
+   · MIGRÁVEL: Echo antigo sem .ps deriva classificação conservadora a
+     partir da trail; dados insuficientes → FRAGMENTADO (nunca apaga,
+     nunca duplica, nunca muda trust).
+   ===================================================================== */
+
+/* ---------------- coleta de comportamento (run) ----------------
+   Um único objeto plano de contadores numéricos — barato de gravar,
+   barato de somar, sobrevive ao checkpoint (Continue Run, PR 7.5). */
+function runStReset(){
+  runSt={
+    s:0,        // amostras de 250ms (base das frações temporais)
+    mw:0,rw:0,  // amostras com arma corpo-a-corpo / distância
+    dsh:0,      // dashes
+    dt:0,       // dano recebido (bruto, incluindo absorvido por escudo)
+    dd:0,       // dano causado pelo jogador (antes do kill)
+    sh:0,hi:0,  // projéteis disparados / acertos de projétil (precisão)
+    ms:0,mh:0,  // golpes corpo-a-corpo / alvos atingidos em melee
+    lo:0,cr:0,  // amostras com HP ≤35% / ≤12%
+    mv:0,fv:0,  // amostras atirando EM MOVIMENTO / PARADO (kiting)
+    ctl:0,      // status de controle aplicados (chill/stun)
+    kw:0,       // abates em alvos já fragilizados (≤35% HP)
+    sb:0,       // quebras de escudo do jogador
+    dS:0,dN:0   // soma/contagem da distância ao inimigo mais próximo
+  };
+}
+let runSt=null;
+runStReset();
+function runStSnapshot(){
+  const o={};
+  if(!runSt)return o;
+  for(const k in runSt)o[k]=Math.round(runSt[k]*100)/100;
+  return o;
+}
+function runStRestore(st){
+  runStReset();
+  if(!st||typeof st!=='object')return;
+  for(const k in runSt){
+    const v=+st[k];
+    if(Number.isFinite(v)&&v>=0)runSt[k]=v;
+  }
+}
+/* amostragem de 250ms — chamada junto ao recorder (1º parâmetro:
+   player; 2º: act do tick — 1 = atirando). Custo: um loop curto sobre
+   inimigos vivos (o mesmo já pago pelo recorder), nada por frame. */
+function runStSample(p,act){
+  const st=runSt;if(!st||!p)return;
+  st.s++;
+  const w=WEAPONS[clamp(p.wi|0,0,WEAPONS.length-1)];
+  if(w&&(w.melee||(w.range||0)<300))st.mw++;else st.rw++;
+  const hf=p.maxHp>0?p.hp/p.maxHp:1;
+  if(hf<=.35)st.lo++;
+  if(hf<=.12)st.cr++;
+  if(act===1){
+    if(Math.hypot(p.vx||0,p.vy||0)>140)st.mv++;else st.fv++;
+  }
+  let bd=1e18;
+  for(const e of enemies){
+    if(e.dead||e.spawnT>0)continue;
+    const d=dist2(e.x,e.y,p.x,p.y);
+    if(d<bd)bd=d;
+  }
+  if(bd<1e18){st.dS+=Math.sqrt(bd);st.dN++;}
+}
+
+/* ---------------- taxonomia ----------------
+   6 identidades + VERSÁTIL (empate/equilíbrio) + FRAGMENTADO (fallback
+   de dados insuficientes). Nenhuma delas é classe de dano: são postura
+   tática, prioridade de alvo e voz. */
+const PERS_ORDER=['aggressive','cautious','precise','impulsive','resilient','opportunist'];
+const PERSONALITIES={
+  aggressive:{id:'aggressive',lab:'AGRESSIVO',short:'AGGR',col:'#ff5c7a',
+    desc:'Fecha a distância, troca de golpes e resolve no corpo a corpo.',
+    spacing:0.90,bias:'threat',
+    lines:{
+      lowHp:['NÃO RECUE AGORA.','QUEIME O RESTO DELES.'],
+      shieldBreak:['BOA. AGORA BRITE.','SEM ESCUDO, MAIS RÁPIDO.'],
+      killStreak:['CONTINUE CORTANDO.','MAIS UM. E O OUTRO.'],
+      resonance:['GOLPE DUPLO!','ISSO — ASSIM.'],
+      miniboss:['UM ALVO GRANDE. ÓTIMO.','ELE FALA. NÓS CORTAMOS.']
+    }
+  },
+  cautious:{id:'cautious',lab:'CAUTELOSO',short:'CAUT',col:'#7dffc4',
+    desc:'Controla a distância e evita qualquer risco desnecessário.',
+    spacing:1.14,bias:'space',
+    lines:{
+      lowHp:['REPOSICIONE-SE.','VOLTE. RESPIRE. RECOMPONHA.'],
+      shieldBreak:['DISTÂNCIA. AGORA.','NÃO DEIXE ELES FECHAREM.'],
+      killStreak:['MANTENHA A LINHA.','CALMO. CONSTANTE.'],
+      resonance:['SINCRONIA CAUTELOSA. OK.','DOIS ÂNGULOS. UM ALVO.'],
+      miniboss:['ARAUTO. NÃO COMPROMETA O HP.','DEIXE-O VIR ATÉ NÓS.']
+    }
+  },
+  precise:{id:'precise',lab:'PRECISO',short:'PREC',col:'#8ff6ff',
+    desc:'Cada tiro conta: mira liderada, mobilidade e paciência.',
+    spacing:1.08,bias:'thin',
+    lines:{
+      lowHp:['ESCOLHA O ALVO.','UM TIRO. UMA MORTE.'],
+      shieldBreak:['NÃO GASTE HP. GASTE MUNIÇÃO.','PRIORIZE A SAÍDA.'],
+      killStreak:['EFICIÊNCIA ACEITÁVEL.','SEM TIROS ALEATÓRIOS.'],
+      resonance:['MIRA SINCRONIZADA.','DOIS TIROS, UMA BALÍSTICA.'],
+      miniboss:['ALVO PRIORITÁRIO. TRAVADO.','ACERTE A JUNTA EXPOSTA.']
+    }
+  },
+  impulsive:{id:'impulsive',lab:'IMPULSIVO',short:'IMPU',col:'#ff9d3c',
+    desc:'Age antes de calcular — dash na frente do perigo, sempre.',
+    spacing:0.86,bias:'close',
+    lines:{
+      lowHp:['SEM FREIO. AGORA.','MAIS FUNDO. SEM FREIO.'],
+      shieldBreak:['PERFEITO. PARTA PARA CIMA.','ESCUDO? QUE ESCUDO?'],
+      killStreak:['MAIS! AINDA MAIS!','ADRENALINA ESTÁVEL.'],
+      resonance:['OS DOIS AO MESMO TEMPO!','SINCRONIA SELVAGEM.'],
+      miniboss:['ELE É GRANDE. EU GOSTO.','VAI. AGORA. ANTES QUE ELE PENSE.']
+    }
+  },
+  resilient:{id:'resilient',lab:'RESILIENTE',short:'RESI',col:'#ffd166',
+    desc:'Aguenta o que mataria qualquer um e não larga a linha.',
+    spacing:1.00,bias:null,
+    lines:{
+      lowHp:['AGUENTE. VOCÊ JÁ AGUENTOU MAIS.','NÃO É HOJE.'],
+      shieldBreak:['RESISTIR. RECOMPOR. REPETIR.','VAI DOER. VAI PASSAR.'],
+      killStreak:['PASSO A PASSO.','DEVAGAR E CONSTANTE.'],
+      resonance:['ESTÁVEL. SEMPRE ESTIVE.','SINCRONIA DE SOBREVIVÊNCIA.'],
+      miniboss:['SEGURE A ONDA. ELE CAI.','DESPENDE MENOS QUE ELE.']
+    }
+  },
+  opportunist:{id:'opportunist',lab:'OPORTUNISTA',short:'OPOR',col:'#c56bff',
+    desc:'Caça o alvo no momento errado para ele: ferido, lento, sozinho.',
+    spacing:0.96,bias:'wounded',
+    lines:{
+      lowHp:['AMBOS NO LIMITE. UM DE NÓS SAI.','SEM PIEDADE. AGORA.'],
+      shieldBreak:['ENTRE AS FENDAS — AGORA.','ELE ESTÁ ABERTO. USE.'],
+      killStreak:['OS FORTES MORREM SEGUNDOS.','BOM TIMING.'],
+      resonance:['DOIS PREDADORES, UMA VÍTIMA.','EXECUÇÃO SINCRONIZADA.'],
+      miniboss:['TODA BLINDAGEM TEM UMA FALHA. ACHU.','ESPERE O ERRO. ELE VEM.']
+    }
+  },
+  versatile:{id:'versatile',lab:'VERSÁTIL',short:'VERS',col:'#9ff3ff',
+    desc:'Sem dominância clara — adapta a postura ao que a onda exige.',
+    spacing:1.00,bias:null,
+    lines:{
+      lowHp:['INTEGRIDADE BAIXA. ADAPTE.','AJUSTE A POSTURA.'],
+      shieldBreak:['ESCUDO CAIU. MUDE DE PLANO.','SEM PROTEÇÃO — GANHE TEMPO.'],
+      killStreak:['FLUXO ESTÁVEL.','MANTENHA O RITMO.'],
+      resonance:['SINCRONIA CONFIRMADA.','DOIS EM UM.'],
+      miniboss:['ENTIDADE DETECTADA. LEIA ANTES.','ALVO DE PRIORIDADE ALTA.']
+    }
+  },
+  fragmented:{id:'fragmented',lab:'FRAGMENTADO',short:'FRAG',col:'#9db8c8',
+    desc:'A memória da run de origem é curta demais para uma identidade estável.',
+    spacing:1.00,bias:null,
+    lines:{
+      lowHp:['DADOS INSUFICIENTES. CUIDE-SE.','MEMÓRIA PARCIAL… RECOMPOSIÇÃO.'],
+      shieldBreak:['REGISTRO CORROMPIDO…','…PROTEÇÃO AUSENTE…'],
+      killStreak:['PADRÃO …','ESTABILIDADE …INCOMPLETA.'],
+      resonance:['SINCRONIA …','FRAGMENTOS ALINHADOS.'],
+      miniboss:['ENTIDADE …DETECTADA','SINAL FORTE. MEMÓRIA FRACA.']
+    }
+  }
+};
+/* traços secundários: composição simples para variedade sem inflar
+   a taxonomia. Máximo 2 por Echo, ordenados por força do sinal. */
+const PERS_TRAITS={
+  butcher:{lab:'CARNICEIRO',desc:'taxa de abate muito acima da média'},
+  brawler:{lab:'CORPO A CORPO',desc:'resolve a maior parte do combate na distância do golpe'},
+  marksman:{lab:'ATIRADOR',desc:'precisão alta mantendo distância'},
+  kiter:{lab:'DANÇARINO',desc:'atira em movimento, nunca dá alvo estático'},
+  controller:{lab:'CONTROLADOR',desc:'modelo o campo com gelo e atordoamento'},
+  swift:{lab:'RELÂMPAGO',desc:'dash frequente — reposicionar é reflexo'},
+  survivor:{lab:'SOBREVIVENTE',desc:'viveu a maior parte da run no vermelho'},
+  reckless:{lab:'IMPRUDENTE',desc:'trocou dano sem hesitar, mesmo no limite'}
+};
+const TRAIT_ORDER=['butcher','brawler','marksman','kiter','controller','swift','survivor','reckless'];
+
+/* ---------------- métricas → sinais normalizados ---------------- */
+function buildPersonalityMetrics(rd){
+  rd=rd||{};
+  const st=(rd.st&&typeof rd.st==='object')?rd.st:null;
+  const dur=Math.max(0,+rd.dur||0);
+  const mins=Math.max(.2,dur/60);
+  const kills=Math.max(0,(rd.kills!==undefined?rd.kills:rd.k)|0);
+  const wave=Math.max(0,rd.wave|0);
+  const tr=Array.isArray(rd.trail)?rd.trail:[];
+  const m={dur,mins,kills,legacy:!st,shots:0,samples:0,dealt:0};
+  if(st){
+    const sN=Math.max(1,st.s|0);
+    m.samples=sN;
+    const cl=(st.mw|0)+(st.rw|0);
+    m.closeShare=cl?clamp((st.mw|0)/cl,0,1):.5;
+    m.rangePref=st.dN>0?clamp(((st.dS/st.dN)-140)/220,0,1):.5;
+    m.killRate=clamp(kills/(mins*26),0,1);
+    const mh=Math.max(60,+rd.mh||100);
+    m.takenRate=clamp((st.dt||0)/mh/(mins*1.6),0,1);
+    m.lowHp=clamp((st.lo|0)/sN,0,1);
+    m.critHp=clamp((st.cr|0)/sN,0,1);
+    m.dashRate=clamp((st.dsh|0)/(mins*20),0,1);
+    m.shots=st.sh|0;
+    m.accKnown=m.shots>=8;
+    m.acc=m.accKnown?clamp((st.hi|0)/m.shots,0,1):.4;
+    m.ctlRate=clamp((st.ctl|0)/(mins*8),0,1);
+    m.fireS=(st.mv|0)+(st.fv|0);
+    m.kite=m.fireS>=16?clamp((st.mv|0)/m.fireS,0,1):.5;
+    m.dealt=st.dd||0;
+    m.eff=clamp(((st.dd||0)/Math.max(60,st.dt||0))/3,0,1);
+    m.weakKill=clamp((st.kw|0)/Math.max(4,kills),0,1);
+    m.waveProg=clamp(wave/MAX_WAVE,0,1);
+    m.durNorm=clamp(dur/780,0,1);
+    m.suff=.42*clamp(dur/120,0,1)+.24*clamp(sN/240,0,1)
+      +.34*clamp(Math.max(kills,(st.dd||0)/220)/12,0,1);
+    m.insufficient=dur<20||sN<16||(kills<2&&(st.dd||0)<250);
+  }else{
+    /* Echo LEGADO (Alpha/pré-PR 8): só a trail existe. Aproximação
+       conservadora — sinais cegos viram neutros e o confidence é
+       limitado (a identidade nunca é afirmada com força). */
+    m.legacy=true;
+    let mw=0,rw=0,dsh=0;
+    for(const cp of tr){
+      const w=WEAPONS[cp[5]|0];
+      if(w&&(w.melee||(w.range||0)<300))mw++;else rw++;
+      if(cp[3]===2)dsh++;
+    }
+    const sN=Math.max(1,tr.length);
+    m.samples=sN;
+    m.closeShare=(mw+rw)?clamp(mw/(mw+rw),0,1):.5;
+    m.rangePref=clamp(.5+(1-m.closeShare)*.3,0,1);   // proxy fraco
+    m.killRate=.35;m.takenRate=.5;m.lowHp=.5;m.critHp=.3;
+    m.dashRate=clamp(dsh/(mins*20),0,1);
+    m.acc=.5;m.accKnown=false;m.ctlRate=.3;m.kite=.5;m.dealt=0;
+    m.eff=.5;m.weakKill=.3;
+    m.waveProg=clamp(wave/MAX_WAVE,0,1);
+    m.durNorm=clamp(dur/780,0,1);
+    m.suff=.30*clamp(dur/120,0,1)+.20*clamp(sN/240,0,1)+.20*clamp(kills/12,0,1);
+    m.insufficient=dur<45||sN<60;
+  }
+  m.closeShare=+m.closeShare.toFixed(4);
+  return m;
+}
+
+/* ---------------- scoring (determinístico, pesos somam 1.00) ----------
+   Cada sinal é 0..1 já normalizado por duração/vida-máxima. Nenhum usa
+   totais brutos — runs longas não pontuam melhor por existirem mais. */
+function scorePersonalities(m){
+  return {
+    aggressive:.32*m.closeShare+.22*m.killRate+.18*m.lowHp+.14*m.takenRate+.14*(1-m.rangePref),
+    cautious  :.30*m.rangePref+.24*(1-m.takenRate)+.18*m.ctlRate+.14*(1-m.lowHp)+.14*m.eff,
+    precise   :.38*m.acc+.24*m.kite+.20*(1-m.takenRate)+.18*m.eff,
+    impulsive :.30*m.dashRate+.24*m.takenRate+.24*m.critHp+.22*m.killRate,
+    resilient :.32*m.waveProg+.24*m.lowHp+.22*m.takenRate+.22*m.durNorm,
+    opportunist:.34*m.weakKill+.24*m.killRate+.22*m.ctlRate+.20*m.acc
+  };
+}
+
+/* ---------------- classificação + empatas + confidence ----------------
+   Empates NUNCA usam RNG:
+   1. dados insuficientes → FRAGMENTADO (nunca rotular 20s de gameplay);
+   2. topo < 0.24 → VERSÁTIL (nenhuma dominância real);
+   3. segundo dentro de eps = máx(.03, 7% do topo) → VERSÁTIL (estilo
+      genuinamente misto — os sinais se contradizem);
+   4. empate numérico exato → ordem fixa PERS_ORDER (estável). */
+function classifyPersonality(m){
+  const sc=scorePersonalities(m);
+  const ranked=[];
+  for(let i=0;i<PERS_ORDER.length;i++)ranked.push([PERS_ORDER[i],sc[PERS_ORDER[i]],i]);
+  ranked.sort((a,b)=>(b[1]-a[1])||(a[2]-b[2]));
+  const s1=ranked[0][1],s2=ranked[1][1];
+  let id,sep=0;
+  if(m.insufficient)id='fragmented';
+  else{
+    sep=(s1-s2)/Math.max(.22,s1);
+    const eps=Math.max(.03,.07*s1);
+    id=(s1<.24||(s1-s2)<eps)?'versatile':ranked[0][0];
+  }
+  /* confidence: suficiência dos dados × separação do veredicto */
+  let conf;
+  if(id==='fragmented')conf=clamp(m.suff*.5,0,.45);
+  else{
+    conf=clamp(m.suff*(.5+.5*clamp(sep,0,1)),0,1);
+    if(m.legacy)conf=Math.min(conf,.4);   // nunca afirmar forte sem sinais diretos
+  }
+  conf=Math.round(conf*1000)/1000;
+  /* traços secundários: limiar + força; máx. 2; ordem estável */
+  const cand=[];
+  if(!m.insufficient){
+    if(m.killRate>=.55)cand.push(['butcher',m.killRate]);
+    if(m.closeShare>=.55)cand.push(['brawler',m.closeShare]);
+    if(m.accKnown&&m.shots>=8&&(1-m.closeShare)*.45+m.acc*.55>=.5)
+      cand.push(['marksman',(1-m.closeShare)*.45+m.acc*.55]);
+    if(!m.legacy&&m.fireS>=16&&m.kite>=.55)cand.push(['kiter',m.kite]);
+    if(!m.legacy&&m.ctlRate>=.35)cand.push(['controller',m.ctlRate]);
+    if(m.dashRate>=.45)cand.push(['swift',m.dashRate]);
+    if(!m.legacy&&m.lowHp>=.18&&m.lowHp+2*m.critHp>=.3)
+      cand.push(['survivor',clamp(m.lowHp*1.7+m.critHp*1.8,0,1)]);
+    if(!m.legacy&&m.takenRate>=.5)cand.push(['reckless',clamp(m.takenRate*.7+m.critHp*.8,0,1)]);
+  }
+  cand.sort((a,b)=>(b[1]-a[1])||(TRAIT_ORDER.indexOf(a[0])-TRAIT_ORDER.indexOf(b[0])));
+  const traits=cand.slice(0,2).map(x=>x[0]);
+  return {id,conf,traits,sep:Math.round(clamp(sep,0,1)*1000)/1000,
+    scores:{
+      aggressive:+sc.aggressive.toFixed(3),cautious:+sc.cautious.toFixed(3),
+      precise:+sc.precise.toFixed(3),impulsive:+sc.impulsive.toFixed(3),
+      resilient:+sc.resilient.toFixed(3),opportunist:+sc.opportunist.toFixed(3)}};
+}
+
+/* payload salvo no registro do Echo — compacto e com IDs estáveis */
+function deriveEchoPersonality(rd){
+  const c=classifyPersonality(buildPersonalityMetrics(rd));
+  return {id:c.id,tr:c.traits,c:c.conf,s:c.scores,v:1};
+}
+/* Migração: Echo antigo sem .ps ganha classificação derivada do que
+   existe (trail/dur/wave). Se faltar sinal → FRAGMENTADO. In-memory no
+   load; o save só é reescrito no fluxo normal (nunca por migração
+   forçada, nunca duplicando o registro). */
+function ensureEchoPersonality(rec){
+  if(!rec||typeof rec!=='object')return null;
+  const p=rec.ps;
+  if(p&&PERSONALITIES[p.id])return p;
+  rec.ps=deriveEchoPersonality(rec);
+  return rec.ps;
+}
+
+/* ---------------- integração comportamental (LEVE) ----------------
+   spacing: multiplica apenas o raio de órbita em modo companheiro
+   (a trilha gravada é intocada — o fantasma replay respeita o
+   passado). bias: fator multiplicativo sobre o score de alvo já
+   existente, limitado a [0.55,1.6] e sem tocar nas regras de
+   confiança/emboscada. Nenhum dano ou cadência é alterado. */
+function persSpacing(e){return (e&&e.pers&&e.pers.spacing)?e.pers.spacing:1;}
+function persBiasMul(bias,en,raw){
+  let mul=1;
+  const d=Math.sqrt(raw);
+  switch(bias){
+    case 'threat':
+      if(en.tgtRef===player)mul*=.78;      // proteger: reforça a regra existente
+      if(d<190)mul*=.85;                   // responde um pouco mais rápido à ameaça próxima
+      break;
+    case 'close':  if(d<170)mul*=.70; break;         // IMPULSIVO: pula no mais perto
+    case 'space':  if(d<150)mul*=1.35; break;         // CAUTELOSO: evita multidão no próprio colo
+    case 'thin':
+      if(player&&dist2(en.x,en.y,player.x,player.y)>260*260)mul*=.82; // PRECISO: alvo isolado
+      break;
+    case 'wounded':
+      if(en.maxHp>0&&en.hp/en.maxHp<.40)mul*=.62;     // OPORTUNISTA: o ferido primeiro
+      break;
+  }
+  return Math.max(.55,Math.min(1.6,mul));
+}
+function persFindTarget(e,range){
+  const P=e.pers;
+  if(!P||!P.bias)return nearestEnemy(e.x,e.y,range);   // baseline idêntica
+  let best=null,bd=1e18;
+  const r2=range*range;
+  for(const en of enemies){
+    if(en.dead||en.spawnT>0)continue;
+    const raw=dist2(e.x,e.y,en.x,en.y);
+    if(raw>r2)continue;                          // o range é duro; o viés só reordena
+    const score=raw*persBiasMul(P.bias,en,raw);
+    if(score<bd){bd=score;best=en;}
+  }
+  return best;
+}
+
+/* ---------------- falas por personalidade ----------------
+   Reusa o gate global do echoReact (8s + 35%) — a personalidade só
+   TROCA o texto, nunca aumenta frequência. Pool por (pid,evento);
+   sem pool → fallback ECHO_LINES genérico (comportamento antigo). */
+function persLineFor(e,event){
+  const P=e&&e.pers;
+  if(!P||!P.lines)return null;
+  const pool=P.lines[event];
+  if(!pool||!pool.length)return null;
+  return pool[randi(0,pool.length-1)];
+}
+
+/* ---------------- apresentação (menu/Codex/telas) ---------------- */
+function persTraitLabs(tr){
+  if(!tr||!tr.length)return 'NENHUM';
+  return tr.map(t=>PERS_TRAITS[t]?PERS_TRAITS[t].lab:String(t).toUpperCase()).join(' · ');
+}
+function persRecordLine(ps){
+  if(!ps||!PERSONALITIES[ps.id])return '';
+  const P=PERSONALITIES[ps.id];
+  return '<b style="color:'+P.col+'">'+P.lab+'</b>'+
+    (ps.tr&&ps.tr.length?' · TRAÇOS: <b>'+persTraitLabs(ps.tr)+'</b>':'')+
+    ' — '+P.desc;
 }
 /* =====================================================================
    STAT MODIFIER PIPELINE (PR 7) — Arquitetura central de modificadores
@@ -2901,7 +3312,9 @@ function echoReact(event,data){
   // apenas 35% de chance por evento para evitar spam
   if(Math.random()>.35)return;
   const e=live[randi(0,live.length-1)];
-  const txt=lines[randi(0,lines.length-1)];
+  // PR 8: a VOZ é da personalidade quando existir para o evento;
+  // o pool genérico permanece como fallback (Echo sem .ps, evento sem pool).
+  const txt=persLineFor(e,event)||lines[randi(0,lines.length-1)];
   const col=event==='dissonance'?'#ff2f5e':
     event==='dissonanceEnd'?'#8ff6ff':
     event==='playerHurt'||event==='lowHp'||event==='shieldBreak'?'#ff8095':
@@ -5123,6 +5536,7 @@ function fireMelee(src,def,team,mul){
   const dir=(src.swingDir=-(src.swingDir||1));
   swings.push({x:src.x,y:src.y,aim:src.aim,reach,arc:def.arc,t:0,life:.26,
     team,color:crit?'#fff6b0':def.color,dir,src});
+  if(src===player&&runSt)runSt.ms++;             // PR 8: golpe corpo a corpo
   let hits=0;
   if(team==='ally'){
     for(const e of enemies){
@@ -5146,6 +5560,7 @@ function fireMelee(src,def,team,mul){
         if(def.lifesteal&&src===player)
           player.hp=Math.min(player.maxHp,player.hp+dmg*def.lifesteal);
         spawnShards(e.x,e.y,def.color,4,3);
+        if(src===player&&runSt)runSt.mh++;       // PR 8: acerto corpo a corpo
         hits++;
       }
     }
@@ -5240,6 +5655,9 @@ function fireWeaponFrom(src,def,team,mul){
   if(src&&src.spBoost&&src.spBoost>1)mul*=src.spBoost;
   if(def.melee){fireMelee(src,def,team,mul);return;}
   if(def.beam){fireBeam(src,def,team,mul,def.interval);return;}
+  // PR 8: projéteis disparados (base da precisão) — só o jogador compõe
+  // a personalidade; contagem O(1), sem alocação.
+  if(src===player&&runSt)runSt.sh+=def.count||1;
   // MASSACRE: crítico garantido enquanto ativo
   const crit=(src===player&&src.spKind==='massacre')||Math.random()<(src.crit||0);
   const cm=crit?(src.critMul||1.8):1;
@@ -5433,6 +5851,7 @@ function tryDash(){
   player.dashT=.17*(player.dashLong||1);   // MANTO ESPECTRAL
   player.dashCd=player.dashCdMax;
   bumpProg('dashes');
+  if(runSt)runSt.dsh++;                    // PR 8: dash — sinal de impulso/reposição
   if(player.wraithRush)player.rushT=2;      // WRAITH: +11% de dano por 2s
   spawnParticles(player.x,player.y,(player.pal&&player.pal.glow)||'#7df9ff',14,260,.3,3);
   rumble(.30,.55,110);
@@ -5502,6 +5921,7 @@ function damageEnemy(e,d,srcx,srcy,crit,isDot){
       spawnParticles(e.x,e.y,'#ffd166',3,160,.2,2);
     }
     e.hp-=d;e.flashT=Math.max(e.flashT,.05);
+    if(curAttacker===player&&runSt)runSt.dd+=Math.min(d,999);   // PR 8
     if(e.hp<=0)killEnemy(e);
     return;
   }
@@ -5545,6 +5965,7 @@ function damageEnemy(e,d,srcx,srcy,crit,isDot){
     }
     if(d<=0)return;
   }
+  const _preHp=e.hp;                       // PR 8: vida pré-golpe p/ "abate frágil"
   e.hp-=d;e.flashT=crit?.17:.09;
   // BLINDAGEM DO ARAUTO: cada faixa de vida perdida estilhaça uma placa
   if(e.type==='miniboss'&&e.plates>0){
@@ -5576,6 +5997,11 @@ function damageEnemy(e,d,srcx,srcy,crit,isDot){
     player.hp=Math.min(player.maxHp,player.hp+6);
     floatText(e.x,e.y-e.r-20,'EXECUTADO','#ff2f5e');
     spawnShards(e.x,e.y,'#ff2f5e',8,5);
+  }
+  // PR 8: contadores de estilo (dano causado; abate de alvo já fragilizado)
+  if(curAttacker===player&&runSt){
+    runSt.dd+=Math.min(d,9999);
+    if(e.hp<=0&&_preHp<=e.maxHp*.35)runSt.kw++;
   }
   if(e.hp<=0)killEnemy(e);
   else sHit();
@@ -5625,6 +6051,7 @@ function killEnemy(e){
   if(curAttacker&&curAttacker!==player&&curAttacker.slot)bumpProg('echoKills');
   if(player){
     player.waveKills=(player.waveKills||0)+1;              // MOTOR DE ENTROPIA
+    if(player.waveKills%12===0)echoReact('killStreak');    // PR 8: fala de sequência
     if(player.killDash&&player.dashCd>0)                   // AMPULHETA QUEBRADA
       player.dashCd=Math.max(0,player.dashCd-player.dashCdMax*player.killDash);
     // DADO VICIADO: chance de cura ao abater
@@ -5745,6 +6172,7 @@ function damagePlayer(d){
   }
   const real=d*(1-Math.min(.5,dmgRed))*player.dmgTakenMul*mEff.playerDmgTaken;
   if(!(real>0))return;
+  if(runSt)runSt.dt+=Math.min(real,9999);   // PR 8: dano recebido (estilo de troca)
   /* ---- ESCUDO DO OPERADOR: absorve dano antes da Integridade ----
      O dano restante (após Shield) segue exatamente o pipeline antigo:
      hurtT, shake, partículas, efeitos, morte. */
@@ -5767,9 +6195,15 @@ function damagePlayer(d){
     floatText(player.x,player.y-30,'ESCUDO ROMPIDO','#8ff6ff');
     spawnRing(player.x,player.y,'#8ff6ff',8,72,.42);
     AUDIO.tone(rand(300,360),.18,'sine',.04,-140);
+    if(runSt)runSt.sb++;                 // PR 8: registro de quebra de escudo
+    echoReact('shieldBreak');            // PR 8: fala reativa (cooldown global segura o spam)
   }
   rumble(clamp(.25+real/60,.25,1),clamp(real/90,.15,.7),clamp(90+real*4,90,320));
   sHurt();
+  // PR 8: falas reativas do Eco — golpe forte e HP baixo. O gate global do
+  // echoReact (8s + 35%) preserva exatamente a frequência anti-spam atual.
+  if(real>=Math.max(6,player.maxHp*.12))echoReact('playerHurt');
+  if(player.hp>0&&player.hp<=player.maxHp*.25)echoReact('lowHp');
   // CARAPAÇA REATIVA: onda de choque ao sofrer dano
   if(player.reactive){
     const R=150;
@@ -5859,6 +6293,8 @@ const STATUS_COLOR={burn:'#ff7a2f',bleed:'#ff3d68',corrode:'#a8ff3d',
 function applyStatus(e,kind,dur,power,src){
   if(!e||e.dead||e.spawnT>0)return;
   if(src===player)bumpProg('status');
+  // PR 8: controle (gelo/atordoamento) — sinal de postura defensiva/tática
+  if(src===player&&runSt&&(kind==='chill'||kind==='stun'))runSt.ctl++;
   if(!e.st)e.st={};
   const s=e.st;
   const boost=(src&&src.stBoost)||1;
@@ -7261,6 +7697,7 @@ function updateEcho(e,dt){
     e.ca+=dt*(e.slot===1?.55:.8);
     let rr=tier===2?82:(tier===1?118:235);
     if(tier===0&&hurt)rr=310;
+    rr*=persSpacing(e);           // PR 8: spacing da personalidade (leve, só órbita)
     const off=e.slot===1?0:2.4;
     tx=player.x+Math.cos(e.ca+off)*rr;
     ty=player.y+Math.sin(e.ca+off)*rr;
@@ -7282,11 +7719,13 @@ function updateEcho(e,dt){
   let tgt=null;
   if(tier===2){
     let bd=1e18;
+    const _bias=e.pers?e.pers.bias:null;          // PR 8: viés leve de alvo
     for(const en of enemies){
       if(en.dead||en.spawnT>0)continue;
       const raw=dist2(e.x,e.y,en.x,en.y);
       if(raw>range*range*1.8)continue;
-      const score=(en.tgtRef===player)?raw*.28:raw;   // prioriza quem ataca VOCÊ
+      let score=(en.tgtRef===player)?raw*.28:raw; // prioriza quem ataca VOCÊ
+      if(_bias)score*=persBiasMul(_bias,en,raw);  // identidade ajusta prioridade
       if(score<bd){bd=score;tgt=en;}
     }
   }else if(tier===0){
@@ -7301,7 +7740,7 @@ function updateEcho(e,dt){
       tx=clamp(e.x+ax/al*190,20,ARENA.w-20);
       ty=clamp(e.y+ay/al*190,20,ARENA.h-20);
     }
-  }else tgt=nearestEnemy(e.x,e.y,range);
+  }else tgt=persFindTarget(e,range);              // PR 8: neutro — mesma busca + viés leve
 
   let wantShoot=act===1,wantAim=aim;
   if(tgt){wantShoot=true;wantAim=Math.atan2(tgt.y-e.y,tgt.x-e.x);e.overT=.55;}
@@ -7513,6 +7952,7 @@ function updatePlayer(dt){
     const act=p.dashT>0?2:(firing?1:0);
     recorder.push([Math.round(runTime*100)/100,Math.round(p.x),Math.round(p.y),
       act,Math.round(p.aim*100)/100,p.wi]);
+    runStSample(p,act);                          // PR 8: amostra de comportamento
   }
 }
 function updateSwings(dt){
@@ -7582,6 +8022,7 @@ function drawBeamFrom(src,def){
 function onProjectileHit(p,e,dmg){
   const d=p.def;if(!d)return;
   const src=p.owner;
+  if(src===player&&runSt)runSt.hi++;             // PR 8: acerto de projétil (precisão)
   if(d.fx)applyStatus(e,d.fx.k,d.fx.dur,d.fx.pow,src);
   if(d.chain)chainShock(e,dmg*.78,d.chain+((src&&src.chainBonus)||0),src);
   if(d.lifesteal&&src===player)
@@ -7894,11 +8335,21 @@ function onVictory(){
   if(meta.endings.indexOf(key)<0)meta.endings.push(key);
   saveMeta();
   clearActiveRun();   // PR 7.5: ciclo concluído — nenhum save fantasma de run
+  /* PR 8: a run vencedora NÃO vira Echo (regra atual preservada), mas o
+     histórico comportamental é lido na tela de encerramento — calculado
+     uma única vez a partir das métricas vivas da run. */
+  let winPers=null;
+  try{
+    winPers=deriveEchoPersonality({dur:runTime,kills:kills|0,wave:wave|0,
+      mh:Math.round(player.maxHp),trail:recorder||[],st:runStSnapshot()});
+  }catch(e){}
   victoryData={key,mem,wave,kills,level:player.level,coins:player.coins,
     items:player.items.slice(),upg:player.upgLog.slice(),
     moral:{comp:moral.comp,greed:moral.greed,viol:moral.viol},dom:moralDom(),
     echoes:echoes.map(e=>({slot:e.slot,dom:e.dom,trust:Math.round(e.trust),
-      alive:e.alive,items:e.itemIds.slice(),wave:e.data.wave||0})),
+      alive:e.alive,items:e.itemIds.slice(),wave:e.data.wave||0,
+      pers:e.pers?e.pers.id:null,persTr:(e.data.ps&&e.data.ps.tr)?e.data.ps.tr:[]})),
+    pers:winPers,
     time:runTime};
   setTimeout(showVictory,1250);
 }
@@ -7924,12 +8375,18 @@ function showVictory(){
     tl+='<div class="tlrow'+(e.slot===2?' m2':'')+'">ECHO·0'+e.slot+' — origem <b>'+DOM_NAME[e.dom]+
       '</b> · alcançou a onda <b>'+e.wave+'</b> · confiança final <b>'+e.trust+'%</b> ('+
       TRUST_NAME[trustTier({trust:e.trust})]+') · '+
+      (e.pers&&PERSONALITIES[e.pers]?'personalidade <b>'+PERSONALITIES[e.pers].lab+'</b>'+
+        (e.persTr.length?' ('+persTraitLabs(e.persTr)+')':'')+' · ':'')+
       (e.alive?'<b>sobreviveu ao ciclo final</b>':'foi destruído em combate')+
       (e.items.length?' · portava '+e.items.length+' módulo(s) herdado(s)':'')+'</div>';
   }
   tl+='<div class="tlrow win">RUN VENCEDORA — perfil <b style="color:'+DOM_COLOR[v.dom]+'">'+DOM_NAME[v.dom]+
     '</b> · <b>'+(v.items.length||'nenhum')+'</b> módulo(s) · <b>'+v.upg.length+
-    '</b> upgrade(s) · dissolveu O Paradoxo na onda 20.<br>'+
+    '</b> upgrade(s)'+
+    (v.pers&&PERSONALITIES[v.pers.id]?' · REGISTRO COMPORTAMENTAL: <b style="color:'+
+      PERSONALITIES[v.pers.id].col+'">'+PERSONALITIES[v.pers.id].lab+'</b>'+
+      (v.pers.tr.length?' (TRAÇOS: '+persTraitLabs(v.pers.tr)+')':''):'')+
+    ' · dissolveu O Paradoxo na onda 20.<br>'+
     'Esta run <b>não</b> se tornará um Echo: ela ascendeu e encerrou a linha temporal.</div>';
   $('e-timeline').innerHTML=tl;
   renderMetaShop();
@@ -8170,6 +8627,9 @@ function activateSlot(i){
   /* Ecos do slot */
   echoQueue=Array.isArray(b.echoes)?smClone(b.echoes):[];
   if(!Array.isArray(echoQueue))echoQueue=[];
+  /* PR 8: migração de Ecos antigos (Alpha) — os CLONES em memória ganham
+     .ps derivada; o registro salvo permanece intocado até o fluxo normal. */
+  for(const r of echoQueue)ensureEchoPersonality(r);
   /* run ativa do slot */
   activeRun=smSanitizeRun(b.run);
   b.run=activeRun;
@@ -8210,6 +8670,7 @@ function smBuildCheckpoint(reason,waveOverride){
     runTime:Math.round(runTime*100)/100,
     kills:kills|0,
     evCount:evCount|0,
+    st:runStSnapshot(),      // PR 8: contadores de personalidade sobrevivem ao resume
     charIdx:charSel,
     moral:{comp:moral.comp|0,greed:moral.greed|0,viol:moral.viol|0},
     /* estado dos Ecos desta run (confiança evolui durante o ciclo) */
@@ -8314,6 +8775,7 @@ function resumeRun(){
   runTime=Math.max(0,+cp.runTime||0);
   kills=Math.max(0,cp.kills|0);
   evCount=Math.max(0,cp.evCount|0);
+  runStRestore(cp.st);       // PR 8: comportamento ANTES do checkpoint continua contando
   /* prog volta ao estado do checkpoint (anti-duplicação) */
   if(cp.prog&&typeof cp.prog==='object'){
     for(const k in prog)if(cp.prog[k]!==undefined)prog[k]=cp.prog[k];
@@ -8446,7 +8908,8 @@ function onPlayerDeath(){
   spawnRing(player.x,player.y,'#ff4df0',4,180,1.1);
   sDie();
   recorder.push([Math.round(runTime*100)/100,Math.round(player.x),Math.round(player.y),0,0,player.wi]);
-  // ficha completa da run → herdada pelo Echo (build + postura moral)
+  // ficha completa da run → herdada pelo Echo (build + postura moral +
+  // PR 8: contadores de comportamento para a PERSONALIDADE)
   const runData={dur:runTime,trail:recorder,dmgMul:player.dmgMul,
     frMul:player.fireRateMul,wave,level:player.level,
     crit:player.crit,critMul:player.critMul,pierce:player.pierce,
@@ -8454,7 +8917,11 @@ function onPlayerDeath(){
     projSpdMul:player.projSpdMul,longRangeBonus:player.longRangeBonus,
     items:player.items.slice(),upg:player.upgLog.slice(),
     owned:player.owned.slice(),
-    moral:{comp:moral.comp,greed:moral.greed,viol:moral.viol},dom:moralDom()};
+    moral:{comp:moral.comp,greed:moral.greed,viol:moral.viol},dom:moralDom(),
+    kills:kills|0,mh:Math.round(player.maxHp),st:runStSnapshot()};
+  /* PR 8: a personalidade nasce AQUI — calculada UMA única vez a partir
+     das métricas finais da run (determinística; nenhum RNG). */
+  runData.ps=deriveEchoPersonality(runData);
   if(devTainted)runData.dev=1;     // run DEV: nunca vira Echo permanente
   const had1=!!echoQueue[0],had2=!!echoQueue[1];
   // REGRA DOS 2 ECOS: Run → Eco1 · Eco1 → Eco2 · Eco2 → descartado
@@ -8479,13 +8946,17 @@ function showFracture(rd,had1,had2){
     'DANO <b>'+Math.round(rd.dmgMul*100)+'%</b> · CRÉDITOS <b>◈'+rd.coins+'</b><br>'+
     'PERFIL PSICOMÉTRICO: <b style="color:'+DOM_COLOR[rd.dom]+'">'+DOM_NAME[rd.dom]+'</b> — '+
     'COMPAIXÃO <b>'+rd.moral.comp+'</b> · GANÂNCIA <b>'+rd.moral.greed+'</b> · VIOLÊNCIA <b>'+rd.moral.viol+'</b><br>'+
+    (rd.ps?'REGISTRO COMPORTAMENTAL: '+persRecordLine(rd.ps)+'<br>':'')+
     'FICHA HERDADA: <b>'+(rd.items.length?rd.items.map(i=>itemById(i).nm).join(' | '):'NENHUM MÓDULO')+'</b>'+
     (rd.upg.length?' · <b>'+rd.upg.length+'</b> UPGRADES':'');
   let lines='';
   for(const e of echoes)
-    lines+='<span class="mid">ECHO·0'+e.slot+' ('+DOM_NAME[e.dom]+') ENCERROU COM CONFIANÇA '+
+    lines+='<span class="mid">ECHO·0'+e.slot+' ('+DOM_NAME[e.dom]+')'+
+      (e.pers?' · '+e.pers.lab:'')+
+      ' ENCERROU COM CONFIANÇA '+
       TRUST_NAME[trustTier(e)]+' — '+Math.round(e.trust)+'%</span><br>';
-  lines+='<span class="good">RUN ATUAL → ECO·01 [ASSIMILADA · '+DOM_NAME[rd.dom]+']</span><br>';
+  lines+='<span class="good">RUN ATUAL → ECO·01 [ASSIMILADA · '+DOM_NAME[rd.dom]+
+    (rd.ps&&PERSONALITIES[rd.ps.id]?' · '+PERSONALITIES[rd.ps.id].lab:'')+']</span><br>';
   if(had1)lines+='<span class="mid">ECO·01 ANTERIOR → REBAIXADO PARA ECO·02</span><br>';
   if(had2)lines+='<span class="bad">ECO·02 ANTERIOR → DESCARTADO</span><br>';
   ovFrac.innerHTML=lines;
@@ -8534,6 +9005,7 @@ function resetRunWorld(){
   rerollCost=10;shopLock=null;modalEl.classList.remove('on');
   scheduleBeacon();
   recorder=[];recAcc=0;
+  runStReset();   // PR 8: run nova começa com métricas de personalidade zeradas
 }
 function startRun(){
   /* Se o Modo Desenvolvedor já estiver ligado quando a run começa, ela
@@ -10394,6 +10866,27 @@ function renderCodexBody(){
         x.d+'</div></div></div>';
     }
     h+='</div>';
+    /* ---- PR 8: leitura técnica dos Ecos desta memória ----
+       Arquivo Ômega registra o COMPORTAMENTO observado na run de origem
+       (identidade), não o relacionamento (PR 10) nem escolhas morais
+       (PR 9) — estes permanecem em seus próprios sistemas. */
+    if(Array.isArray(echoQueue)&&echoQueue.length){
+      h+='<div class="tsec" style="margin:22px 0 12px">'+
+        'ECOS DESTA MEMÓRIA · REGISTRO COMPORTAMENTAL</div><div class="cxgrid">';
+      echoQueue.forEach((rec,i)=>{
+        if(!rec)return;
+        const ps=ensureEchoPersonality(rec)||{id:'fragmented',tr:[]};
+        const P=PERSONALITIES[ps.id]||PERSONALITIES.fragmented;
+        h+='<div class="cxitem"><div class="cxinfo">'+
+          '<div class="cxnm" style="color:'+P.col+'">ECHO·0'+(i+1)+' — '+P.lab+
+          '<span class="cxtag" style="color:'+(i===0?'#8fd6ef':'#ff9df7')+'">'+
+          'ONDA '+(rec.wave|0)+'</span></div>'+
+          '<div class="cxds">REGISTRO COMPORTAMENTAL: <b>'+P.lab+'</b>'+
+          (ps.tr.length?' · TRAÇOS OBSERVADOS: <b>'+persTraitLabs(ps.tr)+'</b>':'')+
+          '<br>'+P.desc+'</div></div></div>';
+      });
+      h+='</div>';
+    }
     cxFoot.textContent=LORE_WORLD.full.length+' REGISTROS · '+LORE_WORLD.extra.length+' DOSSIÊS';
   }else if(codexTab==='prog'){
     const st=[
@@ -11180,6 +11673,7 @@ const DEV_STATUS_IDS=['burn','bleed','corrode','chill','shock','stun'];
 let devPanelOpen=false;
 let devInfoOn=false;
 let devStatSel='damage';     // stat selecionado no STAT INSPECTOR (PR 7)
+let devPersSel='aggressive';   // personalidade selecionada no PERSONALITY INSPECTOR (PR 8)
 let devPausesGame=true;      // painel aberto → jogo pausado (padrão)
 let _devResumeAfter=false;
 let _devLog=[];
@@ -11479,7 +11973,7 @@ const DEV={
 /* ------------------------------- ECHOS ------------------------------ */
   /* Cria um Echo puramente sintético, marcado como debug: ele nunca entra
      no arquivo permanente (saveEchoes ignora runs/dados com .dev). */
-  spawnEcho(slot){
+  spawnEcho(slot,pid){
     if(!devReady())return false;
     const sl=(Number(slot)===2)?2:1;
     const cx=player.x,cy=player.y,wi=player.wi|0;
@@ -11493,6 +11987,9 @@ const DEV={
       crit:.1,critMul:1.8,pierce:0,aoeMul:1,rangeMul:1,projSpdMul:1,
       longRangeBonus:0,coins:0,items:[],upg:[],owned:STARTER_WEAPONS.slice(),
       moral:{comp:0,greed:0,viol:0},dom:'neutro'};
+    /* PR 8: Echo de teste com PERSONALIDADE específica — registro com
+       .dev, portanto invisível ao save legítimo (saveEchoes o ignora). */
+    if(pid&&PERSONALITIES[pid])data.ps={id:pid,tr:[],c:1,s:{},v:1,dev:1};
     const e=makeEcho(data,sl);
     e.dev=true;
     const i=echoes.findIndex(o=>o&&o.slot===sl);
@@ -11571,6 +12068,48 @@ const DEV={
     e.hostileT=0.0001;           // o updateEcho encerra pelo caminho normal
     devTaint();devLog('DISSONÂNCIA ENCERRANDO');
     return true;
+  },
+
+/* ---------------------- ECHO PERSONALITY (PR 8) ---------------------- */
+  /* Previsão determinística: aplica o MESMO pipeline de produção
+     (build→score→classify) às métricas vivas da run atual. Não grava
+     nada — é leitura. */
+  personalityPreview(){
+    const rd={dur:runTime,kills:(typeof kills!=='undefined'?kills|0:0),
+      wave:(typeof wave!=='undefined'?wave|0:0),
+      mh:player?Math.round(player.maxHp):100,
+      trail:recorder||[],st:runStSnapshot()};
+    const m=buildPersonalityMetrics(rd);
+    const c=classifyPersonality(m);
+    return {id:c.id,label:PERSONALITIES[c.id].lab,conf:c.conf,sep:c.sep,
+      traits:c.traits,scores:c.scores,samples:m.samples,legacy:!!m.legacy,
+      dur:Math.round(rd.dur*10)/10};
+  },
+  /* Força a personalidade APENAS no runtime do Echo (e.pers). O registro
+     salvo (echoQueue → .ps) não é tocado — DEV jamais contamina a
+     identidade legítima de um Echo. */
+  forcePersonality(slot,pid){
+    if(!devReady())return false;
+    const e=DEV.echo(slot);if(!e)return false;
+    if(pid==='auto'||!pid){
+      e.pers=(e.data&&e.data.ps&&PERSONALITIES[e.data.ps.id])
+        ?PERSONALITIES[e.data.ps.id]:null;
+      e.persDev=0;
+      devTaint();devLog('PERS AUTO: ECHO·0'+e.slot+' → '+(e.pers?e.pers.lab:'BASE'));
+      return e.pers?e.pers.id:'none';
+    }
+    const P=PERSONALITIES[pid];
+    if(!P)return false;
+    e.pers=P;e.persDev=1;
+    devTaint();devLog('PERS FORÇADA: ECHO·0'+e.slot+' → '+P.lab);
+    return P.id;
+  },
+  /* Inspeciona a identidade real de um Echo vivo. */
+  personalityOf(slot){
+    const e=DEV.echo(slot);if(!e)return null;
+    const ps=e.data&&e.data.ps?e.data.ps:null;
+    return {runtime:e.pers?e.pers.id:null,forced:!!e.persDev,
+      saved:ps?ps.id:null,traits:ps&&ps.tr?ps.tr:[],conf:ps?ps.c:null};
   },
 
 /* ------------------------- STATUS E EFEITOS ------------------------- */
@@ -11780,6 +12319,47 @@ function devRender(){
     devBtn('diss1','DISSONÂNCIA 01','warn')+devBtn('diss2','DISSONÂNCIA 02','warn')+
     devBtn('dissend','ENCERRAR DISSONÂNCIA')+'</div>';
 
+  /* ---- PERSONALITY INSPECTOR (PR 8): mesmo pipeline da produção ---- */
+  let pv=null;
+  try{pv=DEV.personalityPreview();}catch(e){}
+  h+='<h4>ECHO PERSONALITY'+(pv?' · PREV '+pv.label:'')+'</h4>';
+  if(pv){
+    const PC=PERSONALITIES[pv.id]||PERSONALITIES.fragmented;
+    h+='<div class="insp">'+
+      '<div class="row final"><span>PERSONALIDADE PREVISTA</span>'+
+      '<b style="color:'+PC.col+'">'+pv.label+' — '+pv.conf.toFixed(2)+'</b></div>'+
+      '<div class="row"><span>DADOS</span><b>'+pv.samples+' amostras · '+
+      pv.dur+'s'+(pv.legacy?' · modo LEGADO':'')+'</b></div>';
+    for(const pid of PERS_ORDER)
+      h+='<div class="row mod"><span>'+pid+'</span><span class="val">'+
+        pv.scores[pid].toFixed(3)+'</span></div>';
+    h+='<div class="row final"><span>TRAÇOS</span><b>'+
+      (pv.traits.length?pv.traits.map(t=>PERS_TRAITS[t]?PERS_TRAITS[t].lab:t).join(' · '):'—')+'</b></div>';
+    for(const ec of [e1,e2]){
+      if(!ec)continue;
+      const pi=DEV.personalityOf(ec.slot);
+      h+='<div class="row"><span>ECHO·0'+ec.slot+' (SALVO)</span><b>'+
+        (pi?(PERSONALITIES[pi.saved]?PERSONALITIES[pi.saved].lab:pi.saved||'—')+
+          (pi.conf!=null?' · c='+pi.conf:''):'—')+'</b></div>'+
+        '<div class="row mod'+(pi&&pi.forced?'':' inactive')+'"><span>ECHO·0'+ec.slot+
+        ' (EM CAMPO)'+(pi&&pi.forced?' [DEV FORÇADA]':'')+'</span><span class="val">'+
+        (pi?(PERSONALITIES[pi.runtime]?PERSONALITIES[pi.runtime].lab:pi.runtime||'—'):'—')+'</span></div>';
+    }
+    h+='</div>';
+  }
+  h+='<div class="dvrow" style="margin-top:5px">'+
+    '<select class="dvin stat" id="dev-pers">';
+  for(const pid in PERSONALITIES)
+    h+='<option value="'+pid+'"'+(pid===devPersSel?' selected':'')+'>'+
+      PERSONALITIES[pid].lab+'</option>';
+  h+='</select>'+
+    devBtn('persforce1','FORÇAR · ECHO 01')+devBtn('persforce2','FORÇAR · ECHO 02')+
+    devBtn('persauto','AUTO (DA RUN)')+'</div>'+
+    '<div class="dvrow" style="margin-top:5px">'+
+    devBtn('perslog','PREVIEW → LOG')+
+    devBtn('perstest1','ECHO·01 DEV c/ PERS')+devBtn('perstest2','ECHO·02 DEV c/ PERS')+
+    '</div>';
+
   h+='<h4>STATUS</h4><div class="dvrow">';
   for(const st of DEV_STATUS_IDS)h+=devBtn('s:'+st,st.toUpperCase());
   h+=devBtn('curse','CURSE (ORÁCULO)')+devBtn('statusall','APLICAR EM TODOS')+
@@ -11817,6 +12397,12 @@ function devNum(id,def){
   const el=document.getElementById(id);
   const v=Number(el&&el.value);
   return isFinite(v)?v:def;
+}
+function persSelVal(){
+  const el=document.getElementById('dev-pers');
+  const v=el&&el.value;
+  if(v&&PERSONALITIES[v]){devPersSel=v;return v;}
+  return devPersSel;
 }
 function devCommand(c){
   if(!DEV_MODE)return false;
@@ -11865,6 +12451,12 @@ function devCommand(c){
     case 'diss1':      return DEV.dissonance(1);
     case 'diss2':      return DEV.dissonance(2);
     case 'dissend':    DEV.endDissonance(1);return DEV.endDissonance(2);
+    case 'persforce1': return DEV.forcePersonality(1,persSelVal());
+    case 'persforce2': return DEV.forcePersonality(2,persSelVal());
+    case 'persauto':   DEV.forcePersonality(1,'auto');return DEV.forcePersonality(2,'auto');
+    case 'perslog':    return devLog('PERS '+JSON.stringify(DEV.personalityPreview()));
+    case 'perstest1':  return DEV.spawnEcho(1,persSelVal());
+    case 'perstest2':  return DEV.spawnEcho(2,persSelVal());
     case 'curse':      return DEV.curse(6);
     case 'statusall':  return DEV.applyStatus('burn',true);
     case 'clearstatus':return DEV.clearStatus();
@@ -11931,9 +12523,15 @@ function devTick(dt){
   ln.push('BOSS       '+(bd?bd.mode+(bd.alive?' F'+bd.phase:'')+
     ' dash'+bd.dashAdapt:'—'));
   const fe=e=>e?(Math.round(e.trust)+'% '+(e.hostile?'HOSTIL':
-    (e.roleT>0?'PAPEL ON':'ok'))+' cd'+Math.max(0,e.roleCd||0).toFixed(1)):'—';
+    (e.roleT>0?'PAPEL ON':'ok'))+' cd'+Math.max(0,e.roleCd||0).toFixed(1))+
+    (e.pers?' ['+e.pers.short+']':''):'—';
   ln.push('ECHO·01    '+fe(e1));
   ln.push('ECHO·02    '+fe(e2));
+  try{
+    const pv=DEV.personalityPreview();
+    ln.push('PERS PREV  '+pv.label+' c='+pv.conf.toFixed(2)+
+      (pv.traits.length?' T:'+pv.traits.join(','):'')+' s='+pv.samples);
+  }catch(e){}
   const r=DEV.resonanceDebug();
   if(r&&r.target)ln.push('RESO       '+r.lastTag+' '+r.lastHitAgo+'s · micro '+
     r.microTag+' '+r.microAgo+'s');
