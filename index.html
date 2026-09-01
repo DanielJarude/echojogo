@@ -2206,8 +2206,6 @@ function makeEcho(data,slot){
 
 /* ordem de aplicação determinística */
 const SM_ORDER=['flat','add','mult','override'];
-/* piso de segurança para velocidade (evita que a build zere o deslocamento) */
-const SM_SPEED_MIN=30;
 
 /* tabela de stats conhecidos pelo pipeline.
    set: como escrever o valor final de volta no player
@@ -2221,7 +2219,7 @@ const SM_STATS={
   range  :{set:(p,v)=>p.rangeMul=v,    base:o=>o.range,     cl:[null,null], lab:'ALCANCE'},
   projSpd:{set:(p,v)=>p.projSpdMul=v,  base:o=>o.projSpd,   cl:[null,null], lab:'VEL. PROJÉTIL'},
   aoe    :{set:(p,v)=>p.aoeMul=v,      base:o=>o.aoe,       cl:[null,null], lab:'ÁREA'},
-  speed  :{set:(p,v)=>p.speed=v,       base:o=>o.speed,     cl:[SM_SPEED_MIN,null], lab:'VELOCIDADE'},
+  speed  :{set:(p,v)=>p.speed=v,       base:o=>o.speed,     cl:[null,null], lab:'VELOCIDADE'},
   pickupR:{set:(p,v)=>p.pickupR=v,     base:o=>o.pickupR,   cl:[1,null],    lab:'RAIO COLETA'},
   coinMul:{set:(p,v)=>p.coinMul=v,     base:o=>o.coinMul,   cl:[0,null],    lab:'MOEDAS'},
   dmgTaken:{set:(p,v)=>p.dmgTakenMul=v,base:o=>o.dmgTaken,  cl:[0,null],    lab:'DANO RECEBIDO'},

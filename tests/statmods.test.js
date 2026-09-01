@@ -305,11 +305,16 @@ test('crit é limitado a 1.0',()=>{
   T.smFlat(p,'crit','f2','+100',1.0);
   assert.strictEqual(p.crit,1);
 });
-test('velocidade nunca cai abaixo do piso seguro',()=>{
+test('velocidade NÃO tem piso artificial (preserva comportamento antigo)',()=>{
+  // Auditoria PR 7: nenhuma build real chega perto de 0 (mínimo ~137 no
+  // BULWARK com todas as reduções). O jogo antigo não tinha floor de speed
+  // e os slows (auraSlow/slowAura) são aplicados à parte, na leitura.
+  // Logo NÃO há clamp novo: a velocidade segue multiplicação pura.
   const p=bare();
+  const base=p.speed;
   T.smMul(p,'speed','s1','×0.01',.01);
   T.smMul(p,'speed','s2','×0.01',.01);
-  assert.ok(p.speed>=30,'piso de segurança');
+  assert.ok(near(p.speed,base*.0001),'sem clamp, speed='+p.speed);
 });
 
 /* 11. estado não é re-calculado: hp/shield não enchem de graça */

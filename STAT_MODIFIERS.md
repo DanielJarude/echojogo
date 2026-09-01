@@ -209,15 +209,26 @@ FINAL  1.144
 | Dano Recebido | `p.dmgTakenMul` | `1` | mult |
 | Perfuração | `p.pierce` | `0` | flat |
 
-## 14. Stats NÃO migrados + motivo
+## 14. Stats NÃO migrados + motivo (dívida técnica planejada)
 
-- **`maxHp`** — tem comportamento de estado acoplado (cura no acréscimo,
-  clamp na redução) e dezenas de mutações de evento/fratura. Mantido como
-  campo direto para **preservar o balanceamento exato**. O inspector reporta
-  base/derivado de catálogo quando aplicável; mutações de run são notadas.
-- **`shieldMax`/`shieldRegen`/`shieldDelay`** — hoje só o operador define e o
-  DEV as altera; sem itens/upgrades de Shield ainda. Mantidos diretos até o PR
-  de expansão do Shield.
+> **Decisão deliberada de escopo** — não é esquecimento. Manter fora reduz o
+> risco deste PR de fundação sem alterar o balanceamento.
+
+- **`maxHp`** — **dívida técnica planejada.** Ficou fora porque está **acoplado
+  ao estado `hp` atual**: o comportamento legado cura no acréscimo de maxHp
+  (`BLINDAGEM MODULAR +25` cura 25) e clampa na redução, além de ter dezenas de
+  mutações de evento/fratura (`player.maxHp+=…`, `player.hp=player.maxHp`).
+  Migrá-lo exigiria replicar esse acoplamento por completo. Mantido como campo
+  direto para **preservar o balanceamento exato**.
+- **`shieldMax` / `shieldRegen` / `shieldDelay`** — **dívida técnica planejada.**
+  Ficaram fora porque o sistema de Shield será **expandido em um PR futuro**
+  (PR 11). Hoje só o operador os define e o DEV os altera; não há itens/upgrades
+  de Shield ainda.
+- **Regra para a migração futura (obrigatória):** quando `maxHp`/`shieldMax`
+  entrarem no pipeline, **estado deve ser preservado**:
+  - `maxHp ≠ hp` atual — recalcular `maxHp` **não** pode curar o jogador;
+  - `shieldMax ≠ shield` atual — recalcular `shieldMax` **não** pode encher o
+    Shield gratuitamente (apenas clampa para baixo).
 - **`hp`/`shield` (atuais)** — são **state**, nunca pipeline.
 - **Dash recarga (`dashCdMax`)** — não é um stat de combate listado; mantido
   direto.
