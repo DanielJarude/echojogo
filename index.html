@@ -367,6 +367,14 @@
     border-top:1px solid rgba(70,224,255,.14);
     border-bottom:1px solid rgba(70,224,255,.14);padding:13px 0;}
   #p-stats b{color:#e8fbff;font-weight:normal;}
+  /* PR 10 — painel de relação Player ↔ Echo (pausa) */
+  #p-rel{font-family:Consolas,monospace;font-size:var(--fs-xs);letter-spacing:.13em;
+    color:#8fb3c6;line-height:1.75;margin:-8px 0 18px;text-align:left;}
+  #p-rel .rcard{border:1px solid rgba(70,224,255,.16);border-radius:3px;
+    padding:8px 10px;margin-top:7px;background:rgba(70,224,255,.035);}
+  #p-rel .rhead{display:flex;justify-content:space-between;gap:10px;color:#cfe9f5;}
+  #p-rel .rmem{color:rgba(160,200,220,.72);font-style:italic;margin-top:3px;}
+  #p-rel b{color:#e8fbff;font-weight:normal;}
   .pbtn{display:block;width:100%;margin-top:10px;padding:13px 12px;cursor:pointer;
     font-family:Consolas,monospace;font-size:var(--fs-md);letter-spacing:.28em;color:#bffbff;
     border:1px solid rgba(70,224,255,.42);background:rgba(70,224,255,.05);
@@ -651,6 +659,7 @@
   <div id="p-tag">CICLO SUSPENSO</div>
   <div id="p-title">P A U S A</div>
   <div id="p-stats"></div>
+  <div id="p-rel"></div>
   <div class="pbtn" id="p-resume">CONTINUAR [ESC]</div>
   <div class="pbtn" id="p-cfg">⚙ CONFIGURAÇÕES<small>ÁUDIO · TELA CHEIA · GRÁFICOS</small></div>
   <div class="pbtn" id="p-codex">◈ ARSENAL<small>CATÁLOGO DE ARMAS E INIMIGOS</small></div>
@@ -1777,10 +1786,37 @@ function pauseGame(){
         '</b> / V <b>'+moral.viol+'</b> · MÓDULOS AFINS <b>'+countAttunedItems(player)+
         '/'+player.items.length+'</b>';
     })();
+  const _pr=document.getElementById('p-rel');
+  if(_pr)_pr.innerHTML=relationPanelHTML();
   const _pv=document.getElementById('p-ver');
   if(_pv)_pv.textContent=ECHO_VERSION_LABEL+(DEV_MODE?'  ·  DEV MODE':'');
   pm.classList.add('on');
   AUDIO.tone(330,.16,'sine',.04,-90);
+}
+/* PR 10 — RELATIONSHIP UI: estado do vínculo em linguagem humana.
+   Mostra personalidade, relação, confiança e a memória recente — nunca
+   a fórmula, nunca a pressão crua (§34). */
+function relationPanelHTML(){
+  if(!echoes.length)return '';
+  let h='<div style="letter-spacing:.4em;color:rgba(160,220,240,.55)">RELAÇÃO · PLAYER ↔ ECHO</div>';
+  for(const e of echoes){
+    if(!e)continue;
+    const rs=echoRelState(e);
+    const P=e.pers||(e.ps&&PERSONALITIES[e.ps.id])||null;
+    const ds=(e.dis&&e.dis.st)||'stable';
+    const warn=(ds==='unstable')?' · <b style="color:'+DIS_COLOR.unstable+'">SINAL INSTÁVEL</b>':
+      (echoInRupture(e)?' · <b style="color:'+DIS_COLOR[ds]+'">'+DIS_LABEL[ds]+'</b>':'');
+    const mm=(e.rel&&e.rel.mm&&e.rel.mm.length)?e.rel.mm[e.rel.mm.length-1]:null;
+    h+='<div class="rcard"><div class="rhead"><span>ECHO·0'+e.slot+
+      (e.alive?'':' <b style="color:#ff8095">OFFLINE</b>')+'</span>'+
+      '<span>'+(P?P.lab:'—')+'</span></div>'+
+      'RELAÇÃO <b style="color:'+rs.col+'">'+rs.lab+'</b> · '+
+      'CONFIANÇA <b>'+Math.round(e.trust)+'</b>'+warn+
+      (mm?'<div class="rmem">“'+relMomentText(mm)+'”</div>'
+         :'<div class="rmem">Nenhuma memória marcante ainda.</div>')+
+      '</div>';
+  }
+  return h;
 }
 function resumeGame(){
   if(state!=='paused')return;
@@ -2274,7 +2310,7 @@ function makePlayer(){
 function makeEcho(data,slot){
   const tr=data.trail;
   const boost=1+((player&&player.echoBoost)||0);
-  return {data,slot,x:tr[0][1],y:tr[0][2],vx:0,vy:0,r:13,aim:tr[0][4]||0,
+  return echoRelInit({data,slot,x:tr[0][1],y:tr[0][2],vx:0,vy:0,r:13,aim:tr[0][4]||0,
     hp:Math.round(ECHO_HP[slot]*boost),maxHp:Math.round(ECHO_HP[slot]*boost),alive:true,
     shieldMax:ECHO_SHIELD[slot],shield:ECHO_SHIELD[slot],   // começa com escudo cheio
     shieldRegen:ECHO_SHIELD_REGEN[slot],shieldDelayT:0,     // regenera só após o delay
@@ -2294,10 +2330,14 @@ function makeEcho(data,slot){
     pers:(data.ps&&PERSONALITIES[data.ps.id])?PERSONALITIES[data.ps.id]:null,
     trust:slot===1?60:46,trustFx:0,fleeT:0,
     roleCd:slot===1?6:8,roleT:0,roleFx:0,shieldPot:0,   // papéis táticos
-    hostile:false,hostileT:0,curW:0,beamT:0,beamRamp:1,beamTarget:null,
+    /* PR 10: relação e Dissonância vivem em e.rel / e.dis (echoRelInit).
+       `hostile`/`hostileT` continuam existindo como ACESSORES derivados
+       de e.dis — uma única fonte de verdade, zero booleans duplicados. */
+    rel:relNewState(),dis:disNewState(),
+    curW:0,beamT:0,beamRamp:1,beamTarget:null,
     beamLen:0,recoil:0,swingDir:1,
     mul:(data.dmgMul||1)*ECHO_MUL[slot]*boost*mEff.echoPower,
-    hue:slot===1?'#46e0ff':'#ff4df0'};
+    hue:slot===1?'#46e0ff':'#ff4df0'});
 }
 
 /* =====================================================================
@@ -3030,19 +3070,28 @@ function setChip(el,slot,echo){
   el.className='chip';
   if(!echo){el.textContent='ECHO·0'+slot+' — INATIVO';return;}
   if(!echo.alive){el.classList.add('dead');el.textContent='ECHO·0'+slot+' — OFFLINE';return;}
-  if(echo.hostile){
+  /* PR 10: o chip do HUD lê a máquina de estados — nunca um boolean solto */
+  const _ds=(echo.dis&&echo.dis.st)||'stable';
+  if(_ds==='fracturing'||_ds==='hostile'||_ds==='recovering'){
     el.classList.add('dead');
     el.style.textDecoration='none';
-    el.style.borderColor='rgba(255,47,94,.85)';
-    el.textContent='ECHO·0'+slot+' — ⚠ HOSTIL '+echo.hostileT.toFixed(1)+'s';
+    el.style.borderColor=_ds==='hostile'?'rgba(255,47,94,.85)':
+      (_ds==='fracturing'?'rgba(255,157,60,.85)':'rgba(143,246,255,.85)');
+    el.textContent='ECHO·0'+slot+' — ⚠ '+DIS_LABEL[_ds]+
+      (_ds==='hostile'&&echo.dis.integMax>0
+        ? ' · RUPTURA '+Math.round(clamp(echo.dis.integ/echo.dis.integMax,0,1)*100)+'%'
+        : ' '+Math.max(0,echo.dis.t).toFixed(1)+'s');
     return;
   }
   el.style.textDecoration='';
   el.classList.add(slot===1?'on1':'on2');
   const t=trustTier(echo);
-  el.textContent='ECHO·0'+slot+' — ATIVO · '+DOM_SHORT[echo.dom]+' · CONF '+TRUST_NAME[t]+
+  const rs=echoRelState(echo);
+  el.textContent='ECHO·0'+slot+' — '+rs.lab+' · CONF '+TRUST_NAME[t]+
+    (_ds==='unstable'?' · ⚠ INSTÁVEL':'')+
     (echo.itemIds.length?' · ◈'+echo.itemIds.length:'');
-  if(t===0)el.style.borderColor='rgba(255,77,109,.55)';
+  if(_ds==='unstable')el.style.borderColor='rgba(255,209,102,.8)';
+  else if(t===0)el.style.borderColor='rgba(255,77,109,.55)';
   else if(t===2)el.style.borderColor='rgba(125,255,196,.7)';
   else el.style.borderColor='';
 }
@@ -3196,26 +3245,562 @@ function moralGain(c,g,v){
   }
 }
 let _lastTier={c:0,g:0,v:0},_wasConflict=0;
-/* --- reação de confiança dos Ecos às decisões do jogador --- */
+/* --- reação dos Ecos às decisões do jogador (PR 10) ---
+   ANTES: comparação binária de domínio moral com ±18/−26 de confiança
+   por escolha — oscilação enorme e idêntica para qualquer Echo.
+   AGORA: cada Echo avalia a MESMA ação com a sua PRÓPRIA referência
+   (snapshot moral de origem × personalidade × traços), produz uma
+   reação discreta (-2..+2) e só então trust/relação/pressão mudam.
+   Dois Echos podem chegar a veredictos opostos — isso é desejado. */
 function echoesReact(c,g,v){
-  const dec=moralDom({comp:c*3,greed:g*3,viol:v*3});
-  for(const e of echoes){
-    if(!e.alive)continue;
-    if(e.hostile)continue;
-    if(dec==='neutro'||e.dom==='neutro'){e.trust=clamp(e.trust+2,0,100);continue;}
-    if(dec===e.dom){
-      e.trust=clamp(e.trust+18,0,100);e.trustFx=.9;
-      floatText(e.x,e.y-34,'RESSONÂNCIA','#8ff6ff');
-      spawnRing(e.x,e.y,e.hue,8,72,.5);sfx(720,.18,'sine',.035,180);
-    }else{
-      e.trust=clamp(e.trust-26,0,100);e.trustFx=-.9;
-      floatText(e.x,e.y-34,'DISSONÂNCIA','#ff8095');
-      spawnRing(e.x,e.y,'#ff4d6d',8,72,.5);sfx(190,.32,'sawtooth',.045,-95);
-      if(e.trust<=0&&!e.hostile)enterDissonance(e);
-    }
-  }
+  return echoesEvaluate({kind:'moral',vec:{comp:c,greed:g,viol:v}},
+    {event:'trustLow'});
 }
 function trustTier(e){return e.trust>=68?2:(e.trust>=34?1:0);}
+
+/* =====================================================================
+   PR 10 — RELAÇÃO PLAYER ↔ ECHO  (percebe → avalia → reage → lembra)
+   ---------------------------------------------------------------------
+   FILOSOFIA
+   · O Echo POSSUI REFERÊNCIA PRÓPRIA: ele julga o jogador atual
+     comparando-o com a run que o gerou (snapshot moral) — nunca com uma
+     tabela global de "certo e errado".
+   · TRÊS CONCEITOS SEPARADOS (nunca uma variável só):
+       REAÇÃO  — resposta imediata e discreta a um evento (-2..+2);
+       TRUST   — recurso acumulado que já existia (0..100);
+       RELAÇÃO — interpretação persistente do vínculo (estado DERIVADO).
+   · CAMADAS PRESERVADAS: personalidade (PR 8) = COMO a run jogava;
+     moralidade (PR 9) = QUE decisões foram tomadas; relação (PR 10) =
+     COMO o Echo interpreta VOCÊ. A personalidade MODULA a reação; ela
+     nunca substitui o snapshot moral.
+   · NENHUMA BARRA NOVA: a relação é derivada de trust + memória compacta
+     + pressão. Não existe affection/loyalty/bond/respect.
+   · EVENTOS DISCRETOS: nada é avaliado por frame (ver relTick).
+   ===================================================================== */
+const REL_BALANCE={
+  /* escala de reação: inteiros -2..+2 (forte/fraca rejeição · neutro ·
+     fraca/forte aprovação). Limiares aplicados sobre o alinhamento cru. */
+  strongAt:.55,          // |alinhamento| >= 0.55 → reação forte (±2)
+  softAt:.18,            // |alinhamento| >= 0.18 → reação fraca  (±1)
+  /* TRUST: variações PEQUENAS. Um ponto de reação = 2.2 de confiança,
+     então a escolha moral mais divergente possível custa ~4.4 — e não
+     os −26 do sistema pré-PR10. Momentos fortes de evento continuam
+     valendo mais porque passam um trustMul explícito. */
+  trustPerPoint:2.2,
+  trustClamp:36,         // teto absoluto de UMA mutação de confiança
+  /* MEMÓRIA DE RELAÇÃO: dois acumuladores pequenos + streak. */
+  memCap:26,             // teto de approval/rejection memory
+  memDecay:.06,          // por segundo (esquecimento lento)
+  momentsMax:4,          // momentos significativos guardados
+  /* ANTI-FARM: repetir o mesmo motivo rende cada vez menos. */
+  dimStep:.55,           // peso do contador de repetições
+  dimFloor:.20,          // piso do multiplicador
+  dimDecay:34,           // segundos para "esquecer" uma repetição
+  reactCd:.35,           // intervalo mínimo entre avaliações do MESMO Echo
+  feedbackCd:.9,         // intervalo mínimo entre feedbacks visuais
+  /* cooldown por MOTIVO (segundos) — 0/ausente = sem cooldown duro */
+  reasonCd:{resonance:5,micro_resonance:13,protection:20,disruption:20},
+  /* PRESSÃO DE RUPTURA (Dissonância 2.0) */
+  pressure:{
+    max:140,
+    perReject:{1:9,2:18},     // ganho por intensidade de rejeição
+    perApprove:{1:-6,2:-11},  // alívio por aprovação
+    resonance:-4,             // Ressonância acalma
+    unstableAt:55,            // telegrafia: INSTÁVEL
+    unstableOff:44,           // histerese de volta a ESTÁVEL
+    fractureAt:100,           // limiar de ruptura
+    repeatStep:20,            // +limiar por Dissonância já ocorrida
+    repeatMax:40,
+    lowTrust:34,              // abaixo disso a pressão sobe sozinha
+    lowTrustRate:.8,          // por segundo (proporcional ao quão baixa)
+    decay:.35,                // por segundo em relação saudável
+    decaySlow:.12,            // por segundo em relação tensa
+    calmAfter:6,              // segundos sem rejeição p/ o decaimento pleno
+    graceDecay:6              // decaimento acelerado no período de graça
+  }
+};
+/* estados de relação — terminologia do ECHO (nunca AMIGO/INIMIGO) */
+const REL_STATES=[
+  {id:'fractured',lab:'FRATURADA',   min:-999,col:'#ff2f5e'},
+  {id:'tense',    lab:'TENSA',       min:25,  col:'#ff8095'},
+  {id:'latent',   lab:'LATENTE',     min:45,  col:'#9db8c8'},
+  {id:'synced',   lab:'SINCRONIZADA',min:65,  col:'#8ff6ff'},
+  {id:'resonant', lab:'RESSONANTE',  min:85,  col:'#7dffc4'}
+];
+
+/* ---------------- estado por Echo (compacto) ----------------
+   rel: memória da relação · dis: máquina de estados da Dissonância.
+   `hostile` e `hostileT` viram ACESSORES derivados de dis.st/dis.t —
+   UMA fonte de verdade, zero booleans duplicados (PR 10 §95/§96). */
+function relNewState(){
+  return {ap:0,rj:0,streak:0,last:null,mm:[],seen:{},
+    acc:0,lastRejectAt:-999,lastReactAt:-999,lastFbAt:-999,lastTrust:null};
+}
+function disNewState(){
+  return {st:'stable',t:0,p:0,integ:0,integMax:0,grace:0,count:0,fx:0,warned:0};
+}
+function echoRelInit(e){
+  if(!e)return e;
+  if(!e.rel)e.rel=relNewState();
+  if(!e.dis)e.dis=disNewState();
+  if(!Object.getOwnPropertyDescriptor(e,'hostile')){
+    Object.defineProperty(e,'hostile',{
+      get(){return this.dis.st==='hostile';},
+      set(v){
+        if(v){if(this.dis.st!=='hostile')enterDissonance(this);}
+        else if(this.dis.st==='hostile')echoSetDis(this,'recovering');
+      },
+      enumerable:true,configurable:true});
+    Object.defineProperty(e,'hostileT',{
+      get(){return this.dis.st==='hostile'?this.dis.t:0;},
+      set(v){if(this.dis.st==='hostile')this.dis.t=(+v||0);},
+      enumerable:true,configurable:true});
+  }
+  return e;
+}
+/* Um Echo é ALIADO quando não está em nenhuma etapa da ruptura.
+   Guardião, Disruptor, absorção de projéteis, regeneração de escudo e
+   falas aliadas consultam SEMPRE esta função — nunca um boolean solto. */
+function echoAllied(e){
+  if(!e||!e.alive)return false;
+  if(!e.dis)return !e.hostile;
+  const s=e.dis.st;
+  return s==='stable'||s==='unstable'||s==='cooldown';
+}
+/* Etapas em que o Echo já não é aliado (telegrafia, hostil, reintegração) */
+function echoInRupture(e){return !!(e&&e.dis&&
+  (e.dis.st==='fracturing'||e.dis.st==='hostile'||e.dis.st==='recovering'));}
+
+/* ---------------- TRUST: ponto único de mutação ----------------
+   Toda alteração de confiança do jogo passa por aqui e carrega um MOTIVO.
+   Nada de `echo.trust += n` espalhado (PR 10 §17/§18). */
+function changeEchoTrust(e,delta,reason){
+  if(!e||e.trust==null)return 0;
+  let d=+delta;
+  if(!isFinite(d)||d===0)return 0;
+  d=clamp(d,-REL_BALANCE.trustClamp,REL_BALANCE.trustClamp);
+  const before=e.trust;
+  e.trust=clamp(before+d,0,100);
+  const applied=e.trust-before;
+  if(applied>.01)e.trustFx=Math.max(e.trustFx||0,Math.min(.9,.3+applied/26));
+  else if(applied<-.01)e.trustFx=Math.min(e.trustFx||0,-Math.min(.9,.3+(-applied)/26));
+  if(e.rel)e.rel.lastTrust={d:Math.round(applied*100)/100,r:String(reason||'unknown')};
+  return applied;
+}
+
+/* ---------------- relação derivada ----------------
+   FÓRMULA (documentada em ECHO_RELATIONSHIP.md — nunca exibida ao
+   jogador): score = trust + clamp(approval − rejection, −25, +25)
+                     − pressão×0.30
+   Não duplica trust: ele é a espinha, a memória é o tempero. */
+function echoRelScore(e){
+  if(!e)return 0;
+  const r=e.rel||relNewState(),d=e.dis||disNewState();
+  const mem=clamp(r.ap-r.rj,-25,25);
+  return clamp((e.trust||0)+mem-d.p*.30,-40,130);
+}
+function echoRelState(e){
+  const s=echoRelScore(e);
+  let out=REL_STATES[0];
+  for(const st of REL_STATES)if(s>=st.min)out=st;
+  return out;
+}
+
+/* ---------------- diminishing returns / cooldown por motivo ---------------- */
+function relReasonSlot(e,reason){
+  const r=e.rel;
+  let s=r.seen[reason];
+  if(!s){s={n:0,t:-999};r.seen[reason]=s;}
+  return s;
+}
+/* multiplicador 0.20..1 — cai a cada repetição do MESMO motivo e volta
+   a subir com o tempo. Consultar não altera nada (leitura pura). */
+function relDimFactor(e,reason){
+  const s=relReasonSlot(e,reason);
+  const gone=Math.max(0,(runTime-s.t)/REL_BALANCE.dimDecay);
+  const n=Math.max(0,s.n-gone);
+  return clamp(1/(1+REL_BALANCE.dimStep*n),REL_BALANCE.dimFloor,1);
+}
+function relNoteReason(e,reason){
+  const s=relReasonSlot(e,reason);
+  const gone=Math.max(0,(runTime-s.t)/REL_BALANCE.dimDecay);
+  s.n=Math.max(0,s.n-gone)+1;
+  s.t=runTime;
+}
+function relReasonReady(e,reason){
+  const cd=REL_BALANCE.reasonCd[reason];
+  if(!cd)return true;
+  const s=relReasonSlot(e,reason);
+  return (runTime-s.t)>=cd;
+}
+
+/* =====================================================================
+   CAMADA CENTRAL DE AVALIAÇÃO — evaluateEchoReaction(echo, context)
+   ---------------------------------------------------------------------
+   Retorna {value,type,reason,intensity,align} e NÃO altera nada.
+   Toda reação do jogo nasce aqui (§6): moral, Ressonância, proteção.
+   ===================================================================== */
+const REL_AXIS_REASON={comp:'moral_compassion',greed:'moral_greed',viol:'moral_violence'};
+/* PERSONALIDADE modula INTENSIDADE/TOLERÂNCIA — nunca a memória moral.
+   neg = multiplicador quando o Echo estaria rejeitando;
+   pos = multiplicador quando estaria aprovando. */
+const PERS_REL_MOD={
+  aggressive: {viol:{neg:.50,pos:1.15},comp:{neg:1.12,pos:.92}},
+  cautious:   {viol:{neg:1.25,pos:.80},comp:{neg:.85,pos:1.10},greed:{neg:1.10,pos:.95}},
+  precise:    {all:{neg:.95,pos:1.05},greed:{neg:1.05,pos:1.00}},
+  impulsive:  {all:{neg:1.10,pos:1.10}},
+  resilient:  {all:{neg:.72,pos:.92}},
+  opportunist:{greed:{neg:.45,pos:1.20},viol:{neg:.85,pos:1.05}},
+  versatile:  {all:{neg:.80,pos:.95}},
+  fragmented: {all:{neg:.55,pos:.55}}
+};
+/* TRAÇOS SECUNDÁRIOS (PR 8): modificadores MÍNIMOS e centralizados.
+   Só existem 4 entradas de propósito — não é uma segunda taxonomia. */
+const TRAIT_REL_MOD={
+  butcher: {viol:{neg:.88,pos:1.06}},
+  reckless:{viol:{neg:.90}},
+  survivor:{all:{neg:.92}},
+  marksman:{all:{neg:.96,pos:1.04}}
+};
+function relApplyMod(tab,axis,raw){
+  if(!tab)return raw;
+  const k=raw<0?'neg':'pos';
+  let m=1;
+  if(tab.all&&tab.all[k]!=null)m*=tab.all[k];
+  if(axis&&tab[axis]&&tab[axis][k]!=null)m*=tab[axis][k];
+  return raw*m;
+}
+function relDominantAxis(vec){
+  const c=+vec.comp||0,g=+vec.greed||0,v=+vec.viol||0;
+  const t=c+g+v;
+  if(t<=0)return null;
+  if(c>=g&&c>=v)return 'comp';
+  if(g>=v)return 'greed';
+  return 'viol';
+}
+function relNormalize(vec){
+  const c=Math.max(0,+vec.comp||0),g=Math.max(0,+vec.greed||0),v=Math.max(0,+vec.viol||0);
+  const t=c+g+v;
+  if(t<=0)return null;
+  return {comp:c/t,greed:g/t,viol:v/t,total:t};
+}
+function evaluateEchoReaction(echo,ctx){
+  const none={value:0,type:'neutral',reason:'none',intensity:0,align:0};
+  if(!echo||!ctx)return none;
+  const kind=ctx.kind;
+  /* ---- gatilho PRINCIPAL: escolha moral (§9/§10) ---- */
+  if(kind==='moral'){
+    const act=relNormalize(ctx.vec||{});
+    if(!act)return {value:0,type:'neutral',reason:'moral_neutral',intensity:0,align:0};
+    const axis=relDominantAxis(ctx.vec||{});
+    const src=relNormalize(echo.moralSrc||{});
+    /* Echo sem referência moral própria (run neutra/curta): ele não tem
+       o que comparar — reage fraco, mas não vira tabela universal. */
+    let raw,weak=false;
+    if(!src||src.total<3){
+      weak=true;
+      raw=0;
+    }else{
+      /* produto escalar origem × ação. 1/3 é o ponto neutro (origem
+         perfeitamente equilibrada). Acima → reconhecimento; abaixo →
+         contradição com a própria memória. */
+      const dot=src.comp*act.comp+src.greed*act.greed+src.viol*act.viol;
+      const tt=(dot-1/3)/(2/3);            // −0.5 .. +1
+      raw=tt>=0?tt:tt*2;                   // −1 .. +1
+    }
+    const base=raw;
+    /* personalidade → intensidade/tolerância; traços → ajuste mínimo */
+    const pid=echo.pers?echo.pers.id:(echo.ps&&echo.ps.id);
+    raw=relApplyMod(PERS_REL_MOD[pid],axis,raw);
+    const trs=(echo.ps&&Array.isArray(echo.ps.tr))?echo.ps.tr:[];
+    for(const tr of trs)raw=relApplyMod(TRAIT_REL_MOD[tr],axis,raw);
+    if(weak)raw*=.35;
+    raw=clamp(raw,-1,1);
+    const mag=Math.abs(raw);
+    let value=0;
+    if(mag>=REL_BALANCE.strongAt)value=raw>0?2:-2;
+    else if(mag>=REL_BALANCE.softAt)value=raw>0?1:-1;
+    return {value,type:value>0?'approve':(value<0?'reject':'neutral'),
+      reason:REL_AXIS_REASON[axis]||'moral_neutral',
+      intensity:Math.round(mag*100)/100,align:Math.round(base*100)/100};
+  }
+  /* ---- Ressonância / Micro-Ressonância (§24/§25) ---- */
+  if(kind==='resonance')
+    return {value:2,type:'approve',reason:'resonance',intensity:.7,align:1};
+  if(kind==='micro')
+    return {value:1,type:'approve',reason:'micro_resonance',intensity:.2,align:1};
+  /* ---- papéis táticos: momento de vínculo, nunca farm (§26/§27) ---- */
+  if(kind==='protection')
+    return {value:1,type:'approve',reason:'protection',intensity:.35,align:1};
+  if(kind==='disruption')
+    return {value:1,type:'approve',reason:'disruption',intensity:.35,align:1};
+  /* ---- consequência da própria ruptura (§55) ---- */
+  if(kind==='dissonance')
+    return {value:-2,type:'reject',reason:'dissonance',intensity:1,align:-1};
+  if(kind==='reconciliation')
+    return {value:1,type:'approve',reason:'reconciliation',intensity:.5,align:1};
+  return none;
+}
+
+/* ---------------- momentos significativos (§16) ----------------
+   No máximo 4 memórias compactas por Echo. Nada de log infinito. */
+const REL_MOMENT_TEXT={
+  moral_compassion:{approve:'Reconheceu uma decisão compassiva.',
+    reject:'Rejeitou uma decisão compassiva.'},
+  moral_greed:{approve:'Aprovou um ganho arrancado à força.',
+    reject:'Rejeitou uma decisão movida por ganância.'},
+  moral_violence:{approve:'Aprovou uma decisão violenta.',
+    reject:'Rejeitou uma decisão violenta.'},
+  resonance:{approve:'Sincronizou em Ressonância com você.'},
+  protection:{approve:'Cobriu você quando importava.'},
+  disruption:{approve:'Abriu caminho para você.'},
+  dissonance:{reject:'Rompeu e se voltou contra você.'},
+  reconciliation:{approve:'Voltou ao seu lado depois da ruptura.'}
+};
+function relMomentText(m){
+  if(!m)return '';
+  const t=REL_MOMENT_TEXT[m.k];
+  const byType=t&&t[m.v<0?'reject':'approve'];
+  return byType||(m.v<0?'Discordou de uma decisão sua.':'Concordou com uma decisão sua.');
+}
+function relRememberMoment(e,reason,value){
+  const mm=e.rel.mm;
+  mm.push({k:reason,v:value,w:(typeof wave!=='undefined'?wave|0:0),
+    t:Math.round(runTime*10)/10});
+  while(mm.length>REL_BALANCE.momentsMax)mm.shift();
+}
+
+/* ---------------- aplicação da reação (único caminho de escrita) ---------------- */
+function applyEchoReaction(e,r,opts){
+  opts=opts||{};
+  if(!e||!e.alive||!r)return null;
+  echoRelInit(e);
+  if(echoInRupture(e))return null;               // durante a ruptura não se julga
+  if(!opts.force&&(runTime-e.rel.lastReactAt)<REL_BALANCE.reactCd)return null;
+  if(!opts.force&&!relReasonReady(e,r.reason))return null;
+  const dim=relDimFactor(e,r.reason);
+  relNoteReason(e,r.reason);
+  e.rel.lastReactAt=runTime;
+  const mag=Math.abs(r.value);
+  const applied={value:r.value,type:r.type,reason:r.reason,
+    intensity:r.intensity,dim:Math.round(dim*100)/100,trust:0,pressure:0};
+  if(r.value!==0){
+    /* TRUST — mudança pequena, com motivo, escalada pelo anti-farm */
+    const mul=(opts.trustMul==null?1:opts.trustMul);
+    applied.trust=changeEchoTrust(e,
+      r.value*REL_BALANCE.trustPerPoint*dim*mul,r.reason);
+    /* MEMÓRIA — approval/rejection separados + streak assinado */
+    if(r.value>0){
+      e.rel.ap=clamp(e.rel.ap+mag*dim,0,REL_BALANCE.memCap);
+      e.rel.streak=e.rel.streak>0?e.rel.streak+1:1;
+    }else{
+      e.rel.rj=clamp(e.rel.rj+mag*dim,0,REL_BALANCE.memCap);
+      e.rel.streak=e.rel.streak<0?e.rel.streak-1:-1;
+      e.rel.lastRejectAt=runTime;
+    }
+    /* PRESSÃO DE RUPTURA */
+    const P=REL_BALANCE.pressure;
+    const raw=r.value<0?(P.perReject[mag]||0):(P.perApprove[mag]||0);
+    applied.pressure=relAddPressure(e,raw*dim);
+    /* MOMENTO SIGNIFICATIVO: só reações fortes e ainda não saturadas */
+    if(mag>=2&&dim>=.5)relRememberMoment(e,r.reason,r.value);
+  }
+  e.rel.last={t:r.type,r:r.reason,v:r.value,at:Math.round(runTime*10)/10};
+  return applied;
+}
+function relAddPressure(e,delta){
+  if(!e||!e.dis||!isFinite(delta))return 0;
+  const before=e.dis.p;
+  e.dis.p=clamp(before+delta,0,REL_BALANCE.pressure.max);
+  return Math.round((e.dis.p-before)*100)/100;
+}
+/* limiar de ruptura sobe a cada Dissonância já vivida (anti-loop §57) */
+function relFractureAt(e){
+  const P=REL_BALANCE.pressure;
+  return P.fractureAt+Math.min(P.repeatMax,(e.dis.count|0)*P.repeatStep);
+}
+
+/* =====================================================================
+   DIÁLOGO CONTEXTUAL — hierarquia com fallback garantido (§28/§29)
+     1. contexto específico  (motivo × tipo × estado da relação)
+     2. contexto genérico    (motivo × tipo)
+     3. voz da personalidade (tipo)
+     4. reação genérica      (tipo)
+     5. pool de personalidade do evento (PR 8)
+     6. ECHO_LINES (pool original)
+   Nunca fica sem fala. Poucas falas boas por evento — a arquitetura é
+   que precisa escalar, não o volume de texto (§30).
+   ===================================================================== */
+const REL_LINES={
+  moral_compassion:{
+    approve:{_:['VOCÊ AINDA POUPA. EU TAMBÉM POUPAVA.','ISSO EU RECONHEÇO.'],
+             fractured:['DEPOIS DE TUDO, VOCÊ POUPOU. ANOTADO.']},
+    reject:{_:['PIEDADE NUNCA NOS MANTEVE INTEIROS.','ESSE GESTO CUSTA CARO.'],
+            resonant:['EU DISCORDO — MAS SIGO COM VOCÊ.']}
+  },
+  moral_greed:{
+    approve:{_:['LEVAR TUDO. ERA O MEU MÉTODO.','RECURSO ACIMA DE RUÍDO.']},
+    reject:{_:['VOCÊ TROCOU ALGUÉM POR CRÉDITO.','NÃO FOI ASSIM QUE EU PAGUEI O PREÇO.']}
+  },
+  moral_violence:{
+    approve:{_:['ISSO EU RECONHEÇO. FOI O QUE ME MATOU.','SEM HESITAR. CERTO.']},
+    reject:{_:['NÃO ERA ASSIM QUE NÓS SOBREVIVÍAMOS.','VOCÊ ESTÁ VIRANDO OUTRA COISA.'],
+            tense:['MAIS UMA VEZ. EU ESTOU CONTANDO.'],
+            fractured:['EU JÁ NÃO SEI QUEM ESTOU COBRINDO.']}
+  },
+  resonance:{approve:{_:['FREQUÊNCIA ALINHADA. CONTINUE.','ISSO. EXATAMENTE ISSO.']}},
+  protection:{approve:{_:['EU SEGURO ESTA. VOCÊ SEGUE.','COBERTURA MANTIDA.']}},
+  disruption:{approve:{_:['CAMPO ABERTO. APROVEITE.','O TEMPO DELES QUEBROU.']}},
+  reconciliation:{approve:{_:['A ASSINATURA VOLTOU. EU VOLTEI.','ME REINTEGREI. NÃO PROMETO NADA.']}},
+  dissonance:{reject:{_:['EU NÃO SOU MAIS VOCÊ.','A RUPTURA ERA INEVITÁVEL.']}}
+};
+/* voz da personalidade para aprovação/rejeição — camada 3 do fallback */
+const PERS_REL_LINES={
+  aggressive: {approve:['ASSIM SE RESOLVE.','FORÇA RECONHECIDA.'],
+               reject:['ISSO FOI FRACO.','VOCÊ HESITOU DEMAIS.']},
+  cautious:   {approve:['CÁLCULO CORRETO.','RISCO CONTIDO. BOM.'],
+               reject:['RISCO DESNECESSÁRIO.','VOCÊ EXPÔS NÓS DOIS.']},
+  precise:    {approve:['EFICIENTE. REGISTRADO.','MARGEM DE ERRO ACEITÁVEL.'],
+               reject:['DESPERDÍCIO.','ERRO DE EXECUÇÃO.']},
+  impulsive:  {approve:['GOSTEI DISSO.','SEM PENSAR. PERFEITO.'],
+               reject:['LENTO DEMAIS.','ISSO ME IRRITA.']},
+  resilient:  {approve:['AGUENTA. EU TAMBÉM AGUENTEI.','SEGUIMOS.'],
+               reject:['NÃO CONCORDO. AINDA ASSIM, SEGUIMOS.','ANOTADO. SIGA.']},
+  opportunist:{approve:['MOMENTO CERTO. BOM OLHO.','A JANELA ERA ESSA.'],
+               reject:['VOCÊ PERDEU A JANELA.','OPORTUNIDADE DESPERDIÇADA.']},
+  versatile:  {approve:['FUNCIONA. ADAPTADO.','ACEITO.'],
+               reject:['NÃO É O MEU CAMINHO.','DIVERGIMOS AQUI.']},
+  fragmented: {approve:['…ISSO EU LEMBRO. ACHO.','SINAL POSITIVO …PARCIAL.'],
+               reject:['…ISSO NÃO CONFERE.','MEMÓRIA CONTRADIZ …ALGO.']}
+};
+const REL_GENERIC_LINES={
+  approve:['REGISTRADO. CONCORDO.','ISSO EU RECONHEÇO.'],
+  reject:['DIVERGÊNCIA REGISTRADA.','NÃO FOI ASSIM QUE EU FIZ.'],
+  neutral:['REGISTRADO.']
+};
+/* devolve {txt,tier} — tier identifica QUAL camada respondeu (testável) */
+function pickRelationLine(e,ctx){
+  ctx=ctx||{};
+  const type=ctx.type||'neutral';
+  const reason=ctx.reason||'none';
+  const stId=ctx.state||(e?echoRelState(e).id:'latent');
+  const pick=a=>(a&&a.length)?a[randi(0,a.length-1)]:null;
+  const byReason=REL_LINES[reason]&&REL_LINES[reason][type];
+  let txt=byReason&&pick(byReason[stId]);
+  if(txt)return {txt,tier:'context_state'};
+  txt=byReason&&pick(byReason._);
+  if(txt)return {txt,tier:'context'};
+  const pid=e&&(e.pers?e.pers.id:(e.ps&&e.ps.id));
+  txt=pid&&PERS_REL_LINES[pid]&&pick(PERS_REL_LINES[pid][type]);
+  if(txt)return {txt,tier:'personality'};
+  txt=pick(REL_GENERIC_LINES[type]);
+  if(txt)return {txt,tier:'reaction'};
+  txt=e&&ctx.event?persLineFor(e,ctx.event):null;
+  if(txt)return {txt,tier:'pers_event'};
+  txt=ctx.event?pick(ECHO_LINES[ctx.event]):null;
+  if(txt)return {txt,tier:'echo_lines'};
+  return {txt:'…',tier:'none'};
+}
+
+/* ---------------- feedback discreto (§32/§33) ---------------- */
+function relFeedback(e,applied){
+  if(!e||!applied||!applied.value)return false;
+  if((runTime-e.rel.lastFbAt)<REL_BALANCE.feedbackCd)return false;
+  e.rel.lastFbAt=runTime;
+  const up=applied.value>0;
+  const strong=Math.abs(applied.value)>=2;
+  const col=up?'#8ff6ff':'#ff8095';
+  const tag='ECHO·0'+e.slot+(up?(strong?' · +SINCRONIA':' · APROVA')
+                               :(strong?' · REJEITA':' · DIVERGE'));
+  floatText(e.x,e.y-e.r-30,tag,col);
+  spawnRing(e.x,e.y,up?e.hue:'#ff4d6d',6,up?58:64,.35);
+  sfx(up?680:230,.14,up?'sine':'sawtooth',.028,up?140:-90);
+  return true;
+}
+
+/* =====================================================================
+   ORQUESTRAÇÃO: um evento → cada Echo avalia INDEPENDENTEMENTE (§62)
+   Dois Echos podem discordar entre si sobre o jogador — e isso é
+   desejado. O que NÃO existe aqui é Echo↔Echo (PR 14): nenhum Echo lê,
+   altera ou comenta o estado do outro. O único acoplamento é a ORDEM DA
+   FALA: só a reação mais intensa vira frase (§64); a outra fica no
+   feedback discreto.
+   ===================================================================== */
+function echoesEvaluate(ctx,opts){
+  opts=opts||{};
+  const out=[];
+  for(const e of echoes){
+    if(!e||!e.alive)continue;
+    if(!echoAllied(e))continue;
+    echoRelInit(e);
+    const r=evaluateEchoReaction(e,ctx);
+    const applied=applyEchoReaction(e,r,opts);
+    if(!applied)continue;
+    out.push({echo:e,r:applied});
+  }
+  if(!out.length)return out;
+  /* feedback visual para todos; fala só para a reação mais intensa */
+  let best=null;
+  for(const o of out){
+    relFeedback(o.echo,o.r);
+    if(!best||Math.abs(o.r.value)>Math.abs(best.r.value))best=o;
+  }
+  if(best&&best.r.value!==0&&!opts.silent){
+    const line=pickRelationLine(best.echo,{type:best.r.type,reason:best.r.reason,
+      state:echoRelState(best.echo).id,event:opts.event});
+    echoSpeak(best.echo,line.txt,best.r.value>0?'#8ff6ff':'#ff8095');
+  }
+  return out;
+}
+/* Ressonância plena / micro — trust legado (+3) preservado no PRIMEIRO
+   disparo e depois submetido ao anti-farm. */
+function echoRelResonance(e,micro){
+  if(!e||!e.alive||!echoAllied(e))return null;
+  echoRelInit(e);
+  const kind=micro?'micro':'resonance';
+  const reason=micro?'micro_resonance':'resonance';
+  if(!relReasonReady(e,reason))return null;
+  const dim=relDimFactor(e,reason);
+  const r=evaluateEchoReaction(e,{kind});
+  const applied=applyEchoReaction(e,r,{trustMul:0});
+  if(!applied)return null;
+  /* recompensa histórica de confiança: +3 na Ressonância plena
+     (invariante do PR 8), ×0.2 na Micro — sempre com anti-farm. */
+  applied.trust=changeEchoTrust(e,(micro?.6:3)*dim,reason);
+  relAddPressure(e,REL_BALANCE.pressure.resonance*(micro?.25:1)*dim);
+  if(!micro&&Math.abs(applied.value)>=2&&dim>=.5&&!e.rel._firstReso){
+    e.rel._firstReso=1;relRememberMoment(e,'resonance',2);
+  }
+  return applied;
+}
+
+/* ---------------- tick barato da relação (§94) ----------------
+   Nada é recalculado por frame: o acumulador só libera a cada 0.5s e o
+   corpo é aritmética O(1). A máquina de estados da Dissonância vive em
+   echoDissonanceTick (chamada daqui). */
+function relTick(e,dt){
+  if(!e||!e.dis)return;
+  const r=e.rel;
+  r.acc+=dt;
+  if(r.acc<.5){echoDissonanceTick(e,dt);return;}
+  const step=r.acc;r.acc=0;
+  /* esquecimento lento da memória de relação */
+  const dec=REL_BALANCE.memDecay*step;
+  if(r.ap>0)r.ap=Math.max(0,r.ap-dec);
+  if(r.rj>0)r.rj=Math.max(0,r.rj-dec);
+  /* pressão: sobe com desconfiança crônica, cai com estabilidade */
+  const P=REL_BALANCE.pressure,st=e.dis.st;
+  if(st==='stable'||st==='unstable'){
+    let d=0;
+    if(e.trust<P.lowTrust)d+=P.lowTrustRate*(1-e.trust/P.lowTrust)*step;
+    const calm=(runTime-r.lastRejectAt)>=P.calmAfter;
+    if(calm)d-=(e.trust>=50?P.decay:P.decaySlow)*step;
+    if(d!==0)relAddPressure(e,d);
+  }else if(st==='cooldown'){
+    relAddPressure(e,-P.graceDecay*step);
+  }
+  echoDissonanceTick(e,dt);
+}
 
 /* =====================================================================
    MORALIDADE 2.0 (PR 9) — PERFIL MORAL DERIVADO + SINTONIA DE ITENS
@@ -3506,23 +4091,283 @@ function pickEventKind(){
   return EV_KINDS[EV_KINDS.length-1];
 }
 
-/* ---- DISSONÂNCIA MORAL CRÍTICA: confiança 0% → Echo hostil por 12s ---- */
-function enterDissonance(e){
-  e.hostile=true;e.hostileT=12;e.trust=0;
+/* ---- DISSONÂNCIA MORAL CRÍTICA (PR 10 — agora ruptura em etapas) ---- */
+/* =====================================================================
+   DISSONÂNCIA 2.0 — RUPTURA REAL ENTRE PLAYER E ECHO
+   ---------------------------------------------------------------------
+   ANTES: `hostile=true` por 12s, sorteado por trust 0, sem aviso e sem
+   agência — "deu azar e meu pet ficou vermelho".
+   AGORA: máquina de estados EXPLÍCITA e única fonte de verdade
+     ESTÁVEL → INSTÁVEL → FRATURANDO → DISSONANTE → REINTEGRANDO → GRAÇA
+   · a pressão é construída por rejeições, divergência crônica e
+     desconfiança — o jogador VÊ chegando (§40);
+   · a telegrafia dá 1.2s de ruptura sem dano injusto (§43);
+   · o Echo hostil é uma versão CORROMPIDA do companheiro: mantém
+     personalidade, spacing e arma de origem (§44/§45);
+   · existe CONTENÇÃO: dano do jogador consome a integridade da ruptura e
+     encurta a Dissonância — sem gerar XP, créditos, abate ou loot (§52);
+   · o retorno é uma transição (colapso → reintegração), nunca um flip;
+   · nada disso apaga o Echo: a contenção substitui a destruição (§49).
+   ===================================================================== */
+const DIS={
+  telegraph:1.2,      // FRATURANDO: aviso antes da hostilidade real
+  hostileDur:12,      // teto de duração (idêntico ao legado)
+  recoverDur:1.4,     // REINTEGRANDO: colapso visual + volta
+  graceDur:26,        // GRAÇA: nenhuma nova Dissonância neste período
+  integMax:100,       // integridade da ruptura (medidor de contenção)
+  containMul:1.0,     // dano do jogador → integridade consumida
+  containPerHit:14,   // teto por acerto (evita burst instantâneo)
+  integDrain:1.6,     // decaimento passivo por segundo
+  cleanBonus:2.0,     // multiplicador do decaimento se o jogador não apanha
+  cleanAfter:3.0,     // segundos sem dano para valer o bônus
+  trustFloor:34,      // piso histórico de confiança pós-Dissonância
+  dmgMul:.9           // dano hostil (idêntico ao legado)
+};
+const DIS_LABEL={stable:'ESTÁVEL',unstable:'INSTÁVEL',fracturing:'FRATURANDO',
+  hostile:'DISSONANTE',recovering:'REINTEGRANDO',cooldown:'EM GRAÇA'};
+const DIS_COLOR={stable:'#8ff6ff',unstable:'#ffd166',fracturing:'#ff9d3c',
+  hostile:'#ff2f5e',recovering:'#8ff6ff',cooldown:'#7dffc4'};
+/* perfil hostil por personalidade: o Echo rebelado luta como lutava.
+   Sem personalidade → exatamente os números do sistema antigo. */
+const HOSTILE_PROFILE={
+  aggressive: {want:118,spd:292,rate:1.05},
+  cautious:   {want:300,spd:228,rate:1.50},
+  precise:    {want:246,spd:240,rate:1.34},
+  impulsive:  {want:150,spd:300,rate:1.10},
+  resilient:  {want:196,spd:242,rate:1.26},
+  opportunist:{want:172,spd:266,rate:1.20},
+  versatile:  {want:190,spd:250,rate:1.25},
+  fragmented: {want:206,spd:236,rate:1.46}
+};
+function hostileProfile(e){
+  const pid=e&&(e.pers?e.pers.id:(e.ps&&e.ps.id));
+  return HOSTILE_PROFILE[pid]||{want:190,spd:250,rate:1.25};
+}
+function echoDisLabel(e){return DIS_LABEL[(e&&e.dis&&e.dis.st)||'stable'];}
+/* percentual de pressão relativo ao limiar REAL do Echo (0..1) */
+function relPressurePct(e){
+  if(!e||!e.dis)return 0;
+  return clamp(e.dis.p/Math.max(1,relFractureAt(e)),0,1);
+}
+/* ajuste duro de confiança com motivo (resets/pisos/restore) */
+function setEchoTrust(e,v,reason){
+  if(!e||e.trust==null)return 0;
+  const before=e.trust;
+  e.trust=clamp(+v||0,0,100);
+  if(e.rel)e.rel.lastTrust={d:Math.round((e.trust-before)*100)/100,r:String(reason||'set')};
+  return e.trust;
+}
+/* -------- transições: TODA mudança de estado passa por aqui -------- */
+function echoSetDis(e,st){
+  if(!e)return false;
+  echoRelInit(e);
+  const d=e.dis;
+  if(d.st===st)return false;
+  d.st=st;d.fx=1;d.t=0;
+  if(st==='unstable'){
+    if(!d.warned){
+      d.warned=1;
+      toast('ECHO·0'+e.slot+' — SINAL INSTÁVEL');
+      const l=pickRelationLine(e,{type:'reject',reason:'moral_violence',
+        state:echoRelState(e).id,event:'trustLow'});
+      echoSpeak(e,l.txt,'#ffd166');
+      spawnRing(e.x,e.y,'#ffd166',6,70,.4);
+    }
+  }else if(st==='fracturing'){
+    d.t=DIS.telegraph;
+    e.roleT=0;e.shieldPot=0;e.roleFx=0;      // papel suspenso já na telegrafia
+    e.fireTimer=Math.max(e.fireTimer,DIS.telegraph);
+    e.beamT=0;e.beamRamp=1;e.beamTarget=null;
+    banner('FRATURA IMINENTE','ECHO·0'+e.slot+' ESTÁ SE DESLIGANDO DE VOCÊ');
+    toast('ECHO·0'+e.slot+' — FRATURANDO');
+    shake=Math.max(shake,7);aberr=Math.max(aberr,.55);
+    spawnRing(e.x,e.y,'#ff9d3c',10,150,.7);
+    spawnShards(e.x,e.y,'#ff9d3c',12,5);
+    AUDIO.tone(150,.8,'sawtooth',.06,-30);
+    AUDIO.noise(.6,.04,520,.7,'lowpass');
+  }else if(st==='recovering'){
+    d.t=DIS.recoverDur;
+    if(e.trust<DIS.trustFloor)setEchoTrust(e,DIS.trustFloor,'dissonance_floor');
+    e.fireTimer=DIS.recoverDur;e.beamT=0;e.beamRamp=1;e.beamTarget=null;
+    e.recoil=0;e.erratic=0;e.glitchT=0;e.glitchAmp=0;
+    spawnRing(e.x,e.y,'#8ff6ff',10,180,.8);
+    spawnParticles(e.x,e.y,'#eaffff',22,340,.6,3);
+    toast('ECHO·0'+e.slot+' — REINTEGRANDO');
+    AUDIO.tone(420,.5,'sine',.05,180);
+  }else if(st==='cooldown'){
+    d.grace=DIS.graceDur;d.warned=0;
+    d.p=Math.min(d.p,REL_BALANCE.pressure.unstableOff-6);
+    d.integ=0;d.integMax=0;
+    /* CONSEQUÊNCIA + RECONCILIAÇÃO: a relação lembra a ruptura, mas o
+       jogador pode reconstruí-la — nada aqui é irreversível (§55/§56). */
+    e.rel.ap=clamp(e.rel.ap+2,0,REL_BALANCE.memCap);
+    relRememberMoment(e,'reconciliation',1);
+    e.rel.last={t:'approve',r:'reconciliation',v:1,at:Math.round(runTime*10)/10};
+    banner('DISSONÂNCIA CONTIDA','ECHO·0'+e.slot+' VOLTOU AO SEU LADO');
+    const l=pickRelationLine(e,{type:'approve',reason:'reconciliation',
+      state:echoRelState(e).id,event:'dissonanceEnd'});
+    echoSpeak(e,l.txt,'#8ff6ff');
+    spawnRing(e.x,e.y,e.hue,8,140,.6);
+  }
+  return true;
+}
+/* -------- máquina de estados (tick simples, O(1)) -------- */
+function echoDissonanceTick(e,dt){
+  if(!e||!e.dis)return;
+  const d=e.dis;
+  if(d.fx>0)d.fx=Math.max(0,d.fx-dt*1.6);
+  switch(d.st){
+    case 'stable':
+      if(d.p>=REL_BALANCE.pressure.unstableAt)echoSetDis(e,'unstable');
+      break;
+    case 'unstable':
+      if(d.p>=relFractureAt(e)){echoSetDis(e,'fracturing');break;}
+      if(d.p<REL_BALANCE.pressure.unstableOff)echoSetDis(e,'stable');
+      break;
+    case 'fracturing':
+      d.t-=dt;
+      if(d.t<=0)enterDissonance(e,{organic:true});
+      break;
+    case 'hostile':break;                 // gerido por echoHostileTick
+    case 'recovering':
+      d.t-=dt;
+      if(d.t<=0)echoSetDis(e,'cooldown');
+      break;
+    case 'cooldown':
+      d.grace-=dt;
+      if(d.grace<=0)echoSetDis(e,'stable');
+      break;
+  }
+}
+/* ---- ENTRADA NA DISSONÂNCIA (caminho único: orgânico, legado e DEV) ---- */
+function enterDissonance(e,opts){
+  if(!e)return false;
+  echoRelInit(e);
+  opts=opts||{};
+  const d=e.dis;
+  if(d.st==='hostile')return false;
+  d.count=(d.count|0)+1;
+  d.p=0;d.warned=0;
+  d.integMax=DIS.integMax;d.integ=DIS.integMax;
+  d.st='hostile';d.t=DIS.hostileDur;d.fx=1;
+  e.roleT=0;e.shieldPot=0;e.roleFx=0;      // papéis suspensos (§46)
+  e.fireTimer=.35;e.beamT=0;e.beamRamp=1;e.beamTarget=null;
+  setEchoTrust(e,0,'dissonance');
+  /* a relação REGISTRA a ruptura (memória significativa + tensão) */
+  e.rel.rj=clamp(e.rel.rj+5,0,REL_BALANCE.memCap);
+  e.rel.streak=-1;e.rel.lastRejectAt=runTime;
+  e.rel.last={t:'reject',r:'dissonance',v:-2,at:Math.round(runTime*10)/10};
+  relRememberMoment(e,'dissonance',-2);
   shake=Math.max(shake,12);aberr=Math.max(aberr,.9);
   spawnRing(e.x,e.y,'#ff2f5e',10,200,.8);
   spawnRing(e.x,e.y,'#ff4df0',6,150,1.0);
   spawnShards(e.x,e.y,'#ff2f5e',20,6);
-  banner('DISSONÂNCIA CRÍTICA','ECHO·0'+e.slot+' SE VOLTOU CONTRA VOCÊ — 12s');
+  banner('DISSONÂNCIA','ECHO·0'+e.slot+' SE VOLTOU CONTRA VOCÊ — CONTENHA A RUPTURA');
   toast('ECHO·0'+e.slot+' ESTÁ HOSTIL');
   echoReact('dissonance');
   AUDIO.tone(110,1.3,'sawtooth',.09,-40);
   AUDIO.tone(74,1.6,'square',.07,-22);
   AUDIO.noise(1.2,.06,420,.6,'lowpass');
   for(let i=0;i<6;i++)AUDIO.tone(880-i*120,.3,'square',.03,-260,i*.09);
+  return true;
+}
+/* ---- CONTENÇÃO: o jogador tem agência (§50/§51) ----
+   Dano do jogador consome a INTEGRIDADE DA RUPTURA, nunca o HP do Echo.
+   Consequência direta: o Echo hostil não pode ser morto por engano e não
+   é um inimigo econômico — zero XP, créditos, loot, abate, lifesteal,
+   status, proc de módulo ou ganho moral (§52). */
+function containEcho(e,dmg,sx,sy){
+  if(!e||!e.alive||!e.dis||e.dis.st!=='hostile')return 0;
+  const raw=+dmg;
+  if(!(raw>0))return 0;
+  const applied=Math.min(raw*DIS.containMul,DIS.containPerHit);
+  e.dis.integ=Math.max(0,e.dis.integ-applied);
+  e.dis.fx=Math.max(e.dis.fx,.55);
+  spawnParticles(e.x,e.y,'#ff9d3c',5,220,.28,2.4);
+  floatText(e.x,e.y-e.r-18,'−RUPTURA','#ffd166');
+  sfx(rand(300,380),.06,'square',.02,-180);
+  if(e.dis.integ<=0){
+    floatText(e.x,e.y-e.r-32,'RUPTURA CONTIDA','#8ff6ff');
+    echoSetDis(e,'recovering');
+  }
+  return applied;
+}
+function isHostileEcho(o){return !!(o&&o.dis&&o.dis.st==='hostile'&&o.alive);}
+/* alvo de contenção mais próximo no alcance dado (nunca inimigo comum) */
+function nearestHostileEcho(x,y,rad){
+  let best=null,bd=rad*rad;
+  for(const e of echoes){
+    if(!isHostileEcho(e))continue;
+    const d=dist2(x,y,e.x,e.y);
+    if(d<bd){bd=d;best=e;}
+  }
+  return best;
+}
+/* ---- FORÇAR RECUPERAÇÃO (usado pela contenção, DEV e fim de duração) ---- */
+function forceEchoRecovery(e){
+  if(!e||!e.dis)return false;
+  if(e.dis.st!=='hostile'&&e.dis.st!=='fracturing')return false;
+  return echoSetDis(e,'recovering');
+}
+/* ---- IA HOSTIL: versão corrompida do companheiro (§44/§45/§47) ----
+   Alvo EXCLUSIVO: o jogador. Nunca ajuda contra inimigos, nunca ativa
+   papel aliado, nunca absorve fogo inimigo em favor do jogador. */
+function echoHostileTick(e,dt){
+  const d=e.dis;
+  d.t-=dt;
+  /* integridade da ruptura cede sozinha; cede mais rápido se o jogador
+     está sobrevivendo limpo (esquiva também é contenção) */
+  const clean=(runTime-_lastHurtAt)>=DIS.cleanAfter;
+  d.integ=Math.max(0,d.integ-DIS.integDrain*(clean?DIS.cleanBonus:1)*dt);
+  if(d.t<=0||d.integ<=0){echoSetDis(e,'recovering');return;}
+  if(e.recoil>0)e.recoil=Math.max(0,e.recoil-dt*7);
+  if(e.beamT>0)e.beamT-=dt;
+  const prof=hostileProfile(e);
+  const dx=player.x-e.x,dy=player.y-e.y,dd=Math.hypot(dx,dy)||1;
+  let want=prof.want;
+  /* OPORTUNISTA fecha o espaço quando você está vulnerável */
+  const pid=e.pers?e.pers.id:(e.ps&&e.ps.id);
+  if(pid==='opportunist'&&player.hp/player.maxHp<.45)want*=.62;
+  const dir=dd>want?1:-1;
+  e.x=clamp(e.x+(dx/dd)*prof.spd*dir*dt,e.r,ARENA.w-e.r);
+  e.y=clamp(e.y+(dy/dd)*prof.spd*dir*dt,e.r,ARENA.h-e.r);
+  const jitter=(pid==='fragmented'?78:46);
+  e.x+=(Math.random()-.5)*jitter*dt;e.y+=(Math.random()-.5)*jitter*dt;
+  e.aim=angTo(e.aim,Math.atan2(dy,dx),11*dt);
+  e.glitchT-=dt;
+  if(e.glitchT<=0){e.glitchT=rand(.15,.5);e.glitchAmp=rand(6,26);}
+  const w=clamp(e.curW|0,0,WEAPONS.length-1);
+  const def=WEAPONS[w];
+  e.fireTimer-=dt;
+  if(e.fireTimer<=0){
+    fireWeaponFrom(e,def,'enemy',e.mul*DIS.dmgMul);   // dano real: Shield → HP
+    e.fireTimer=def.interval*prof.rate;
+  }
+  if(Math.random()<dt*9)spawnParticles(e.x,e.y,'#ff2f5e',1,110,.3,2.2);
+  pushGhost(e.ghosts,e.x,e.y,16);
+  ageGhosts(e.ghosts,dt);
+}
+/* ---- TELEGRAFIA / REINTEGRAÇÃO: sem dano, sem papel, com sinal claro ---- */
+function echoRuptureTick(e,dt){
+  const d=e.dis;
+  e.roleT=0;e.shieldPot=0;
+  if(e.recoil>0)e.recoil=Math.max(0,e.recoil-dt*7);
+  e.glitchT-=dt;
+  if(e.glitchT<=0){e.glitchT=rand(.06,.22);e.glitchAmp=rand(10,34);}
+  const k=d.st==='fracturing'?1:-1;
+  const dx=player.x-e.x,dy=player.y-e.y,dd=Math.hypot(dx,dy)||1;
+  e.x=clamp(e.x-(dx/dd)*70*k*dt,e.r,ARENA.w-e.r);
+  e.y=clamp(e.y-(dy/dd)*70*k*dt,e.r,ARENA.h-e.r);
+  e.x+=(Math.random()-.5)*90*dt;e.y+=(Math.random()-.5)*90*dt;
+  e.aim=angTo(e.aim,Math.atan2(dy,dx),6*dt);
+  if(Math.random()<dt*14)
+    spawnParticles(e.x,e.y,d.st==='fracturing'?'#ff9d3c':'#8ff6ff',1,150,.3,2.4);
+  pushGhost(e.ghosts,e.x,e.y,16);
+  ageGhosts(e.ghosts,dt);
 }
 function dissolveEcho(e,reason){
-  e.alive=false;e.hostile=false;
+  e.alive=false;
+  if(e.dis){e.dis.st='stable';e.dis.t=0;e.dis.integ=0;e.dis.grace=0;}
   shake=Math.max(shake,10);
   spawnShards(e.x,e.y,'#ff2f5e',26,7);
   spawnParticles(e.x,e.y,'#ff8095',40,460,.9,4);
@@ -3603,7 +4448,7 @@ function echoSpeak(e,txt,color){
 function echoReact(event,data){
   if(!echoes.length)return;
   if(_echoSpeakCd>0)return;
-  const live=echoes.filter(e=>e.alive&&!e.hostile);
+  const live=echoes.filter(e=>e.alive&&!e.hostile&&echoAllied(e));
   if(!live.length)return;
   const lines=ECHO_LINES[event];
   if(!lines||!lines.length)return;
@@ -3631,8 +4476,11 @@ const ECHO_ROLE=[null,
   {id:'disruptor',nm:'DISRUPTOR',c:'#ff4df0'}
 ];
 function echoRoleTick(e,dt){
-  // Eco hostil ou desconfiança total desliga o papel
-  if(!e.alive||e.hostile||trustTier(e)===0){e.roleT=0;return;}
+  /* Eco hostil (ou em qualquer etapa da ruptura) e desconfiança total
+     desligam o papel: durante a Dissonância 2.0 nem Guardião nem
+     Disruptor podem continuar ajudando o jogador (PR 10 §46). */
+  if(!e.alive||e.hostile||!echoAllied(e)||trustTier(e)===0){
+    e.roleT=0;e.shieldPot=0;return;}
   const tier=trustTier(e);
   if(e.roleFx>0)e.roleFx-=dt;
   // confiança acelera o cooldown: tier 2 = ×1.35, tier 0 = ×0.55
@@ -3664,13 +4512,20 @@ function echoRoleTick(e,dt){
       hit++;
     }
     curAttacker=prev;
+    /* PR 10: abrir caminho para o jogador é um momento de vínculo —
+       cooldown de 20s por motivo e trustMul baixo (§27). */
+    if(hit>=3){
+      const rr=evaluateEchoReaction(e,{kind:'disruption'});
+      const ap=applyEchoReaction(e,rr,{trustMul:.35});
+      if(ap)relFeedback(e,ap);
+    }
     if(hit)echoSpeak(e,'DISTORÇÃO LIBERADA.','#ff9df7');
     aberr=Math.max(aberr,.45);
     AUDIO.tone(180,.4,'sawtooth',.04,-70);
   }
 }
 function drawEchoRole(e){
-  if(!e.alive||e.hostile)return;
+  if(!e.alive||e.hostile||!echoAllied(e))return;
   if(e.slot===1&&e.roleT>0){
     // campo de cobertura ligando o Guardião ao jogador
     const k=clamp(e.roleT/4.2,0,1);
@@ -4579,15 +5434,18 @@ function openEvent(kind){
   else renderAmbush();
   sfx(300,.35,'sine',.05,-120);
 }
+/* PR 10: a prévia usa EXATAMENTE o avaliador de produção (leitura pura,
+   nada é aplicado). Dois Ecos podem mostrar veredictos opostos. */
 function echoOpinion(vec){
-  const dec=moralDom({comp:vec[0]*3,greed:vec[1]*3,viol:vec[2]*3});
   let out='';
   for(const e of echoes){
-    if(!e.alive)continue;
-    if(dec==='neutro'||e.dom==='neutro')continue;
-    const ok=dec===e.dom;
+    if(!e.alive||!echoAllied(e))continue;
+    const r=evaluateEchoReaction(e,{kind:'moral',
+      vec:{comp:vec[0],greed:vec[1],viol:vec[2]}});
+    if(!r.value)continue;
+    const ok=r.value>0,strong=Math.abs(r.value)>=2;
     out+='<div class="cmoral" style="color:'+(ok?'#8ff6ff':'#ff8095')+'">ECHO·0'+e.slot+
-      (ok?' APROVA (+CONFIANÇA)':' REPUDIA (−CONFIANÇA)')+'</div>';
+      (ok?(strong?' RECONHECE':' APROVA'):(strong?' REJEITA':' DIVERGE'))+'</div>';
   }
   return out;
 }
@@ -4823,7 +5681,7 @@ function renderVault(){
    EVENTO 7 — A TRANSMISSÃO FANTASMA (interage com os Ecos)
    ===================================================================== */
 function renderGhost(){
-  const live=echoes.filter(e=>e.alive&&!e.hostile);
+  const live=echoes.filter(e=>e.alive&&echoAllied(e));
   mTitle.textContent='A TRANSMISSÃO FANTASMA';
   mDesc.innerHTML='Um sinal degradado atravessa a fratura. É a voz de uma das suas '+
     'próprias runs, pedindo reforço de sinal antes de se dissolver.<br>'+
@@ -4839,7 +5697,7 @@ function renderGhost(){
     (!live.length||player.coins<cost),()=>{
       player.coins-=cost;
       for(const e of live){
-        e.hp=e.maxHp;e.trust=clamp(e.trust+22,0,100);e.trustFx=.9;
+        e.hp=e.maxHp;changeEchoTrust(e,22,'event_signal_boost');
         spawnRing(e.x,e.y,e.hue,8,110,.7);
         floatText(e.x,e.y-34,'SINAL RESTAURADO','#8ff6ff');
       }
@@ -4855,10 +5713,12 @@ function renderGhost(){
       smMul(player,'fireRate','event.transmissao.rate','TRANSMISSÃO DRENADA +18% CADÊNCIA',1.18);
       player.upgLog.push('TRANSMISSÃO DRENADA (+18% CADÊNCIA)');
       for(const e of live){
-        e.hp=Math.max(1,e.hp*.5);e.trust=clamp(e.trust-30,0,100);e.trustFx=-.9;
+        e.hp=Math.max(1,e.hp*.5);changeEchoTrust(e,-30,'event_signal_drain');
         spawnShards(e.x,e.y,'#ff4d6d',10,5);
         floatText(e.x,e.y-34,'SINAL DRENADO','#ff8095');
-        if(e.trust<=0&&!e.hostile)enterDissonance(e);
+        /* PR 10: uma escolha isolada NUNCA rebela o Echo na hora — ela
+           empurra a pressão de ruptura, que o jogador consegue ver. */
+        relAddPressure(e,44);
       }
       spawnRing(player.x,player.y,'#ff4df0',10,140,.7);
       floatText(player.x,player.y-30,'+18% CADÊNCIA','#ff4df0');
@@ -5176,7 +6036,7 @@ child(){
       player.hp=player.maxHp=player.maxHp+18;
       for(const e of echoes){
         if(!e.alive)continue;
-        e.trust=clamp(e.trust+25,0,100);e.trustFx=.9;e.hp=e.maxHp;
+        changeEchoTrust(e,25,'event_child_guided');e.hp=e.maxHp;
       }
       spawnRing(player.x,player.y,'#8ff6ff',10,190,1);
       AUDIO.levelUp();toast('ECO GUIADO EM PAZ');
@@ -5188,8 +6048,8 @@ child(){
       smMul(player,'damage','event.residuo.damage','CONSUMIR RESÍDUO +20% DANO',1.20);
       for(const e of echoes){
         if(!e.alive)continue;
-        e.trust=clamp(e.trust-35,0,100);e.trustFx=-.9;
-        if(e.trust<=0&&!e.hostile)enterDissonance(e);
+        changeEchoTrust(e,-35,'event_child_consumed');
+        relAddPressure(e,50);   // pressão, não rebelião instantânea (PR 10)
       }
       spawnShards(beacon.x,beacon.y,'#8ff6ff',22,7);
       toast('RESÍDUO CONSUMIDO · +20% DANO');
@@ -5870,6 +6730,15 @@ function fireMelee(src,def,team,mul){
         hits++;
       }
     }
+    /* PR 10 — CONTENÇÃO corpo a corpo: o mesmo arco alcança um Echo
+       DISSONANTE, consumindo a integridade da ruptura (sem recompensa). */
+    if(src===player)for(const ec of echoes){
+      if(!isHostileEcho(ec))continue;
+      const dx=ec.x-src.x,dy=ec.y-src.y,d=Math.hypot(dx,dy);
+      if(d>reach+ec.r)continue;
+      const da=Math.abs(((Math.atan2(dy,dx)-src.aim+Math.PI*3)%TAU)-Math.PI);
+      if(da<=half+Math.atan2(ec.r,Math.max(24,d))){containEcho(ec,dmg,src.x,src.y);hits++;}
+    }
   }else{
     const dx=player.x-src.x,dy=player.y-src.y,d=Math.hypot(dx,dy);
     if(d<=reach+player.r){
@@ -5928,6 +6797,13 @@ function fireBeam(src,def,team,mul,dt){
       if(proj<0||proj>bd)continue;
       if(Math.abs(rx*uy-ry*ux)<e.r+7){bd=proj;best=e;}
     }
+    /* PR 10: o feixe também contém um Echo DISSONANTE no caminho */
+    if(src===player)for(const ec of echoes){
+      if(!isHostileEcho(ec))continue;
+      const rx=ec.x-ox,ry=ec.y-oy,proj=rx*ux+ry*uy;
+      if(proj<0||proj>bd)continue;
+      if(Math.abs(rx*uy-ry*ux)<ec.r+7){bd=proj;best=ec;}
+    }
   }else{
     const rx=player.x-ox,ry=player.y-oy,proj=rx*ux+ry*uy;
     if(proj>0&&proj<bd&&Math.abs(rx*uy-ry*ux)<player.r+7){bd=proj;best=player;}
@@ -5940,7 +6816,10 @@ function fireBeam(src,def,team,mul,dt){
   src.beamT=.09;
   const dmg=def.dmg*mul*(src.beamRamp||1);
   if(best){
-    if(team==='ally')damageEnemy(best,dmg,ox,oy,(src.beamRamp||1)>=def.rampMax*.92);
+    if(team==='ally'){
+      if(isHostileEcho(best))containEcho(best,dmg,ox,oy);
+      else damageEnemy(best,dmg,ox,oy,(src.beamRamp||1)>=def.rampMax*.92);
+    }
     else damagePlayer(dmg);
     const hx=ox+ux*bd,hy=oy+uy*bd;
     if(Math.random()<.6)spawnParticles(hx,hy,def.color,2,220,.22,2.2);
@@ -6256,6 +7135,9 @@ function damageEnemy(e,d,srcx,srcy,crit,isDot){
       if(!isP&&curAttacker&&curAttacker.syncT!==undefined){
         curAttacker.syncT=2;curAttacker.syncHits=(curAttacker.syncHits||0)+1;
       }
+      // PR 10: janela curta de sintonia → aprovação mínima, com cooldown
+      // próprio (13s). Nunca farmável e sempre menor que a plena.
+      if(!isP&&curAttacker&&curAttacker.trust!=null)echoRelResonance(curAttacker,true);
     }
     e.microTag=tag;e.microT=runTime;
   }
@@ -6340,9 +7222,9 @@ function triggerResonance(e,by,baseDmg){
     }
   }
   curAttacker=prev;
-  // recompensa a sintonia: confiança sobe no Echo participante
-  if(by&&by!==player&&by.trust!=null&&!by.hostile)
-    by.trust=clamp(by.trust+3,0,100);
+  // recompensa a sintonia: confiança sobe no Echo participante (PR 10:
+  // ponto único de mutação, com motivo e retornos decrescentes)
+  if(by&&by!==player&&by.trust!=null&&!by.hostile)echoRelResonance(by,false);
 }
 function updateResonance(dt){
   if(resoFlash>0)resoFlash=Math.max(0,resoFlash-dt*2.6);
@@ -6453,6 +7335,7 @@ function killEnemy(e){
     pickups.push({type:'med',x:e.x,y:e.y,vx:rand(-30,30),vy:rand(-30,30),v:18,t:0});
   sKill();if(e.type==='tank'){shake=Math.max(shake,7);sBoom();}
 }
+let _lastHurtAt=-999;   // PR 10: instante do último dano recebido (contenção)
 function damagePlayer(d){
   if(!(d>0))return;                          // só dano válido reinicia o escudo
   // INVULNERABILIDADE DEV — só existe com o Modo Desenvolvedor ativo
@@ -6474,10 +7357,24 @@ function damagePlayer(d){
   // GUARDIÃO (Eco·01): barreira ativa reduz dano recebido
   let dmgRed=0;
   for(const e of echoes){
-    if(e.alive&&!e.hostile&&e.slot===1&&e.roleT>0)dmgRed+=(e.shieldPot||0);
+    if(e.alive&&!e.hostile&&echoAllied(e)&&e.slot===1&&e.roleT>0)dmgRed+=(e.shieldPot||0);
   }
   const real=d*(1-Math.min(.5,dmgRed))*player.dmgTakenMul*mEff.playerDmgTaken;
   if(!(real>0))return;
+  _lastHurtAt=runTime;                      // PR 10: janela de "sobreviveu limpo"
+  /* PR 10: o Guardião cobrindo um golpe relevante é um momento de vínculo.
+     Cooldown de 20s por motivo + trustMul baixo — a barreira automática
+     JAMAIS vira farm de confiança (§26). */
+  if(dmgRed>0&&d>=8){
+    for(const e of echoes){
+      if(e.alive&&echoAllied(e)&&e.slot===1&&e.roleT>0&&(e.shieldPot||0)>0){
+        const rr=evaluateEchoReaction(e,{kind:'protection'});
+        const ap=applyEchoReaction(e,rr,{trustMul:.35});
+        if(ap)relFeedback(e,ap);
+        break;
+      }
+    }
+  }
   if(runSt)runSt.dt+=Math.min(real,9999);   // PR 8: dano recebido (estilo de troca)
   /* ---- ESCUDO DO OPERADOR: absorve dano antes da Integridade ----
      O dano restante (após Shield) segue exatamente o pipeline antigo:
@@ -6557,7 +7454,7 @@ function regenPlayerShield(p,dt){
    (independente de FPS). Fica SUSPENSO durante a Dissonância
    (e.hostile===true); o escudo restante ainda absorve dano. */
 function regenEchoShield(e,dt){
-  if(!e.alive||e.hostile)return;                  // suspenso durante Dissonância
+  if(!e.alive||e.hostile||!echoAllied(e))return;  // suspenso durante a ruptura
   if(e.shieldDelayT>0){e.shieldDelayT=Math.max(0,e.shieldDelayT-dt);return;}
   if(e.shield>=e.shieldMax)return;
   e.shield=Math.min(e.shieldMax,e.shield+e.shieldMax*e.shieldRegen*dt);
@@ -7569,7 +8466,7 @@ function updateBoss(e,dt){
         }
       }
       for(const ec of echoes){                 // feixes também ferem os Ecos
-        if(!ec.alive)continue;
+        if(!ec.alive||!echoAllied(ec))continue;  // PR 10: nunca durante a ruptura
         const ex=ec.x-e.x,ey=ec.y-e.y,pr=ex*ux+ey*uy;
         if(pr>0&&pr<e.beamLen&&Math.abs(ex*uy-ey*ux)<12+ec.r&&Math.random()<dt*2.2)
           damageEcho(ec,7);
@@ -7944,48 +8841,14 @@ function enemiesNear(x,y,rad){
 }
 function updateEcho(e,dt){
   if(!e.alive)return;
-  regenEchoShield(e,dt);            // escudo regenera (suspenso durante Dissonância)
+  regenEchoShield(e,dt);            // escudo regenera (suspenso durante a ruptura)
   if(e.trustFx)e.trustFx*=Math.pow(.12,dt);
-  /* ---------- ESTADO HOSTIL (Dissonância) ---------- */
-  if(e.hostile){
-    e.hostileT-=dt;
-    if(e.hostileT<=0){
-      e.hostile=false;e.hostileT=0;
-      e.trust=Math.max(e.trust,34);
-      e.fireTimer=0;e.beamT=0;e.beamRamp=1;e.beamTarget=null;
-      e.recoil=0;e.erratic=0;e.glitchT=0;e.glitchAmp=0;
-      banner('DISSONÂNCIA TERMINADA','ECHO·0'+e.slot+' RETORNOU AO SEU LADO');
-      toast('ECHO·0'+e.slot+' NÃO É MAIS HOSTIL');
-      echoReact('dissonanceEnd');
-      return;
-    }
-    if(e.recoil>0)e.recoil=Math.max(0,e.recoil-dt*7);
-    if(e.beamT>0)e.beamT-=dt;
-    // alveja o inimigo OU o jogador — o que estiver mais perto
-    let tgt=nearestEnemy(e.x,e.y,560);
-    const dp=Math.hypot(player.x-e.x,player.y-e.y);
-    if(!tgt||dp<Math.hypot(tgt.x-e.x,tgt.y-e.y))tgt={x:player.x,y:player.y,isPlayer:true};
-    const dx=tgt.x-e.x,dy=tgt.y-e.y,dd=Math.hypot(dx,dy)||1;
-    const want=190;
-    const dir=dd>want?1:-1;
-    e.x=clamp(e.x+(dx/dd)*250*dir*dt,e.r,ARENA.w-e.r);
-    e.y=clamp(e.y+(dy/dd)*250*dir*dt,e.r,ARENA.h-e.r);
-    e.x+=(Math.random()-.5)*46*dt;e.y+=(Math.random()-.5)*46*dt;
-    e.aim=angTo(e.aim,Math.atan2(dy,dx),11*dt);
-    e.glitchT-=dt;
-    if(e.glitchT<=0){e.glitchT=rand(.15,.5);e.glitchAmp=rand(6,26);}
-    const w=clamp(e.curW|0,0,WEAPONS.length-1);
-    const def=WEAPONS[w];
-    e.fireTimer-=dt;
-    if(e.fireTimer<=0){
-      fireWeaponFrom(e,def,'enemy',e.mul*.9);   // dano real contra o jogador
-      e.fireTimer=def.interval*1.25;
-    }
-    if(Math.random()<dt*9)spawnParticles(e.x,e.y,'#ff2f5e',1,110,.3,2.2);
-    pushGhost(e.ghosts,e.x,e.y,16);
-    ageGhosts(e.ghosts,dt);
-    return;
-  }
+  /* PR 10: relação + máquina de estados da Dissonância (O(1) por tick) */
+  relTick(e,dt);
+  const _dst=e.dis?e.dis.st:'stable';
+  /* ---------- RUPTURA (Dissonância 2.0) — uma fonte de verdade ---------- */
+  if(_dst==='fracturing'||_dst==='recovering'){echoRuptureTick(e,dt);return;}
+  if(_dst==='hostile'){echoHostileTick(e,dt);return;}
   const tr=e.data.trail,last=tr.length-1;
   while(e.pi<last&&tr[e.pi+1][0]<=runTime)e.pi++;
   const cp=tr[e.pi],nx=tr[Math.min(e.pi+1,last)];
@@ -8484,6 +9347,20 @@ function updateProjectiles(dt){
           break;
         }
       }
+      /* PR 10 — CONTENÇÃO: se o disparo não acertou inimigo algum, ele
+         ainda pode atingir um Echo DISSONANTE. O dano vai para a
+         integridade da ruptura (nunca para o HP do Echo) e não gera
+         XP, créditos, loot, abate, lifesteal, status ou moral. */
+      if(!dead&&p.owner===player){
+        for(const ec of echoes){
+          if(!isHostileEcho(ec))continue;
+          const rr=ec.r+p.r;
+          if(dist2(p.x,p.y,ec.x,ec.y)<rr*rr){
+            containEcho(ec,p.dmg,p.x,p.y);
+            dead=true;break;
+          }
+        }
+      }
     }else{
       // REBOBINADOR CINÉTICO: dash reflete projéteis inimigos
       if(player.dashReflect&&player.dashT>0&&
@@ -8501,8 +9378,13 @@ function updateProjectiles(dt){
         const rr=player.r+p.r;
         if(dist2(p.x,p.y,player.x,player.y)<rr*rr){damagePlayer(p.dmg);dead=true;}
       }
-      if(!dead)for(const ec of echoes){ // Ecos absorvem projéteis inimigos
+      if(!dead)for(const ec of echoes){ // Ecos ALIADOS absorvem projéteis inimigos
         if(!ec.alive||ec===p.owner)continue;   // não absorve o próprio disparo
+        /* PR 10: um Echo em ruptura não serve de escudo para você (e um
+           disparo de Echo hostil nunca fere o outro Echo — Echo↔Echo é
+           assunto do PR 14). */
+        if(!echoAllied(ec))continue;
+        if(p.owner&&p.owner!==player&&p.owner.slot)continue;
         const rr=ec.r+p.r+3;
         if(dist2(p.x,p.y,ec.x,ec.y)<rr*rr){damageEcho(ec,p.dmg);dead=true;break;}
       }
@@ -8966,6 +9848,94 @@ function activateSlot(i){
      modificadores permanentes (ids estáveis) + campos de estado — nunca
      os valores finais —, então restaurar não duplica multiplicadores.
    ===================================================================== */
+
+/* =====================================================================
+   PR 10 — PERSISTÊNCIA DA RELAÇÃO (checkpoint / Continue Run / slots)
+   ---------------------------------------------------------------------
+   ESCOPO (decisão documentada em ECHO_RELATIONSHIP.md):
+   · A relação nasce e vive dentro da RUN — exatamente como a confiança
+     sempre viveu — e é persistida no CHECKPOINT do slot ativo. Logo:
+       – Continue Run devolve relação, memórias e pressão intactas;
+       – fechar e reabrir o jogo NÃO zera a pressão (§59);
+       – cada SAVE SLOT tem a sua própria relação, sem contaminação (§60),
+         porque o checkpoint mora em smRoot.slots[n].run.
+   · Relação ATRAVESSANDO runs é PR 14 (Echos entre runs) — não é feito
+     aqui de propósito.
+   · Estado volátil da ruptura nunca é gravado como tal: um Echo salvo em
+     telegrafia/hostil/reintegração retorna em GRAÇA, com a pressão
+     preservada mas abaixo do limiar — estado seguro e coerente (§58).
+   ===================================================================== */
+function relPackEcho(e){
+  if(!e||!e.rel)return null;
+  const r=e.rel;
+  const o={ap:Math.round(r.ap*10)/10,rj:Math.round(r.rj*10)/10,sk:r.streak|0};
+  if(r.last)o.l={t:r.last.t,r:r.last.r,v:r.last.v|0};
+  if(r.mm&&r.mm.length)o.mm=r.mm.slice(-REL_BALANCE.momentsMax)
+    .map(m=>({k:m.k,v:m.v|0,w:m.w|0}));
+  return o;
+}
+function disPackEcho(e){
+  if(!e||!e.dis)return null;
+  const d=e.dis;
+  return {p:Math.round(d.p*10)/10,c:d.count|0,
+    g:Math.round(Math.max(0,d.grace)*10)/10,st:d.st,
+    /* marcador: o Echo estava em ruptura no momento do checkpoint */
+    rp:echoInRupture(e)?1:0};
+}
+/* Restauração + MIGRAÇÃO. Echo sem payload PR 10 (save antigo) recebe
+   memória vazia e estado derivado do trust atual — nada é apagado:
+   personality, traits, trust, runData e snapshot moral seguem intactos. */
+function relUnpackEcho(e,rel,dis){
+  if(!e)return e;
+  echoRelInit(e);
+  const R=REL_BALANCE;
+  if(rel&&typeof rel==='object'){
+    e.rel.ap=clamp(+rel.ap||0,0,R.memCap);
+    e.rel.rj=clamp(+rel.rj||0,0,R.memCap);
+    e.rel.streak=clamp(rel.sk|0,-99,99);
+    if(rel.l&&typeof rel.l==='object')
+      e.rel.last={t:String(rel.l.t||'neutral'),r:String(rel.l.r||'none'),
+        v:clamp(rel.l.v|0,-2,2),at:0};
+    if(Array.isArray(rel.mm))
+      e.rel.mm=rel.mm.filter(m=>m&&typeof m==='object')
+        .slice(-R.momentsMax)
+        .map(m=>({k:String(m.k||'none'),v:clamp(m.v|0,-2,2),w:m.w|0,t:0}));
+  }else{
+    /* FALLBACK de Echo legado: relação derivada apenas da confiança —
+       aproxima o estado sem inventar histórico. */
+    e.rel.ap=0;e.rel.rj=0;e.rel.streak=0;e.rel.last=null;e.rel.mm=[];
+  }
+  e.rel.seen={};e.rel.acc=0;
+  e.rel.lastRejectAt=-999;e.rel.lastReactAt=-999;e.rel.lastFbAt=-999;
+  if(dis&&typeof dis==='object'){
+    e.dis.p=clamp(+dis.p||0,0,R.pressure.max);
+    e.dis.count=Math.max(0,dis.c|0);
+    const wasRupture=!!dis.rp||dis.st==='hostile'||
+      dis.st==='fracturing'||dis.st==='recovering';
+    if(wasRupture){
+      /* nunca retomamos no meio da animação: volta em GRAÇA, com a
+         pressão preservada porém abaixo do limiar (nada de exploit de
+         reload, nada de rebelião instantânea ao carregar). */
+      e.dis.st='cooldown';
+      e.dis.grace=Math.max(8,Math.min(DIS.graceDur,+dis.g||0));
+      e.dis.p=Math.min(e.dis.p,R.pressure.unstableOff-6);
+    }else{
+      e.dis.st=(dis.st==='unstable')?'unstable':
+        (dis.st==='cooldown'?'cooldown':'stable');
+      e.dis.grace=(e.dis.st==='cooldown')?Math.max(0,+dis.g||0):0;
+    }
+  }else{
+    /* MIGRAÇÃO: pressão inicial derivada da desconfiança já existente —
+       um Echo salvo com 10% de confiança volta tenso, não zerado. */
+    e.dis.p=e.trust<R.pressure.lowTrust
+      ? Math.round((1-e.trust/R.pressure.lowTrust)*R.pressure.unstableAt*.8)
+      : 0;
+    e.dis.count=0;e.dis.st='stable';e.dis.grace=0;
+  }
+  e.dis.t=0;e.dis.integ=0;e.dis.integMax=0;e.dis.fx=0;
+  e.dis.warned=(e.dis.st==='unstable')?1:0;
+  return e;
+}
 function smBuildCheckpoint(reason,waveOverride){
   const w=clamp(Math.round(waveOverride!=null?waveOverride:wave)||1,1,MAX_WAVE);
   return {
@@ -8979,8 +9949,12 @@ function smBuildCheckpoint(reason,waveOverride){
     st:runStSnapshot(),      // PR 8: contadores de personalidade sobrevivem ao resume
     charIdx:charSel,
     moral:{comp:moral.comp|0,greed:moral.greed|0,viol:moral.viol|0},
-    /* estado dos Ecos desta run (confiança evolui durante o ciclo) */
-    echoes:echoes.map(e=>({trust:clamp(Math.round(e.trust),0,100),alive:!!e.alive})),
+    /* estado dos Ecos desta run (confiança + relação evoluem no ciclo).
+       PR 10: rel/dis são COMPACTOS e, por design, o estado volátil da
+       ruptura (animação, projéteis, posição, cooldown visual) NÃO é
+       gravado — só o que é relevante para a coerência (§58). */
+    echoes:echoes.map(e=>({trust:clamp(Math.round(e.trust),0,100),alive:!!e.alive,
+      rel:relPackEcho(e),dis:disPackEcho(e)})),
     /* snapshot anti-duplicação: prog volta ao estado do checkpoint ao
        retomar, então um trecho de onda repetido nunca conta duas vezes */
     prog:smClone(prog),
@@ -9184,8 +10158,11 @@ function resumeRun(){
     cp.echoes.forEach((s,i)=>{
       const e=echoes[i];
       if(!e)return;
-      e.trust=clamp(num(s.trust,e.trust),0,100);
+      setEchoTrust(e,clamp(num(s.trust,e.trust),0,100),'checkpoint_restore');
       if(s.alive===false){e.alive=false;}
+      /* PR 10: relação/pressão voltam idênticas; Echos de checkpoints
+         PRÉ-PR10 (sem rel/dis) recebem fallback derivado do trust. */
+      relUnpackEcho(e,s.rel,s.dis);
     });
   buildWeaponHUD();
   cam.x=player.x;cam.y=player.y;
@@ -9319,6 +10296,7 @@ function startRun(){
   /* Se o Modo Desenvolvedor já estiver ligado quando a run começa, ela
      nasce marcada como debug. Caso contrário, começa limpa. */
   devTainted=!!DEV_MODE;
+  _lastHurtAt=-999;                 // PR 10: janela de contenção começa limpa
   resetRunWorld();
   player=makePlayer();
   echoes=echoQueue.map((d,i)=>makeEcho(d,i+1));
@@ -9737,33 +10715,69 @@ function drawShip(x,y,aim,r,color,alpha,glitchy,wi,pal){
 }
 function drawEchoEntity(e){
   if(!e.alive)return;
-  /* ---------- ECHO HOSTIL (Dissonância) ---------- */
-  if(e.hostile){
-    const warn=.5+.5*Math.sin(runTime*16);
+  /* ===================================================================
+     VISUAL DERIVADO DO ESTADO LÓGICO (PR 10 §97)
+     Não existe estado visual próprio: tudo lê e.dis.st, então imagem e
+     regra nunca dessincronizam.
+       FRATURANDO  → laranja, glitch crescente, anel fechando (sem dano)
+       DISSONANTE  → vermelho hostil, contorno pulsante, medidor de ruptura
+       REINTEGRANDO→ ciano, colapso e reconstrução (sem dano)
+       INSTÁVEL    → aliado, mas com cintilação e rótulo de alerta
+     =================================================================== */
+  const _ds=(e.dis&&e.dis.st)||'stable';
+  if(_ds==='fracturing'||_ds==='hostile'||_ds==='recovering'){
+    const hostile=_ds==='hostile';
+    const frac=_ds==='fracturing';
+    const col=DIS_COLOR[_ds];
+    const pulse=.5+.5*Math.sin(runTime*(hostile?16:22));
+    // rastro corrompido
     for(let i=0;i<e.ghosts.length;i++){
       const g=e.ghosts[i];
-      ctx.globalAlpha=(i/e.ghosts.length)*.22;ctx.fillStyle='#ff2f5e';
+      ctx.globalAlpha=(i/e.ghosts.length)*(hostile?.22:.16);
+      ctx.fillStyle=col;
       ctx.beginPath();ctx.arc(g.x,g.y,e.r*.8,0,TAU);ctx.fill();
     }
     ctx.globalAlpha=1;
+    const jit=frac?(3+pulse*5):(hostile?4:2);
     ctx.save();ctx.globalCompositeOperation='lighter';
-    drawUnit(e.x+rand(-4,4),e.y+rand(-2,2),e.aim,e.r,{
-      body:'rgba(120,10,30,.95)',dark:'rgba(50,2,12,.98)',edge:'#ff2f5e',
-      glow:'#ff2f5e',visor:'#ffe0e6',head:'rgba(110,8,26,.95)',wep:'#ff2f5e'
-    },{alpha:.9,glitch:true,wi:e.curW|0,walk:.8,recoil:e.recoil||0,phase:e.seed});
+    drawUnit(e.x+rand(-jit,jit),e.y+rand(-jit*.5,jit*.5),e.aim,e.r,{
+      body:hostile?'rgba(120,10,30,.95)':(frac?'rgba(120,64,10,.92)':'rgba(30,96,124,.9)'),
+      dark:'rgba(50,2,12,.98)',edge:col,glow:col,
+      visor:hostile?'#ffe0e6':'#eaffff',
+      head:hostile?'rgba(110,8,26,.95)':'rgba(70,60,80,.9)',wep:col
+    },{alpha:hostile?.9:.78,glitch:true,wi:e.curW|0,walk:.8,
+       recoil:e.recoil||0,phase:e.seed});
     ctx.restore();
-    // anel de alerta hostil + contagem regressiva
     ctx.save();
-    ctx.strokeStyle='rgba(255,47,94,'+(.45+warn*.45)+')';ctx.lineWidth=2;
+    // anel de estado: fecha na telegrafia, pulsa na hostilidade, abre no retorno
+    const prog=e.dis.t>0?clamp(e.dis.t/(frac?DIS.telegraph:
+      (hostile?DIS.hostileDur:DIS.recoverDur)),0,1):0;
+    const ringR=frac?(e.r+14+prog*30):(_ds==='recovering'?(e.r+14+(1-prog)*26):(e.r+15));
+    ctx.strokeStyle=col;ctx.globalAlpha=hostile?(.45+pulse*.45):(.35+pulse*.5);
+    ctx.lineWidth=2;
     ctx.setLineDash([6,7]);ctx.lineDashOffset=-runTime*26;
-    ctx.beginPath();ctx.arc(e.x,e.y,e.r+15,0,TAU);ctx.stroke();
+    ctx.beginPath();ctx.arc(e.x,e.y,ringR,0,TAU);ctx.stroke();
     ctx.setLineDash([]);
+    // contorno de ruptura (torna o Echo reconhecível instantaneamente)
+    ctx.globalAlpha=.30+pulse*.35;ctx.lineWidth=3;
+    ctx.beginPath();ctx.arc(e.x,e.y,e.r+5,0,TAU);ctx.stroke();
+    ctx.globalAlpha=1;
     ctx.font='11px Consolas,monospace';ctx.textAlign='center';
-    ctx.fillStyle='#ff8095';
-    ctx.fillText('⚠ HOSTIL '+e.hostileT.toFixed(1)+'s',e.x,e.y-e.r-16);
-    ctx.fillStyle='rgba(0,0,0,.45)';ctx.fillRect(e.x-16,e.y-e.r-10,32,3);
-    ctx.fillStyle='#ff2f5e';
-    ctx.fillRect(e.x-16,e.y-e.r-10,32*clamp(e.hostileT/12,0,1),3);
+    ctx.fillStyle=col;
+    ctx.fillText('ECHO·0'+e.slot+' · '+DIS_LABEL[_ds],e.x,e.y-e.r-26);
+    if(hostile){
+      // MEDIDOR DE RUPTURA: o jogador vê a contenção progredindo
+      const k=e.dis.integMax>0?clamp(e.dis.integ/e.dis.integMax,0,1):0;
+      ctx.fillStyle='rgba(255,128,149,.9)';
+      ctx.fillText('RUPTURA '+Math.round(k*100)+'%',e.x,e.y-e.r-15);
+      ctx.fillStyle='rgba(0,0,0,.45)';ctx.fillRect(e.x-20,e.y-e.r-10,40,4);
+      ctx.fillStyle='#ff2f5e';ctx.fillRect(e.x-20,e.y-e.r-10,40*k,4);
+      ctx.strokeStyle='rgba(255,47,94,.55)';ctx.lineWidth=1;
+      ctx.strokeRect(e.x-20.5,e.y-e.r-10.5,41,5);
+    }else{
+      ctx.fillStyle='rgba(255,209,102,.9)';
+      ctx.fillText(frac?'NÃO CAUSA DANO AINDA':'SEM HOSTILIDADE',e.x,e.y-e.r-15);
+    }
     ctx.restore();
     return;
   }
@@ -9813,6 +10827,20 @@ function drawEchoEntity(e){
   ctx.fillText('ECHO·0'+e.slot+' · '+DOM_NAME[e.dom],e.x,e.y-e.r-24);
   ctx.fillStyle=tier===2?'#8ff6ff':(tier===1?'rgba(200,220,230,.7)':'#ff8095');
   ctx.fillText('CONF '+TRUST_NAME[tier]+(tier===0&&e.ambush?' · DESERTANDO':''),e.x,e.y-e.r-15);
+  /* PR 10 — TELEGRAFIA: antes de qualquer ruptura o Echo já avisa. */
+  if(e.dis&&e.dis.st==='unstable'){
+    const fl=.45+.55*Math.abs(Math.sin(runTime*7));
+    ctx.save();
+    ctx.globalAlpha=fl;
+    ctx.fillStyle=DIS_COLOR.unstable;
+    ctx.fillText('⚠ INSTÁVEL '+Math.round(relPressurePct(e)*100)+'%',e.x,e.y-e.r-35);
+    ctx.strokeStyle=DIS_COLOR.unstable;ctx.lineWidth=1.4;ctx.globalAlpha=fl*.5;
+    ctx.setLineDash([4,6]);ctx.lineDashOffset=runTime*18;
+    ctx.beginPath();ctx.arc(e.x,e.y,e.r+11,0,TAU);ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+    if(Math.random()<.05)spawnParticles(e.x,e.y,DIS_COLOR.unstable,1,90,.25,2);
+  }
   if(e.trustFx){
     ctx.globalAlpha=Math.abs(e.trustFx);
     ctx.strokeStyle=e.trustFx>0?'#8ff6ff':'#ff4d6d';ctx.lineWidth=2;
@@ -10919,6 +11947,19 @@ const LORE_WORLD={
        'o lugar dela. <b>O Paradoxo Eterno</b> acontece quando suas '+
        'contradições foram tão extremas que ambos os finais ocorrem ao '+
        'mesmo tempo, em superposição permanente.'},
+    {t:'MEMÓRIA E RELAÇÃO',c:'#8ff6ff',
+     d:'Um Eco não é um dispositivo: é uma versão sua que <b>lembra quem '+
+       'era</b>. Cada decisão importante que você toma é comparada com a '+
+       'run que o gerou — e ele aprova, discorda ou ignora. Ecos '+
+       'diferentes chegam a veredictos diferentes sobre a mesma escolha, '+
+       'porque a referência de cada um é a própria memória.<br><br>'+
+       'A <b>confiança</b> evolui em passos pequenos: nenhuma escolha '+
+       'isolada define o vínculo, mas a insistência define. Divergir não '+
+       'é um erro — é uma história diferente, com falas mais tensas e uma '+
+       'assinatura menos estável. Quando a divergência se acumula, o sinal '+
+       'do Eco começa a <b>oscilar</b> antes de romper. Esse aviso é real: '+
+       'quem observa consegue evitar a ruptura, contê-la quando acontece e '+
+       'reconstruir a relação depois.'},
     {t:'PONTOS DE MEMÓRIA',c:'#c9a9ff',
      d:'Um resíduo consegue atravessar a fratura intacto: a memória do '+
        'que você aprendeu. Ela não devolve armas nem créditos, mas ajusta '+
@@ -12414,6 +13455,137 @@ const DEV={
     return true;
   },
 
+/* ------------------- PLAYER ↔ ECHO (PR 10) -------------------------
+   Todas as ferramentas passam pelos MESMOS caminhos de produção
+   (evaluateEchoReaction / applyEchoReaction / echoSetDis / changeEchoTrust).
+   Todas contaminam a run (devTaint) — nenhum teste artificial vira save,
+   progresso ou Echo legítimo. Os INSPETORES são leitura pura. */
+  /* leitura pura: nada é escrito, nada é contaminado */
+  relationOf(slot){
+    const e=DEV.echo(slot);
+    if(!e||!e.rel||!e.dis)return null;
+    const st=echoRelState(e);
+    return {
+      slot:e.slot,
+      personality:e.pers?e.pers.id:(e.ps&&e.ps.id)||null,
+      traits:(e.ps&&Array.isArray(e.ps.tr))?e.ps.tr.slice():[],
+      moralOrigin:{c:(e.moralSrc&&e.moralSrc.comp)|0,
+        g:(e.moralSrc&&e.moralSrc.greed)|0,v:(e.moralSrc&&e.moralSrc.viol)|0},
+      trust:Math.round(e.trust*10)/10,
+      approval:Math.round(e.rel.ap*10)/10,
+      rejection:Math.round(e.rel.rj*10)/10,
+      streak:e.rel.streak|0,
+      score:Math.round(echoRelScore(e)*10)/10,
+      state:st.id,stateLabel:st.lab,
+      lastReaction:e.rel.last?Object.assign({},e.rel.last):null,
+      lastTrust:e.rel.lastTrust?Object.assign({},e.rel.lastTrust):null,
+      pressure:Math.round(e.dis.p*10)/10,
+      pressurePct:Math.round(relPressurePct(e)*100),
+      fractureAt:relFractureAt(e),
+      dissonance:e.dis.st,dissonanceLabel:DIS_LABEL[e.dis.st],
+      timer:Math.round(Math.max(0,e.dis.t)*100)/100,
+      grace:Math.round(Math.max(0,e.dis.grace)*10)/10,
+      integrity:Math.round(e.dis.integ),integrityMax:Math.round(e.dis.integMax),
+      count:e.dis.count|0,
+      moments:(e.rel.mm||[]).map(m=>({k:m.k,v:m.v,w:m.w,txt:relMomentText(m)}))
+    };
+  },
+  /* prévia determinística de como CADA Echo julgaria um vetor moral */
+  previewReaction(c,g,v){
+    const out=[];
+    for(const e of echoes){
+      if(!e||!e.alive)continue;
+      const r=evaluateEchoReaction(e,{kind:'moral',
+        vec:{comp:Number(c)||0,greed:Number(g)||0,viol:Number(v)||0}});
+      out.push({slot:e.slot,personality:e.pers?e.pers.id:null,
+        value:r.value,type:r.type,reason:r.reason,
+        intensity:r.intensity,align:r.align});
+    }
+    return out;
+  },
+  /* PRESETS DE RELAÇÃO — trust + memória + pressão coerentes entre si */
+  relationPreset(kind){
+    if(!devReady())return false;
+    const K=String(kind||'neutral');
+    let n=0;
+    for(const e of echoes){
+      if(!e)continue;
+      echoRelInit(e);
+      if(K==='high'){setEchoTrust(e,88,'dev_preset');e.rel.ap=18;e.rel.rj=1;
+        e.rel.streak=4;e.dis.p=0;}
+      else if(K==='low'){setEchoTrust(e,14,'dev_preset');e.rel.ap=1;e.rel.rj=20;
+        e.rel.streak=-4;e.dis.p=70;}
+      else{setEchoTrust(e,55,'dev_preset');e.rel.ap=0;e.rel.rj=0;
+        e.rel.streak=0;e.dis.p=0;}
+      e.rel.seen={};e.rel.last=null;
+      n++;
+    }
+    devTaint();devLog('RELAÇÃO PRESET '+K.toUpperCase()+' ('+n+' ECHO)');
+    return n>0;
+  },
+  /* pressão em % do limiar real do Echo */
+  setPressure(slot,pct){
+    if(!devReady())return false;
+    const e=DEV.echo(slot);if(!e)return false;
+    echoRelInit(e);
+    const k=clamp(Number(pct)||0,0,100)/100;
+    e.dis.p=k*relFractureAt(e);
+    devTaint();devLog('ECHO·0'+e.slot+' PRESSÃO = '+Math.round(k*100)+'%');
+    return Math.round(e.dis.p*10)/10;
+  },
+  /* força uma reação PELO caminho real (avaliação → aplicação) */
+  forceReaction(slot,type){
+    if(!devReady())return false;
+    const e=DEV.echo(slot);if(!e||!e.alive)return false;
+    echoRelInit(e);
+    const approve=String(type)==='approve';
+    const r={value:approve?2:-2,type:approve?'approve':'reject',
+      reason:approve?'moral_compassion':'moral_violence',intensity:1,align:approve?1:-1};
+    const ap=applyEchoReaction(e,r,{force:true});
+    if(!ap)return false;
+    relFeedback(e,ap);
+    const l=pickRelationLine(e,{type:r.type,reason:r.reason,state:echoRelState(e).id});
+    echoSpeak(e,l.txt,approve?'#8ff6ff':'#ff8095');
+    devTaint();devLog('REAÇÃO FORÇADA '+r.type+' ('+ap.trust.toFixed(1)+' CONF)');
+    return ap;
+  },
+  /* leva o Echo diretamente a QUALQUER estado da máquina (debug visual) */
+  disState(slot,st){
+    if(!devReady())return false;
+    const e=DEV.echo(slot);if(!e||!e.alive)return false;
+    echoRelInit(e);
+    const S=String(st);
+    if(DIS_LABEL[S]==null)return false;
+    if(S==='hostile'){
+      if(e.dis.st==='hostile')return false;
+      enterDissonance(e);
+    }else if(S==='fracturing'){
+      if(echoInRupture(e))return false;
+      e.dis.p=relFractureAt(e);
+      echoSetDis(e,'fracturing');
+    }else if(S==='recovering'){
+      if(e.dis.st!=='hostile'&&e.dis.st!=='fracturing')e.dis.st='hostile';
+      echoSetDis(e,'recovering');
+    }else if(S==='unstable'){
+      e.dis.p=Math.max(e.dis.p,REL_BALANCE.pressure.unstableAt);
+      e.dis.st='stable';e.dis.warned=0;echoSetDis(e,'unstable');
+    }else if(S==='cooldown'){
+      echoSetDis(e,'cooldown');
+    }else{
+      e.dis.st='stable';e.dis.t=0;e.dis.grace=0;e.dis.integ=0;e.dis.integMax=0;
+    }
+    devTaint();devLog('ECHO·0'+e.slot+' ESTADO = '+DIS_LABEL[e.dis.st]);
+    return e.dis.st;
+  },
+  /* recuperação imediata pelo caminho real (contenção completa) */
+  forceRecovery(slot){
+    if(!devReady())return false;
+    const e=DEV.echo(slot);if(!e)return false;
+    if(!forceEchoRecovery(e))return false;
+    devTaint();devLog('RECUPERAÇÃO FORÇADA · ECHO·0'+e.slot);
+    return true;
+  },
+
 /* ---------------------- ECHO PERSONALITY (PR 8) ---------------------- */
   /* Previsão determinística: aplica o MESMO pipeline de produção
      (build→score→classify) às métricas vivas da run atual. Não grava
@@ -12791,6 +13963,58 @@ function devRender(){
     devBtn('diss1','DISSONÂNCIA 01','warn')+devBtn('diss2','DISSONÂNCIA 02','warn')+
     devBtn('dissend','ENCERRAR DISSONÂNCIA')+'</div>';
 
+  /* ---- PLAYER ↔ ECHO (PR 10): inspetor + presets + Dissonância ---- */
+  h+='<h4>PLAYER ↔ ECHO</h4><div class="dvrow">'+
+    devBtn('relhigh','RELAÇÃO ALTA')+devBtn('relneutral','RELAÇÃO NEUTRA')+
+    devBtn('rellow','RELAÇÃO BAIXA','warn')+'</div>'+
+    '<div class="dvrow" style="margin-top:5px">'+
+    devBtn('t100','CONF 100')+devBtn('t50','CONF 50')+devBtn('t0','CONF 0','warn')+
+    devBtn('p0','PRESSÃO 0')+devBtn('p50','PRESSÃO 50%')+
+    devBtn('pmax','PRESSÃO MÁX','warn')+'</div>'+
+    '<div class="dvrow" style="margin-top:5px">'+
+    devBtn('fapprove','FORÇAR APROVAÇÃO')+devBtn('freject','FORÇAR REJEIÇÃO','warn')+
+    devBtn('relpv','PRÉVIA C/G/V')+'</div>'+
+    '<div class="dvrow" style="margin-top:5px">'+
+    devBtn('dsunstable','→ INSTÁVEL')+devBtn('dsfrac','→ TELEGRAPH','warn')+
+    devBtn('dshost','→ HOSTIL','warn')+devBtn('dsrec','→ RECUPERAR')+
+    devBtn('dscool','→ GRAÇA')+devBtn('dsstable','→ ESTÁVEL')+'</div>';
+  /* DISSONANCE INSPECTOR — leitura pura, nunca contamina */
+  h+='<div class="insp">';
+  let _any=false;
+  for(const ec of [e1,e2]){
+    if(!ec)continue;
+    const ri=DEV.relationOf(ec.slot);
+    if(!ri)continue;
+    _any=true;
+    const lr=ri.lastReaction;
+    h+='<div class="row final"><span>ECHO·0'+ri.slot+' · '+
+      (ri.personality?ri.personality.toUpperCase():'—')+'</span>'+
+      '<b>'+ri.stateLabel+'</b></div>'+
+      '<div class="row"><span>TRUST</span><b>'+ri.trust+'</b></div>'+
+      '<div class="row mod"><span>MORAL ORIGEM</span><span class="val">C'+
+      ri.moralOrigin.c+' G'+ri.moralOrigin.g+' V'+ri.moralOrigin.v+'</span></div>'+
+      '<div class="row mod"><span>APROVAÇÃO / REJEIÇÃO</span><span class="val">'+
+      ri.approval+' / '+ri.rejection+' · streak '+ri.streak+'</span></div>'+
+      '<div class="row mod"><span>SCORE DE RELAÇÃO</span><span class="val">'+
+      ri.score+'</span></div>'+
+      '<div class="row"><span>PRESSURE</span><b>'+ri.pressurePct+'% ('+
+      ri.pressure+'/'+ri.fractureAt+')</b></div>'+
+      '<div class="row"><span>STATE</span><b>'+ri.dissonanceLabel+
+      (ri.timer>0?' · '+ri.timer+'s':'')+'</b></div>'+
+      '<div class="row mod"><span>RUPTURA / COOLDOWN</span><span class="val">'+
+      (ri.integrityMax>0?ri.integrity+'/'+ri.integrityMax:'—')+
+      ' · graça '+ri.grace+'s · ×'+ri.count+'</span></div>'+
+      '<div class="row mod"><span>LAST REACTION</span><span class="val">'+
+      (lr?(lr.t.toUpperCase()+' · '+lr.r+' · '+(lr.v>0?'+':'')+lr.v):'—')+
+      (ri.lastTrust?' ('+(ri.lastTrust.d>0?'+':'')+ri.lastTrust.d+' CONF)':'')+
+      '</span></div>';
+    for(const m of ri.moments)
+      h+='<div class="row mod inactive"><span>MEMÓRIA</span><span class="val">'+
+        (m.v>0?'+':'')+m.v+' · '+m.k+' · ONDA '+m.w+'</span></div>';
+  }
+  if(!_any)h+='<div class="row"><span>NENHUM ECHO EM CAMPO</span><b>—</b></div>';
+  h+='</div>';
+
   /* ---- PERSONALITY INSPECTOR (PR 8): mesmo pipeline da produção ---- */
   let pv=null;
   try{pv=DEV.personalityPreview();}catch(e){}
@@ -12946,6 +14170,32 @@ function devCommand(c){
     case 'diss1':      return DEV.dissonance(1);
     case 'diss2':      return DEV.dissonance(2);
     case 'dissend':    DEV.endDissonance(1);return DEV.endDissonance(2);
+    case 'relhigh':    return DEV.relationPreset('high');
+    case 'relneutral': return DEV.relationPreset('neutral');
+    case 'rellow':     return DEV.relationPreset('low');
+    case 't100':       {const a=DEV.setTrust(1,100),b=DEV.setTrust(2,100);
+                        return a!==false||b!==false;}
+    case 't50':        {const a=DEV.setTrust(1,50),b=DEV.setTrust(2,50);
+                        return a!==false||b!==false;}
+    case 't0':         {const a=DEV.setTrust(1,0),b=DEV.setTrust(2,0);
+                        return a!==false||b!==false;}
+    case 'p0':         {const a=DEV.setPressure(1,0),b=DEV.setPressure(2,0);
+                        return a!==false||b!==false;}
+    case 'p50':        {const a=DEV.setPressure(1,50),b=DEV.setPressure(2,50);
+                        return a!==false||b!==false;}
+    case 'pmax':       {const a=DEV.setPressure(1,100),b=DEV.setPressure(2,100);
+                        return a!==false||b!==false;}
+    case 'fapprove':   return DEV.forceReaction(1,'approve')||DEV.forceReaction(2,'approve');
+    case 'freject':    return DEV.forceReaction(1,'reject')||DEV.forceReaction(2,'reject');
+    case 'relpv':      return devLog('PRÉVIA V+3: '+
+                        JSON.stringify(DEV.previewReaction(0,0,3)));
+    case 'dsunstable': return DEV.disState(1,'unstable')||DEV.disState(2,'unstable');
+    case 'dsfrac':     return DEV.disState(1,'fracturing')||DEV.disState(2,'fracturing');
+    case 'dshost':     return DEV.disState(1,'hostile')||DEV.disState(2,'hostile');
+    case 'dsrec':      {const a=DEV.forceRecovery(1),b=DEV.forceRecovery(2);
+                        return a!==false||b!==false;}
+    case 'dscool':     return DEV.disState(1,'cooldown')||DEV.disState(2,'cooldown');
+    case 'dsstable':   return DEV.disState(1,'stable')||DEV.disState(2,'stable');
     case 'persforce1': return DEV.forcePersonality(1,persSelVal());
     case 'persforce2': return DEV.forcePersonality(2,persSelVal());
     case 'persauto':   DEV.forcePersonality(1,'auto');return DEV.forcePersonality(2,'auto');
@@ -13033,6 +14283,18 @@ function devTick(dt){
     (e.pers?' ['+e.pers.short+']':''):'—';
   ln.push('ECHO·01    '+fe(e1));
   ln.push('ECHO·02    '+fe(e2));
+  /* PR 10: relação + máquina de estados da Dissonância */
+  const fr=e=>{
+    const ri=e?DEV.relationOf(e.slot):null;
+    if(!ri)return '—';
+    return ri.stateLabel+' · '+ri.dissonanceLabel+' · P'+ri.pressurePct+'%'+
+      (ri.integrityMax>0?' · RUP'+ri.integrity:'')+
+      (ri.grace>0?' · g'+ri.grace.toFixed(0)+'s':'')+
+      (ri.lastReaction?' · '+ri.lastReaction.r+(ri.lastReaction.v>0?'+':'')+
+        ri.lastReaction.v:'');
+  };
+  ln.push('REL·01     '+fr(e1));
+  ln.push('REL·02     '+fr(e2));
   try{
     const pv=DEV.personalityPreview();
     ln.push('PERS PREV  '+pv.label+' c='+pv.conf.toFixed(2)+
