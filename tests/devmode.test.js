@@ -847,8 +847,8 @@ ok('ECHO_VERSION coincide com o version do package.json',()=>{
   assert.strictEqual(dev.ECHO_VERSION,pkg.version);
 });
 
-ok('Versão é 0.6.5-alpha (playtest público)',()=>{
-  assert.strictEqual(pkg.version,'0.6.5-alpha');
+ok('Versão é 0.6.6-alpha (playtest público)',()=>{
+  assert.strictEqual(pkg.version,'0.6.6-alpha');
   assert(/alpha/.test(pkg.version),'a build de teste deve ser alpha');
 });
 
