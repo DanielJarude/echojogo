@@ -173,6 +173,50 @@ Detalhes do sistema em `MORALITY_SYSTEM.md`.
 
 ---
 
+## 4.2 PLAYER ↔ ECHO (PR 10)
+
+Seção própria no painel, dividida em quatro faixas de botões e um
+**DISSONANCE INSPECTOR**.
+
+**Presets de relação** — `RELAÇÃO ALTA` · `RELAÇÃO NEUTRA` · `RELAÇÃO BAIXA`
+(`DEV.relationPreset('high'|'neutral'|'low')`). Ajustam confiança, memória de
+aprovação/rejeição, streak e pressão de forma **coerente entre si**, para que
+o estado derivado caia mesmo em RESSONANTE / LATENTE / TENSA.
+
+**Presets numéricos** — `CONF 100/50/0` (`DEV.setTrust`) e
+`PRESSÃO 0 / 50% / MÁX` (`DEV.setPressure(slot, pct)`; a porcentagem é
+relativa ao **limiar real daquele Echo**, que sobe a cada Dissonância).
+
+**Reações** — `FORÇAR APROVAÇÃO` / `FORÇAR REJEIÇÃO`
+(`DEV.forceReaction(slot,'approve'|'reject')`) passam pelo pipeline de
+produção (`evaluateEchoReaction → applyEchoReaction → relFeedback →
+pickRelationLine`); nada de atalho paralelo. `PRÉVIA C/G/V`
+(`DEV.previewReaction(c,g,v)`) mostra, sem escrever nada, como **cada Echo em
+campo** julgaria o mesmo vetor moral — a forma mais rápida de provar
+divergência entre Echos.
+
+**Máquina de estados** — `→ INSTÁVEL` · `→ TELEGRAPH` · `→ HOSTIL` ·
+`→ RECUPERAR` · `→ GRAÇA` · `→ ESTÁVEL` (`DEV.disState(slot, st)` e
+`DEV.forceRecovery(slot)`). Permitem inspecionar cada visual sem esperar o
+acúmulo de pressão. `→ HOSTIL` chama `enterDissonance()`; `→ RECUPERAR` chama
+`forceEchoRecovery()` — de novo, sem duplicar lógica.
+
+**Inspetores de leitura pura (não contaminam):** `DEV.relationOf(slot)` devolve
+personalidade, traços, snapshot moral de origem, confiança, aprovação,
+rejeição, streak, score, estado da relação, última reação, última mutação de
+confiança (com motivo), pressão absoluta e em %, limiar de fratura, estado da
+Dissonância, timer, graça, integridade de ruptura, contagem de rupturas e as
+memórias marcantes. `DEV.previewReaction(...)` idem.
+
+Todos os comandos que **escrevem** chamam `devTaint()`: a run vira debug e
+`saveEchoes()` a recusa. O HUD de debug (`toggleInfo`) ganhou as linhas
+`REL·01` / `REL·02` com estado da relação, estado da Dissonância, pressão %,
+integridade de ruptura, graça restante e o último motivo de reação.
+
+Detalhes do sistema em `ECHO_RELATIONSHIP.md`.
+
+---
+
 ## 5. O que o DEV MODE **não** faz
 
 - não muda valores base em `CHARS`, `EDEFS`, `MINIBOSS`, `ITEMS` ou `UPGRADES`;
