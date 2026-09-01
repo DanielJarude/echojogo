@@ -38,6 +38,20 @@
     box-shadow:0 0 12px var(--cy-dim);transition:width .15s ease-out;}
   #hpnum{font-family:Consolas,monospace;font-size:11px;color:#aeeaff;margin-top:3px;
     letter-spacing:.12em;}
+  /* ---------- ESCUDO DO OPERADOR (camada independente da Integridade) ---------- */
+  #shwrap{margin-top:9px;padding-top:8px;
+    border-top:1px solid rgba(255,209,102,.10);}
+  #shbar{height:6px;margin-top:4px;background:rgba(255,209,102,.08);
+    border:1px solid rgba(255,209,102,.28);position:relative;overflow:hidden;}
+  #shfill{height:100%;width:100%;background:linear-gradient(90deg,#ffb347,#ffe9a8);
+    box-shadow:0 0 10px rgba(255,209,102,.35);transition:width .15s ease-out;}
+  #shnum{font-family:Consolas,monospace;font-size:10px;color:#ffe2a8;margin-top:3px;
+    letter-spacing:.12em;}
+  /* estados: cheio / parcial / vazio — leitura imediata */
+  #shbar.full{box-shadow:0 0 12px rgba(255,209,102,.35),
+    inset 0 0 8px rgba(255,209,102,.10);}
+  #shbar.empty #shfill{opacity:.16;box-shadow:none;}
+  #shbar.empty #shnum{color:rgba(255,180,130,.45);}
   #midtop{text-align:center;}
   #wave{font-family:Consolas,monospace;font-size:20px;letter-spacing:.35em;
     color:#eaffff;text-shadow:0 0 14px var(--cy);}
@@ -457,6 +471,11 @@
       <span class="lbl">INTEGRIDADE</span>
       <div id="hpbar"><div id="hpfill"></div></div>
       <div id="hpnum">100 / 100</div>
+      <div id="shwrap">
+        <span class="lbl">ESCUDO</span>
+        <div id="shbar"><div id="shfill"></div></div>
+        <div id="shnum">0 / 0</div>
+      </div>
     </div>
     <div id="midtop">
       <div id="wave">ONDA 01</div>
@@ -1472,6 +1491,7 @@ function pauseGame(){
     'ONDA <b>'+String(Math.max(1,wave)).padStart(2,'0')+' / 20</b> · '+
     'NÍVEL <b>'+player.level+'</b> · ABATES <b>'+kills+'</b><br>'+
     'INTEGRIDADE <b>'+Math.max(0,Math.ceil(player.hp))+' / '+player.maxHp+'</b> · '+
+    'ESCUDO <b>'+Math.max(0,Math.ceil(player.shield))+' / '+player.shieldMax+'</b> · '+
     'CRÉDITOS <b>◈'+player.coins+'</b><br>'+
     'ARMA <b>'+w.nm+'</b> · ARSENAL <b>'+player.owned.length+'/'+WEAPONS.length+'</b> · '+
     'MÓDULOS <b>'+player.items.length+'</b><br>'+
@@ -1530,6 +1550,8 @@ const CHARS=[
   pal:{body:'#4d788f',dark:'#22394a',edge:'#8fd6ef',glow:'#9ff3ff',
        visor:'#eaffff',head:'#5b8ba3'},
   hp:100,speed:335,dmg:1,rate:1,crit:.05,dashCd:2.1,r:14,slots:4,
+  /* ESCUDO base do operador — shieldStart é fração (0..1) do shieldMax */
+  shieldMax:30,shieldRegen:4,shieldDelay:2.5,shieldStart:1,
   guns:['plasma','blade'],
   sp:{id:'blink',nm:'SALTO DE FASE',cd:9,
       desc:'Teletransporte instantâneo para o cursor + 1.2s de invulnerabilidade.'},
@@ -1542,6 +1564,8 @@ const CHARS=[
   pal:{body:'#4a2a70',dark:'#1e1030',edge:'#c56bff',glow:'#d9a0ff',
        visor:'#f2e0ff',head:'#5c3585'},
   hp:72,speed:410,dmg:1.18,rate:1,crit:.16,dashCd:1.35,r:13,slots:2,
+  /* ESCUDO baixo, regeneração rápida — reposicionamento é a defesa dele */
+  shieldMax:18,shieldRegen:7,shieldDelay:1.5,shieldStart:1,
   guns:['nail','scythe'],
   sp:{id:'massacre',nm:'PROTOCOLO MASSACRE',cd:16,
       desc:'6s de crítico garantido, +40% de velocidade e rastro que corta.'},
@@ -1554,6 +1578,8 @@ const CHARS=[
   pal:{body:'#2f5f6b',dark:'#132c33',edge:'#8ff6ff',glow:'#a8fbff',
        visor:'#dffdff',head:'#3a7280'},
   hp:185,speed:262,dmg:1,rate:.92,crit:.03,dashCd:2.8,r:16,slots:5,
+  /* ESCUDO alto e delay longo — tanque: absorve muito, recompõe devagar */
+  shieldMax:60,shieldRegen:5,shieldDelay:4,shieldStart:1,
   guns:['shotgun','hammer'],
   sp:{id:'bastion',nm:'BASTIÃO',cd:18,
       desc:'Escudo que absorve todo dano por 5s e reflete 60% aos agressores.'},
@@ -1566,6 +1592,8 @@ const CHARS=[
   pal:{body:'#7a3a12',dark:'#331605',edge:'#ff9d3c',glow:'#ff7a2f',
        visor:'#ffe0b8',head:'#8f4718'},
   hp:88,speed:322,dmg:1,rate:1.10,crit:.05,dashCd:2.0,r:14,slots:3,
+  /* ESCUDO modesto — ofensivo: prioriza queimar o alvo, não se proteger */
+  shieldMax:24,shieldRegen:4.5,shieldDelay:2.8,shieldStart:1,
   guns:['flamer','blade'],
   sp:{id:'nova',nm:'NOVA INCENDIÁRIA',cd:14,
       desc:'Explosão de 320px que incendeia tudo com 8 camadas de queimadura.'},
@@ -1578,6 +1606,8 @@ const CHARS=[
   pal:{body:'#7a2470',dark:'#2e0b2b',edge:'#ff4df0',glow:'#ff9df7',
        visor:'#ffe0fb',head:'#8f2c84'},
   hp:80,speed:345,dmg:.88,rate:1,crit:.08,dashCd:1.9,r:14,slots:3,
+  /* ESCUDO eficiente — tecnológico: boa capacidade com regeneração ágil */
+  shieldMax:34,shieldRegen:6,shieldDelay:2.2,shieldStart:1,
   guns:['tesla','blade'],
   sp:{id:'overload',nm:'SOBRECARGA RESSONANTE',cd:15,
       desc:'Por 7s seus Ecos triplicam o dano e ficam colados em você.'},
@@ -1778,7 +1808,17 @@ function makePlayer(){
   const guns=charGunIdx(C.guns);
   const p={x:ARENA.w/2,y:ARENA.h/2,vx:0,vy:0,r:C.r,aim:0,
     charId:C.id,pal:C.pal,maxSlots:C.slots||3,
-    hp:C.hp,maxHp:C.hp,speed:C.speed*(1+.05*meta.spd),accel:2600,
+    hp:C.hp,maxHp:C.hp,
+    /* ESCUDO DO OPERADOR — derivado da definição base, nunca hardcoded aqui.
+       Itens/upgrades futuros devem alterar estes campos do player (ex.:
+       p.shieldMax+=20, p.shieldRegen*=1.25, p.shieldDelay-=.5) e todo o
+       pipeline (dano, regeneração, HUD) continuará funcionando sem mudanças. */
+    shieldMax:C.shieldMax||0,
+    shield:clamp(Math.round((C.shieldMax||0)*(C.shieldStart==null?1:C.shieldStart)),0,C.shieldMax||0),
+    shieldRegen:C.shieldRegen||0,
+    shieldDelay:C.shieldDelay||0,
+    shieldDelayT:0,
+    speed:C.speed*(1+.05*meta.spd),accel:2600,
     owned:guns.slice(),
     wi:guns[0],fireTimer:0,dmgMul:C.dmg,fireRateMul:C.rate,
     dashT:0,dashCd:0,dashCdMax:C.dashCd,dashDx:1,dashDy:0,
@@ -1953,6 +1993,7 @@ function floatText(x,y,txt,color){
 const $=id=>document.getElementById(id);
 const hpfill=$('hpfill'),hpnum=$('hpnum'),waveEl=$('wave'),timerEl=$('timer'),
   xpfill=$('xpfill'),lvlEl=$('lvl'),chip1=$('chip1'),chip2=$('chip2'),
+  shfill=$('shfill'),shnum=$('shnum'),shbar=$('shbar'),
   dashfill=$('dashfill'),dashwrap=$('dashwrap'),bannerEl=$('banner'),
   toastsEl=$('toasts'),overlay=$('overlay'),ovBody=$('ov-body'),
   ovGo=$('ov-go'),ovEchos=$('ov-echos'),ovFrac=$('ov-frac-lines'),
@@ -1998,6 +2039,13 @@ function updateHUD(force){
   hudAcc=0;
   hpfill.style.width=clamp(player.hp/player.maxHp*100,0,100)+'%';
   hpnum.textContent=Math.max(0,Math.ceil(player.hp))+' / '+player.maxHp;
+  // ---- ESCUDO DO OPERADOR ----
+  const shR=clamp(player.shield/(player.shieldMax||1)*100,0,100);
+  shfill.style.width=shR+'%';
+  shnum.textContent=Math.max(0,Math.ceil(player.shield))+' / '+player.shieldMax;
+  shbar.classList.toggle('full',player.shieldMax>0&&player.shield>=player.shieldMax);
+  shbar.classList.toggle('partial',player.shield>0&&player.shield<player.shieldMax);
+  shbar.classList.toggle('empty',player.shield<=0);
   waveEl.textContent=boss?'PARADOXO':(miniBoss?'ARAUTO':
     ('ONDA '+String(Math.max(1,wave)).padStart(2,'0')+' / 20'));
   const m=String(Math.floor(runTime/60)).padStart(2,'0'),
@@ -4639,6 +4687,7 @@ function killEnemy(e){
   sKill();if(e.type==='tank'){shake=Math.max(shake,7);sBoom();}
 }
 function damagePlayer(d){
+  if(!(d>0))return;                          // só dano válido reinicia o escudo
   // BASTIÃO: absorve tudo e devolve 60% aos inimigos próximos
   if(player.spKind==='bastion'){
     const prev=curAttacker;curAttacker=player;
@@ -4654,7 +4703,17 @@ function damagePlayer(d){
   if(player.dashT>0||player.invT>0)return;   // i-frames do dash / retorno de modal
   if(state!=='play')return;                  // nunca sofre dano com o tempo travado
   const real=d*player.dmgTakenMul*mEff.playerDmgTaken;   // Violência te expõe
-  player.hp-=real;player.hurtT=clamp(.18+real/70,.18,.55);
+  if(!(real>0))return;
+  /* ---- ESCUDO DO OPERADOR: absorve dano antes da Integridade ----
+     O dano restante (após Shield) segue exatamente o pipeline antigo:
+     hurtT, shake, partículas, efeitos, morte. */
+  const shieldBroke=player.shield>0&&real>=player.shield;
+  const absorbed=Math.min(player.shield,real);
+  player.shield=Math.max(0,player.shield-absorbed);
+  player.shieldDelayT=player.shieldDelay;    // dano válido reinicia o delay
+  const rest=real-absorbed;
+  if(rest>0)player.hp-=rest;
+  player.hurtT=clamp(.18+real/70,.18,.55);
   // SCREEN SHAKE PROPORCIONAL: golpes leves tremem pouco, massivos sacodem a tela
   const mag=clamp(2.5+real*0.62,2.5,26);
   shake=Math.max(shake,mag);
@@ -4663,6 +4722,11 @@ function damagePlayer(d){
     spawnRing(player.x,player.y,'#ff4d6d',8,60+real*1.4,.4);
   }
   spawnParticles(player.x,player.y,'#ff5c7a',clamp(5+Math.round(real/3),5,22),240,.3,3);
+  if(shieldBroke){                       // feedback curto — sem dano/stun/mecânica extra
+    floatText(player.x,player.y-30,'ESCUDO ROMPIDO','#8ff6ff');
+    spawnRing(player.x,player.y,'#8ff6ff',8,72,.42);
+    AUDIO.tone(rand(300,360),.18,'sine',.04,-140);
+  }
   rumble(clamp(.25+real/60,.25,1),clamp(real/90,.15,.7),clamp(90+real*4,90,320));
   sHurt();
   // CARAPAÇA REATIVA: onda de choque ao sofrer dano
@@ -4695,6 +4759,17 @@ function damagePlayer(d){
     }
     onPlayerDeath();
   }
+}
+/* ---- regeneração do escudo do OPERADOR ----
+   Convenção: shieldRegen é em UNIDADES de Shield por segundo (não % do max).
+   Facilita modificadores futuros (+25% shieldRegen => p.shieldRegen*=1.25)
+   sem acoplar a regeneração ao shieldMax. Usa dt => independente de FPS.
+   Modificadores futuros apenas alteram p.shieldMax/shieldRegen/shieldDelay. */
+function regenPlayerShield(p,dt){
+  if(!p||!(p.shieldMax>0)||!(p.shieldRegen>0))return;
+  if(p.shieldDelayT>0){p.shieldDelayT=Math.max(0,p.shieldDelayT-dt);return;}
+  if(p.shield>=p.shieldMax)return;
+  p.shield=Math.min(p.shieldMax,p.shield+p.shieldRegen*dt);
 }
 /* ---- regeneração do escudo ----
    O escudo se recupera sozinho após o delay de dano, usando dt
@@ -5851,6 +5926,7 @@ function updatePlayer(dt){
   p.y=clamp(p.y+p.vy*dt,p.r,ARENA.h-p.r);
   if(p.hurtT>0)p.hurtT-=dt;
   if(p.invT>0)p.invT-=dt;
+  regenPlayerShield(p,dt);                 // regenera só após o delay sem dano
   if(p.recoil>0)p.recoil=Math.max(0,p.recoil-dt*7);
   if(p.rangeFx>0)p.rangeFx=Math.max(0,p.rangeFx-dt*1.1);
   // BULWARK / COMPAIXÃO: regeneração fora de combate
@@ -7976,6 +8052,7 @@ function renderCodexBody(){
       const stats=['VIDA '+C.hp,'VEL '+C.speed,
         'DANO ×'+C.dmg.toFixed(2),'CADÊNCIA ×'+C.rate.toFixed(2),
         'CRÍTICO '+Math.round(C.crit*100)+'%','DASH '+C.dashCd.toFixed(2)+'s',
+        'ESCUDO '+C.shieldMax+' · +'+C.shieldRegen+'/s · '+C.shieldDelay+'s',
         '⌗ '+C.slots+' SLOTS DE ARMA'];
       h+='<div class="cxitem'+(lk?' lock':'')+'" data-char="'+i+'" style="cursor:pointer'+
         (sel&&!lk?';border-color:'+C.color+';box-shadow:0 0 20px '+C.color+'44':'')+'">'+
@@ -8471,7 +8548,9 @@ function charTipHTML(C){
     const w=WEAPONS.find(x=>x.id===g);return w?w.nm:g;}).join(' + ');
   const stats=['VIDA '+C.hp,'VEL '+C.speed,'DANO ×'+C.dmg.toFixed(2),
     'CADÊNCIA ×'+C.rate.toFixed(2),'CRÍT '+Math.round(C.crit*100)+'%',
-    'DASH '+C.dashCd.toFixed(2)+'s','⌗ '+C.slots+' SLOTS'];
+    'DASH '+C.dashCd.toFixed(2)+'s',
+    'ESCUDO '+C.shieldMax+' · +'+C.shieldRegen+'/s · '+C.shieldDelay+'s',
+    '⌗ '+C.slots+' SLOTS'];
   let h='<div class="tnm" style="color:'+C.color+'">'+C.nm+'</div>'+
     '<div class="trole" style="color:'+C.color+'">'+C.role+'</div>'+
     '<div class="tds">'+C.desc+'</div>'+
@@ -8636,6 +8715,8 @@ function backToMainMenu(){
   showTitle();
   // 5. repõe o HUD em repouso antes de qualquer frame novo
   hpfill.style.width='100%';hpnum.textContent='100 / 100';
+  shfill.style.width='0%';shnum.textContent='0 / 0';
+  shbar.classList.remove('full','partial');shbar.classList.add('empty');
   waveEl.textContent='ONDA 01 / 20';timerEl.textContent='00:00 · ABATES 0';
   xpfill.style.width='0%';lvlEl.textContent='NV 1 · 0/20';
   dashfill.style.width='100%';dashwrap.classList.remove('ready');
