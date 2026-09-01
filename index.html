@@ -1024,6 +1024,13 @@ const ECHO_MUL=[0,.34,.24];      // era .85 / .60 — corte agressivo
 const ECHO_RANGE=[0,360,400];    // era 480 / 540
 const ECHO_RATE=[0,.62,.52];     // cadência: atiram bem mais devagar
 const ECHO_DMG_CAP=14;           // teto de dano por disparo de Eco
+/* ---- ESCUDO REGENERATIVO DOS ECOS (sistema base) ----
+   Camada de proteção separada do HP: absorve dano antes dele e se
+   regenera sozinha após um delay sem dano. Item/upgrade/overshield
+   ficam para um PR posterior. */
+const ECHO_SHIELD=[0,30,20];          // capacidade máxima de escudo por Eco
+const ECHO_SHIELD_REGEN=[0,.06,.05];  // fração do shieldMax regenerada por segundo
+const ECHO_SHIELD_DELAY=[0,2.5,3];    // segundos sem dano antes de regenerar
 const LS_KEY='echoRuns.v1';
 
 /* ---------------- estado global ---------------- */
@@ -1793,6 +1800,8 @@ function makeEcho(data,slot){
   const boost=1+((player&&player.echoBoost)||0);
   return {data,slot,x:tr[0][1],y:tr[0][2],vx:0,vy:0,r:13,aim:tr[0][4]||0,
     hp:Math.round(ECHO_HP[slot]*boost),maxHp:Math.round(ECHO_HP[slot]*boost),alive:true,
+    shieldMax:ECHO_SHIELD[slot],shield:ECHO_SHIELD[slot],   // começa com escudo cheio
+    shieldRegen:ECHO_SHIELD_REGEN[slot],shieldDelayT:0,     // regenera só após o delay
     pi:0,fireTimer:.3,overT:0,erratic:0,stab:slot===1?1:.72,
     glitchT:0,glitchAmp:0,seed:rand(0,100),ca:rand(0,TAU),ghosts:[],
     crit:data.crit||0,critMul:data.critMul||1.8,pierce:data.pierce||0,
@@ -4687,10 +4696,31 @@ function damagePlayer(d){
     onPlayerDeath();
   }
 }
+/* ---- regeneração do escudo ----
+   O escudo se recupera sozinho após o delay de dano, usando dt
+   (independente de FPS). Fica SUSPENSO durante a Dissonância
+   (e.hostile===true); o escudo restante ainda absorve dano. */
+function regenEchoShield(e,dt){
+  if(!e.alive||e.hostile)return;                  // suspenso durante Dissonância
+  if(e.shieldDelayT>0){e.shieldDelayT=Math.max(0,e.shieldDelayT-dt);return;}
+  if(e.shield>=e.shieldMax)return;
+  e.shield=Math.min(e.shieldMax,e.shield+e.shieldMax*e.shieldRegen*dt);
+}
 function damageEcho(e,d){
-  if(!e.alive)return;
-  e.hp-=d;
+  if(!e.alive||!(d>0))return;                     // só dano válido conta
+  /* ESCUDO absorve dano antes do HP */
+  const broke=e.shield>0&&d>=e.shield;
+  const absorbed=Math.min(e.shield,d);
+  e.shield-=absorbed;
+  e.shieldDelayT=ECHO_SHIELD_DELAY[e.slot]||2.5;  // dano válido reinicia o delay
+  const rest=d-absorbed;
+  if(rest>0)e.hp-=rest;
   spawnParticles(e.x,e.y,e.hue,5,220,.3,2.5);
+  if(broke){                                      // escudo quebrado por este ataque
+    floatText(e.x,e.y-e.r-30,'ESCUDO ROMPIDO','#ffd166');
+    spawnRing(e.x,e.y,'#ffd166',5,90,.45);
+    sfx(330,.22,'sine',.045,-150);
+  }
   if(e.hp<=0&&e.hostile){dissolveEcho(e,'SOB FOGO');return;}
   if(e.hp<=0){
     e.alive=false;shake=Math.max(shake,6);
@@ -5639,6 +5669,7 @@ function enemiesNear(x,y,rad){
 }
 function updateEcho(e,dt){
   if(!e.alive)return;
+  regenEchoShield(e,dt);            // escudo regenera (suspenso durante Dissonância)
   if(e.trustFx)e.trustFx*=Math.pow(.12,dt);
   /* ---------- ESTADO HOSTIL (Dissonância) ---------- */
   if(e.hostile){
@@ -6960,6 +6991,17 @@ function drawEchoEntity(e){
   if(e.hp<e.maxHp){
     ctx.fillStyle='rgba(0,0,0,.4)';ctx.fillRect(e.x-14,e.y-e.r-11,28,3);
     ctx.fillStyle=col;ctx.fillRect(e.x-14,e.y-e.r-11,28*clamp(e.hp/e.maxHp,0,1),3);
+  }
+  // ESCUDO — barra sempre visível: cheio / parcialmente danificado / vazio
+  if(e.shieldMax>0){
+    const sr=clamp(e.shield/e.shieldMax,0,1);
+    ctx.fillStyle='rgba(0,0,0,.42)';ctx.fillRect(e.x-14,e.y-e.r-7,28,3);
+    if(sr>0){
+      ctx.fillStyle=sr>=1?'#ffe9a8':'#ffd166';
+      ctx.fillRect(e.x-14,e.y-e.r-7,28*sr,3);
+    }
+    ctx.strokeStyle='rgba(255,209,102,'+(sr>0?.5:.28)+')';ctx.lineWidth=1;
+    ctx.strokeRect(e.x-14.5,e.y-e.r-7.5,29,4);
   }
   if(e.itemIds&&e.itemIds.length){
     const n=e.itemIds.length,w=7;
