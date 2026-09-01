@@ -122,6 +122,14 @@ function createWindow() {
     paintWhenInitiallyHidden: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
+      /* CANAL DE BUILD (PR 6.5)
+         O renderer só habilita o Modo Desenvolvedor quando o app NÃO está
+         empacotado. Na build distribuída (itch.io) o canal é 'release' e o
+         atalho Ctrl+Shift+D fica inerte. */
+      additionalArguments: [
+        '--echo-channel=' + (app.isPackaged ? 'release' : 'dev'),
+        '--echo-version=' + app.getVersion()
+      ],
       contextIsolation: true,          // padrão moderno de segurança
       nodeIntegration: false,
       sandbox: false,

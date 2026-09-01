@@ -1,8 +1,8 @@
 {
   "name": "echo-roguelite",
   "productName": "ECHO",
-  "version": "1.0.2",
-  "description": "ECHO — roguelite top-down de ressonância temporal. Suas runs anteriores voltam como Ecos e lutam ao seu lado.",
+  "version": "0.6.5-alpha",
+  "description": "ECHO — roguelite top-down de ressonância temporal. Suas runs anteriores voltam como Ecos e lutam ao seu lado. Build de playtest (alpha).",
   "main": "main.js",
   "author": {
     "name": "ECHO Game Studio"
@@ -12,8 +12,11 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --enable-logging",
-    "test": "node tests/shield.test.js && node tests/operators.test.js && node tests/legacy-restore.test.js",
+    "test": "node tests/shield.test.js && node tests/operators.test.js && node tests/legacy-restore.test.js && node tests/devmode.test.js",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "prebuild": "npm run clean",
+    "build": "electron-builder --win portable --x64",
+    "build:dir": "electron-builder --win --dir --x64",
     "predist": "npm run clean",
     "predist:win": "npm run clean",
     "pack": "electron-builder --dir",
@@ -43,14 +46,26 @@
       "preload.js",
       "package.json",
       "!dist/**",
+      "!tests/**",
       "!**/*.map",
       "!**/{.git,.github,.vscode,.idea}/**",
-      "!**/{README,readme,CHANGELOG}.md"
+      "!**/{README,readme,CHANGELOG}.md",
+      "!**/*.test.js"
     ],
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"] },
-        { "target": "portable", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "icon": "build/icon.ico",
       "artifactName": "${productName}-${version}-win-${arch}.${ext}"
@@ -71,9 +86,15 @@
     },
     "mac": {
       "target": [
-        { "target": "dmg", "arch": ["x64", "arm64"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
       ],
-      "icon": "build/icon.icns",
+      "icon": "build/icon.png",
       "category": "public.app-category.games",
       "darkModeSupport": true,
       "hardenedRuntime": true,
@@ -84,7 +105,11 @@
       "title": "ECHO ${version}"
     },
     "linux": {
-      "target": ["AppImage", "deb", "tar.gz"],
+      "target": [
+        "AppImage",
+        "deb",
+        "tar.gz"
+      ],
       "icon": "build/icon.png",
       "category": "Game",
       "synopsis": "Roguelite top-down de ressonância temporal",
