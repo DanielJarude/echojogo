@@ -5208,7 +5208,8 @@ function analyzeEchoData(){
     for(const cp of r.trail){
       total++;
       const w=cp[5]|0;
-      if(w===1)closeW++;else longW++;
+      const def=WEAPONS[w];
+      if(def&&(def.melee||def.range<300))closeW++;else longW++;
       if(cp[3]===2)dashes++;
       if(cp[3]===1)shots++;
     }
