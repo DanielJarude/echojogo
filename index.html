@@ -191,6 +191,40 @@
   #ov-frac-lines .bad{color:#ff8095;text-decoration:line-through;}
   #ov-frac-lines .mid{color:#e0a9f5;}
 
+  /* ---------- PR 7.5 — SAVE SLOTS / morte com decisão ---------- */
+  #ov-go:empty{display:none;}
+  #ov-actions{margin-top:16px;display:none;gap:12px;align-items:center;
+    justify-content:center;flex-wrap:wrap;}
+  #ov-actions.on{display:flex;}
+  #ov-actions .hint{font-family:Consolas,monospace;font-size:var(--fs-2xs);
+    letter-spacing:.28em;color:rgba(150,180,200,.5);width:100%;margin-top:6px;}
+  #ov-slots{margin-top:26px;display:flex;flex-direction:column;gap:12px;
+    align-items:center;width:100%;}
+  .savecard{width:min(600px,92vw);border:1px solid rgba(70,224,255,.32);
+    background:rgba(8,18,28,.74);padding:14px 22px;cursor:pointer;text-align:left;
+    border-radius:3px;transition:border-color .14s,box-shadow .14s,transform .14s;}
+  .savecard:hover{border-color:#46e0ff;box-shadow:0 0 20px rgba(70,224,255,.22);
+    transform:translateY(-2px);}
+  .savecard .sc-name{font-family:Consolas,monospace;font-size:15px;
+    letter-spacing:.42em;color:#e8fbff;}
+  .savecard .sc-info{margin-top:7px;font-family:Consolas,monospace;font-size:12px;
+    letter-spacing:.14em;color:#9cc6da;line-height:1.8;}
+  .savecard .sc-info b{color:#e8fbff;font-weight:normal;}
+  .savecard .sc-run{margin-top:5px;font-family:Consolas,monospace;font-size:11px;
+    letter-spacing:.26em;color:#ffd166;}
+  .savecard .sc-run.none{color:rgba(120,160,185,.55);}
+  .savecard.empty{border-style:dashed;opacity:.72;}
+  .savecard.sel{border-color:#9ff3ff;box-shadow:0 0 24px rgba(70,224,255,.35);}
+  #ov-slotacts{margin-top:24px;display:flex;flex-direction:column;gap:10px;
+    align-items:center;width:100%;}
+  .slotact{min-width:min(420px,86vw);text-align:center;}
+  .slotact small{display:block;margin-top:3px;font-size:var(--fs-2xs);
+    letter-spacing:.22em;color:rgba(140,180,205,.6);}
+  .slotact.dis{opacity:.32;cursor:not-allowed;}
+  .slotact.dis:hover{border-color:rgba(120,150,170,.3);background:none;
+    transform:none;box-shadow:none;}
+
+
   /* ---------- modais: evento de decisão & loja ---------- */
   #modal{position:fixed;inset:0;z-index:24;display:none;align-items:center;justify-content:center;
     background:radial-gradient(ellipse at center,rgba(6,10,20,.70),rgba(2,4,10,.93));}
@@ -622,7 +656,7 @@
   <div class="pbtn" id="p-codex">◈ ARSENAL<small>CATÁLOGO DE ARMAS E INIMIGOS</small></div>
   <div class="pbtn" id="p-org">⇅ ORGANIZAR ARMAS<small>REORDENAR SLOTS E DESCARTAR</small></div>
   <div class="pbtn warn" id="p-abort">ABORTAR RUN<small>CONVERTE ESTA RUN EM ECHO·01</small></div>
-  <div class="pbtn warn" id="p-mainmenu">MENU PRINCIPAL<small>INTERROMPE A PARTIDA E DESCARTA ESTE CICLO</small></div>
+  <div class="pbtn warn" id="p-mainmenu">SALVAR E SAIR PARA O MENU<small>GUARDA O CHECKPOINT DA ONDA E VOLTA AO MENU DO SAVE</small></div>
   <div id="p-hint"><span id="p-ver">ECHO</span><br>O TEMPO ESTÁ CONGELADO — NENHUM DANO PODE TE ALCANÇAR<br>
     AO RETOMAR VOCÊ RECEBE 0.5s DE ESCUDO DE FASE<br>
     CONTROLE: START RETOMA · B VOLTA · SELECT ORGANIZA ARMAS</div>
@@ -653,6 +687,7 @@
     <div class="coinT" id="e-total">MEMÓRIA TOTAL: ◆ 0</div>
     <div style="display:flex;gap:10px;flex-wrap:wrap">
       <div class="btn" id="e-wipe">APAGAR MEMÓRIA TEMPORAL</div>
+      <div class="btn" id="e-menu">VOLTAR AO MENU</div>
       <div class="btn go" id="e-restart">INICIAR NOVO CICLO</div>
     </div>
   </div>
@@ -663,6 +698,10 @@
   <div id="ov-sub">PROTOCOLO DE RESSONÂNCIA TEMPORAL</div>
   <div id="ov-body"></div>
   <div id="ov-go">INICIAR CICLO</div>
+  <div id="ov-actions">
+    <div class="ovbtn slotact" id="ov-back">VOLTAR AO MENU</div>
+    <div class="hint">ENTER — NOVA RUN · ESC — VOLTAR AO MENU</div>
+  </div>
   <div id="ov-char"></div>
   <div id="ov-menu">
     <div class="ovbtn" id="ov-arsenal">◈ ARSENAL</div>
@@ -1246,13 +1285,35 @@ window.addEventListener('keydown',e=>{
     }
     return;
   }
+  /* ---- PR 7.5 — navegação por teclado das novas telas ---- */
   if(state==='title'&&(e.code==='Enter'||e.code==='Space')){
-    initAudio();hideOverlay();startRun();return;
+    initAudio();showSlotSelect();return;          // abre a seleção de memórias
   }
   if(state==='title'&&e.code==='KeyC'){initAudio();openCodex('arsenal');return;}
   if(state==='title'&&e.code==='KeyO'){initAudio();openCodex('config');return;}
+  if(state==='slots'){
+    if(e.code==='Digit1'||e.code==='Numpad1'){pickSlot(1);return;}
+    if(e.code==='Digit2'||e.code==='Numpad2'){pickSlot(2);return;}
+    if(e.code==='Digit3'||e.code==='Numpad3'){pickSlot(3);return;}
+    if(e.code==='Escape'||e.code==='Backspace'){showTitle();return;}
+    return;
+  }
+  if(state==='slotMenu'){
+    if((e.code==='Enter'||e.code==='KeyC')&&hasActiveRun()){resumeRun();return;}
+    if(e.code==='KeyN'){activeRun?showSlotConfirm():doNewRun();return;}
+    if(e.code==='Escape'||e.code==='Backspace'){showSlotSelect();return;}
+    return;
+  }
+  if(state==='slotConfirm'){
+    if(e.code==='Enter'||e.code==='KeyN'){doNewRun();return;}
+    if(e.code==='Escape'||e.code==='Backspace'){showSlotMenu();return;}
+    return;
+  }
   if(state==='fracture'&&(e.code==='Enter'||e.code==='Space')&&fracT>0.45){
     beginNextRun();return;
+  }
+  if(state==='fracture'&&(e.code==='Escape'||e.code==='Backspace')){
+    exitToSlotMenuFromDeath();return;
   }
   if(state==='victory'){
     if(e.code==='KeyM')setAudio(!audioOn);
@@ -1413,16 +1474,20 @@ function pollGamepad(){
     if(cxOpen)closeCodex();
     else if(state==='play')pauseGame();
     else if(state==='paused')resumeGame();
-    else if(state==='title'){initAudio();hideOverlay();startRun();}
+    else if(state==='title'){initAudio();showSlotSelect();}
     else if(state==='fracture'&&fracT>.45)beginNextRun();
     return;
   }
   if(padEdge(gp,PB.B)){
     if(cxOpen){closeCodex();return;}
     if(state==='paused'){resumeGame();return;}
+    if(state==='slots'){showTitle();return;}
+    if(state==='slotMenu'){showSlotSelect();return;}
+    if(state==='slotConfirm'){showSlotMenu();return;}
+    if(state==='fracture'){exitToSlotMenuFromDeath();return;}
   }
   if(state==='title'){
-    if(padEdge(gp,PB.A)){initAudio();hideOverlay();startRun();return;}
+    if(padEdge(gp,PB.A)){initAudio();showSlotSelect();return;}
     if(padEdge(gp,PB.X)){initAudio();openCodex('arsenal');return;}
     if(padEdge(gp,PB.Y)){initAudio();openCodex('config');return;}
     // LB/RB trocam de operador
@@ -1436,6 +1501,28 @@ function pollGamepad(){
       initAudio();AUDIO.ui(760);refreshTitleChar();
       return;
     }
+  }
+  /* ---- PR 7.5: navegação de SAVE SLOTS pelo controle ---- */
+  if(state==='slots'){
+    if(padEdge(gp,PB.UP)||padEdge(gp,PB.LEFT)||padEdge(gp,PB.LB)){
+      slotNav=slotNav<=1?3:slotNav-1;renderSlotSelect();AUDIO.ui(520);return;}
+    if(padEdge(gp,PB.DOWN)||padEdge(gp,PB.RIGHT)||padEdge(gp,PB.RB)){
+      slotNav=slotNav>=3?1:slotNav+1;renderSlotSelect();AUDIO.ui(520);return;}
+    if(padEdge(gp,PB.A)){pickSlot(slotNav);return;}
+    return;
+  }
+  if(state==='slotMenu'){
+    const opts=hasActiveRun()?3:2;
+    if(padEdge(gp,PB.UP)||padEdge(gp,PB.LEFT)){
+      slotMenuIdx=(slotMenuIdx+opts-1)%opts;renderSlotMenuNav();AUDIO.ui(520);return;}
+    if(padEdge(gp,PB.DOWN)||padEdge(gp,PB.RIGHT)){
+      slotMenuIdx=(slotMenuIdx+1)%opts;renderSlotMenuNav();AUDIO.ui(520);return;}
+    if(padEdge(gp,PB.A)){slotMenuAction(slotMenuIdx);return;}
+    return;
+  }
+  if(state==='slotConfirm'){
+    if(padEdge(gp,PB.A)){doNewRun();return;}
+    return;
   }
   if(state==='fracture'&&padEdge(gp,PB.A)&&fracT>.45){beginNextRun();return;}
   if(state!=='play')return;
@@ -1460,9 +1547,16 @@ window.addEventListener('mousedown',e=>{
   if(_cx&&_cx.classList.contains('on'))return;  // painéis capturam o clique
   // BOTÕES DA UI NÃO INICIAM A RUN (mousedown dispara antes do click)
   const t=e.target;
-  if(t&&t.closest&&t.closest('#ov-menu,#ov-char,#pause-menu,#modal,#endwrap,#codex,#devpanel'))return;
-  if(state==='title'){hideOverlay();startRun();return;}
-  if(state==='fracture'){if(fracT>0.45)beginNextRun();return;}
+  if(t&&t.closest&&t.closest('#ov-menu,#ov-char,#ov-slots,#ov-slotacts,'+
+    '#ov-actions,#pause-menu,#modal,#endwrap,#codex,#devpanel'))return;
+  if(state==='title'){showSlotSelect();return;}          // PR 7.5: escolhe memória
+  if(state==='slots'||state==='slotMenu'||state==='slotConfirm')return;
+  if(state==='fracture'){
+    /* clique fora dos botões = NOVA RUN (decisão explícita, com trava
+       mínima de tempo para não pular a tela de morte sem querer) */
+    if(fracT>0.45)beginNextRun();
+    return;
+  }
   if(state==='shop'||state==='event'||state==='paused'||state==='victory')return;
   if(e.button===0)firing=true;
   if(e.button===2)tryDash();
@@ -1518,7 +1612,10 @@ document.addEventListener('visibilitychange',()=>{
   }
 });
 
-/* ---- 2. PROTEÇÃO DA RUN AO FECHAR ---- */
+/* ---- 2. PROTEÇÃO DA RUN AO FECHAR ----
+   PR 7.5: fechar o jogo não descarta mais a run — o último checkpoint
+   (fronteira de onda / transação de loja) já está persistido. O aviso
+   existe apenas para o jogador saber que voltará ao início da onda. */
 function runInProgress(){
   return (state==='play'||state==='paused'||state==='event'||state==='shop')
     && !!player && player.hp>0 && runTime>3;
@@ -1526,7 +1623,7 @@ function runInProgress(){
 window.addEventListener('beforeunload',e=>{
   if(!runInProgress())return undefined;
   e.preventDefault();
-  e.returnValue='Uma run está em andamento. Sair agora descarta o progresso do ciclo atual.';
+  e.returnValue='Uma run está em andamento. Ao reabrir, use CONTINUAR RUN para voltar ao último checkpoint (início da onda atual). Ecos e progressão permanecem salvos.';
   return e.returnValue;
 });
 
@@ -1664,7 +1761,7 @@ function pauseGame(){
   const pm=document.getElementById('pause-menu');
   const w=WEAPONS[player.wi];
   document.getElementById('p-stats').innerHTML=
-    'ONDA <b>'+String(Math.max(1,wave)).padStart(2,'0')+' / 20</b> · '+
+    'SAVE <b>0'+curSlot+'</b> · ONDA <b>'+String(Math.max(1,wave)).padStart(2,'0')+' / 20</b> · '+
     'NÍVEL <b>'+player.level+'</b> · ABATES <b>'+kills+'</b><br>'+
     'INTEGRIDADE <b>'+Math.max(0,Math.ceil(player.hp))+' / '+player.maxHp+'</b> · '+
     'ESCUDO <b>'+Math.max(0,Math.ceil(player.shield))+' / '+player.shieldMax+'</b> · '+
@@ -1699,7 +1796,10 @@ function abortRun(){
   onPlayerDeath();                       // vira Echo 1 e aplica a fila de Ecos
 }
 
-/* ---------------- persistência dos Ecos ---------------- */
+/* ---------------- persistência dos Ecos ----------------
+   PR 7.5: cada SAVE SLOT possui sua própria fila de Ecos.
+   saveEchoes grava a fila no slot ativo (echoSave.v3); loadEchoes lê
+   exclusivamente do slot ativo — nenhum Echo vaza entre memórias. */
 function saveEchoes(){
   /* PROTEÇÃO DEV: uma run tocada pelo Modo Desenvolvedor jamais é gravada
      como Echo legítimo — o arquivo permanente fica exatamente como estava. */
@@ -1707,20 +1807,22 @@ function saveEchoes(){
     console.warn('[ECHO/DEV] saveEchoes() ignorado: run marcada como debug');
     return false;
   }
+  if(!smEnsureSlot())return false;
   try{
     const slim=echoQueue.filter(r=>r&&!r.dev).map(r=>({v:2,dur:Math.round(r.dur*100)/100,dmgMul:r.dmgMul,
       frMul:r.frMul,wave:r.wave,level:r.level,trail:r.trail,
       crit:r.crit,critMul:r.critMul,pierce:r.pierce,aoeMul:r.aoeMul,rangeMul:r.rangeMul,
       projSpdMul:r.projSpdMul,longRangeBonus:r.longRangeBonus,
       coins:r.coins,items:r.items,upg:r.upg,owned:r.owned,moral:r.moral,dom:r.dom}));
-    localStorage.setItem(LS_KEY,JSON.stringify(slim));
+    smRoot.slots[curSlot].echoes=slim;
+    smCommit();
   }catch(e){/* cota excedida: mantém apenas em memória */}
   return true;
 }
 function loadEchoes(){
+  if(!smEnsureSlot())return [];
   try{
-    const raw=localStorage.getItem(LS_KEY); if(!raw)return [];
-    const q=JSON.parse(raw);
+    const q=smRoot.slots[curSlot].echoes;
     if(!Array.isArray(q))return [];
     // Ecos marcados como debug nunca voltam para uma run normal
     return q.filter(r=>r&&!r.dev&&Array.isArray(r.trail)&&r.trail.length>4).slice(0,2);
@@ -1914,19 +2016,22 @@ const PROG_KEY='echoProg.v1';
 let prog={kills:0,runs:0,waves:0,best:0,wins:0,bosses:0,minis:0,
   elites:0,crits:0,dashes:0,coins:0,items:0,events:0,echoKills:0,
   reso:0,melee:0,status:0,seen:[]};
+/* PR 7.5: a progressão vive dentro do slot ativo (echoSave.v3 → slots[n].prog).
+   loadProg recarrega o objeto global a partir do slot; saveProg grava nele. */
 function loadProg(){
+  if(!smEnsureSlot())return;
   try{
-    const r=localStorage.getItem(PROG_KEY);
-    if(r){const p=JSON.parse(r);
-      if(p&&typeof p==='object')for(const k in prog)
-        if(p[k]!==undefined)prog[k]=p[k];}
+    const p=smRoot.slots[curSlot].prog;
+    if(p&&typeof p==='object')for(const k in prog)
+      if(p[k]!==undefined)prog[k]=p[k];
   }catch(e){}
   if(!Array.isArray(prog.seen))prog.seen=[];
 }
 let _progDirty=false;
 function saveProg(){
   if(devTainted)return false;      // PROTEÇÃO DEV: progressão permanente intocada
-  try{localStorage.setItem(PROG_KEY,JSON.stringify(prog));}catch(e){}
+  if(!smEnsureSlot())return false;
+  try{smRoot.slots[curSlot].prog=JSON.parse(JSON.stringify(prog));smCommit();}catch(e){}
   return true;
 }
 function bumpProg(k,n){
@@ -2080,25 +2185,20 @@ function flushUnlocks(){
   if(unlockQueue.length)setTimeout(flushUnlocks,2600);
 }
 /* v2: passou a guardar o índice no novo CHARS de 8 operadores.
-   Migração 1x do save antigo (5 operadores): 0..3 ficam, 4 (ECHO-0) → 6. */
+   Migração 1x do save antigo (5 operadores): 0..3 ficam, 4 (ECHO-0) → 6.
+   PR 7.5: o operador escolhido pertence ao SAVE SLOT ativo — as constantes
+   abaixo sobrevivem como fonte da migração (lidas uma única vez por
+   smMigrateLegacy), mas nada é lido/gravado fora do slot durante o jogo. */
 const CHAR_KEY='echoChar.v2';
 const CHAR_KEY_OLD='echoChar.v1';
 const CHAR_LEGACY_IDX=[0,1,2,3,6];   // índice do save v1 → índice em CHARS
 let charSel=0;
-try{
-  let _c=localStorage.getItem(CHAR_KEY);
-  if(_c===null){
-    const _o=localStorage.getItem(CHAR_KEY_OLD);
-    if(_o!==null){
-      const _m=CHAR_LEGACY_IDX[_o|0];
-      charSel=clamp(_m==null?0:_m,0,CHARS.length-1);
-      localStorage.setItem(CHAR_KEY,String(charSel));
-    }
-  }else charSel=clamp(_c|0,0,CHARS.length-1);
-}catch(e){}
 function setChar(i){
   charSel=clamp(i,0,CHARS.length-1);
-  try{localStorage.setItem(CHAR_KEY,String(charSel));}catch(e){}
+  if(curSlot>=1&&smRoot){            // persiste apenas no slot ativo
+    smRoot.slots[curSlot].char=charSel;
+    smCommit();
+  }
 }
 function curChar(){
   const c=CHARS[charSel];
@@ -3522,6 +3622,7 @@ function openSlotPicker(wi,price){
         const gi=shopGuns.indexOf(wi);
         if(gi>=0)shopGuns.splice(gi,1);
         renderShop();
+        checkpointShopPurchase();       // PR 7.5: compra concluída → checkpoint
       },
       shopIcon(od.id,od.color));
     bindTip(card,()=>weaponTipHTML(od));
@@ -3567,6 +3668,7 @@ function renderShop(){
         if(isLocked('upg',u.id))shopLock=null;
         shopOffers.splice(shopOffers.indexOf(u),1);
         toast('UPGRADE: '+u.nm);sLvl();renderShop();
+        checkpointShopPurchase();       // PR 7.5: compra concluída → checkpoint
       },
       shopIcon(u.id,'#8fd6ef'),
       lockCfgFor('upg',u.id,u.nm)));
@@ -3606,6 +3708,7 @@ function renderShop(){
           if(isLocked('gun',wi))shopLock=null;
           shopGuns.splice(shopGuns.indexOf(wi),1);
           renderShop();
+          checkpointShopPurchase();     // PR 7.5: compra concluída → checkpoint
         }
       },
       shopIcon(d.id,d.color),
@@ -3626,6 +3729,7 @@ function renderShop(){
         player.coins-=pr;giveItem(it,false);
         if(isLocked('item',it.id))shopLock=null;
         shopItems.splice(shopItems.indexOf(it),1);renderShop();
+        checkpointShopPurchase();       // PR 7.5: compra concluída → checkpoint
       },
       shopIcon(it.id,it.color),
       lockCfgFor('item',it.id,it.nm)));
@@ -3645,6 +3749,7 @@ function renderShop(){
       spawnRing(player.x,player.y,'#7dffc4',8,95,.5);
       toast('REPARO APLICADO · +35 HP');AUDIO.levelUp();
       renderShop();
+      checkpointShopPurchase();         // PR 7.5: reparo pago → checkpoint
     },
     shopIcon('repair','#7dffc4'));
   rcard.style.flex='1 1 100%';
@@ -3681,6 +3786,7 @@ function renderShop(){
       rerollCost=Math.round(rerollCost*1.6*mEff.rerollMul);  // Ganância pune
     }
     rollShop();renderShop();AUDIO.ui(560);
+    checkpointShopPurchase();           // PR 7.5: reroll pago → checkpoint
   };
   mClose.textContent=(wave+1>=MAX_WAVE)?'⚠ ENFRENTAR O PARADOXO':
     ('AVANÇAR PARA ONDA '+String(wave+1).padStart(2,'0')+' / 20');
@@ -6525,10 +6631,12 @@ function drawMiniBoss(e){
 }
 function spawnWave(n){
   waveCleared=false;
-  if(player){
+  if(player&&!smRestoring){
     player.waveKills=0;              // ENTROPIA zera a cada onda
     player.harvStacks=0;             // REVENANT perde o acúmulo
     // REVENANT: a fome cobra seu preço a cada onda superada
+    // (na retomada do checkpoint a onda não é "superada" de novo: a fome
+    //  já foi cobrada quando este checkpoint foi consolidado — PR 7.5)
     if(player.decayPerWave&&n>1){
       const lost=Math.round(player.maxHp*player.decayPerWave);
       player.maxHp=Math.max(28,player.maxHp-lost);
@@ -6537,6 +6645,10 @@ function spawnWave(n){
       toast('A FOME CONSOME · −'+lost+' DE VIDA MÁXIMA');
     }
   }
+  /* PR 7.5 — CHECKPOINT DE FRONTEIRA DE ONDA: estado consolidado de tudo
+     que aconteceu até aqui (loja anterior, escolhas, danos). Retomar
+     devolve exatamente este estado no início da onda n. */
+  if(!smRestoring)captureCheckpoint('onda',n);
   if(n>=MAX_WAVE){spawnBoss();return;}
   const c=waveComp(n),list=[];
   for(let i=0;i<c.chaser;i++)list.push('chaser');
@@ -7692,19 +7804,23 @@ function levelUpReward(){
    ===================================================================== */
 const META_KEY='echoMeta.v1';
 let meta={mem:0,spd:0,reroll:0,vault:0,wins:0,endings:[]};
+/* PR 7.5: a meta-progresso (Pontos de Memória, melhorias, finais) vive
+   dentro do slot ativo (echoSave.v3 → slots[n].meta). Cada memória tem
+   seus próprios pontos — nada é compartilhado entre SAVE 1/2/3. */
 function loadMeta(){
+  if(!smEnsureSlot())return;
   try{
-    const r=localStorage.getItem(META_KEY);
-    if(r){const m=JSON.parse(r);
-      if(m&&typeof m==='object'){
-        meta={mem:m.mem|0,spd:m.spd|0,reroll:m.reroll|0,vault:m.vault|0,
-          wins:m.wins|0,endings:Array.isArray(m.endings)?m.endings:[]};
-      }}
+    const m=smRoot.slots[curSlot].meta;
+    if(m&&typeof m==='object'){
+      meta={mem:m.mem|0,spd:m.spd|0,reroll:m.reroll|0,vault:m.vault|0,
+        wins:m.wins|0,endings:Array.isArray(m.endings)?m.endings:[]};
+    }
   }catch(e){}
 }
 function saveMeta(){
   if(devTainted)return false;      // PROTEÇÃO DEV: meta-progresso intocado
-  try{localStorage.setItem(META_KEY,JSON.stringify(meta));}catch(e){}
+  if(!smEnsureSlot())return false;
+  try{smRoot.slots[curSlot].meta=JSON.parse(JSON.stringify(meta));smCommit();}catch(e){}
   return true;
 }
 const META_SHOP=[
@@ -7777,6 +7893,7 @@ function onVictory(){
   meta.mem+=mem;meta.wins++;
   if(meta.endings.indexOf(key)<0)meta.endings.push(key);
   saveMeta();
+  clearActiveRun();   // PR 7.5: ciclo concluído — nenhum save fantasma de run
   victoryData={key,mem,wave,kills,level:player.level,coins:player.coins,
     items:player.items.slice(),upg:player.upgLog.slice(),
     moral:{comp:moral.comp,greed:moral.greed,viol:moral.viol},dom:moralDom(),
@@ -7835,12 +7952,483 @@ function renderMetaShop(){
   $('e-restart').onclick=()=>{
     $('endwrap').classList.remove('on');
     echoQueue=[];saveEchoes();      // a linha vencedora encerra: recomeça limpo
-    startRun();
+    startRun();                     // decisão explícita: nova run no mesmo slot
+  };
+  $('e-menu').onclick=()=>{
+    $('endwrap').classList.remove('on');
+    victoryToMenu();                // volta ao menu do save (run já encerrada)
   };
   $('e-wipe').onclick=()=>{
-    echoQueue=[];try{localStorage.removeItem(LS_KEY);}catch(e){}
-    toast('MEMÓRIA TEMPORAL APAGADA');AUDIO.echoShatter();
+    echoQueue=[];saveEchoes();      // PR 7.5: apaga apenas os Ecos do slot atual
+    toast('MEMÓRIA TEMPORAL DO SAVE ATUAL APAGADA');AUDIO.echoShatter();
   };
+}
+
+/* =====================================================================
+   SAVE SLOTS v3 + RUN CONTINUÁVEL  (PR 7.5)
+   ---------------------------------------------------------------------
+   Um único wrapper no localStorage (echoSave.v3) guarda as três memórias:
+
+     echoSave.v3 = {
+       version: 3,
+       lastSlot: 1..3,          // último slot usado (o jogo sempre mostra
+                                // a tela de seleção após o título)
+       slots: {
+         1: { meta, prog, char, echoes, run, touched },
+         2: { ... },
+         3: { ... }
+       }
+     }
+
+   · meta   — meta-progresso do slot (Pontos de Memória, melhorias, finais)
+   · prog   — estatísticas permanentes + unlocks/Codex do slot
+   · char   — operador selecionado do slot
+   · echoes — fila de Ecos do slot (mesmo formato slim de echoRuns.v1)
+   · run    — activeRun: checkpoint transacional da run em andamento (ou null)
+   · touched— o slot já foi inicializado (diferencia "novo save" de slot usado)
+
+   Configurações globais de aplicativo (echoCfg.v1, echoAudio.v1) continuam
+   fora do wrapper: são APP SETTINGS, não SAVE DATA.
+
+   Migração: se echoSave.v3 não existir e houver qualquer chave do formato
+   da Alpha (echoMeta.v1 / echoProg.v1 / echoChar.v2 / echoChar.v1 /
+   echoRuns.v1), o conteúdo é movido UMA VEZ para o SAVE 1 e as chaves
+   antigas são removidas — nunca duplica nem re-migra.
+   ===================================================================== */
+const SM_KEY='echoSave.v3';
+const SM_VERSION=3;
+const SM_LEGACY_KEYS=['echoMeta.v1','echoProg.v1','echoChar.v2','echoChar.v1','echoRuns.v1'];
+let smRoot=null;              // raiz carregada do echoSave.v3
+let curSlot=0;                // slot ativo (0 = nenhum — só antes do boot)
+let activeRun=null;           // espelho de smRoot.slots[curSlot].run
+let smRestoring=false;        // spawnWave executando dentro de resumeRun
+
+function smClone(o){return o==null?null:JSON.parse(JSON.stringify(o));}
+function smDefaultSlot(){
+  return {meta:null,prog:null,char:0,echoes:[],run:null,touched:false};
+}
+function smNewRoot(){
+  return {version:SM_VERSION,lastSlot:1,
+    slots:{1:smDefaultSlot(),2:smDefaultSlot(),3:smDefaultSlot()}};
+}
+function smCommit(){
+  try{localStorage.setItem(SM_KEY,JSON.stringify(smRoot));}catch(e){}
+}
+/* garante um slot ativo para gravação (no jogo real o boot já ativou um;
+   existe como proteção para caminhos alternativos de teste) */
+function smEnsureSlot(){
+  if(curSlot>=1&&smRoot)return true;
+  if(smRoot){activateSlot(clamp(smRoot.lastSlot|0||1,1,3));return curSlot>=1;}
+  return false;
+}
+
+/* ---------------- validação defensiva ----------------
+   Um slot malformado é reparado campo a campo. Uma activeRun inválida
+   descarta APENAS a run — meta, prog, char e echoes do slot preservados. */
+function smSanitizeRun(r){
+  try{
+    if(!r||typeof r!=='object'||r.v!==1)return null;
+    const w=r.wave|0;
+    if(w<1||w>MAX_WAVE)return null;
+    const p=r.p;
+    if(!p||typeof p!=='object')return null;
+    if(!Number.isFinite(p.hp)||p.hp<=0)return null;
+    if(!Number.isFinite(p.maxHp)||p.maxHp<28)return null;
+    if(!Number.isInteger(r.charIdx)||r.charIdx<0||r.charIdx>=CHARS.length)return null;
+    if(!Array.isArray(p.owned)||!p.owned.length)return null;
+    for(const wi of p.owned)
+      if(!Number.isInteger(wi)||wi<0||wi>=WEAPONS.length)return null;
+    if(!Number.isInteger(p.wi)||p.wi<0||p.wi>=WEAPONS.length)return null;
+    if(p.owned.indexOf(p.wi)<0)return null;
+    if(!Array.isArray(p.sm)||!Array.isArray(p.items)||!Array.isArray(p.upgLog))return null;
+    if(!Array.isArray(r.echoes))return null;
+    return r;
+  }catch(e){return null;}
+}
+function smSanitizeSlot(s){
+  if(!s||typeof s!=='object')return smDefaultSlot();
+  const out=smDefaultSlot();
+  out.meta=(s.meta&&typeof s.meta==='object')?s.meta:null;
+  out.prog=(s.prog&&typeof s.prog==='object')?s.prog:null;
+  out.char=Number.isInteger(s.char)?clamp(s.char,0,CHARS.length-1):0;
+  out.echoes=Array.isArray(s.echoes)?
+    s.echoes.filter(r=>r&&!r.dev&&Array.isArray(r.trail)&&r.trail.length>4).slice(0,2):[];
+  out.run=smSanitizeRun(s.run);
+  out.touched=!!s.touched;
+  return out;
+}
+
+/* ---------------- migração da Alpha (uma única vez) ---------------- */
+function smMigrateLegacy(){
+  try{
+    const hasLegacy=SM_LEGACY_KEYS.some(k=>localStorage.getItem(k)!==null);
+    if(!hasLegacy)return null;                 // instalação nova: nada a migrar
+    const slot=smDefaultSlot();
+    slot.touched=true;                         // save existente = memória usada
+    /* meta-progresso */
+    try{
+      const r=localStorage.getItem(META_KEY);
+      if(r){const m=JSON.parse(r);
+        if(m&&typeof m==='object')
+          slot.meta={mem:m.mem|0,spd:m.spd|0,reroll:m.reroll|0,vault:m.vault|0,
+            wins:m.wins|0,endings:Array.isArray(m.endings)?m.endings:[]};
+      }
+    }catch(e){}
+    /* progressão + unlocks */
+    try{
+      const r=localStorage.getItem(PROG_KEY);
+      if(r){const p=JSON.parse(r);
+        if(p&&typeof p==='object'){
+          const base={kills:0,runs:0,waves:0,best:0,wins:0,bosses:0,minis:0,
+            elites:0,crits:0,dashes:0,coins:0,items:0,events:0,echoKills:0,
+            reso:0,melee:0,status:0,seen:[]};
+          for(const k in base)if(p[k]!==undefined)base[k]=p[k];
+          if(!Array.isArray(base.seen))base.seen=[];
+          slot.prog=base;
+        }}
+    }catch(e){}
+    /* operador selecionado (v2; aceita v1 com remapeamento de índice) */
+    try{
+      const c2=localStorage.getItem(CHAR_KEY),c1=localStorage.getItem(CHAR_KEY_OLD);
+      if(c2!==null)slot.char=clamp(c2|0,0,CHARS.length-1);
+      else if(c1!==null){
+        const m=CHAR_LEGACY_IDX[c1|0];
+        slot.char=clamp(m==null?0:m,0,CHARS.length-1);
+      }
+    }catch(e){}
+    /* Ecos */
+    try{
+      const r=localStorage.getItem(LS_KEY);
+      if(r){const q=JSON.parse(r);
+        if(Array.isArray(q))
+          slot.echoes=q.filter(x=>x&&!x.dev&&Array.isArray(x.trail)&&x.trail.length>4)
+            .slice(0,2);
+      }
+    }catch(e){}
+    slot.run=null;                             // a Alpha não tinha run ativa
+    const root=smNewRoot();
+    root.lastSlot=1;
+    root.slots[1]=slot;
+    localStorage.setItem(SM_KEY,JSON.stringify(root));  // grava ANTES de apagar
+    for(const k of SM_LEGACY_KEYS){try{localStorage.removeItem(k);}catch(e){}}
+    console.log('[ECHO] Save da Alpha migrado para o SAVE 1 (echoSave.v3).');
+    return root;
+  }catch(e){return null;}                      // próxima inicialização tenta de novo
+}
+
+/* ---------------- carga e sanitização da raiz ---------------- */
+/* boot do sistema de saves: carrega (ou migra) e ativa o último slot usado.
+   A tela de seleção de memórias continua sempre visível após o título. */
+function smBoot(){
+  smLoadRoot();
+  activateSlot(clamp(smRoot.lastSlot|0||1,1,3));
+}
+function smLoadRoot(){
+  smRoot=null;
+  try{
+    const raw=localStorage.getItem(SM_KEY);
+    if(raw){
+      const r=JSON.parse(raw);
+      if(r&&typeof r==='object'&&r.version===SM_VERSION&&
+         r.slots&&typeof r.slots==='object'){
+        smRoot=smNewRoot();
+        const ls=r.lastSlot|0;
+        smRoot.lastSlot=(ls>=1&&ls<=3)?ls:1;
+        for(const i of [1,2,3])smRoot.slots[i]=smSanitizeSlot(r.slots[i]);
+      }
+    }
+  }catch(e){smRoot=null;}                      // v3 corrompido: não explode
+  if(!smRoot)smRoot=smMigrateLegacy()||smNewRoot();
+}
+
+/* ---------------- ativação de slot ----------------
+   Troca as globais do jogo (meta/prog/charSel/echoQueue/activeRun) para o
+   conteúdo persistido do slot. Deve ser chamada apenas de telas de menu —
+   nunca deixa dados de um slot vazar para outro. */
+function activateSlot(i){
+  i|=0;
+  if(!smRoot)smLoadRoot();
+  if(i<1||i>3)i=clamp(smRoot.lastSlot|0||1,1,3);
+  const b=smRoot.slots[i];
+  /* meta */
+  meta={mem:0,spd:0,reroll:0,vault:0,wins:0,endings:[]};
+  if(b.meta&&typeof b.meta==='object'){
+    meta={mem:b.meta.mem|0,spd:b.meta.spd|0,reroll:b.meta.reroll|0,
+      vault:b.meta.vault|0,wins:b.meta.wins|0,
+      endings:Array.isArray(b.meta.endings)?b.meta.endings:[]};
+  }
+  /* progressão + unlocks */
+  prog={kills:0,runs:0,waves:0,best:0,wins:0,bosses:0,minis:0,
+    elites:0,crits:0,dashes:0,coins:0,items:0,events:0,echoKills:0,
+    reso:0,melee:0,status:0,seen:[]};
+  if(b.prog&&typeof b.prog==='object')
+    for(const k in prog)if(b.prog[k]!==undefined)prog[k]=b.prog[k];
+  if(!Array.isArray(prog.seen))prog.seen=[];
+  /* operador do slot (se bloqueado, curChar() recai no inicial) */
+  charSel=clamp(b.char|0,0,CHARS.length-1);
+  if(!isCharUnlocked(CHARS[charSel].id))charSel=0;
+  /* Ecos do slot */
+  echoQueue=Array.isArray(b.echoes)?smClone(b.echoes):[];
+  if(!Array.isArray(echoQueue))echoQueue=[];
+  /* run ativa do slot */
+  activeRun=smSanitizeRun(b.run);
+  b.run=activeRun;
+  /* inicialização de slot vazio: cria os dados base (sem tocar os outros) */
+  if(!b.touched){b.touched=true;b.meta=smClone(meta);b.prog=smClone(prog);}
+  curSlot=i;
+  smRoot.lastSlot=i;
+  smCommit();
+}
+
+/* =====================================================================
+   CHECKPOINT DA RUN — política transacional por fronteira de onda
+   ---------------------------------------------------------------------
+   POLÍTICA ESCOLHIDA (documentada em SAVE_SYSTEM.md):
+   · O checkpoint é gravado apenas em pontos seguros fora de combate:
+       1. início da run (onda 1 pendente);
+       2. início de cada onda (spawnWave), incluindo a onda do chefe;
+       3. após cada transação concluída da loja (upgrade/módulo/arma/
+          reparo/reroll) — sempre entre uma onda concluída e a seguinte.
+   · Retomar = voltar ao INÍCIO da onda gravada. Ganhos obtidos no meio
+     da onda (level-ups, créditos, abates, escolhas de evento) só são
+     consolidados pelo checkpoint da onda seguinte. Assim nenhuma
+     recompensa pode ser coletada duas vezes e nenhuma compra é perdida.
+   · Morte, vitória e aborto limpam activeRun — não existe "continuar"
+     uma run encerrada.
+   · Nada de autosave por frame: gravação pequena, rara e determinística.
+   · O Stat Pipeline reconstrói os derivados: guardamos a LISTA de
+     modificadores permanentes (ids estáveis) + campos de estado — nunca
+     os valores finais —, então restaurar não duplica multiplicadores.
+   ===================================================================== */
+function smBuildCheckpoint(reason,waveOverride){
+  const w=clamp(Math.round(waveOverride!=null?waveOverride:wave)||1,1,MAX_WAVE);
+  return {
+    v:1,
+    reason:String(reason||'?').slice(0,24),
+    at:Date.now(),
+    wave:w,
+    runTime:Math.round(runTime*100)/100,
+    kills:kills|0,
+    evCount:evCount|0,
+    charIdx:charSel,
+    moral:{comp:moral.comp|0,greed:moral.greed|0,viol:moral.viol|0},
+    /* estado dos Ecos desta run (confiança evolui durante o ciclo) */
+    echoes:echoes.map(e=>({trust:clamp(Math.round(e.trust),0,100),alive:!!e.alive})),
+    /* snapshot anti-duplicação: prog volta ao estado do checkpoint ao
+       retomar, então um trecho de onda repetido nunca conta duas vezes */
+    prog:smClone(prog),
+    /* BUILD + ESTADO do jogador — sem stats derivados do pipeline */
+    p:{
+      charId:player.charId,
+      /* vitais: estado, nunca enchidos no load */
+      hp:player.hp,maxHp:player.maxHp,
+      shield:player.shield,shieldMax:player.shieldMax,
+      shieldRegen:player.shieldRegen,shieldDelay:player.shieldDelay,
+      coins:player.coins,
+      level:player.level,xp:player.xp,xpNext:player.xpNext,
+      /* arsenal */
+      owned:player.owned.slice(),wi:player.wi,maxSlots:player.maxSlots,
+      /* módulos e histórico (upgLog é só para exibição) */
+      items:player.items.slice(),upgLog:player.upgLog.slice(),
+      /* modificadores PERMANENTES do pipeline (temporários ficam de fora) */
+      sm:(player.sm||[]).filter(m=>m&&m.dur==null&&!m.cond)
+        .map(m=>({id:m.id,stat:m.stat,type:m.type,value:m.value,
+          stacks:m.stacks,label:m.label})),
+      /* escolhas e efeitos permanentes da run (bandeiras cruas — o
+         pipeline reconstrói os derivados a partir delas) */
+      vowPoverty:player.vowPoverty,vowBlood:player.vowBlood,
+      markedUp:player.markedUp,bigShop:player.bigShop,
+      freeRerolls:player.freeRerolls,repairs:player.repairs,
+      echoBoost:player.echoBoost,regen:player.regen,
+      dashCdMax:player.dashCdMax,dashReflect:!!player.dashReflect,
+      doubleTap:player.doubleTap||0,
+      dashLong:player.dashLong||1,phaseDash:!!player.phaseDash,
+      lowHpBonus:player.lowHpBonus||0,afflictBonus:player.afflictBonus||0,
+      globalLifesteal:player.globalLifesteal||0,
+      overheat:!!player.overheat,drones:player.drones||0,
+      resoPower:player.resoPower||1,reactive:!!player.reactive,
+      entropy:!!player.entropy,killDash:player.killDash||0,
+      revives:player.revives||0,thorns:player.thorns||0,
+      harvestHeal:player.harvestHeal||0,harvestStack:player.harvestStack||0,
+      decayPerWave:player.decayPerWave||0,shopPersonal:player.shopPersonal||1,
+      /* status/econômicos (módulos elementais, eventos e operadores) */
+      longRangeBonus:player.longRangeBonus||0,
+      burnSpread:!!player.burnSpread,
+      chainBonus:player.chainBonus||0,critChain:!!player.critChain,
+      critHeal:player.critHeal||0,dotCrit:player.dotCrit||0,
+      enemyHpTax:player.enemyHpTax||0,execThreshold:player.execThreshold||0,
+      frozenBonus:player.frozenBonus||0,
+      healAmount:player.healAmount||14,healChance:player.healChance||0,
+      medBoost:player.medBoost||1,pickupSpd:player.pickupSpd||1,
+      stBoost:player.stBoost||1,stDurMul:player.stDurMul||1,
+      virulent:player.virulent||1,wraithRush:!!player.wraithRush,
+      slowAura:player.slowAura||1
+    }
+  };
+}
+function captureCheckpoint(reason,waveOverride){
+  /* PROTEÇÃO DEV: run depurada nunca gera checkpoint legítimo */
+  if(devTainted)return false;
+  if(!player)return false;
+  if(curSlot<1||!smRoot)return false;
+  if(!(state==='play'||state==='paused'||state==='shop'))return false;
+  const cp=smBuildCheckpoint(reason,waveOverride);
+  if(!smSanitizeRun(cp))return false;
+  activeRun=cp;
+  smRoot.slots[curSlot].run=cp;
+  smCommit();
+  return true;
+}
+function clearActiveRun(doCommit){
+  activeRun=null;
+  if(curSlot>=1&&smRoot){
+    smRoot.slots[curSlot].run=null;
+    if(doCommit!==false)smCommit();
+  }
+}
+function hasActiveRun(){return !!(activeRun&&smSanitizeRun(activeRun));}
+
+/* transação de loja concluída: consolida a compra no checkpoint apontando
+   para a PRÓXIMA onda (ela ainda não começou; retomar spawna direto nela) */
+function checkpointShopPurchase(){
+  captureCheckpoint('loja',Math.min(wave+1,MAX_WAVE));
+}
+
+/* ---------------- retomada da run ---------------- */
+function resumeRun(){
+  const cp=hasActiveRun()?activeRun:null;
+  hideOverlay();
+  if(!cp)return startRun();
+  devTainted=!!DEV_MODE;
+  resetRunWorld();
+  /* moral persistida (escolhas da run) antes de criar o player */
+  moral={comp:0,greed:0,viol:0};
+  if(cp.moral&&typeof cp.moral==='object'){
+    moral.comp=Math.max(0,cp.moral.comp|0);
+    moral.greed=Math.max(0,cp.moral.greed|0);
+    moral.viol=Math.max(0,cp.moral.viol|0);
+  }
+  _lastTier={c:0,g:0,v:0};applyMoral();
+  /* contadores da run */
+  wave=clamp(cp.wave|0,1,MAX_WAVE);
+  runTime=Math.max(0,+cp.runTime||0);
+  kills=Math.max(0,cp.kills|0);
+  evCount=Math.max(0,cp.evCount|0);
+  /* prog volta ao estado do checkpoint (anti-duplicação) */
+  if(cp.prog&&typeof cp.prog==='object'){
+    for(const k in prog)if(cp.prog[k]!==undefined)prog[k]=cp.prog[k];
+    if(!Array.isArray(prog.seen))prog.seen=[];
+  }
+  /* operador: o checkpoint só é válido se bater com o slot */
+  player=makePlayer();
+  const q=cp.p;
+  if(q.charId!==player.charId||cp.charIdx!==charSel){
+    /* save inconsistente: invalida só a run, preserva a meta do slot */
+    console.warn('[ECHO] activeRun inválida (operador divergente) — run descartada');
+    clearActiveRun();
+    startRun();
+    return;
+  }
+  const num=(v,d)=>Number.isFinite(v)?v:d;
+  /* estado cru (hp/maxHp NÃO são recalculados nem enchidos) */
+  player.maxHp=Math.max(28,num(q.maxHp,player.maxHp));
+  player.hp=clamp(num(q.hp,player.hp),1,player.maxHp);
+  player.shieldMax=Math.max(0,num(q.shieldMax,player.shieldMax));
+  player.shield=clamp(num(q.shield,player.shield),0,player.shieldMax);
+  player.shieldRegen=Math.max(0,num(q.shieldRegen,player.shieldRegen));
+  player.shieldDelay=Math.max(0,num(q.shieldDelay,player.shieldDelay));
+  player.coins=Math.max(0,Math.round(num(q.coins,player.coins)));
+  player.level=Math.max(1,num(q.level,1)|0);
+  player.xp=Math.max(0,num(q.xp,0));
+  player.xpNext=Math.max(1,num(q.xpNext,player.xpNext));
+  /* arsenal */
+  player.owned=(Array.isArray(q.owned)?q.owned:player.owned)
+    .filter(wi=>Number.isInteger(wi)&&wi>=0&&wi<WEAPONS.length)
+    .slice(0,8);
+  if(!player.owned.length)player.owned=makePlayer().owned;
+  player.wi=player.owned.indexOf(q.wi)>=0?q.wi:player.owned[0];
+  player.maxSlots=clamp(num(q.maxSlots,player.maxSlots)|0,1,8);
+  player.items=(Array.isArray(q.items)?q.items:[]).slice(0,64);
+  player.upgLog=(Array.isArray(q.upgLog)?q.upgLog:[]).slice(0,400);
+  /* modificadores permanentes capturados substituem os recém-nascidos:
+     o pipeline recalcula os derivados a partir da base imutável — os
+     multiplicadores NÃO são reaplicados em cima dos valores finais */
+  player.sm=(Array.isArray(q.sm)?q.sm:[])
+    .filter(m=>m&&m.id&&SM_STATS[m.stat])
+    .map(m=>({id:String(m.id),stat:m.stat,
+      type:SM_ORDER.indexOf(m.type)>=0?m.type:'mult',
+      value:num(m.value,1),stacks:m.stacks||'stack',
+      label:String(m.label||m.id).slice(0,60)}));
+  /* escolhas/efeitos permanentes da run */
+  player.vowPoverty=num(q.vowPoverty,0)|0;
+  player.vowBlood=Number.isFinite(q.vowBlood)?q.vowBlood:-1;
+  player.markedUp=num(q.markedUp,1);
+  player.bigShop=num(q.bigShop,0)|0;
+  player.freeRerolls=Math.max(0,num(q.freeRerolls,player.freeRerolls)|0);
+  player.repairs=Math.max(0,num(q.repairs,0)|0);
+  player.echoBoost=num(q.echoBoost,0);
+  player.regen=num(q.regen,0);
+  player.dashCdMax=Math.max(.2,num(q.dashCdMax,player.dashCdMax));
+  player.dashReflect=!!q.dashReflect;
+  player.doubleTap=num(q.doubleTap,0);
+  player.dashLong=num(q.dashLong,1);
+  player.phaseDash=!!q.phaseDash;
+  player.lowHpBonus=num(q.lowHpBonus,0);
+  player.afflictBonus=num(q.afflictBonus,0);
+  player.globalLifesteal=num(q.globalLifesteal,0);
+  player.overheat=!!q.overheat;
+  player.drones=num(q.drones,0)|0;
+  player.resoPower=num(q.resoPower,1);
+  player.reactive=!!q.reactive;
+  player.entropy=!!q.entropy;
+  player.killDash=num(q.killDash,0);
+  player.revives=num(q.revives,0)|0;
+  player.thorns=num(q.thorns,0);
+  player.harvestHeal=num(q.harvestHeal,0);
+  player.harvestStack=num(q.harvestStack,0);
+  player.decayPerWave=num(q.decayPerWave,0);
+  player.shopPersonal=num(q.shopPersonal,1);
+  /* status/econômicos — fallback: o que o operador já definiu no makePlayer */
+  player.longRangeBonus=num(q.longRangeBonus,player.longRangeBonus||0);
+  player.burnSpread=!!q.burnSpread||!!player.burnSpread;
+  player.chainBonus=num(q.chainBonus,player.chainBonus||0);
+  player.critChain=!!q.critChain||!!player.critChain;
+  player.critHeal=num(q.critHeal,player.critHeal||0);
+  player.dotCrit=num(q.dotCrit,player.dotCrit||0);
+  player.enemyHpTax=num(q.enemyHpTax,player.enemyHpTax||0);
+  player.execThreshold=num(q.execThreshold,player.execThreshold||0);
+  player.frozenBonus=num(q.frozenBonus,player.frozenBonus||0);
+  player.healAmount=num(q.healAmount,player.healAmount||14);
+  player.healChance=num(q.healChance,player.healChance||0);
+  player.medBoost=num(q.medBoost,player.medBoost||1);
+  player.pickupSpd=num(q.pickupSpd,player.pickupSpd||1);
+  player.stBoost=num(q.stBoost,player.stBoost||1);
+  player.stDurMul=num(q.stDurMul,player.stDurMul||1);
+  player.virulent=num(q.virulent,player.virulent||1);
+  player.wraithRush=!!q.wraithRush||!!player.wraithRush;
+  player.slowAura=num(q.slowAura,player.slowAura||1);
+  smRefresh(player);
+  /* Ecos do slot com a confiança do checkpoint */
+  echoes=echoQueue.map((d,i)=>makeEcho(d,i+1));
+  if(Array.isArray(cp.echoes))
+    cp.echoes.forEach((s,i)=>{
+      const e=echoes[i];
+      if(!e)return;
+      e.trust=clamp(num(s.trust,e.trust),0,100);
+      if(s.alive===false){e.alive=false;}
+    });
+  buildWeaponHUD();
+  cam.x=player.x;cam.y=player.y;
+  hudAcc=1;updateHUD(true);
+  banner('RUN RESTAURADA','CHECKPOINT · ONDA '+String(wave).padStart(2,'0')+' — MEMÓRIA SINCRONIZADA');
+  /* a onda do checkpoint começa agora (política de fronteira de onda).
+     smRestoring: mecânicas de "início de onda" já consolidadas no
+     checkpoint (ex.: fome do REVENANT) não são cobradas duas vezes e o
+     checkpoint original permanece intocado. */
+  smRestoring=true;
+  try{spawnWave(wave);}
+  finally{smRestoring=false;}
+  waveActive=true;wavePause=2.8;scheduleBeacon();
 }
 
 /* ---------------- ciclo de morte ---------------- */
@@ -7872,6 +8460,9 @@ function onPlayerDeath(){
   // REGRA DOS 2 ECOS: Run → Eco1 · Eco1 → Eco2 · Eco2 → descartado
   echoQueue=[runData,echoQueue[0]].filter(Boolean);
   saveEchoes();
+  // PR 7.5: a run morreu — activeRun some e NADA reinicia automaticamente.
+  // A tela de morte oferece NOVA RUN / VOLTAR AO MENU; a decisão é do jogador.
+  clearActiveRun();
   showFracture(runData,had1,had2);
 }
 function showFracture(rd,had1,had2){
@@ -7899,23 +8490,36 @@ function showFracture(rd,had1,had2){
   if(had2)lines+='<span class="bad">ECO·02 ANTERIOR → DESCARTADO</span><br>';
   ovFrac.innerHTML=lines;
   ovEchos.textContent='';
-  ovGo.textContent='REINICIANDO CICLO…';
+  ovGo.textContent='NOVA RUN';
+  const _act=$('ov-actions');
+  if(_act)_act.classList.add('on');
   overlay.classList.remove('hidden');
 }
+/* PR 7.5: fim de ciclo NÃO reinicia mais sozinho. tickFracture apenas
+   anima a fratura; nada aqui inicia outra run sem decisão explícita
+   do jogador (NOVA RUN / VOLTAR AO MENU). */
+function tickFracture(dt){
+  fracT+=dt;
+}
 function beginNextRun(){
+  /* "NOVA RUN" da tela de morte: decisão explícita. Mantém o mesmo slot —
+     meta, Ecos, unlocks e Codex continuam sendo os do save atual. */
   if(state!=='fracture')return;
   hideOverlay();startRun();
 }
-function hideOverlay(){overlay.classList.add('hidden');}
+function hideOverlay(){
+  overlay.classList.add('hidden');
+  const _act=$('ov-actions');
+  if(_act)_act.classList.remove('on');
+}
 
-function startRun(){
-  /* Se o Modo Desenvolvedor já estiver ligado quando a run começa, ela
-     nasce marcada como debug. Caso contrário, começa limpa. */
-  devTainted=!!DEV_MODE;
+/* ---------------- início de run ----------------
+   resetRunWorld: parte comum (limpeza total do mundo) usada por
+   startRun (run nova) e resumeRun (continuar um checkpoint). */
+function resetRunWorld(){
   state='play';runTime=0;fracT=0;shake=0;
   wave=0;kills=0;wavePause=2.2;waveActive=false;waveCleared=false;
   document.getElementById('pause-menu').classList.remove('on');
-  player=makePlayer();
   enemies=[];projectiles=[];xporbs=[];parts=[];ftexts=[];
   swings=[];arcs=[];curAttacker=null;resoFlash=0;
   pickups=[];allies=[];beacon=null;curEv=null;evCount=0;
@@ -7930,6 +8534,13 @@ function startRun(){
   rerollCost=10;shopLock=null;modalEl.classList.remove('on');
   scheduleBeacon();
   recorder=[];recAcc=0;
+}
+function startRun(){
+  /* Se o Modo Desenvolvedor já estiver ligado quando a run começa, ela
+     nasce marcada como debug. Caso contrário, começa limpa. */
+  devTainted=!!DEV_MODE;
+  resetRunWorld();
+  player=makePlayer();
   echoes=echoQueue.map((d,i)=>makeEcho(d,i+1));
   buildWeaponHUD();
   cam.x=player.x;cam.y=player.y;
@@ -7937,6 +8548,8 @@ function startRun(){
     echoes.length+(echoes.length===1?' ECO ATIVO':' ECOS ATIVOS')+' — SUAS VIDAS PASSADAS LUTAM COM VOCÊ'
     :'SEM ECOS REGISTRADOS — MORRA PARA CRIAR UM');
   hudAcc=1;updateHUD(true);
+  // PR 7.5: primeiro checkpoint — a run já é retomável antes da onda 1
+  captureCheckpoint('início',1);
 }
 
 /* ---------------- render ---------------- */
@@ -9388,9 +10001,10 @@ function loop(now){
       }
     }
   }else if(state==='fracture'){
-    fracT+=dt;
+    /* PR 7.5: sem auto-restart. A fratura apenas anima; a próxima run
+       nasce somente de NOVA RUN (clique/Enter/gatilho A) ou VOLTAR AO MENU. */
+    tickFracture(dt);
     dt*=.25; // slow-motion residual
-    if(fracT>2.6)beginNextRun();
   }
   if(frozen)dt*=.12;   // partículas ficam em câmera lenta quando o tempo trava
   // ---- PARTÍCULAS ----
@@ -10008,18 +10622,18 @@ function renderConfig(){
   cxBody.appendChild(sect);
 
   const q=loadEchoes();
-  cxBody.appendChild(cfgRow('MEMÓRIA TEMPORAL',
-    'Ecos salvos: '+q.length+'/2. Apagar remove as runs gravadas — '+
-    'você recomeça sem nenhum Echo aliado.',
+  cxBody.appendChild(cfgRow('MEMÓRIA TEMPORAL DO SAVE '+curSlot,
+    'Ecos salvos: '+q.length+'/2. Apagar remove as runs gravadas NESTE save '+
+    '(os outros saves não são afetados) — você recomeça sem nenhum Echo aliado.',
     'APAGAR ECOS','warn',
-    ()=>{echoQueue=[];try{localStorage.removeItem(LS_KEY);}catch(e){}
-      toast('MEMÓRIA TEMPORAL APAGADA');}));
-  cxBody.appendChild(cfgRow('PONTOS DE MEMÓRIA',
+    ()=>{echoQueue=[];saveEchoes();       // PR 7.5: afeta somente o slot ativo
+      toast('MEMÓRIA TEMPORAL DO SAVE '+curSlot+' APAGADA');}));
+  cxBody.appendChild(cfgRow('PONTOS DE MEMÓRIA DO SAVE '+curSlot,
     'Total: ◆'+meta.mem+' · Vitórias: '+meta.wins+' · Finais: '+
     meta.endings.length+'/3 · Bônus permanentes desbloqueados.',
     'ZERAR PROGRESSO','warn',
     ()=>{meta={mem:0,spd:0,reroll:0,vault:0,wins:0,endings:[]};saveMeta();
-      toast('META-PROGRESSO ZERADO');}));
+      toast('META-PROGRESSO DO SAVE '+curSlot+' ZERADO');}));
   appendQuitRow();
   cxFoot.textContent='AS CONFIGURAÇÕES SÃO SALVAS AUTOMATICAMENTE';
 }
@@ -10039,8 +10653,9 @@ function appendQuitRow(){
   row.innerHTML='<div class="cfgl"><div class="cfgnm">SAIR DO JOGO</div>'+
     '<div class="cfgds">'+
     (active
-      ? '<span style="color:#ff9d3c">Uma run está em andamento — o progresso '+
-        'do ciclo atual será perdido.</span> Ecos salvos e Pontos de Memória permanecem.'
+      ? '<span style="color:#ff9d3c">Uma run está em andamento — ao reabrir, '+
+        'use CONTINUAR RUN para voltar ao último checkpoint (início da onda).</span> '+
+        'Ecos salvos e Pontos de Memória permanecem.'
       : 'Fecha o ECHO. Todo o progresso persistente já está salvo.')+
     '</div></div>';
   const btn=document.createElement('div');
@@ -10206,18 +10821,18 @@ function refreshTitleChar(){
       }
       setChar(i);initAudio();AUDIO.ui(760);
       refreshTitleChar();
+      /* PR 7.5: no menu do save, o cabeçalho mostra o operador do slot */
+      if(state==='slotMenu')showSlotMenu();
     });
   });
 }
 
 /* ---------------- boot ---------------- */
 function showTitle(){
-  loadMeta();loadCfg();loadProg();checkUnlocks(true);refreshTitleChar();
-  const q=loadEchoes();echoQueue=q;
-  const unW=WEAPONS.filter(w=>isWeaponUnlocked(w.id)).length;
-  const unC=CHARS.filter(c=>isCharUnlocked(c.id)).length;
+  loadCfg();                    // configurações globais (APP SETTINGS)
+  checkUnlocks(true);           // sincroniza unlocks silenciosamente
   ovTitle.textContent='E C H O';ovTitle.setAttribute('data-t','E C H O');
-  ovTitle.style.fontSize='64px';
+  ovTitle.style.fontSize='64px';ovTitle.classList.add('glitch');
   ovSub.textContent='PROTOCOLO DE RESSONÂNCIA TEMPORAL';
   ovBody.innerHTML=
     '<span class="k">W</span><span class="k">A</span><span class="k">S</span><span class="k">D</span> MOVER · '+
@@ -10230,28 +10845,203 @@ function showTitle(){
     'ESCOPETA, ORBE E SINGULARIDADE SÃO <b>COMPRADOS NA LOJA</b><br>'+
     'ACERTAR O MESMO ALVO QUE UM ECHO EM &lt;0.5s DETONA <b>RESSONÂNCIA</b><br>'+
     '<span class="k">🎮</span> CONTROLE SUPORTADO — CONECTE E APERTE QUALQUER BOTÃO<br>'+
-    '<span class="k">C</span> ARSENAL · <span class="k">O</span> CONFIGURAÇÕES · '+
-    'LIBERADO: <b>'+unC+'/'+CHARS.length+'</b> OPERADORES · <b>'+
-    unW+'/'+WEAPONS.length+'</b> ARMAS<br>'+
+    '<span class="k">C</span> ARSENAL · <span class="k">O</span> CONFIGURAÇÕES<br>'+
     'AO MORRER, SUA RUN SE TORNA UM <b>ECHO</b> E LUTA AO SEU LADO NO PRÓXIMO CICLO<br>'+
     'DECISÕES NO CENTRO DA ARENA MOLDAM <b>COMPAIXÃO · GANÂNCIA · VIOLÊNCIA</b><br>'+
     'SEUS ECOS JULGAM SUAS ESCOLHAS — CONFIANÇA <b>ALTA</b> LUTA POR VOCÊ, <b>BAIXA</b> TE ABANDONA';
-  let s=q.length?
-    'MEMÓRIA TEMPORAL: ECHO·01 '+(q[0]?'CARREGADO ('+q[0].trail.length+' CPS · ONDA '+q[0].wave+' · '+
-      DOM_NAME[q[0].dom||'neutro']+')':'VAZIO')+
-    ' · ECHO·02 '+(q[1]?'CARREGADO ('+q[1].trail.length+' CPS · '+DOM_NAME[q[1].dom||'neutro']+')':'VAZIO')
-    :'MEMÓRIA TEMPORAL VAZIA — NENHUM ECO REGISTRADO';
-  s+='\nSOBREVIVA A 20 ONDAS E DISSOLVA "O PARADOXO" — 3 FINAIS POSSÍVEIS';
-  s+='\nMETA-PROGRESSO: ◆ '+meta.mem+' MEMÓRIA · VELOCIDADE +'+(meta.spd*5)+'% · '+
-     meta.reroll+' REROLL GRÁTIS · ◈'+(meta.vault*25)+' INICIAIS · '+
-     meta.wins+' VITÓRIA(S) · FINAIS '+meta.endings.length+'/3';
+  ovGo.textContent='INICIAR';
+  /* PR 7.5: o seletor de operador agora vive no menu do SAVE (por slot) */
+  const _oc=$('ov-char');
+  if(_oc)_oc.innerHTML='';
   ovEchos.style.whiteSpace='pre-line';
-  ovEchos.textContent=s;
+  ovEchos.textContent='3 MEMÓRIAS DISPONÍVEIS — ESCOLHA QUAL HISTÓRIA CONTINUAR';
   ovFrac.innerHTML='';
+  const _act=$('ov-actions');
+  if(_act)_act.classList.remove('on');
   const _ver=$('ov-ver');
   if(_ver)_ver.textContent=ECHO_VERSION_LABEL;
-  ovGo.textContent='INICIAR CICLO';
   overlay.classList.remove('hidden');
+}
+/* =====================================================================
+   PR 7.5 — TELAS DE SAVE SLOT
+   Título → SELECIONE UMA MEMÓRIA (SAVE 1/2/3) → menu do SAVE
+   (CONTINUAR RUN · NOVA RUN · VOLTAR) → run.
+   Cada memória é totalmente independente: meta, Ecos, unlocks, Codex,
+   operador e run ativa vivem dentro do próprio slot.
+   ===================================================================== */
+let slotNav=1;          // slot destacado na tela de seleção (gamepad)
+let slotMenuIdx=0;      // opção destacada no menu do save (gamepad)
+
+function slotSummaryLines(i){
+  const b=smRoot.slots[i];
+  const used=!!b.touched||!!b.run;
+  if(!used)
+    return {cls:' empty',info:'MEMÓRIA VIRGEN — NENHUM CICLO REGISTRADO',
+      runTxt:'NOVO SAVE',runCls:''};
+  const C=CHARS[clamp(b.char|0,0,CHARS.length-1)]||CHARS[0];
+  const nEchoes=(Array.isArray(b.echoes)?b.echoes:[]).length;
+  const best=b.prog&&Number.isFinite(b.prog.best)?b.prog.best:0;
+  const mem=b.meta?Math.max(0,b.meta.mem|0):0;
+  let info='OPERADOR: <b>'+C.nm+'</b> · MELHOR ONDA: <b>'+(best>0?best:'—')+'</b>'+
+    ' · ECOS: <b>'+nEchoes+'</b> · MEMÓRIA: <b>◆ '+mem+'</b>';
+  const r=b.run;
+  let runTxt,runCls='';
+  if(r&&smSanitizeRun(r)){
+    runTxt='RUN EM ANDAMENTO — ONDA '+String(r.wave|0).padStart(2,'0');
+  }else{
+    runTxt='SEM RUN ATIVA';runCls='none';
+  }
+  return {cls:'',info,runTxt,runCls};
+}
+function showSlotSelect(){
+  state='slots';
+  slotNav=clamp(curSlot||1,1,3);
+  ovTitle.textContent='SELECIONE UMA MEMÓRIA';
+  ovTitle.setAttribute('data-t','SELECIONE UMA MEMÓRIA');
+  ovTitle.style.fontSize='40px';ovTitle.classList.add('glitch');
+  ovSub.textContent='CADA MEMÓRIA É UMA LINHA TEMPORAL INDEPENDENTE';
+  renderSlotSelect();
+  ovGo.textContent='';
+  const _oc=$('ov-char');if(_oc)_oc.innerHTML='';
+  ovEchos.textContent='';
+  ovFrac.innerHTML='';
+  const _act=$('ov-actions');if(_act)_act.classList.remove('on');
+  const _ver=$('ov-ver');
+  if(_ver)_ver.textContent=ECHO_VERSION_LABEL;
+  overlay.classList.remove('hidden');
+}
+function renderSlotSelect(){
+  let h='<div id="ov-slots">';
+  for(const i of [1,2,3]){
+    const s=slotSummaryLines(i);
+    h+='<div class="savecard'+s.cls+(i===slotNav?' sel':'')+'" data-slot="'+i+'">'+
+      '<div class="sc-name">SAVE '+i+'</div>'+
+      '<div class="sc-info">'+s.info+'</div>'+
+      '<div class="sc-run '+s.runCls+'">'+s.runTxt+'</div></div>';
+  }
+  h+='<div style="font-family:Consolas,monospace;font-size:var(--fs-2xs);'+
+    'letter-spacing:.3em;color:rgba(150,180,200,.55);margin-top:8px">'+
+    'CLIQUE · TECLAS 1 2 3 · CONTROLE: D-PAD + A</div></div>';
+  ovBody.innerHTML=h;
+  ovBody.querySelectorAll('[data-slot]').forEach(el=>{
+    el.addEventListener('click',ev=>{
+      ev.stopPropagation();
+      pickSlot(parseInt(el.dataset.slot,10));
+    });
+  });
+}
+function pickSlot(i){
+  i|=0;
+  if(i<1||i>3)return;
+  initAudio();AUDIO.ui(760);
+  activateSlot(i);              // carrega as globais deste slot (isolado)
+  showSlotMenu();
+}
+function showSlotMenu(){
+  state='slotMenu';
+  slotMenuIdx=0;
+  const b=smRoot.slots[curSlot];
+  const C=CHARS[charSel]||CHARS[0];
+  ovTitle.textContent='SAVE '+curSlot;
+  ovTitle.setAttribute('data-t','SAVE '+curSlot);
+  ovTitle.style.fontSize='44px';ovTitle.classList.add('glitch');
+  ovSub.textContent=C.nm+' · MEMÓRIA ATIVA';
+  const best=prog.best>0?prog.best:'—';
+  const r=hasActiveRun()?activeRun:null;
+  let h=
+    '<div style="font-family:Consolas,monospace;font-size:var(--fs-sm);'+
+    'letter-spacing:.2em;color:#9cc6da;line-height:2">'+
+    'MELHOR ONDA <b>'+best+'</b> · ECOS <b>'+echoQueue.length+'</b> · '+
+    'MEMÓRIA <b>◆ '+meta.mem+'</b> · VITÓRIAS <b>'+meta.wins+'</b> · '+
+    'FINAIS <b>'+meta.endings.length+'/3</b></div>'+
+    '<div id="ov-slotacts">'+
+    '<div class="ovbtn slotact'+(r?'':' dis')+'" data-act="continue">'+
+      'CONTINUAR RUN<small>'+(r?
+        'ONDA '+String(r.wave|0).padStart(2,'0')+' · '+C.nm+' · CHECKPOINT '+
+          String(r.reason||'').toUpperCase()
+        :'NENHUMA RUN ATIVA NESTA MEMÓRIA')+'</small></div>'+
+    '<div class="ovbtn slotact" data-act="new">NOVA RUN<small>'+
+      (r?'A RUN ATUAL SERÁ ENCERRADA':'INICIA UM CICLO DO ZERO NESTE SAVE')+
+      '</small></div>'+
+    '<div class="ovbtn slotact" data-act="back">VOLTAR<small>VOLTA PARA A SELEÇÃO DE MEMÓRIAS</small></div>'+
+    '</div>';
+  ovBody.innerHTML=h;
+  ovBody.querySelectorAll('[data-act]').forEach(el=>{
+    el.addEventListener('click',ev=>{
+      ev.stopPropagation();
+      slotMenuAction({continue:0,new:1,back:2}[el.dataset.act]);
+    });
+  });
+  renderSlotMenuNav();
+  refreshTitleChar();           // seletor de operador — por slot
+  ovGo.textContent='';
+  ovEchos.textContent='SAVE '+curSlot+' — OS DADOS DESTA MEMÓRIA NÃO AFETAM OS OUTROS SAVES';
+  ovFrac.innerHTML='';
+  const _act=$('ov-actions');if(_act)_act.classList.remove('on');
+  const _ver=$('ov-ver');
+  if(_ver)_ver.textContent=ECHO_VERSION_LABEL;
+  overlay.classList.remove('hidden');
+}
+/* destaque visual da navegação por gamepad (sem poluir o clique) */
+function renderSlotMenuNav(){
+  const acts=ovBody.querySelectorAll('[data-act]');
+  acts.forEach((el,i)=>{
+    el.style.borderColor=(i===slotMenuIdx)?'rgba(159,243,255,.85)':'';
+    el.style.boxShadow=(i===slotMenuIdx)?'0 0 18px rgba(70,224,255,.25)':'';
+  });
+}
+function slotMenuAction(idx){
+  if(idx===0){                              // CONTINUAR RUN
+    if(!hasActiveRun()){toast('NENHUMA RUN ATIVA NESTA MEMÓRIA');AUDIO.ui(220);return;}
+    initAudio();AUDIO.levelUp();
+    resumeRun();
+  }else if(idx===1){                        // NOVA RUN
+    initAudio();AUDIO.ui(600);
+    hasActiveRun()?showSlotConfirm():doNewRun();
+  }else{                                    // VOLTAR
+    initAudio();AUDIO.ui(440);
+    showSlotSelect();
+  }
+}
+function showSlotConfirm(){
+  state='slotConfirm';
+  const r=activeRun;
+  ovTitle.textContent='ENCERRAR A RUN ATUAL?';
+  ovTitle.setAttribute('data-t','ENCERRAR A RUN ATUAL?');
+  ovTitle.style.fontSize='34px';ovTitle.classList.add('glitch');
+  ovSub.textContent='ESTA DECISÃO NÃO PODE SER DESFEITA';
+  ovBody.innerHTML=
+    '<div style="font-family:Consolas,monospace;font-size:var(--fs-md);'+
+    'letter-spacing:.16em;color:#9cc6da;line-height:2.2;max-width:640px">'+
+    'Existe uma run em andamento.<br>Iniciar uma nova run irá encerrar a run atual'+
+    (r?' (onda '+String(r.wave|0).padStart(2,'0')+')':'')+'.<br>'+
+    'A meta-progressão, os Ecos e os desbloqueios deste save '+
+    '<b style="color:#7dffc4">permanecem intactos</b>.</div>'+
+    '<div id="ov-slotacts">'+
+    '<div class="ovbtn slotact" data-cact="cancel">CANCELAR<small>VOLTA PARA O MENU DO SAVE</small></div>'+
+    '<div class="ovbtn slotact" data-cact="wipe" style="border-color:rgba(255,92,122,.55);'+
+      'color:#ffb3c2">INICIAR NOVA RUN<small>DESCARTA O ESTADO DA RUN ATIVA</small></div>'+
+    '</div>';
+  ovBody.querySelectorAll('[data-cact]').forEach(el=>{
+    el.addEventListener('click',ev=>{
+      ev.stopPropagation();
+      if(el.dataset.cact==='cancel'){AUDIO.ui(440);showSlotMenu();}
+      else doNewRun();
+    });
+  });
+  ovGo.textContent='';
+  ovEchos.textContent='';
+  ovFrac.innerHTML='';
+  const _oc=$('ov-char');if(_oc)_oc.innerHTML='';
+  const _act=$('ov-actions');if(_act)_act.classList.remove('on');
+  overlay.classList.remove('hidden');
+}
+function doNewRun(){
+  /* NOVA RUN com run ativa: apaga APENAS o estado da run (checkpoint).
+     Meta-progressão, Ecos, unlocks e Codex do slot permanecem. */
+  clearActiveRun();
+  hideOverlay();
+  startRun();
 }
 /* ---- botões do menu inicial: Arsenal e Configurações ---- */
 $('ov-arsenal').addEventListener('click',e=>{
@@ -10259,6 +11049,10 @@ $('ov-arsenal').addEventListener('click',e=>{
 });
 $('ov-config').addEventListener('click',e=>{
   e.stopPropagation();initAudio();openCodex('config');
+});
+/* ---- PR 7.5: botão "VOLTAR AO MENU" da tela de morte ---- */
+$('ov-back').addEventListener('click',e=>{
+  e.stopPropagation();initAudio();AUDIO.ui(440);exitToSlotMenuFromDeath();
 });
 $('cx-close').addEventListener('click',e=>{e.stopPropagation();closeCodex();});
 codexEl.addEventListener('click',e=>{if(e.target===codexEl)closeCodex();});
@@ -10297,9 +11091,8 @@ if(DESKTOP.isElectron){
   document.title='ECHO';
 }
 document.getElementById('p-abort').addEventListener('click',abortRun);
-/* ---- MENU PRINCIPAL: encerra a partida por completo e volta ao título ---- */
-function backToMainMenu(){
-  if(state!=='paused')return;
+/* ---- PR 7.5: limpeza comum de fim de partida (usada ao sair para menus) ---- */
+function clearRunEntities(){
   // 1. interrompe a partida e limpa TODAS as entidades ativas da run
   releaseAllInput();
   enemies.length=0;
@@ -10326,10 +11119,7 @@ function backToMainMenu(){
   cam.x=ARENA.w/2;cam.y=ARENA.h/2;
   last=performance.now();
   frameGate=last;
-  // 4. retorna de forma estável à tela de título (sem loops residuais)
-  state='title';
-  showTitle();
-  // 5. repõe o HUD em repouso antes de qualquer frame novo
+  // 4. repõe o HUD em repouso antes de qualquer frame novo
   hpfill.style.width='100%';hpnum.textContent='100 / 100';
   shfill.style.width='0%';shnum.textContent='0 / 0';
   shbar.classList.remove('full','partial');shbar.classList.add('empty');
@@ -10343,7 +11133,30 @@ function backToMainMenu(){
   chip2.className='chip';chip2.textContent='ECHO·02 — INATIVO';
   AUDIO.tone(440,.18,'sine',.035,-160);
 }
+/* ---- MENU PRINCIPAL (pausa): guarda o checkpoint e volta ao menu do SAVE.
+     A run NÃO é descartada: retomar devolve o início da onda do checkpoint
+     (política de fronteira de onda — ver SAVE_SYSTEM.md). ---- */
+function backToMainMenu(){
+  if(state!=='paused')return;
+  clearRunEntities();
+  state='slotMenu';
+  showSlotMenu();
+}
 document.getElementById('p-mainmenu').addEventListener('click',backToMainMenu);
+/* ---- morte → "VOLTAR AO MENU": retorna ao menu do save atual ---- */
+function exitToSlotMenuFromDeath(){
+  if(state!=='fracture')return;
+  clearRunEntities();
+  state='slotMenu';
+  showSlotMenu();
+}
+/* ---- vitória → "VOLTAR AO MENU": idem (activeRun já foi limpa) ---- */
+function victoryToMenu(){
+  if(state!=='victory')return;
+  clearRunEntities();
+  state='slotMenu';
+  showSlotMenu();
+}
 
 /* =====================================================================
    ======================  MODO DESENVOLVEDOR  ========================
@@ -11133,7 +11946,8 @@ if(IS_DEV_BUILD){
 }
 
 setAudio(audioOn);
-showTitle();
+smBoot();            // PR 7.5: carrega echoSave.v3 (ou migra o save da Alpha) e ativa o último slot
+showTitle();         // título → seleção de memória → menu do save
 requestAnimationFrame(loop);
 </script>
 </body>

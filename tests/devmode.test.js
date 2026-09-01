@@ -28,6 +28,7 @@ const EXPORTS='\n;globalThis.__t={'+
   'DEV_ENEMY_IDS,DEV_MINIBOSS_IDS,DEV_STATUS_IDS,'+
   'EDEFS,MINIBOSS,CHARS,ITEMS,MAX_WAVE,ECHO_VERSION,UNLOCKS,ECHO_SHIELD,'+
   'makePlayer,makeEcho,startRun,setChar,saveEchoes,loadEchoes,saveProg,saveMeta,'+
+  'smLoadRoot,smBoot,activateSlot,'+
   'onPlayerDeath,damagePlayer,trustTier,'+
   'isDevMode:()=>DEV_MODE,isDevBuild:()=>IS_DEV_BUILD,isTainted:()=>devTainted,'+
   'setTainted:v=>{devTainted=v;},'+
@@ -790,10 +791,14 @@ ok('loadEchoes() ignora Echos marcados como dev',()=>{
   dev.forceDevMode(false);dev.setTainted(false);
   const trail=[];
   for(let i=0;i<8;i++)trail.push([i*.1,100,100,0,0,0]);
-  dev._ls.setItem('echoRuns.v1',JSON.stringify([
-    {dev:1,dur:5,trail,wave:3},
-    {dur:5,trail,wave:4}
-  ]));
+  /* PR 7.5: os Ecos vivem no slot do save (echoSave.v3 → slots[n].echoes) */
+  const root={version:3,lastSlot:1,slots:{
+    1:{meta:null,prog:null,char:0,touched:true,
+       echoes:[{dev:1,dur:5,trail,wave:3},{dur:5,trail,wave:4}],run:null},
+    2:{meta:null,prog:null,char:0,echoes:[],run:null,touched:false},
+    3:{meta:null,prog:null,char:0,echoes:[],run:null,touched:false}}};
+  dev._ls.setItem('echoSave.v3',JSON.stringify(root));
+  dev.smLoadRoot();dev.activateSlot(1);
   const q=dev.loadEchoes();
   assert.strictEqual(q.length,1,'só o Echo legítimo pode voltar');
   assert(!q[0].dev);

@@ -284,7 +284,7 @@ ipcMain.handle('echo:confirm-quit', async (_e, runActive) => {
     cancelId: 0,
     title: 'ECHO — Run em andamento',
     message: 'Uma run está em andamento.',
-    detail: 'Sair agora descarta o progresso do ciclo atual. Os Ecos já salvos e os Pontos de Memória permanecem intactos.',
+    detail: 'Ao reabrir o jogo, use CONTINUAR RUN no seu save para voltar ao último checkpoint (início da onda atual). Os Ecos, a meta-progressão e os desbloqueios permanecem salvos.',
     noLink: true
   });
   return response === 1;
