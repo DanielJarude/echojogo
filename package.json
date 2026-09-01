@@ -12,6 +12,7 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --enable-logging",
+    "test": "node tests/shield.test.js",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "predist": "npm run clean",
     "predist:win": "npm run clean",
