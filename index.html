@@ -9848,6 +9848,94 @@ function activateSlot(i){
      modificadores permanentes (ids estáveis) + campos de estado — nunca
      os valores finais —, então restaurar não duplica multiplicadores.
    ===================================================================== */
+
+/* =====================================================================
+   PR 10 — PERSISTÊNCIA DA RELAÇÃO (checkpoint / Continue Run / slots)
+   ---------------------------------------------------------------------
+   ESCOPO (decisão documentada em ECHO_RELATIONSHIP.md):
+   · A relação nasce e vive dentro da RUN — exatamente como a confiança
+     sempre viveu — e é persistida no CHECKPOINT do slot ativo. Logo:
+       – Continue Run devolve relação, memórias e pressão intactas;
+       – fechar e reabrir o jogo NÃO zera a pressão (§59);
+       – cada SAVE SLOT tem a sua própria relação, sem contaminação (§60),
+         porque o checkpoint mora em smRoot.slots[n].run.
+   · Relação ATRAVESSANDO runs é PR 14 (Echos entre runs) — não é feito
+     aqui de propósito.
+   · Estado volátil da ruptura nunca é gravado como tal: um Echo salvo em
+     telegrafia/hostil/reintegração retorna em GRAÇA, com a pressão
+     preservada mas abaixo do limiar — estado seguro e coerente (§58).
+   ===================================================================== */
+function relPackEcho(e){
+  if(!e||!e.rel)return null;
+  const r=e.rel;
+  const o={ap:Math.round(r.ap*10)/10,rj:Math.round(r.rj*10)/10,sk:r.streak|0};
+  if(r.last)o.l={t:r.last.t,r:r.last.r,v:r.last.v|0};
+  if(r.mm&&r.mm.length)o.mm=r.mm.slice(-REL_BALANCE.momentsMax)
+    .map(m=>({k:m.k,v:m.v|0,w:m.w|0}));
+  return o;
+}
+function disPackEcho(e){
+  if(!e||!e.dis)return null;
+  const d=e.dis;
+  return {p:Math.round(d.p*10)/10,c:d.count|0,
+    g:Math.round(Math.max(0,d.grace)*10)/10,st:d.st,
+    /* marcador: o Echo estava em ruptura no momento do checkpoint */
+    rp:echoInRupture(e)?1:0};
+}
+/* Restauração + MIGRAÇÃO. Echo sem payload PR 10 (save antigo) recebe
+   memória vazia e estado derivado do trust atual — nada é apagado:
+   personality, traits, trust, runData e snapshot moral seguem intactos. */
+function relUnpackEcho(e,rel,dis){
+  if(!e)return e;
+  echoRelInit(e);
+  const R=REL_BALANCE;
+  if(rel&&typeof rel==='object'){
+    e.rel.ap=clamp(+rel.ap||0,0,R.memCap);
+    e.rel.rj=clamp(+rel.rj||0,0,R.memCap);
+    e.rel.streak=clamp(rel.sk|0,-99,99);
+    if(rel.l&&typeof rel.l==='object')
+      e.rel.last={t:String(rel.l.t||'neutral'),r:String(rel.l.r||'none'),
+        v:clamp(rel.l.v|0,-2,2),at:0};
+    if(Array.isArray(rel.mm))
+      e.rel.mm=rel.mm.filter(m=>m&&typeof m==='object')
+        .slice(-R.momentsMax)
+        .map(m=>({k:String(m.k||'none'),v:clamp(m.v|0,-2,2),w:m.w|0,t:0}));
+  }else{
+    /* FALLBACK de Echo legado: relação derivada apenas da confiança —
+       aproxima o estado sem inventar histórico. */
+    e.rel.ap=0;e.rel.rj=0;e.rel.streak=0;e.rel.last=null;e.rel.mm=[];
+  }
+  e.rel.seen={};e.rel.acc=0;
+  e.rel.lastRejectAt=-999;e.rel.lastReactAt=-999;e.rel.lastFbAt=-999;
+  if(dis&&typeof dis==='object'){
+    e.dis.p=clamp(+dis.p||0,0,R.pressure.max);
+    e.dis.count=Math.max(0,dis.c|0);
+    const wasRupture=!!dis.rp||dis.st==='hostile'||
+      dis.st==='fracturing'||dis.st==='recovering';
+    if(wasRupture){
+      /* nunca retomamos no meio da animação: volta em GRAÇA, com a
+         pressão preservada porém abaixo do limiar (nada de exploit de
+         reload, nada de rebelião instantânea ao carregar). */
+      e.dis.st='cooldown';
+      e.dis.grace=Math.max(8,Math.min(DIS.graceDur,+dis.g||0));
+      e.dis.p=Math.min(e.dis.p,R.pressure.unstableOff-6);
+    }else{
+      e.dis.st=(dis.st==='unstable')?'unstable':
+        (dis.st==='cooldown'?'cooldown':'stable');
+      e.dis.grace=(e.dis.st==='cooldown')?Math.max(0,+dis.g||0):0;
+    }
+  }else{
+    /* MIGRAÇÃO: pressão inicial derivada da desconfiança já existente —
+       um Echo salvo com 10% de confiança volta tenso, não zerado. */
+    e.dis.p=e.trust<R.pressure.lowTrust
+      ? Math.round((1-e.trust/R.pressure.lowTrust)*R.pressure.unstableAt*.8)
+      : 0;
+    e.dis.count=0;e.dis.st='stable';e.dis.grace=0;
+  }
+  e.dis.t=0;e.dis.integ=0;e.dis.integMax=0;e.dis.fx=0;
+  e.dis.warned=(e.dis.st==='unstable')?1:0;
+  return e;
+}
 function smBuildCheckpoint(reason,waveOverride){
   const w=clamp(Math.round(waveOverride!=null?waveOverride:wave)||1,1,MAX_WAVE);
   return {
@@ -9861,8 +9949,12 @@ function smBuildCheckpoint(reason,waveOverride){
     st:runStSnapshot(),      // PR 8: contadores de personalidade sobrevivem ao resume
     charIdx:charSel,
     moral:{comp:moral.comp|0,greed:moral.greed|0,viol:moral.viol|0},
-    /* estado dos Ecos desta run (confiança evolui durante o ciclo) */
-    echoes:echoes.map(e=>({trust:clamp(Math.round(e.trust),0,100),alive:!!e.alive})),
+    /* estado dos Ecos desta run (confiança + relação evoluem no ciclo).
+       PR 10: rel/dis são COMPACTOS e, por design, o estado volátil da
+       ruptura (animação, projéteis, posição, cooldown visual) NÃO é
+       gravado — só o que é relevante para a coerência (§58). */
+    echoes:echoes.map(e=>({trust:clamp(Math.round(e.trust),0,100),alive:!!e.alive,
+      rel:relPackEcho(e),dis:disPackEcho(e)})),
     /* snapshot anti-duplicação: prog volta ao estado do checkpoint ao
        retomar, então um trecho de onda repetido nunca conta duas vezes */
     prog:smClone(prog),
@@ -10066,8 +10158,11 @@ function resumeRun(){
     cp.echoes.forEach((s,i)=>{
       const e=echoes[i];
       if(!e)return;
-      e.trust=clamp(num(s.trust,e.trust),0,100);
+      setEchoTrust(e,clamp(num(s.trust,e.trust),0,100),'checkpoint_restore');
       if(s.alive===false){e.alive=false;}
+      /* PR 10: relação/pressão voltam idênticas; Echos de checkpoints
+         PRÉ-PR10 (sem rel/dis) recebem fallback derivado do trust. */
+      relUnpackEcho(e,s.rel,s.dis);
     });
   buildWeaponHUD();
   cam.x=player.x;cam.y=player.y;
