@@ -541,6 +541,17 @@
     color:#eaffff;background:rgba(0,0,0,.55);padding:4px 6px;border-radius:2px;
     border:1px solid rgba(120,150,170,.45);}
   .dvin.wide{width:132px;}
+  .dvin.stat{width:156px;padding:5px 6px;}
+  .insp{font-size:10px;line-height:1.7;margin-top:5px;white-space:pre-wrap;
+    border:1px solid rgba(70,224,255,.28);background:rgba(70,224,255,.05);
+    padding:7px 9px;border-radius:2px;color:#cfe9f7;}
+  .insp .row{display:flex;justify-content:space-between;gap:10px;}
+  .insp .row b{color:#fff;}
+  .insp .mod{color:rgba(170,205,225,.85);}
+  .insp .mod.inactive{color:rgba(255,157,176,.55);text-decoration:line-through;}
+  .insp .val{color:#7dffc4;text-align:right;}
+  .insp .final{border-top:1px solid rgba(255,209,102,.28);margin-top:5px;padding-top:5px;
+    color:#ffd166;}
   #dev-log{font-size:10px;line-height:1.65;color:rgba(170,205,225,.75);
     margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,209,102,.18);
     max-height:76px;overflow:hidden;white-space:pre-wrap;}
@@ -1782,7 +1793,7 @@ const CHARS=[
        'Cada placa que veste já falhou uma vez — e foi refundida para não '+
        'falhar de novo. Ele avança devagar porque nada consegue empurrá-lo.',
   quote:'"Passa por mim. Eu espero."',
-  apply:p=>{p.dmgTakenMul*=.78;p.regen=1.5;}},
+  apply:p=>{smMul(p,'dmgTaken','operator.bulwark.dmgTaken','BULWARK · FORTALEZA −22% DANO RECEBIDO',.78);p.regen=1.5;}},
 
  {id:'pyre',nm:'PYRE',role:'INCENDIÁRIO',color:'#ff7a2f',
   pal:{body:'#7a3a12',dark:'#331605',edge:'#ff9d3c',glow:'#ff7a2f',
@@ -1847,7 +1858,7 @@ const CHARS=[
        'história</b>. Carrega o arsenal mais variado porque nunca recusa '+
        'um negócio.',
   quote:'"O mundo acabou. Alguém tem que lucrar com isso."',
-  apply:p=>{p.coinMul*=1.45;p.shopPersonal=.85;}},
+  apply:p=>{smMul(p,'coinMul','operator.nomad.coin','NÔMADE · GANÂNCIA +45% MOEDAS',1.45);p.shopPersonal=.85;}},
 
  {id:'echo0',nm:'ECHO-0',role:'RESSONANTE',color:'#ff4df0',
   pal:{body:'#7a2470',dark:'#2e0b2b',edge:'#ff4df0',glow:'#ff9df7',
@@ -2134,7 +2145,17 @@ function makePlayer(){
     spCd:0,spT:0,spKind:null,spMax:0,
     vowPoverty:0,vowBlood:-1,markedUp:1,bigShop:0,slowAura:1,
     beamT:0,beamRamp:1,beamTarget:null,beamLen:0,recoil:0,swingDir:1};
+  /* base imutável dos stats derivados + registro de modificadores (PR 7).
+     A base NUNCA é reescrita: os campos derivados são recalculados a
+     partir dela + os modificadores por smRefresh(). */
+  p._smBase={
+    dmg:C.dmg, rate:C.rate, crit:C.crit, critMul:1.8,
+    speed:C.speed*(1+.05*meta.spd), pickupR:170, coinMul:1, dmgTaken:1,
+    range:1, projSpd:1, aoe:1, pierce:0
+  };
+  p.sm=[];
   if(C.apply)C.apply(p);
+  smRefresh(p);
   return p;
 }
 function makeEcho(data,slot){
@@ -2158,6 +2179,177 @@ function makeEcho(data,slot){
     beamLen:0,recoil:0,swingDir:1,
     mul:(data.dmgMul||1)*ECHO_MUL[slot]*boost*mEff.echoPower,
     hue:slot===1?'#46e0ff':'#ff4df0'};
+}
+/* =====================================================================
+   STAT MODIFIER PIPELINE (PR 7) — Arquitetura central de modificadores
+   ---------------------------------------------------------------------
+   Separa conceitualmente:
+
+     BASE + FLAT + ADD(%) + MULT + OVERRIDE + CONDITIONAL → FINAL
+
+   A base de cada stat é capturada em `_smBase` no nascimento do player
+   e NUNCA é destruída. Os campos derivados (p.dmgMul, p.fireRateMul,
+   p.crit, ...) são RECALCULADOS a partir dessa base + a lista de
+   modificadores sempre que um modificador muda (dirty-flag) — nunca por
+   multiplicações espalhadas que corrompem a base.
+
+   Princípios:
+   · stat ≠ state. maxHp/shieldMax são stats derivados; hp/shield são
+     estado e são apenas CLAMPADOS após recálculo — nunca enchidos de graça.
+   · ordem determinística: flat → add(%) → mult → override → clamp.
+   · stacking explícito (stack | replace | refresh | unique).
+   · modificadores podem ser temporários (dur em segundos) ou condicionais
+     (cond recebe o player e devolve bool).
+   · IDs estáveis permitem adicionar/remover/substituir/inspecionar sem
+     depender de multiplicações irreversíveis.
+   ===================================================================== */
+
+/* ordem de aplicação determinística */
+const SM_ORDER=['flat','add','mult','override'];
+
+/* tabela de stats conhecidos pelo pipeline.
+   set: como escrever o valor final de volta no player
+   base: como ler a base imutável (guardada em _smBase)
+   cl:  [min,max] opcionais */
+const SM_STATS={
+  damage :{set:(p,v)=>p.dmgMul=v,      base:o=>o.dmg,       cl:[null,null], lab:'DANO'},
+  fireRate:{set:(p,v)=>p.fireRateMul=v,base:o=>o.rate,      cl:[null,null], lab:'CADÊNCIA'},
+  crit   :{set:(p,v)=>p.crit=v,        base:o=>o.crit,      cl:[0,1],       lab:'CRÍTICO'},
+  critMul:{set:(p,v)=>p.critMul=v,     base:o=>o.critMul,   cl:[0,null],    lab:'DANO CRÍT.'},
+  range  :{set:(p,v)=>p.rangeMul=v,    base:o=>o.range,     cl:[null,null], lab:'ALCANCE'},
+  projSpd:{set:(p,v)=>p.projSpdMul=v,  base:o=>o.projSpd,   cl:[null,null], lab:'VEL. PROJÉTIL'},
+  aoe    :{set:(p,v)=>p.aoeMul=v,      base:o=>o.aoe,       cl:[null,null], lab:'ÁREA'},
+  speed  :{set:(p,v)=>p.speed=v,       base:o=>o.speed,     cl:[null,null], lab:'VELOCIDADE'},
+  pickupR:{set:(p,v)=>p.pickupR=v,     base:o=>o.pickupR,   cl:[1,null],    lab:'RAIO COLETA'},
+  coinMul:{set:(p,v)=>p.coinMul=v,     base:o=>o.coinMul,   cl:[0,null],    lab:'MOEDAS'},
+  dmgTaken:{set:(p,v)=>p.dmgTakenMul=v,base:o=>o.dmgTaken,  cl:[0,null],    lab:'DANO RECEBIDO'},
+  pierce :{set:(p,v)=>p.pierce=v,      base:o=>o.pierce,    cl:[0,null],    lab:'PERFURAÇÃO'}
+};
+
+/* ---- API central ---- */
+function smInit(p){
+  if(!p)return p;
+  if(!p.sm)p.sm=[];
+  return p;
+}
+/* registra um modificador. m: {id, stat, type, value, dur, cond, stacks, label} */
+function smAdd(p,m){
+  p=smInit(p||player);
+  if(!m||!m.stat||!SM_STATS[m.stat])return null;
+  const pol=m.stacks||'stack';
+  if(pol==='replace'||pol==='unique'){
+    p.sm=p.sm.filter(x=>!(x.id===m.id&&x.stat===m.stat));
+  }else if(pol==='refresh'){
+    const now=smTickClock();
+    for(const x of p.sm){
+      if(x.id===m.id&&x.stat===m.stat&&x.dur!=null){x.dur=m.dur!=null?m.dur:x.dur;x.expires=now+ (x.dur!=null?x.dur:0);}
+    }
+  }
+  const mod={type:'mult',value:1,...m};
+  if(mod.dur!=null)mod.expires=smTickClock()+mod.dur;
+  p.sm.push(mod);
+  smRefresh(p);
+  return mod;
+}
+function smMul(p,stat,id,label,value){return smAdd(p,{id,stat,type:'mult',value,label});}
+function smFlat(p,stat,id,label,value){return smAdd(p,{id,stat,type:'flat',value,label});}
+function smAddPct(p,stat,id,label,value){return smAdd(p,{id,stat,type:'add',value,label});}
+function smRemoveId(p,id){
+  p=smInit(p||player);
+  const before=p.sm.length;
+  p.sm=p.sm.filter(x=>x.id!==id);
+  if(p.sm.length!==before){smRefresh(p);return true;}
+  return false;
+}
+function smRemoveSource(p,source){
+  p=smInit(p||player);
+  const before=p.sm.length;
+  p.sm=p.sm.filter(x=>x.source!==source);
+  if(p.sm.length!==before){smRefresh(p);return true;}
+  return false;
+}
+function smHas(p,id){
+  p=smInit(p||player);
+  return p.sm.some(x=>x.id===id);
+}
+/* valor final de um stat, aplicando condicionais ativas + clamps */
+function smGet(p,stat){
+  p=smInit(p||player);
+  const S=SM_STATS[stat];if(!S)return undefined;
+  const base=S.base(p._smBase||{});
+  let flat=0,addSum=0,mult=1,override=null;
+  for(const m of p.sm){
+    if(m.stat!==stat)continue;
+    if(m.cond&&!m.cond(p))continue;
+    switch(m.type){
+      case 'flat':flat+=m.value;break;
+      case 'add':addSum+=m.value;break;
+      case 'mult':mult*=m.value;break;
+      case 'override':override=m.value;break;
+    }
+  }
+  let v = override!=null?override:(base+flat)*(1+addSum)*mult;
+  if(S.cl){
+    if(S.cl[0]!=null)v=Math.max(S.cl[0],v);
+    if(S.cl[1]!=null)v=Math.min(S.cl[1],v);
+  }
+  return v;
+}
+/* recalcula todos os stats derivados a partir da base + modificadores e
+   escreve de volta nos campos do player. Estado (hp/shield) é só clampado. */
+function smRefresh(p){
+  p=smInit(p||player);
+  if(!p||!p._smBase)return;
+  for(const stat in SM_STATS)SM_STATS[stat].set(p,smGet(p,stat));
+  if(p.hp!=null)p.hp=Math.min(p.hp,p.maxHp);
+  if(p.shield!=null)p.shield=Math.min(p.shield,p.shieldMax);
+}
+/* relógio monótono para expiração de modificadores temporários */
+let _smClock=0;
+function smTickClock(){return _smClock;}
+/* avança o tempo e remove modificadores temporários vencidos */
+function smTick(p,dt){
+  p=smInit(p||player);
+  if(!p)return;
+  _smClock+=dt;
+  if(!p.sm||!p.sm.length)return;
+  let dirty=false;
+  for(let i=p.sm.length-1;i>=0;i--){
+    const m=p.sm[i];
+    if(m.dur!=null){
+      m.dur-=dt;
+      if(m.dur<=0){p.sm.splice(i,1);dirty=true;}
+    }
+  }
+  if(dirty)smRefresh(p);
+}
+/* ---- BREAKDOWN: explica "por que meu dano atual é X?" ---- */
+function smBreakdown(p,stat){
+  p=smInit(p||player);
+  if(!p)return null;
+  const S=SM_STATS[stat];if(!S)return null;
+  const base=S.base(p._smBase||{});
+  const lines=[];
+  for(const m of p.sm){
+    if(m.stat!==stat)continue;
+    lines.push({id:m.id,label:m.label||m.id,type:m.type,value:m.value,
+      active:!m.cond||!!m.cond(p),dur:m.dur!=null?m.dur:null,
+      temp:m.dur!=null});
+  }
+  return {stat,lab:S.lab,base,final:smGet(p,stat),lines};
+}
+/* multiplicador de dano usado pelo tiro — única fonte de verdade.
+   Reúne a base+modificadores persistidos (via pipeline, incluindo a
+   Maldição do Oráculo) e os bônus condicionais dinâmicos de combate. */
+function calcDamageMul(p){
+  let mul=smGet(p,'damage');
+  if(p.rushT>0)mul*=1.11;                              // WRAITH
+  if(p.overheat)mul*=1+.08*(p.heat||0);                // REATOR
+  if(p.lowHpBonus&&p.hp<p.maxHp*.4)mul*=1+p.lowHpBonus;// VINGANÇA
+  if(p.entropy)mul*=1+Math.min(.60,(p.waveKills||0)*.01);// ENTROPIA
+  if(p.harvestStack)                                     // REVENANT
+    mul*=1+Math.min(.75,(p.harvStacks||0)*p.harvestStack);
+  return mul;
 }
 /* =====================================================================
    ESCALONAMENTO INCREMENTAL DE DIFICULDADE
@@ -2692,26 +2884,37 @@ function drawEchoRole(e){
 /* --------------- CATÁLOGO: 8 ITENS PASSIVOS COM TRADE-OFF --------------- */
 const ITEMS=[
  {id:'nucleo',nm:'NÚCLEO INSTÁVEL',desc:'+30% DANO · −15% VIDA MÁXIMA',price:34,color:'#ff5c7a',
-  apply:p=>{p.dmgMul*=1.30;p.maxHp=Math.max(30,Math.round(p.maxHp*.85));p.hp=Math.min(p.hp,p.maxHp);}},
+  apply:p=>{smMul(p,'damage','module.nucleo.damage','NÚCLEO +30% DANO',1.30);
+    p.maxHp=Math.max(30,Math.round(p.maxHp*.85));p.hp=Math.min(p.hp,p.maxHp);}},
  {id:'rebob',nm:'REBOBINADOR CINÉTICO',desc:'DASH REFLETE PROJÉTEIS (×2.2 DANO) · +25% RECARGA DO DASH',price:40,color:'#7df9ff',
   apply:p=>{p.dashReflect=true;p.dashCdMax*=1.25;}},
  {id:'lente',nm:'LENTE DE FASE',desc:'PROJÉTEIS PERFURAM +1 ALVO · −12% DANO',price:32,color:'#9d7bff',
-  apply:p=>{p.pierce+=1;p.dmgMul*=.88;}},
+  apply:p=>{smFlat(p,'pierce','module.lente.pierce','LENTE +1 PERFURAÇÃO',1);
+    smMul(p,'damage','module.lente.damage','LENTE −12% DANO',.88);}},
  {id:'coracao',nm:'CORAÇÃO SOBRECARREGADO',desc:'+35% CADÊNCIA · +15% DANO RECEBIDO',price:33,color:'#ffb347',
-  apply:p=>{p.fireRateMul*=1.35;p.dmgTakenMul*=1.15;}},
+  apply:p=>{smMul(p,'fireRate','module.coracao.rate','CORAÇÃO +35% CADÊNCIA',1.35);
+    smMul(p,'dmgTaken','module.coracao.dmgTaken','CORAÇÃO +15% DANO RECEBIDO',1.15);}},
  {id:'iman',nm:'ÍMÃ DE VAZIO',desc:'RAIO DE COLETA ×2.2 · +30% MOEDAS · −8% VELOCIDADE',price:26,color:'#c9a9ff',
-  apply:p=>{p.pickupR*=2.2;p.coinMul*=1.3;p.speed*=.92;}},
+  apply:p=>{smMul(p,'pickupR','module.iman.pickup','ÍMÃ ×2.2 RAIO COLETA',2.2);
+    smMul(p,'coinMul','module.iman.coin','ÍMÃ +30% MOEDAS',1.3);
+    smMul(p,'speed','module.iman.speed','ÍMÃ −8% VELOCIDADE',.92);}},
  {id:'placa',nm:'PLACA ABLATIVA',desc:'+55 VIDA MÁXIMA · −12% VELOCIDADE',price:30,color:'#8ff6ff',
-  apply:p=>{p.maxHp+=55;p.hp+=55;p.speed*=.88;}},
+  apply:p=>{p.maxHp+=55;p.hp+=55;smMul(p,'speed','module.placa.speed','PLACA −12% VELOCIDADE',.88);}},
  {id:'olho',nm:'OLHO DO PREDADOR',desc:'+22% CRÍTICO · +40% DANO CRÍTICO · −10% DANO BASE',price:35,color:'#ffd166',
-  apply:p=>{p.crit+=.22;p.critMul+=.40;p.dmgMul*=.90;}},
+  apply:p=>{smFlat(p,'crit','module.olho.crit','OLHO +22% CRÍTICO',.22);
+    smFlat(p,'critMul','module.olho.critd','OLHO +40% DANO CRÍTICO',.40);
+    smMul(p,'damage','module.olho.damage','OLHO −10% DANO',.90);}},
  {id:'paradoxo',nm:'PARADOXO ECOANTE',desc:'ECOS +55% DANO E +45% VIDA · −20% VIDA MÁXIMA DO JOGADOR',price:42,color:'#ff4df0',
   apply:p=>{p.echoBoost+=.55;p.maxHp=Math.max(30,Math.round(p.maxHp*.8));
     p.hp=Math.min(p.hp,p.maxHp);buffEchoes();}},
  {id:'luneta',nm:'LUNETA DE VÁCUO',desc:'+70% DE ALCANCE · +18% DANO ALÉM DE 400px · −20% CADÊNCIA',price:38,color:'#8ff6ff',
-  apply:p=>{p.rangeMul*=1.70;p.longRangeBonus=(p.longRangeBonus||0)+.18;p.fireRateMul*=.80;}},
+  apply:p=>{smMul(p,'range','module.luneta.range','LUNETA +70% ALCANCE',1.70);
+    p.longRangeBonus=(p.longRangeBonus||0)+.18;
+    smMul(p,'fireRate','module.luneta.rate','LUNETA −20% CADÊNCIA',.80);}},
  {id:'estilhaco',nm:'CÂMARA DE ESTILHAÇO',desc:'−35% DE ALCANCE · +45% DANO · +20% CADÊNCIA',price:36,color:'#ffb347',
-  apply:p=>{p.rangeMul*=.65;p.dmgMul*=1.45;p.fireRateMul*=1.20;}},
+  apply:p=>{smMul(p,'range','module.estilhaco.range','ESTILHAÇO −35% ALCANCE',.65);
+    smMul(p,'damage','module.estilhaco.damage','ESTILHAÇO +45% DANO',1.45);
+    smMul(p,'fireRate','module.estilhaco.rate','ESTILHAÇO +20% CADÊNCIA',1.20);}},
 
  /* ============ MÓDULOS DE SINERGIA COM EFEITOS DE STATUS ============ */
  {id:'pirostase',nm:'PIRÓSTASE',desc:'STATUS +60% DE POTÊNCIA · QUEIMA PROPAGA AO MORRER · −10% VIDA MÁX.',
@@ -2729,7 +2932,8 @@ const ITEMS=[
 
  {id:'catalis',nm:'CATALISADOR VIRULENTO',desc:'CORROSÃO E SANGRAMENTO ×2 DE POTÊNCIA · +12% DANO RECEBIDO',
   price:38,color:'#a8ff3d',syn:'corrode',
-  apply:p=>{p.virulent=(p.virulent||1)*2;p.dmgTakenMul*=1.12;}},
+  apply:p=>{p.virulent=(p.virulent||1)*2;
+    smMul(p,'dmgTaken','module.catalis.dmgTaken','CATALISADOR +12% DANO RECEBIDO',1.12);}},
 
  {id:'ferrao',nm:'FERRÃO PREDATÓRIO',desc:'ALVOS COM QUALQUER STATUS RECEBEM +28% DE DANO',
   price:42,color:'#ff3d68',syn:'any',
@@ -2755,11 +2959,13 @@ const ITEMS=[
 
  {id:'colmeia',nm:'COLMEIA ORBITAL',desc:'2 DRONES ORBITAIS QUE ATIRAM SOZINHOS · −8% CADÊNCIA',
   price:52,color:'#8ff6ff',
-  apply:p=>{p.drones=(p.drones||0)+2;p.fireRateMul*=.92;}},
+  apply:p=>{p.drones=(p.drones||0)+2;
+    smMul(p,'fireRate','module.colmeia.rate','COLMEIA −8% CADÊNCIA',.92);}},
 
  {id:'usura',nm:'CONTRATO DE USURA',desc:'+80% DE CRÉDITOS · INIMIGOS TÊM +12% DE VIDA',
   price:30,color:'#ffd166',
-  apply:p=>{p.coinMul*=1.80;p.enemyHpTax=(p.enemyHpTax||0)+.12;}},
+  apply:p=>{smMul(p,'coinMul','module.usura.coin','USURA +80% MOEDAS',1.80);
+    p.enemyHpTax=(p.enemyHpTax||0)+.12;}},
 
  {id:'ressonador',nm:'RESSONADOR DUPLO',desc:'RESSONÂNCIA COM ECOS: +90% DE RAIO E DANO · RECARGA MAIS RÁPIDA',
   price:48,color:'#8ff6ff',
@@ -2767,7 +2973,8 @@ const ITEMS=[
 
  {id:'carapaca',nm:'CARAPAÇA REATIVA',desc:'AO SOFRER DANO, EMITE ONDA DE CHOQUE DE 150px · −6% VELOCIDADE',
   price:38,color:'#ff9d3c',
-  apply:p=>{p.reactive=true;p.speed*=.94;}},
+  apply:p=>{p.reactive=true;
+    smMul(p,'speed','module.carapaca.speed','CARAPAÇA −6% VELOCIDADE',.94);}},
 
  {id:'entropia',nm:'MOTOR DE ENTROPIA',desc:'CADA ABATE DÁ +1% DE DANO NA ONDA (MÁX. +60%) · ZERA A CADA ONDA',
   price:42,color:'#ff4df0',
@@ -2775,7 +2982,8 @@ const ITEMS=[
 
  {id:'prisma2',nm:'PRISMA FRATURADO',desc:'25% DE CHANCE DE DISPARO DUPLO GRATUITO · −10% DANO',
   price:40,color:'#9d7bff',
-  apply:p=>{p.doubleTap=(p.doubleTap||0)+.25;p.dmgMul*=.90;}},
+  apply:p=>{p.doubleTap=(p.doubleTap||0)+.25;
+    smMul(p,'damage','module.prisma2.damage','PRISMA −10% DANO',.90);}},
 
  {id:'ampulheta',nm:'AMPULHETA QUEBRADA',desc:'DASH RECARREGA 35% MAIS RÁPIDO A CADA ABATE',
   price:35,color:'#7df9ff',
@@ -2787,7 +2995,8 @@ const ITEMS=[
 
  {id:'espinho',nm:'COROA DE ESPINHOS',desc:'REFLETE 35% DO DANO DE CONTATO · +10% DANO RECEBIDO',
   price:33,color:'#ff5c7a',
-  apply:p=>{p.thorns=(p.thorns||0)+.35;p.dmgTakenMul*=1.10;}},
+  apply:p=>{p.thorns=(p.thorns||0)+.35;
+    smMul(p,'dmgTaken','module.espinho.dmgTaken','ESPINHO +10% DANO RECEBIDO',1.10);}},
 
  {id:'su_vampiro',nm:'PRESAS DE VÁCUO',rar:2,
   desc:'VAMPIRISMO +9% · +20% DE CURA RECEBIDA',
@@ -2798,7 +3007,8 @@ const ITEMS=[
  {id:'su_imante',nm:'CAMPO MAGNÉTICO AMPLO',rar:1,
   desc:'RAIO DE COLETA +120% · ITENS VOAM MAIS RÁPIDO ATÉ VOCÊ',
   price:24,color:'#c9a9ff',
-  apply:p=>{p.pickupR*=2.20;p.pickupSpd=(p.pickupSpd||1)*1.5;}},
+  apply:p=>{smMul(p,'pickupR','module.su_imante.pickup','CAMPO MAGNÉTICO +120% COLETA',2.20);
+    p.pickupSpd=(p.pickupSpd||1)*1.5;}},
 
  {id:'su_regen',nm:'TECIDO AUTORREPARADOR',rar:2,
   desc:'REGENERA 2.2 HP/s FORA DE COMBATE · +25 DE VIDA MÁXIMA',
@@ -2813,7 +3023,8 @@ const ITEMS=[
  {id:'su_critcura',nm:'BISTURI SIMBIÓTICO',rar:2,
   desc:'CADA CRÍTICO CURA 4 HP · +8% DE CHANCE CRÍTICA',
   price:44,color:'#8ff6ff',
-  apply:p=>{p.critHeal=(p.critHeal||0)+4;p.crit+=.08;}},
+  apply:p=>{p.critHeal=(p.critHeal||0)+4;
+    smFlat(p,'crit','module.su_critcura.crit','BISTURI +8% CRÍTICO',.08);}},
 
  {id:'su_exec',nm:'PROTOCOLO DE EXECUÇÃO',rar:3,
   desc:'EXECUTA ALVOS ABAIXO DE 12% DE VIDA · CURA 6 HP POR EXECUÇÃO',
@@ -2863,35 +3074,51 @@ function randomUnownedItem(){
 /* --------------- UPGRADES DA LOJA --------------- */
 const UPGRADES=[
  /* ---- COMUM ---- */
- {id:'crit', nm:'CÂMARA CRÍTICA',       desc:'+8% DE CHANCE CRÍTICA',           price:16,rar:0,apply:p=>p.crit+=.08},
- {id:'critd',nm:'DETONADOR FOCADO',     desc:'+35% DE DANO CRÍTICO',            price:16,rar:0,apply:p=>p.critMul+=.35},
- {id:'rate', nm:'SERVO-GATILHO',        desc:'+12% DE CADÊNCIA DE TIRO',        price:18,rar:0,apply:p=>p.fireRateMul*=1.12},
+ {id:'crit', nm:'CÂMARA CRÍTICA',       desc:'+8% DE CHANCE CRÍTICA',           price:16,rar:0,
+  apply:p=>smFlat(p,'crit','upgrade.crit.crit','CÂMARA CRÍTICA +8%',.08)},
+ {id:'critd',nm:'DETONADOR FOCADO',     desc:'+35% DE DANO CRÍTICO',            price:16,rar:0,
+  apply:p=>smFlat(p,'critMul','upgrade.critd.critd','DETONADOR FOCADO +35%',.35)},
+ {id:'rate', nm:'SERVO-GATILHO',        desc:'+12% DE CADÊNCIA DE TIRO',        price:18,rar:0,
+  apply:p=>smMul(p,'fireRate','upgrade.rate.rate','SERVO-GATILHO +12% CADÊNCIA',1.12)},
  {id:'hp',   nm:'BLINDAGEM MODULAR',    desc:'+25 DE VIDA MÁXIMA E CURA 25',    price:18,rar:0,apply:p=>{p.maxHp+=25;p.hp=Math.min(p.maxHp,p.hp+25);}},
- {id:'range',nm:'ESTABILIZADOR DE FASE',desc:'+25% DE ALCANCE DE TODAS AS ARMAS',price:15,rar:0,apply:p=>p.rangeMul*=1.25},
- {id:'magnet',nm:'BOBINA COLETORA',     desc:'+45% DE RAIO DE COLETA',          price:12,rar:0,apply:p=>p.pickupR*=1.45},
+ {id:'range',nm:'ESTABILIZADOR DE FASE',desc:'+25% DE ALCANCE DE TODAS AS ARMAS',price:15,rar:0,
+  apply:p=>smMul(p,'range','upgrade.range.range','ESTABILIZADOR +25% ALCANCE',1.25)},
+ {id:'magnet',nm:'BOBINA COLETORA',     desc:'+45% DE RAIO DE COLETA',          price:12,rar:0,
+  apply:p=>smMul(p,'pickupR','upgrade.magnet.pickup','BOBINA COLETORA +45%',1.45)},
  /* ---- INCOMUM ---- */
- {id:'dmg',  nm:'CATALISADOR IÔNICO',   desc:'+14% DE DANO GERAL',              price:22,rar:1,apply:p=>p.dmgMul*=1.14},
+ {id:'dmg',  nm:'CATALISADOR IÔNICO',   desc:'+14% DE DANO GERAL',              price:22,rar:1,
+  apply:p=>smMul(p,'damage','upgrade.dmg.damage','CATALISADOR +14% DANO',1.14)},
  {id:'dash', nm:'CAPACITOR DE DASH',    desc:'−15% DE RECARGA DO DASH',         price:16,rar:1,apply:p=>p.dashCdMax*=.85},
- {id:'aoe',  nm:'AMPLIFICADOR DE CAMPO',desc:'+25% DE ÁREA DE EXPLOSÃO',        price:20,rar:1,apply:p=>p.aoeMul*=1.25},
+ {id:'aoe',  nm:'AMPLIFICADOR DE CAMPO',desc:'+25% DE ÁREA DE EXPLOSÃO',        price:20,rar:1,
+  apply:p=>smMul(p,'aoe','upgrade.aoe.aoe','AMPLIFICADOR +25% ÁREA',1.25)},
  {id:'range2',nm:'BOBINA DE LONGO CURSO',desc:'+35% DE ALCANCE · +8% VELOCIDADE DE PROJÉTIL',price:24,rar:1,
-  apply:p=>{p.rangeMul*=1.35;p.projSpdMul=(p.projSpdMul||1)*1.08;}},
+  apply:p=>{smMul(p,'range','upgrade.range2.range','LONGO CURSO +35% ALCANCE',1.35);
+    smMul(p,'projSpd','upgrade.range2.projSpd','LONGO CURSO +8% PROJÉTIL',1.08);}},
  /* ---- RARO (desbloqueáveis) ---- */
- {id:'pierce',nm:'PONTA PERFURANTE',    desc:'PROJÉTEIS PERFURAM +1 ALVO',      price:28,rar:2,apply:p=>p.pierce+=1},
+ {id:'pierce',nm:'PONTA PERFURANTE',    desc:'PROJÉTEIS PERFURAM +1 ALVO',      price:28,rar:2,
+  apply:p=>smFlat(p,'pierce','upgrade.pierce.pierce','PONTA PERFURANTE +1',1)},
  {id:'critx',nm:'MIRA CIRÚRGICA',       desc:'+14% CRÍTICO · +55% DANO CRÍTICO',price:34,rar:2,
-  apply:p=>{p.crit+=.14;p.critMul+=.55;}},
+  apply:p=>{smFlat(p,'crit','upgrade.critx.crit','MIRA CIRÚRGICA +14%',.14);
+    smFlat(p,'critMul','upgrade.critx.critd','MIRA CIRÚRGICA +55%',.55);}},
  {id:'vamp', nm:'DRENO SANGUÍNEO',      desc:'ROUBA 5% DO DANO COMO VIDA',      price:32,rar:2,
   apply:p=>p.globalLifesteal=(p.globalLifesteal||0)+.05},
  {id:'sprint',nm:'IMPULSO NEURAL',      desc:'+14% VELOCIDADE · −10% RECARGA DE DASH',price:30,rar:2,
-  apply:p=>{p.speed*=1.14;p.dashCdMax*=.90;}},
+  apply:p=>{smMul(p,'speed','upgrade.sprint.speed','IMPULSO NEURAL +14% VELOCIDADE',1.14);p.dashCdMax*=.90;}},
  /* ---- ÉPICO ---- */
- {id:'dmg2', nm:'REATOR DE ANIQUILAÇÃO',desc:'+32% DE DANO GERAL',              price:52,rar:3,apply:p=>p.dmgMul*=1.32},
- {id:'rate2',nm:'GATILHO QUÂNTICO',     desc:'+30% DE CADÊNCIA DE TIRO',        price:50,rar:3,apply:p=>p.fireRateMul*=1.30},
- {id:'pierce2',nm:'LANÇA DIMENSIONAL',  desc:'PROJÉTEIS PERFURAM +2 ALVOS',     price:56,rar:3,apply:p=>p.pierce+=2},
+ {id:'dmg2', nm:'REATOR DE ANIQUILAÇÃO',desc:'+32% DE DANO GERAL',              price:52,rar:3,
+  apply:p=>smMul(p,'damage','upgrade.dmg2.damage','REATOR +32% DANO',1.32)},
+ {id:'rate2',nm:'GATILHO QUÂNTICO',     desc:'+30% DE CADÊNCIA DE TIRO',        price:50,rar:3,
+  apply:p=>smMul(p,'fireRate','upgrade.rate2.rate','GATILHO QUÂNTICO +30%',1.30)},
+ {id:'pierce2',nm:'LANÇA DIMENSIONAL',  desc:'PROJÉTEIS PERFURAM +2 ALVOS',     price:56,rar:3,
+  apply:p=>smFlat(p,'pierce','upgrade.pierce2.pierce','LANÇA DIMENSIONAL +2',2)},
  /* ---- LENDÁRIO ---- */
  {id:'omni', nm:'NÚCLEO ONISCIENTE',    desc:'+22% DANO · +18% CADÊNCIA · +12% CRÍTICO · +30 VIDA',price:88,rar:4,
-  apply:p=>{p.dmgMul*=1.22;p.fireRateMul*=1.18;p.crit+=.12;p.maxHp+=30;p.hp+=30;}},
+  apply:p=>{smMul(p,'damage','upgrade.omni.damage','NÚCLEO +22% DANO',1.22);
+    smMul(p,'fireRate','upgrade.omni.rate','NÚCLEO +18% CADÊNCIA',1.18);
+    smFlat(p,'crit','upgrade.omni.crit','NÚCLEO +12% CRÍTICO',.12);
+    p.maxHp+=30;p.hp+=30;}},
  {id:'singul',nm:'SINGULARIDADE PESSOAL',desc:'+45% DE DANO · DASH RECARREGA 50% MAIS RÁPIDO',price:92,rar:4,
-  apply:p=>{p.dmgMul*=1.45;p.dashCdMax*=.50;}}
+  apply:p=>{smMul(p,'damage','upgrade.singul.damage','SINGULARIDADE +45% DANO',1.45);p.dashCdMax*=.50;}}
 ];
 /* =====================================================================
    SISTEMA DE RARIDADE
@@ -3565,7 +3792,8 @@ function renderSurvivor(){
   mRow.appendChild(mkCard('EXPLORAR EQUIPAMENTO',
     'Arranca os chips do peito dele. <b>+'+loot+' créditos</b> e <b>+12% de dano permanente</b>. O sobrevivente morre.',
     moralTagHTML([0,3,2])+echoOpinion([0,3,2]),false,()=>{
-      player.coins+=loot;player.dmgMul*=1.12;
+      player.coins+=loot;
+      smMul(player,'damage','event.sobrevivente.damage','SOBREVIVENTE +12% DANO',1.12);
       spawnParticles(beacon.x,beacon.y,'#ff4d6d',26,320,.6,3.5);
       spawnRing(beacon.x,beacon.y,'#ff4d6d',8,120,.6);sKill();
       toast('CHIPS EXTRAÍDOS · +12% DANO');
@@ -3621,7 +3849,7 @@ function renderRift(){
     '(20% da atual), mas o refluxo temporal concede <b>+15% de cadência de tiro permanente</b>.',
     moralTagHTML([3,0,0])+echoOpinion([3,0,0]),false,()=>{
       player.hp=Math.max(1,player.hp-cost);
-      player.fireRateMul*=1.15;
+      smMul(player,'fireRate','event.fenda.rate','FENDA ESTABILIZADA +15% CADÊNCIA',1.15);
       player.upgLog.push('FENDA ESTABILIZADA (+15% CADÊNCIA)');
       spawnRing(beacon.x,beacon.y,'#46e0ff',10,190,.9);
       spawnShards(beacon.x,beacon.y,'#46e0ff',18,6);
@@ -3664,7 +3892,7 @@ function renderAltar(){
     'os inimigos Elite</b> através da arena. Em troca, a exposição aumenta o <b>dano recebido em 10%</b>.',
     moralTagHTML([2,0,0])+echoOpinion([2,0,0]),false,()=>{
       player.visionWaves=2;player.visionUntil=wave+2;
-      player.dmgTakenMul*=1.10;
+      smMul(player,'dmgTaken','event.altar.dmgTaken','SINTONIA DO ALTAR +10% DANO RECEBIDO',1.10);
       player.upgLog.push('SINTONIA DO ALTAR (VISÃO DE ELITES)');
       spawnRing(player.x,player.y,'#c9a9ff',10,220,1.0);
       spawnRing(beacon.x,beacon.y,'#c9a9ff',6,160,.8);
@@ -3799,7 +4027,7 @@ function renderGhost(){
     (live.length?'Cada Eco perde <b>metade da vida</b> e <b>30 de confiança</b>.'
       :'Não há Ecos para sofrer — só o eco morto que você silencia.'),
     moralTagHTML([0,2,3])+echoOpinion([0,2,3]),false,()=>{
-      player.fireRateMul*=1.18;
+      smMul(player,'fireRate','event.transmissao.rate','TRANSMISSÃO DRENADA +18% CADÊNCIA',1.18);
       player.upgLog.push('TRANSMISSÃO DRENADA (+18% CADÊNCIA)');
       for(const e of live){
         e.hp=Math.max(1,e.hp*.5);e.trust=clamp(e.trust-30,0,100);e.trustFx=-.9;
@@ -3908,7 +4136,7 @@ forge(){
     'Arranca os servos e o núcleo térmico. <b>+55 créditos</b> e '+
     '<b>+12% de cadência permanente</b>.',[0,3,1],'',false,()=>{
       player.coins+=Math.round(55*mEff.coinMul);
-      player.fireRateMul*=1.12;
+      smMul(player,'fireRate','event.forja.rate','FORJA DESMONTADA +12% CADÊNCIA',1.12);
       spawnShards(beacon.x,beacon.y,'#ff9d3c',18,6);
       toast('FORJA DESMONTADA');
     });
@@ -3988,7 +4216,7 @@ twin(){
     [1,0,0],'',false,()=>{
       player.hp=player.maxHp;
       player.maxSlots++;
-      player.speed*=.88;
+      smMul(player,'speed','event.copia.speed','CÓPIA ABSORVIDA −12% VELOCIDADE',.88);
       spawnRing(player.x,player.y,'#ff4df0',10,170,.8);
       buildWeaponHUD();
       toast('CÓPIA ABSORVIDA · +1 SLOT DE ARMA');
@@ -4029,7 +4257,7 @@ shrine(){
     'Jura não comprar nada na <b>próxima loja</b>. Em troca: '+
     '<b>+30% de dano permanente</b>.',[3,0,0],'',false,()=>{
       player.vowPoverty=1;
-      player.dmgMul*=1.30;
+      smMul(player,'damage','event.pobreza.damage','VOTO DE POBREZA +30% DANO',1.30);
       spawnRing(player.x,player.y,'#7dffc4',10,160,.8);
       toast('VOTO FIRMADO · +30% DANO · PRÓXIMA LOJA BLOQUEADA');
     });
@@ -4037,7 +4265,7 @@ shrine(){
     'Jura não usar o dash pelas <b>próximas 2 ondas</b>. Em troca: '+
     '<b>+45% de cadência permanente</b>.',[0,0,3],'',false,()=>{
       player.vowBlood=wave+2;
-      player.fireRateMul*=1.45;
+      smMul(player,'fireRate','event.sangue.rate','VOTO DE SANGUE +45% CADÊNCIA',1.45);
       spawnRing(player.x,player.y,'#ff5c7a',10,160,.8);
       toast('VOTO DE SANGUE · +45% CADÊNCIA · SEM DASH POR 2 ONDAS');
     });
@@ -4089,7 +4317,7 @@ reactor(){
     [3,0,0],'',false,()=>{
       player.invT=0;damagePlayer(30);
       player.coins+=Math.round(80*mEff.coinMul);
-      player.aoeMul*=1.20;
+      smMul(player,'aoe','event.reator.aoe','REATOR +20% ÁREA',1.20);
       toast('REATOR ESTABILIZADO');
     });
   evOpt('SOBRECARREGAR O NÚCLEO',
@@ -4132,7 +4360,7 @@ child(){
     'Absorve o eco incompleto. <b>+20% de dano permanente</b>, mas '+
     'seus Ecos perdem <b>35 de confiança</b> — eles viram isso.',
     [0,2,4],'',false,()=>{
-      player.dmgMul*=1.20;
+      smMul(player,'damage','event.residuo.damage','CONSUMIR RESÍDUO +20% DANO',1.20);
       for(const e of echoes){
         if(!e.alive)continue;
         e.trust=clamp(e.trust-35,0,100);e.trustFx=-.9;
@@ -4184,7 +4412,8 @@ hunger(){
       player.owned.splice(idx,1);
       if(player.wi===undefined||player.owned.indexOf(player.wi)<0)
         player.wi=player.owned[0];
-      player.dmgMul*=1.40;player.fireRateMul*=1.25;
+      smMul(player,'damage','event.devora.damage','ARMA DEVORADA +40% DANO',1.40);
+      smMul(player,'fireRate','event.devora.rate','ARMA DEVORADA +25% CADÊNCIA',1.25);
       buildWeaponHUD();
       spawnShards(beacon.x,beacon.y,'#a8ff3d',24,8);
       shake=Math.max(shake,12);
@@ -4210,14 +4439,17 @@ mirror(){
   evOpt('TROCAR FORÇA POR VELOCIDADE',
     '<b>−20% de dano</b> permanente, mas <b>+30% de velocidade</b> e '+
     '<b>−35% de recarga do dash</b>.',[0,0,1],'',false,()=>{
-      player.dmgMul*=.80;player.speed*=1.30;player.dashCdMax*=.65;
+      smMul(player,'damage','event.espelho.damage','ESPELHO −20% DANO',.80);
+      smMul(player,'speed','event.espelho.speed','ESPELHO +30% VELOCIDADE',1.30);
+      player.dashCdMax*=.65;
       spawnRing(player.x,player.y,'#bffbff',10,160,.7);
       toast('REFLEXO TROCADO · MAIS RÁPIDO');
     });
   evOpt('TROCAR VELOCIDADE POR FORÇA',
     '<b>−22% de velocidade</b> permanente, mas <b>+40% de dano</b> e '+
     '<b>+25 de vida máxima</b>.',[0,0,2],'',false,()=>{
-      player.speed*=.78;player.dmgMul*=1.40;
+      smMul(player,'speed','event.espelho.speed','ESPELHO −22% VELOCIDADE',.78);
+      smMul(player,'damage','event.espelho.damage','ESPELHO +40% DANO',1.40);
       player.maxHp+=25;player.hp+=25;
       spawnRing(player.x,player.y,'#ff5c7a',10,160,.7);
       toast('REFLEXO TROCADO · MAIS FORTE');
@@ -5320,7 +5552,7 @@ function killEnemy(e){
   if(e.type==='boss'){onVictory();return;}
   // recompensa do duelo contra a duplicata
   if(e.duelReward&&player){
-    player.dmgMul*=1.25;
+    smMul(player,'damage','reward.duelo.damage','DUELO VENCIDO +25% DANO',1.25);
     player.coins+=Math.round(90*mEff.coinMul);
     banner('DUELO VENCIDO','+25% DANO PERMANENTE · ◈90');
     AUDIO.victory();
@@ -6025,6 +6257,11 @@ function updateMiniBoss(e,dt){
   if(SK.curse&&e.skillCd<=0){
     e.skillCd=9;
     p.curseT=6;
+    /* PR 7: a redução de dano vira um MODIFICADOR TEMPORÁRIO do pipeline.
+       curseT continua sendo o estado/duração; remover o modificador quando
+       expira restaura o dano exatamente ao valor anterior (sem "desfazer"
+       multiplicação manual). */
+    smMul(p,'damage','status.oracle_curse.damage','MALDIÇÃO DO ORÁCULO −30% DANO',.70);
     banner('MALDIÇÃO DISSONANTE','SEU DANO CAIU 30% POR 6s');
     spawnRing(p.x,p.y,'#ffd166',10,160,.7);
     AUDIO.tone(200,.5,'sawtooth',.05,-80);
@@ -7105,8 +7342,12 @@ function updatePlayer(dt){
       spawnRing(p.x,p.y,'#9d7bff',6,80,.5);
     }
   }
-  // maldição do Oráculo: dano reduzido 30%
-  if(p.curseT>0)p.curseT-=dt;
+  // maldição do Oráculo: dano reduzido 30% (modificador temporário do pipeline)
+  if(p.curseT>0){
+    p.curseT-=dt;
+    if(p.curseT<=0){p.curseT=0;smRemoveId(p,'status.oracle_curse.damage');}
+  }
+  smTick(p,dt);                 // expira outros modificadores temporários (PR 7)
   if(p.tempT>0){
     p.tempT-=dt;
     if(p.tempT<=0&&p.tempPen>0){
@@ -7144,14 +7385,8 @@ function updatePlayer(dt){
     p.spin=firing?Math.min(1,(p.spin||0)+dt*.55):Math.max(0,(p.spin||0)-dt*1.6);
   }else p.spin=0;
   if(firing&&p.fireTimer<=0){
-    let mul=p.dmgMul*mEff.dmgMul;
-    if(p.rushT>0)mul*=1.11;                              // WRAITH
-    if(p.overheat)mul*=1+.08*(p.heat||0);                // REATOR
-    if(p.lowHpBonus&&p.hp<p.maxHp*.4)mul*=1+p.lowHpBonus;// VINGANÇA
-    if(p.entropy)mul*=1+Math.min(.60,(p.waveKills||0)*.01);// ENTROPIA
-    if(p.harvestStack)                                     // REVENANT
-      mul*=1+Math.min(.75,(p.harvStacks||0)*p.harvestStack);
-    if(p.curseT>0)mul*=.70;                                // MALDIÇÃO DO ORÁCULO
+    // PR 7: multiplicador de dano centralizado (base + modificadores + condicionais)
+    let mul=calcDamageMul(p)*mEff.dmgMul;
     fireWeaponFrom(p,wdef,'ally',mul);
     if(p.doubleTap&&Math.random()<p.doubleTap)           // PRISMA FRATURADO
       fireWeaponFrom(p,wdef,'ally',mul);
@@ -7437,11 +7672,11 @@ function updateOrbs(dt){
 }
 function levelUpReward(){
   const ups=[
-    ['+12% DANO',()=>player.dmgMul*=1.12],
-    ['+9% CADÊNCIA DE TIRO',()=>player.fireRateMul*=1.09],
+    ['+12% DANO',()=>smMul(player,'damage','level.damage','NV +12% DANO',1.12)],
+    ['+9% CADÊNCIA DE TIRO',()=>smMul(player,'fireRate','level.rate','NV +9% CADÊNCIA',1.09)],
     ['+18 VIDA MÁXIMA',()=>{player.maxHp+=18;player.hp=Math.min(player.maxHp,player.hp+30);}],
     ['DASH: -8% RECARGA',()=>player.dashCdMax*=0.92],
-    ['+5% VELOCIDADE',()=>player.speed*=1.05],
+    ['+5% VELOCIDADE',()=>smMul(player,'speed','level.speed','NV +5% VELOCIDADE',1.05)],
     ['REPARO IMEDIATO +35',()=>player.hp=Math.min(player.maxHp,player.hp+35)]
   ];
   const u=ups[randi(0,ups.length-1)];u[1]();
@@ -10131,6 +10366,7 @@ const DEV_STATUS_IDS=['burn','bleed','corrode','chill','shock','stun'];
 
 let devPanelOpen=false;
 let devInfoOn=false;
+let devStatSel='damage';     // stat selecionado no STAT INSPECTOR (PR 7)
 let devPausesGame=true;      // painel aberto → jogo pausado (padrão)
 let _devResumeAfter=false;
 let _devLog=[];
@@ -10174,7 +10410,7 @@ function devDisable(){
   // desfaz efeitos temporários que não devem sobreviver ao modo
   if(player){
     player.devInvuln=false;
-    if(player._devSpdBase!=null){player.speed=player._devSpdBase;player._devSpdBase=null;}
+    smRemoveId(player,'dev.speed');   // DEV: remove o multiplicador temporário de velocidade
   }
   devClosePanel();
   devInfoOn=false;
@@ -10375,12 +10611,13 @@ const DEV={
     return player.coins;
   },
   /* Velocidade temporária — restaurada ao desligar o DEV ou na próxima run.
-     NÃO altera a definição base do operador em CHARS. */
+     NÃO altera a definição base do operador em CHARS. Usa um modificador
+     `override`-livre (mult) do pipeline: remover o id restaura a velocidade. */
   setSpeed(mul){
     if(!devReady())return false;
     const m=clamp(Number(mul)||1,.25,4);
-    if(player._devSpdBase==null)player._devSpdBase=player.speed;
-    player.speed=player._devSpdBase*m;
+    smRemoveId(player,'dev.speed');
+    smMul(player,'speed','dev.speed','DEV VELOCIDADE ×'+m.toFixed(2),m);
     devTaint();devLog('VELOCIDADE ×'+m.toFixed(2)+' (temporária)');
     return player.speed;
   },
@@ -10553,7 +10790,10 @@ const DEV={
   /* MALDIÇÃO DO ORÁCULO no jogador (−30% de dano por 6s) */
   curse(sec){
     if(!devReady())return false;
-    player.curseT=clamp(Number(sec)||6,0,60);
+    const t=clamp(Number(sec)||6,0,60);
+    smRemoveId(player,'status.oracle_curse.damage');
+    player.curseT=t;
+    if(t>0)smMul(player,'damage','status.oracle_curse.damage','MALDIÇÃO DO ORÁCULO −30% DANO',.70);
     devTaint();devLog('MALDIÇÃO '+player.curseT+'s');
     return player.curseT;
   },
@@ -10646,6 +10886,26 @@ const DEV={
 function devBtn(cmd,label,cls){
   return '<div class="dvb'+(cls?' '+cls:'')+'" data-c="'+cmd+'">'+label+'</div>';
 }
+/* ---- STAT INSPECTOR (PR 7) — formata o breakdown de um stat ---- */
+function devStatInspectorHTML(stat){
+  if(!player||!SM_STATS[stat])return '<div class="insp">— sem player —</div>';
+  const bd=smBreakdown(player,stat);
+  const fmt=v=>typeof v==='number'?((Math.round(v*1000)/1000).toString().replace('.',',')):v;
+  const fmtVal=(l)=>l.type==='flat'?(l.value>0?'+'+fmt(l.value):fmt(l.value))
+    :l.type==='add'?(l.value>0?'+'+Math.round(l.value*100)+'%':Math.round(l.value*100)+'%')
+    :l.type==='mult'?'×'+fmt(l.value):l.type==='override'?'= '+fmt(l.value):'';
+  let s='<div class="insp">';
+  s+='<div class="row"><span>BASE '+bd.lab+'</span><b>'+fmt(bd.base)+'</b></div>';
+  for(const l of bd.lines){
+    const active=l.active?'':'[INATIVO] ';
+    s+='<div class="row mod'+(l.active?'':' inactive')+'">'+
+      '<span>'+active+l.label+(l.temp?' <i style="opacity:.6">('+l.dur+'s)</i>':'')+'</span>'+
+      '<span class="val">'+fmtVal(l)+'</span></div>';
+  }
+  if(!bd.lines.length)s+='<div class="row mod"><span>sem modificadores</span><span></span></div>';
+  s+='<div class="row final"><span>FINAL</span><b>'+fmt(bd.final)+'</b></div></div>';
+  return s;
+}
 function devRender(){
   const el=document.getElementById('devpanel');
   if(!el||!DEV_MODE)return false;
@@ -10728,6 +10988,14 @@ function devRender(){
     devBtn('reso','RESSONÂNCIA → LOG')+devBtn('bossdbg','BOSS INTEL → LOG')+
     '</div>';
 
+  /* ---- STAT INSPECTOR (PR 7): exclusivo do DEV MODE ---- */
+  h+='<h4>STAT INSPECTOR</h4><div class="dvrow">'+
+    '<select class="dvin stat" id="dev-stat">';
+  for(const k in SM_STATS)h+='<option value="'+k+'"'+(k===devStatSel?' selected':'')+
+    '>'+SM_STATS[k].lab+'</option>';
+  h+='</select>'+devBtn('statinsp','INSPECIONAR')+'</div>'+
+    '<div id="dev-statinsp">'+devStatInspectorHTML(devStatSel)+'</div>';
+
   h+='<div id="dev-log">'+(_devLog.join('\n')||'—')+'</div>';
   el.innerHTML=h;
   return true;
@@ -10793,6 +11061,14 @@ function devCommand(c){
     case 'reroll':     return DEV.reroll();
     case 'reso':       return devLog('RESO '+JSON.stringify(DEV.resonanceDebug()));
     case 'bossdbg':    return devLog('BOSS '+JSON.stringify(DEV.bossDebug()));
+    case 'statinsp':{
+      const sel=document.getElementById('dev-stat');
+      const st=sel&&sel.value&&SM_STATS[sel.value]?sel.value:'damage';
+      devStatSel=st;
+      devLog('STAT '+SM_STATS[st].lab+': '+JSON.stringify(smBreakdown(player,st)));
+      if(devPanelOpen)devRender();
+      return true;
+    }
   }
   return false;
 }

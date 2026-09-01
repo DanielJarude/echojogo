@@ -297,10 +297,12 @@ test('ITEMS: PRESAS DE VÁCUO / CAMPO MAGNÉTICO AMPLO / TECIDO AUTORREPARADOR r
   vamp.apply(p);
   assert.ok(Math.abs(p.globalLifesteal-.09)<1e-9);
   assert.ok(Math.abs(p.medBoost-1.2)<1e-9);
-  const q={pickupR:100,pickupSpd:1};
+  /* PR 7: o efeito de stat é resolvido pelo PIPELINE a partir da base
+     (pickupR base 170) + multiplicadores — não por mutação direta. */
+  const q=T.getPlayer();                       // player real do pipeline
   im.apply(q);
-  assert.ok(Math.abs(q.pickupR-220)<1e-9);
-  assert.ok(Math.abs(q.pickupSpd-1.5)<1e-9);
+  assert.ok(Math.abs(q.pickupR-170*2.2)<1e-6,'pickupR='+q.pickupR);
+  assert.strictEqual(q.pickupSpd,1.5);
   const r={regen:0,maxHp:100,hp:50};
   reg.apply(r);
   assert.ok(Math.abs(r.regen-2.2)<1e-9);
