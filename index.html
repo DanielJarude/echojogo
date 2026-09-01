@@ -479,14 +479,14 @@
     border-radius:3px;transition:all .13s;}
   .orow.cur{border-color:var(--cy);background:rgba(18,44,62,.75);
     box-shadow:0 0 16px rgba(70,224,255,.18);}
-  .oslot{font-family:Consolas,monospace;font-size:15px;letter-spacing:.1em;
+  .oslot{font-family:Consolas,monospace;font-size:var(--fs-2xl);letter-spacing:.1em;
     color:#ffd166;width:30px;text-align:center;}
   .oinfo{flex:1;min-width:0;}
-  .onm{font-family:Consolas,monospace;font-size:12px;letter-spacing:.1em;}
-  .ods{font-family:Consolas,monospace;font-size:9px;color:rgba(150,185,205,.7);
+  .onm{font-family:Consolas,monospace;font-size:var(--fs-lg);letter-spacing:.1em;}
+  .ods{font-family:Consolas,monospace;font-size:var(--fs-xs);color:rgba(150,185,205,.7);
     margin-top:3px;}
   .obtns{display:flex;gap:6px;}
-  .obtn{font-family:Consolas,monospace;font-size:12px;width:32px;height:30px;
+  .obtn{font-family:Consolas,monospace;font-size:var(--fs-lg);width:32px;height:30px;
     display:flex;align-items:center;justify-content:center;cursor:pointer;
     border:1px solid rgba(70,224,255,.3);background:rgba(70,224,255,.05);
     color:#bffbff;border-radius:2px;transition:all .12s;}
@@ -497,8 +497,61 @@
   .obtn.del:hover{background:rgba(255,77,109,.22);}
   .oempty{display:flex;align-items:center;gap:12px;padding:11px 12px;margin-top:9px;
     border:1px dashed rgba(120,150,170,.28);border-radius:3px;opacity:.45;
-    font-family:Consolas,monospace;font-size:10px;letter-spacing:.16em;
-    color:rgba(150,180,200,.7);}</style>
+    font-family:Consolas,monospace;font-size:var(--fs-sm);letter-spacing:.16em;
+    color:rgba(150,180,200,.7);}
+
+  /* =====================================================================
+     MODO DESENVOLVEDOR (PR 6.5) — ferramenta interna, some por completo
+     quando DEV_MODE está desligado. Nada aqui afeta a UI de jogo.
+     ===================================================================== */
+  #devbadge{position:fixed;left:50%;bottom:8px;transform:translateX(-50%);
+    z-index:82;display:none;pointer-events:none;
+    font-family:Consolas,monospace;font-size:11px;letter-spacing:.34em;
+    color:#0a0f14;background:#ffd166;padding:3px 12px;border-radius:2px;
+    box-shadow:0 0 18px rgba(255,209,102,.55);}
+  #devbadge.on{display:block;}
+  #devpanel{position:fixed;left:12px;top:132px;width:346px;
+    max-height:calc(100vh - 240px);overflow-y:auto;z-index:81;display:none;
+    font-family:Consolas,"Cascadia Code",monospace;color:#d7ecf7;
+    border:1px solid rgba(255,209,102,.55);border-radius:3px;
+    background:linear-gradient(180deg,rgba(8,12,18,.97),rgba(4,7,12,.98));
+    box-shadow:0 0 46px rgba(0,0,0,.85),inset 0 0 30px rgba(255,209,102,.05);
+    padding:10px 12px 14px;}
+  #devpanel.on{display:block;}
+  #devpanel::-webkit-scrollbar{width:8px;}
+  #devpanel::-webkit-scrollbar-thumb{background:rgba(255,209,102,.3);}
+  #devpanel h4{font-size:11px;letter-spacing:.26em;color:#ffd166;
+    font-weight:normal;margin:12px 0 5px;padding-top:8px;
+    border-top:1px solid rgba(255,209,102,.18);}
+  #devpanel h4:first-of-type{margin-top:6px;border-top:0;padding-top:0;}
+  #dev-head{display:flex;justify-content:space-between;align-items:center;gap:8px;}
+  #dev-head b{font-size:12.5px;letter-spacing:.22em;color:#ffd166;font-weight:normal;}
+  #dev-head span{font-size:10px;letter-spacing:.14em;color:rgba(190,215,230,.6);}
+  .dvrow{display:flex;flex-wrap:wrap;gap:5px;}
+  .dvb{font-size:10.5px;letter-spacing:.08em;color:#cfe9f7;cursor:pointer;
+    border:1px solid rgba(120,150,170,.4);background:rgba(70,224,255,.06);
+    padding:5px 8px;border-radius:2px;transition:all .1s;white-space:nowrap;}
+  .dvb:hover{background:rgba(70,224,255,.22);border-color:var(--cy);color:#fff;}
+  .dvb.warn{color:#ff9db0;border-color:rgba(255,77,109,.45);background:rgba(255,77,109,.06);}
+  .dvb.warn:hover{background:rgba(255,77,109,.24);}
+  .dvb.gold{color:#ffd9a0;border-color:rgba(255,209,102,.45);background:rgba(255,209,102,.07);}
+  .dvb.gold:hover{background:rgba(255,209,102,.24);}
+  .dvb.on{background:rgba(125,255,196,.2);border-color:#7dffc4;color:#d9ffe9;}
+  .dvin{width:62px;font-family:Consolas,monospace;font-size:10.5px;
+    color:#eaffff;background:rgba(0,0,0,.55);padding:4px 6px;border-radius:2px;
+    border:1px solid rgba(120,150,170,.45);}
+  .dvin.wide{width:132px;}
+  #dev-log{font-size:10px;line-height:1.65;color:rgba(170,205,225,.75);
+    margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,209,102,.18);
+    max-height:76px;overflow:hidden;white-space:pre-wrap;}
+  #devinfo{position:fixed;right:12px;top:190px;width:250px;z-index:80;display:none;
+    font-family:Consolas,monospace;font-size:10.5px;line-height:1.6;
+    color:#bfe6f7;background:rgba(4,8,14,.82);padding:9px 11px;border-radius:3px;
+    border:1px solid rgba(255,209,102,.3);white-space:pre;pointer-events:none;}
+  #devinfo.on{display:block;}
+  #ov-ver{font-family:Consolas,monospace;font-size:var(--fs-2xs);
+    letter-spacing:.34em;color:rgba(150,185,205,.5);margin-top:20px;}
+</style>
 </head>
 <body>
 <canvas id="game"></canvas>
@@ -559,7 +612,7 @@
   <div class="pbtn" id="p-org">⇅ ORGANIZAR ARMAS<small>REORDENAR SLOTS E DESCARTAR</small></div>
   <div class="pbtn warn" id="p-abort">ABORTAR RUN<small>CONVERTE ESTA RUN EM ECHO·01</small></div>
   <div class="pbtn warn" id="p-mainmenu">MENU PRINCIPAL<small>INTERROMPE A PARTIDA E DESCARTA ESTE CICLO</small></div>
-  <div id="p-hint">O TEMPO ESTÁ CONGELADO — NENHUM DANO PODE TE ALCANÇAR<br>
+  <div id="p-hint"><span id="p-ver">ECHO</span><br>O TEMPO ESTÁ CONGELADO — NENHUM DANO PODE TE ALCANÇAR<br>
     AO RETOMAR VOCÊ RECEBE 0.5s DE ESCUDO DE FASE<br>
     CONTROLE: START RETOMA · B VOLTA · SELECT ORGANIZA ARMAS</div>
 </div></div>
@@ -606,9 +659,15 @@
   </div>
   <div id="ov-echos"></div>
   <div id="ov-frac-lines"></div>
+  <div id="ov-ver">ECHO</div>
 </div>
 
 <div id="tip"></div>
+
+<!-- ===== MODO DESENVOLVEDOR — oculto por padrão (DEV_MODE = false) ===== -->
+<div id="devbadge">DEV MODE</div>
+<div id="devpanel"></div>
+<div id="devinfo"></div>
 
 <div id="codex"><div class="cxbox">
   <div class="cxhead">
@@ -1106,6 +1165,49 @@ const ECHO_SHIELD_REGEN=[0,.06,.05];  // fração do shieldMax regenerada por se
 const ECHO_SHIELD_DELAY=[0,2.5,3];    // segundos sem dano antes de regenerar
 const LS_KEY='echoRuns.v1';
 
+/* =====================================================================
+   VERSÃO DO JOGO + CANAL DE BUILD  (PR 6.5)
+   ECHO_VERSION deve permanecer igual ao "version" do package.json.
+   O teste tests/devmode.test.js falha se os dois divergirem.
+   ===================================================================== */
+const ECHO_VERSION='0.6.5-alpha';
+const ECHO_VERSION_LABEL='ECHO  v'+ECHO_VERSION+'  ·  PLAYTEST';
+
+/* =====================================================================
+   MODO DESENVOLVEDOR — PORTÃO DE SEGURANÇA
+   ---------------------------------------------------------------------
+   DEV_MODE começa SEMPRE desligado. Além disso, o painel só pode ser
+   ATIVADO em uma build de desenvolvimento (IS_DEV_BUILD):
+
+     · Electron  → apenas quando o app NÃO está empacotado
+                   (main.js envia --echo-channel=dev no preload).
+     · Navegador → apenas com a flag explícita ?dev=1 na URL.
+
+   A build enviada ao itch.io é empacotada e sem query string, logo
+   IS_DEV_BUILD = false e o atalho Ctrl+Shift+D simplesmente não responde.
+   ===================================================================== */
+function detectDevBuild(){
+  try{
+    const D=(typeof window!=='undefined')&&window.echoDesktop;
+    if(D&&D.isElectron)return D.channel==='dev';
+    const loc=(typeof window!=='undefined')&&window.location;
+    const q=(loc&&(loc.search||''))+(loc&&(loc.hash||''));
+    if(/[?&#]dev=1(?:&|$)/.test(q))return true;
+  }catch(e){}
+  return false;
+}
+const IS_DEV_BUILD=detectDevBuild();
+let DEV_MODE=false;        // NUNCA inicia ligado — nem em build de dev
+let devTainted=false;      // a run atual foi tocada por ferramentas DEV?
+/* Marca a run como "suja": nada dela pode atravessar para os sistemas
+   permanentes (Ecos salvos, progressão, meta-progresso, recordes). */
+function devTaint(){
+  if(!DEV_MODE)return;
+  devTainted=true;
+  const b=(typeof document!=='undefined')&&document.getElementById('devbadge');
+  if(b)b.textContent='DEV MODE · RUN DEBUG (NÃO SALVA)';
+}
+
 /* ---------------- estado global ---------------- */
 let state='title';           // title | play | fracture
 let runTime=0, fracT=0, shake=0;
@@ -1347,7 +1449,7 @@ window.addEventListener('mousedown',e=>{
   if(_cx&&_cx.classList.contains('on'))return;  // painéis capturam o clique
   // BOTÕES DA UI NÃO INICIAM A RUN (mousedown dispara antes do click)
   const t=e.target;
-  if(t&&t.closest&&t.closest('#ov-menu,#ov-char,#pause-menu,#modal,#endwrap,#codex'))return;
+  if(t&&t.closest&&t.closest('#ov-menu,#ov-char,#pause-menu,#modal,#endwrap,#codex,#devpanel'))return;
   if(state==='title'){hideOverlay();startRun();return;}
   if(state==='fracture'){if(fracT>0.45)beginNextRun();return;}
   if(state==='shop'||state==='event'||state==='paused'||state==='victory')return;
@@ -1491,6 +1593,13 @@ window.addEventListener('keydown',e=>{
     e.preventDefault();
     return;
   }
+  /* ---- MODO DESENVOLVEDOR: Ctrl+Shift+D ----
+     Inerte em build de release (IS_DEV_BUILD === false). */
+  if(ctrl&&e.shiftKey&&c==='KeyD'){
+    e.preventDefault();
+    if(!e.repeat&&typeof devToggle==='function')devToggle();
+    return;
+  }
   // F11 e Alt+Enter → tela cheia
   if(c==='F11'||(e.altKey&&(c==='Enter'||c==='NumpadEnter'))){
     e.preventDefault();toggleFullscreen();return;
@@ -1526,6 +1635,8 @@ window.addEventListener('keydown',e=>{
    normal do jogo. Prioridade: modais → painéis → pausa.
    ===================================================================== */
 function onGameEsc(){
+  // 0. painel DEV tem prioridade máxima (ferramenta, não parte do jogo)
+  if(typeof devPanelOpen!=='undefined'&&devPanelOpen){devClosePanel();return;}
   // 1. modais de loja / evento (não podem ser fechados por ESC: exigem escolha)
   if(state==='shop'||state==='event')return;
   // 2. painel de Arsenal / Configurações
@@ -1551,6 +1662,8 @@ function pauseGame(){
     'MÓDULOS <b>'+player.items.length+'</b><br>'+
     'ECHO·01 <b>'+(echoes[0]?(echoes[0].alive?'ATIVO':'OFFLINE'):'INATIVO')+'</b> · '+
     'ECHO·02 <b>'+(echoes[1]?(echoes[1].alive?'ATIVO':'OFFLINE'):'INATIVO')+'</b>';
+  const _pv=document.getElementById('p-ver');
+  if(_pv)_pv.textContent=ECHO_VERSION_LABEL+(DEV_MODE?'  ·  DEV MODE':'');
   pm.classList.add('on');
   AUDIO.tone(330,.16,'sine',.04,-90);
 }
@@ -1577,21 +1690,29 @@ function abortRun(){
 
 /* ---------------- persistência dos Ecos ---------------- */
 function saveEchoes(){
+  /* PROTEÇÃO DEV: uma run tocada pelo Modo Desenvolvedor jamais é gravada
+     como Echo legítimo — o arquivo permanente fica exatamente como estava. */
+  if(devTainted){
+    console.warn('[ECHO/DEV] saveEchoes() ignorado: run marcada como debug');
+    return false;
+  }
   try{
-    const slim=echoQueue.map(r=>({v:2,dur:Math.round(r.dur*100)/100,dmgMul:r.dmgMul,
+    const slim=echoQueue.filter(r=>r&&!r.dev).map(r=>({v:2,dur:Math.round(r.dur*100)/100,dmgMul:r.dmgMul,
       frMul:r.frMul,wave:r.wave,level:r.level,trail:r.trail,
       crit:r.crit,critMul:r.critMul,pierce:r.pierce,aoeMul:r.aoeMul,rangeMul:r.rangeMul,
       projSpdMul:r.projSpdMul,longRangeBonus:r.longRangeBonus,
       coins:r.coins,items:r.items,upg:r.upg,owned:r.owned,moral:r.moral,dom:r.dom}));
     localStorage.setItem(LS_KEY,JSON.stringify(slim));
   }catch(e){/* cota excedida: mantém apenas em memória */}
+  return true;
 }
 function loadEchoes(){
   try{
     const raw=localStorage.getItem(LS_KEY); if(!raw)return [];
     const q=JSON.parse(raw);
     if(!Array.isArray(q))return [];
-    return q.filter(r=>r&&Array.isArray(r.trail)&&r.trail.length>4).slice(0,2);
+    // Ecos marcados como debug nunca voltam para uma run normal
+    return q.filter(r=>r&&!r.dev&&Array.isArray(r.trail)&&r.trail.length>4).slice(0,2);
   }catch(e){return [];}
 }
 
@@ -1792,7 +1913,11 @@ function loadProg(){
   if(!Array.isArray(prog.seen))prog.seen=[];
 }
 let _progDirty=false;
-function saveProg(){try{localStorage.setItem(PROG_KEY,JSON.stringify(prog));}catch(e){}}
+function saveProg(){
+  if(devTainted)return false;      // PROTEÇÃO DEV: progressão permanente intocada
+  try{localStorage.setItem(PROG_KEY,JSON.stringify(prog));}catch(e){}
+  return true;
+}
 function bumpProg(k,n){
   prog[k]=(prog[k]||0)+(n||1);_progDirty=true;
 }
@@ -2258,8 +2383,9 @@ function updateHUD(force){
     if(el.dataset.slot===undefined)continue;
     el.classList.toggle('act',player.owned[slot]===player.wi);
   }
-  setChip(chip1,1,echoes[0]||null);
-  setChip(chip2,2,echoes[1]||null);
+  // busca por SLOT (e não por índice): o Modo DEV pode criar só o Echo·02
+  setChip(chip1,1,echoes.find(e=>e&&e.slot===1)||null);
+  setChip(chip2,2,echoes.find(e=>e&&e.slot===2)||null);
   coinsEl.textContent='◈ '+player.coins;
   mbC.style.width=clamp(moral.comp/12*100,0,100)+'%';
   mbG.style.width=clamp(moral.greed/12*100,0,100)+'%';
@@ -5258,6 +5384,8 @@ function killEnemy(e){
 }
 function damagePlayer(d){
   if(!(d>0))return;                          // só dano válido reinicia o escudo
+  // INVULNERABILIDADE DEV — só existe com o Modo Desenvolvedor ativo
+  if(DEV_MODE&&player&&player.devInvuln)return;
   // BASTIÃO: absorve tudo e devolve 60% aos inimigos próximos
   if(player.spKind==='bastion'){
     const prev=curAttacker;curAttacker=player;
@@ -7339,7 +7467,11 @@ function loadMeta(){
       }}
   }catch(e){}
 }
-function saveMeta(){try{localStorage.setItem(META_KEY,JSON.stringify(meta));}catch(e){}}
+function saveMeta(){
+  if(devTainted)return false;      // PROTEÇÃO DEV: meta-progresso intocado
+  try{localStorage.setItem(META_KEY,JSON.stringify(meta));}catch(e){}
+  return true;
+}
 const META_SHOP=[
   {id:'spd',nm:'CALIBRAGEM MOTORA',desc:'+5% DE VELOCIDADE BASE POR NÍVEL',cost:60,max:5,
    lvl:()=>meta.spd,buy:()=>meta.spd++},
@@ -7500,6 +7632,7 @@ function onPlayerDeath(){
     items:player.items.slice(),upg:player.upgLog.slice(),
     owned:player.owned.slice(),
     moral:{comp:moral.comp,greed:moral.greed,viol:moral.viol},dom:moralDom()};
+  if(devTainted)runData.dev=1;     // run DEV: nunca vira Echo permanente
   const had1=!!echoQueue[0],had2=!!echoQueue[1];
   // REGRA DOS 2 ECOS: Run → Eco1 · Eco1 → Eco2 · Eco2 → descartado
   echoQueue=[runData,echoQueue[0]].filter(Boolean);
@@ -7541,6 +7674,9 @@ function beginNextRun(){
 function hideOverlay(){overlay.classList.add('hidden');}
 
 function startRun(){
+  /* Se o Modo Desenvolvedor já estiver ligado quando a run começa, ela
+     nasce marcada como debug. Caso contrário, começa limpa. */
+  devTainted=!!DEV_MODE;
   state='play';runTime=0;fracT=0;shake=0;
   wave=0;kills=0;wavePause=2.2;waveActive=false;waveCleared=false;
   document.getElementById('pause-menu').classList.remove('on');
@@ -9048,6 +9184,7 @@ function loop(now){
   render();
   hudAcc+=dt;
   updateHUD();
+  devTick(raw);                 // HUD de debug (no-op fora do Modo DEV)
   }catch(err){
     if(errGuard++<8)console.error('[ECHO] erro capturado no ciclo (repetição suprimida):',err);
   }
@@ -9876,6 +10013,8 @@ function showTitle(){
   ovEchos.style.whiteSpace='pre-line';
   ovEchos.textContent=s;
   ovFrac.innerHTML='';
+  const _ver=$('ov-ver');
+  if(_ver)_ver.textContent=ECHO_VERSION_LABEL;
   ovGo.textContent='INICIAR CICLO';
   overlay.classList.remove('hidden');
 }
@@ -9970,6 +10109,753 @@ function backToMainMenu(){
   AUDIO.tone(440,.18,'sine',.035,-160);
 }
 document.getElementById('p-mainmenu').addEventListener('click',backToMainMenu);
+
+/* =====================================================================
+   ======================  MODO DESENVOLVEDOR  ========================
+   PR 6.5 — ferramenta interna de teste. NÃO faz parte do jogo.
+
+   REGRAS INVIOLÁVEIS
+   1. DEV_MODE começa sempre FALSE (ver bloco de flags no topo do script).
+   2. Só é possível ATIVAR em build de desenvolvimento (IS_DEV_BUILD).
+   3. Toda função DEV retorna false imediatamente se DEV_MODE for false.
+   4. Qualquer comando DEV marca a run como debug (devTaint) e, a partir
+      daí, ela não grava Echo, progressão, meta-progresso nem recordes.
+   5. Nenhum valor base de operador/inimigo/onda é alterado no catálogo —
+      as ferramentas mexem apenas na INSTÂNCIA viva da run.
+   ===================================================================== */
+
+/* IDs válidos expostos para o painel e para os testes automatizados */
+const DEV_ENEMY_IDS=Object.keys(EDEFS);
+const DEV_MINIBOSS_IDS=MINIBOSS.map(m=>m.id);
+const DEV_STATUS_IDS=['burn','bleed','corrode','chill','shock','stun'];
+
+let devPanelOpen=false;
+let devInfoOn=false;
+let devPausesGame=true;      // painel aberto → jogo pausado (padrão)
+let _devResumeAfter=false;
+let _devLog=[];
+let _devFps=0,_devFpsAcc=0,_devFpsN=0,_devInfoAcc=0;
+
+function devLog(msg){
+  _devLog.unshift(msg);
+  if(_devLog.length>4)_devLog.length=4;
+  const el=document.getElementById('dev-log');
+  if(el)el.textContent=_devLog.join('\n');
+  return true;
+}
+/* pré-condição comum: DEV ligado + run viva */
+function devReady(){
+  return !!(DEV_MODE&&player&&state!=='title'&&state!=='fracture');
+}
+/* posição de spawn segura: longe o bastante para não nascer em cima */
+function devSafeSpawnPos(minD,maxD){
+  const a=rand(0,TAU),d=rand(minD||300,maxD||430);
+  return {x:clamp(player.x+Math.cos(a)*d,70,ARENA.w-70),
+          y:clamp(player.y+Math.sin(a)*d,70,ARENA.h-70)};
+}
+
+/* ---------------------------------------------------------------------
+   ATIVAÇÃO / DESATIVAÇÃO
+   --------------------------------------------------------------------- */
+function devEnable(){
+  if(!IS_DEV_BUILD)return false;         // build pública: inerte
+  if(DEV_MODE)return true;
+  DEV_MODE=true;
+  const b=document.getElementById('devbadge');
+  if(b){b.textContent=devTainted?'DEV MODE · RUN DEBUG (NÃO SALVA)':'DEV MODE';
+    b.classList.add('on');}
+  if(state!=='title')devTaint();         // ligou no meio da run → run é debug
+  devLog('DEV MODE ATIVADO');
+  devOpenPanel();
+  return true;
+}
+function devDisable(){
+  if(!DEV_MODE)return false;
+  // desfaz efeitos temporários que não devem sobreviver ao modo
+  if(player){
+    player.devInvuln=false;
+    if(player._devSpdBase!=null){player.speed=player._devSpdBase;player._devSpdBase=null;}
+  }
+  devClosePanel();
+  devInfoOn=false;
+  const i=document.getElementById('devinfo');if(i)i.classList.remove('on');
+  const b=document.getElementById('devbadge');if(b)b.classList.remove('on');
+  DEV_MODE=false;
+  /* devTainted NÃO é limpo de propósito: desligar o DEV não "lava" a run. */
+  return true;
+}
+function devToggle(){
+  if(!IS_DEV_BUILD)return false;
+  return DEV_MODE?devDisable():devEnable();
+}
+
+/* ---------------------------------------------------------------------
+   PAINEL — abre/fecha e política de pausa
+   Política: painel aberto PAUSA o jogo (evita morrer escolhendo opções).
+   Pode ser desligado no próprio painel com [PAUSA: ON/OFF].
+   --------------------------------------------------------------------- */
+function devOpenPanel(){
+  if(!DEV_MODE)return false;
+  devPanelOpen=true;
+  const el=document.getElementById('devpanel');
+  if(el)el.classList.add('on');
+  devRender();
+  if(devPausesGame)devPause();
+  return true;
+}
+function devClosePanel(){
+  devPanelOpen=false;
+  const el=document.getElementById('devpanel');
+  if(el)el.classList.remove('on');
+  devUnpause();
+  return true;
+}
+function devPause(){
+  if(state!=='play')return false;
+  _devResumeAfter=true;
+  state='paused';
+  releaseAllInput();
+  return true;
+}
+function devUnpause(){
+  if(!_devResumeAfter)return false;
+  _devResumeAfter=false;
+  if(state==='paused'){
+    state='play';
+    releaseAllInput();
+    last=performance.now();frameGate=last;
+    if(player)player.invT=Math.max(player.invT||0,.4);
+  }
+  return true;
+}
+function devSetPausePolicy(v){
+  devPausesGame=!!v;
+  if(devPausesGame){if(devPanelOpen)devPause();}
+  else devUnpause();
+  devRender();
+  return devPausesGame;
+}
+
+/* =====================================================================
+   COMANDOS — todos protegidos por DEV_MODE
+   ===================================================================== */
+const DEV={
+
+/* ------------------------------- ONDAS ------------------------------ */
+  /* Valida e pula direto para a onda pedida sem corromper a run. */
+  goToWave(n){
+    if(!devReady())return false;
+    const v=Math.round(Number(n));
+    if(!isFinite(v)||v<1||v>MAX_WAVE)return false;
+    DEV.clearEnemies(true);
+    wave=v;waveCleared=false;waveActive=true;wavePause=2.8;
+    beacon=null;scheduleBeacon();
+    modalEl.classList.remove('on');
+    if(state==='shop'||state==='event')state='play';
+    spawnWave(v);
+    devTaint();devLog('ONDA → '+v);
+    return v;
+  },
+  nextWave(){
+    if(!devReady())return false;
+    return DEV.goToWave(Math.min(MAX_WAVE,Math.max(1,wave)+1));
+  },
+  /* Reinicia a composição da onda atual imediatamente. */
+  startWave(){
+    if(!devReady())return false;
+    return DEV.goToWave(Math.max(1,wave));
+  },
+  /* Encerra a onda atual: remove tudo sem dar XP/créditos/abates. */
+  clearWave(){
+    if(!devReady())return false;
+    DEV.clearEnemies(true);
+    waveCleared=false;waveActive=false;wavePause=0.6;
+    devTaint();devLog('ONDA LIMPA — avanço em 0.6s');
+    return true;
+  },
+
+/* ---------------------------- INIMIGOS ------------------------------ */
+  spawnEnemy(type,count){
+    if(!devReady())return false;
+    if(DEV_ENEMY_IDS.indexOf(type)<0)return false;
+    const n=clamp(Math.round(Number(count)||1),1,20);
+    let made=0;
+    for(let i=0;i<n;i++){
+      const p=devSafeSpawnPos();
+      spawnEnemy(type,p.x,p.y,Math.max(1,wave));
+      made++;
+    }
+    devTaint();devLog('SPAWN '+n+'× '+type.toUpperCase());
+    return made;
+  },
+  /* silent=true → uso interno (troca de onda), sem log */
+  clearEnemies(silent){
+    if(!DEV_MODE||!player)return false;
+    const n=enemies.length;
+    for(const e of enemies)e.dead=true;
+    enemies.length=0;
+    for(let i=projectiles.length-1;i>=0;i--)
+      if(projectiles[i].team==='enemy')projectiles.splice(i,1);
+    swings.length=0;arcs.length=0;
+    if(miniBoss)clearMiniBossHUD();
+    if(boss){boss=null;document.getElementById('bosswrap').classList.remove('on');}
+    devTaint();
+    if(!silent)devLog('INIMIGOS REMOVIDOS: '+n);
+    return n;
+  },
+
+/* --------------------------- MINI-CHEFES ---------------------------- */
+  spawnMiniBoss(id){
+    if(!devReady())return false;
+    const def=MINIBOSS.find(m=>m.id===id);
+    if(!def)return false;
+    if(miniBoss)DEV.clearMiniBoss();
+    const n=clamp(Math.max(5,wave),5,MAX_WAVE-1);
+    const b=spawnMiniBoss(n,def);
+    devTaint();devLog('MINI-CHEFE: '+def.nm);
+    return b;
+  },
+  clearMiniBoss(){
+    if(!DEV_MODE)return false;
+    if(!miniBoss)return false;
+    const i=enemies.indexOf(miniBoss);
+    if(i>=0){enemies[i].dead=true;enemies.splice(i,1);}
+    clearMiniBossHUD();
+    devTaint();devLog('MINI-CHEFE REMOVIDO');
+    return true;
+  },
+  /* Chefe final — usado para validar a adaptação por analyzeEchoData(). */
+  spawnBoss(){
+    if(!devReady())return false;
+    if(boss)return false;
+    spawnBoss();
+    devTaint();devLog('BOSS · MODO '+(bossIntel?bossIntel.mode:'?'));
+    return boss;
+  },
+
+/* ------------------------------ PLAYER ------------------------------ */
+  heal(amount){
+    if(!devReady())return false;
+    const a=Number(amount)||Math.ceil(player.maxHp*.25);
+    player.hp=clamp(player.hp+a,1,player.maxHp);
+    devTaint();devLog('CURA +'+Math.round(a));
+    return player.hp;
+  },
+  fullHp(){
+    if(!devReady())return false;
+    player.hp=player.maxHp;
+    devTaint();devLog('HP CHEIO');
+    return player.hp;
+  },
+  killPlayer(){
+    if(!devReady())return false;
+    player.devInvuln=false;
+    player.hp=0;
+    devTaint();devLog('PLAYER MORTO (run DEV descartada)');
+    // onPlayerDeath() só age em state 'play'; o painel pode ter pausado a run
+    if(state==='paused'){
+      _devResumeAfter=false;state='play';
+      last=performance.now();frameGate=last;
+    }
+    onPlayerDeath();
+    return true;
+  },
+  toggleInvuln(){
+    if(!devReady())return false;
+    player.devInvuln=!player.devInvuln;
+    devTaint();devLog('INVULNERÁVEL: '+(player.devInvuln?'ON':'OFF'));
+    devRender();
+    return player.devInvuln;
+  },
+  addCoins(n){
+    if(!devReady())return false;
+    const v=clamp(Math.round(Number(n)||0),-99999,99999);
+    player.coins=clamp(player.coins+v,0,999999);
+    devTaint();devLog('CRÉDITOS: ◈'+player.coins);
+    return player.coins;
+  },
+  /* Velocidade temporária — restaurada ao desligar o DEV ou na próxima run.
+     NÃO altera a definição base do operador em CHARS. */
+  setSpeed(mul){
+    if(!devReady())return false;
+    const m=clamp(Number(mul)||1,.25,4);
+    if(player._devSpdBase==null)player._devSpdBase=player.speed;
+    player.speed=player._devSpdBase*m;
+    devTaint();devLog('VELOCIDADE ×'+m.toFixed(2)+' (temporária)');
+    return player.speed;
+  },
+
+/* ------------------------------ ESCUDO ------------------------------ */
+  fillShield(){
+    if(!devReady())return false;
+    player.shield=player.shieldMax;          // nunca ultrapassa o máximo
+    player.shieldDelayT=0;
+    devTaint();devLog('ESCUDO CHEIO '+player.shield+'/'+player.shieldMax);
+    return player.shield;
+  },
+  zeroShield(){
+    if(!devReady())return false;
+    player.shield=0;player.shieldDelayT=player.shieldDelay;
+    devTaint();devLog('ESCUDO ZERADO');
+    return 0;
+  },
+  /* Quebra o escudo pelo caminho REAL de dano (dispara o mesmo feedback e o
+     mesmo delay de regeneração da produção), mas o HP é restaurado logo em
+     seguida: a ferramenta testa o Shield, nunca mata o testador. */
+  breakShield(){
+    if(!devReady())return false;
+    if(player.shield<=0)return 0;
+    const prev=player.devInvuln;player.devInvuln=false;
+    const inv=player.invT;player.invT=0;
+    const st=state;if(st!=='play')state='play';
+    const hp0=player.hp;
+    damagePlayer(player.shield*3+1);      // garante o rompimento total
+    player.hp=hp0;                        // nenhum dano real de Integridade
+    state=st;player.invT=inv;player.devInvuln=prev;
+    devTaint();devLog('ESCUDO QUEBRADO');
+    return true;
+  },
+  /* Ajuste temporário do teto de escudo (operadores sem escudo testáveis). */
+  setShieldMax(v){
+    if(!devReady())return false;
+    const m=clamp(Math.round(Number(v)),0,500);
+    if(!isFinite(m))return false;
+    player.shieldMax=m;
+    player.shield=clamp(player.shield,0,m);
+    devTaint();devLog('ESCUDO MÁX = '+m+' (temporário)');
+    return m;
+  },
+
+/* ------------------------------- ECHOS ------------------------------ */
+  /* Cria um Echo puramente sintético, marcado como debug: ele nunca entra
+     no arquivo permanente (saveEchoes ignora runs/dados com .dev). */
+  spawnEcho(slot){
+    if(!devReady())return false;
+    const sl=(Number(slot)===2)?2:1;
+    const cx=player.x,cy=player.y,wi=player.wi|0;
+    const trail=[];
+    for(let i=0;i<8;i++){
+      const a=i/8*TAU;
+      trail.push([i*.08,Math.round(cx+Math.cos(a)*130),
+        Math.round(cy+Math.sin(a)*130),1,a,wi]);
+    }
+    const data={dev:1,dur:0,trail,dmgMul:1,frMul:1,wave:Math.max(1,wave),level:1,
+      crit:.1,critMul:1.8,pierce:0,aoeMul:1,rangeMul:1,projSpdMul:1,
+      longRangeBonus:0,coins:0,items:[],upg:[],owned:STARTER_WEAPONS.slice(),
+      moral:{comp:0,greed:0,viol:0},dom:'neutro'};
+    const e=makeEcho(data,sl);
+    e.dev=true;
+    const i=echoes.findIndex(o=>o&&o.slot===sl);
+    if(i>=0)echoes[i]=e;else echoes.push(e);
+    echoes.sort((a,b)=>a.slot-b.slot);
+    devTaint();devLog('ECHO·0'+sl+' DEV GERADO');
+    return e;
+  },
+  clearEchoes(){
+    if(!DEV_MODE)return false;
+    const n=echoes.length;
+    echoes.length=0;
+    devTaint();devLog('ECHOS REMOVIDOS: '+n);
+    return n;
+  },
+  echo(slot){
+    return echoes.find(e=>e&&e.slot===(Number(slot)===2?2:1))||null;
+  },
+  /* Confiança sempre normalizada para 0..100 */
+  setTrust(slot,v){
+    if(!DEV_MODE)return false;
+    const e=DEV.echo(slot);if(!e)return false;
+    const t=Number(v);
+    if(!isFinite(t))return false;
+    e.trust=clamp(t,0,100);
+    devTaint();devLog('ECHO·0'+e.slot+' CONF = '+Math.round(e.trust)+'%');
+    return e.trust;
+  },
+  addTrust(slot,d){
+    if(!DEV_MODE)return false;
+    const e=DEV.echo(slot);if(!e)return false;
+    return DEV.setTrust(slot,e.trust+(Number(d)||0));
+  },
+  /* Força o papel tático a disparar AGORA (Guardião/Disruptor).
+     Usa exatamente echoRoleTick — nenhuma lógica de produção é duplicada. */
+  forceRole(slot){
+    if(!devReady())return false;
+    const e=DEV.echo(slot);if(!e||!e.alive)return false;
+    if(e.hostile)return false;
+    if(trustTier(e)===0)e.trust=Math.max(e.trust,34);
+    e.roleCd=0;
+    echoRoleTick(e,0.0001);
+    devTaint();devLog('PAPEL FORÇADO: '+ECHO_ROLE[e.slot].nm);
+    return ECHO_ROLE[e.slot].id;
+  },
+  resetRoleCd(slot){
+    if(!DEV_MODE)return false;
+    const e=DEV.echo(slot);if(!e)return false;
+    e.roleCd=0;
+    devTaint();devLog('COOLDOWN DE PAPEL ZERADO');
+    return true;
+  },
+  forceSpeak(slot){
+    if(!devReady())return false;
+    const e=DEV.echo(slot);if(!e||!e.alive)return false;
+    _echoSpeakCd=0;
+    const keys=Object.keys(ECHO_LINES);
+    const k=keys[randi(0,keys.length-1)];
+    const lines=ECHO_LINES[k];
+    echoSpeak(e,lines[randi(0,lines.length-1)],e.hue);
+    devTaint();devLog('FALA FORÇADA ('+k+')');
+    return k;
+  },
+  /* Dissonância usa a MESMA função de produção (enterDissonance). */
+  dissonance(slot){
+    if(!devReady())return false;
+    const e=DEV.echo(slot);if(!e||!e.alive)return false;
+    if(e.hostile)return false;
+    enterDissonance(e);
+    devTaint();devLog('DISSONÂNCIA · ECHO·0'+e.slot);
+    return true;
+  },
+  endDissonance(slot){
+    if(!DEV_MODE)return false;
+    const e=DEV.echo(slot);if(!e||!e.hostile)return false;
+    e.hostileT=0.0001;           // o updateEcho encerra pelo caminho normal
+    devTaint();devLog('DISSONÂNCIA ENCERRANDO');
+    return true;
+  },
+
+/* ------------------------- STATUS E EFEITOS ------------------------- */
+  /* Aplica status existentes no alvo mais próximo (ou em todos). */
+  applyStatus(kind,all){
+    if(!devReady())return false;
+    if(DEV_STATUS_IDS.indexOf(kind)<0)return false;
+    const dur=5,pw=kind==='corrode'?.2:(kind==='chill'?.5:6);
+    let n=0;
+    if(all){
+      for(const e of enemies){
+        if(e.dead||e.spawnT>0)continue;
+        applyStatus(e,kind,dur,pw,player);n++;
+      }
+    }else{
+      const t=nearestEnemy(player.x,player.y,2400);
+      if(!t)return 0;
+      applyStatus(t,kind,dur,pw,player);n=1;
+    }
+    devTaint();devLog('STATUS '+kind.toUpperCase()+' em '+n+' alvo(s)');
+    return n;
+  },
+  clearStatus(){
+    if(!devReady())return false;
+    let n=0;
+    for(const e of enemies){if(e.st){e.st=null;n++;}}
+    devTaint();devLog('STATUS LIMPOS: '+n);
+    return n;
+  },
+  /* MALDIÇÃO DO ORÁCULO no jogador (−30% de dano por 6s) */
+  curse(sec){
+    if(!devReady())return false;
+    player.curseT=clamp(Number(sec)||6,0,60);
+    devTaint();devLog('MALDIÇÃO '+player.curseT+'s');
+    return player.curseT;
+  },
+
+/* -------------------------- MÓDULOS / LOJA -------------------------- */
+  grantModule(id){
+    if(!devReady())return false;
+    const it=itemById(id);
+    if(!it)return false;
+    if(ownsItem(id))return false;
+    giveItem(it,true);
+    devTaint();devLog('MÓDULO: '+it.nm);
+    return it.id;
+  },
+  listModules(){
+    if(!player)return [];
+    return player.items.slice();
+  },
+  openShop(){
+    if(!devReady())return false;
+    devClosePanel();
+    _devResumeAfter=false;
+    openShop();
+    devTaint();devLog('LOJA ABERTA');
+    return true;
+  },
+  reroll(){
+    if(!DEV_MODE||!player)return false;
+    rollShop();
+    if(state==='shop')renderShop();
+    devTaint();devLog('LOJA REROLADA');
+    return true;
+  },
+
+/* ---------------------------- OPERADORES ---------------------------- */
+  /* Troca o operador da PRÓXIMA run — trocar no meio da run corromperia
+     armas, escudo e especial já instanciados. */
+  setOperatorNextRun(id){
+    if(!DEV_MODE)return false;
+    const i=CHARS.findIndex(c=>c.id===id);
+    if(i<0)return false;
+    setChar(i);
+    devLog('PRÓXIMA RUN: '+CHARS[i].nm);
+    return CHARS[i].id;
+  },
+
+/* ------------------------------- DEBUG ------------------------------ */
+  toggleInfo(){
+    if(!DEV_MODE)return false;
+    devInfoOn=!devInfoOn;
+    const el=document.getElementById('devinfo');
+    if(el)el.classList.toggle('on',devInfoOn);
+    devRender();
+    return devInfoOn;
+  },
+  /* Leitura da janela de Ressonância / Micro-Ressonância no alvo mais próximo */
+  resonanceDebug(){
+    if(!player)return null;
+    const t=nearestEnemy(player.x,player.y,2400);
+    const e1=DEV.echo(1),e2=DEV.echo(2);
+    return {
+      target:t?t.type:null,
+      lastTag:t?(t.lastTag||null):null,
+      lastHitAgo:t&&t.lastTagT!=null?+(runTime-t.lastTagT).toFixed(2):null,
+      microTag:t?(t.microTag||null):null,
+      microAgo:t&&t.microT!=null?+(runTime-t.microT).toFixed(2):null,
+      resoCd:t?+(t.resoCd||0).toFixed(2):null,
+      microCd:t?+(t.microCd||0).toFixed(2):null,
+      window:0.5,microWindow:1.6,
+      e1SyncHits:e1?(e1.syncHits||0):null,e1SyncT:e1?+(e1.syncT||0).toFixed(2):null,
+      e2SyncHits:e2?(e2.syncHits||0):null,e2SyncT:e2?+(e2.syncT||0).toFixed(2):null
+    };
+  },
+  bossDebug(){
+    const a=bossIntel||(typeof analyzeEchoData==='function'?analyzeEchoData():null);
+    if(!a)return null;
+    return {mode:a.mode,total:a.total,closeW:a.closeW,longW:a.longW,
+      dashes:a.dashes,dashAdapt:(a.dashes>2?-0.8:0),
+      phase:boss?boss.phase:null,alive:!!boss};
+  },
+  state(){
+    return {DEV_MODE,IS_DEV_BUILD,devTainted,devPanelOpen,devInfoOn,
+      version:ECHO_VERSION,wave,state,enemies:enemies.length};
+  }
+};
+
+/* =====================================================================
+   PAINEL (render + eventos)
+   ===================================================================== */
+function devBtn(cmd,label,cls){
+  return '<div class="dvb'+(cls?' '+cls:'')+'" data-c="'+cmd+'">'+label+'</div>';
+}
+function devRender(){
+  const el=document.getElementById('devpanel');
+  if(!el||!DEV_MODE)return false;
+  const p=player;
+  let h='<div id="dev-head"><b>DEV MODE</b><span>v'+ECHO_VERSION+'</span></div>'+
+    '<div class="dvrow" style="margin-top:7px">'+
+      devBtn('pause','PAUSA: '+(devPausesGame?'ON':'OFF'),devPausesGame?'on':'')+
+      devBtn('info','DEBUG INFO: '+(devInfoOn?'ON':'OFF'),devInfoOn?'on':'')+
+      devBtn('close','FECHAR [ESC]','gold')+
+      devBtn('off','DESLIGAR DEV','warn')+
+    '</div>';
+
+  h+='<h4>ONDA</h4><div class="dvrow">'+
+    '<input class="dvin" id="dev-wave" type="number" min="1" max="'+MAX_WAVE+
+      '" value="'+Math.max(1,wave)+'">'+
+    devBtn('gowave','IR PARA ONDA')+devBtn('nextwave','PRÓXIMA')+
+    devBtn('startwave','INICIAR AGORA')+devBtn('clearwave','ENCERRAR ONDA','warn')+
+    '</div>';
+
+  h+='<h4>INIMIGOS ('+DEV_ENEMY_IDS.length+')</h4><div class="dvrow">';
+  for(const id of DEV_ENEMY_IDS)h+=devBtn('e:'+id,id.toUpperCase());
+  h+=devBtn('clearenemies','LIMPAR INIMIGOS','warn')+'</div>';
+
+  h+='<h4>MINI-CHEFES (8)</h4><div class="dvrow">';
+  for(const m of MINIBOSS)
+    h+=devBtn('m:'+m.id,m.nm.replace(/^(O|A)\s+/,'').split(' ')[0]);
+  h+=devBtn('clearmini','LIMPAR MINI-CHEFE','warn')+devBtn('boss','CHEFE FINAL','gold')+
+    '</div>';
+
+  h+='<h4>PLAYER'+(p?' · '+Math.ceil(p.hp)+'/'+p.maxHp+' HP · ◈'+p.coins:'')+
+    '</h4><div class="dvrow">'+
+    devBtn('heal','CURAR 25%')+devBtn('fullhp','HP MÁXIMO')+
+    devBtn('invuln','INVULN: '+(p&&p.devInvuln?'ON':'OFF'),p&&p.devInvuln?'on':'')+
+    devBtn('coins100','+◈100')+devBtn('coins1000','+◈1000')+
+    devBtn('spd2','VEL ×2')+devBtn('spd1','VEL ×1')+
+    devBtn('kill','MATAR PLAYER','warn')+'</div>';
+
+  h+='<h4>ESCUDO'+(p?' · '+Math.ceil(p.shield)+'/'+p.shieldMax+
+     ' · delay '+(p.shieldDelayT||0).toFixed(1)+'/'+(p.shieldDelay||0)+'s':'')+
+    '</h4><div class="dvrow">'+
+    devBtn('shfull','ENCHER')+devBtn('shzero','ZERAR')+devBtn('shbreak','QUEBRAR')+
+    devBtn('shmax','MÁX +20')+'</div>';
+
+  const e1=DEV.echo(1),e2=DEV.echo(2);
+  h+='<h4>ECHOS'+
+    (e1?' · 01 '+Math.round(e1.trust)+'%'+(e1.hostile?' HOSTIL':''):'')+
+    (e2?' · 02 '+Math.round(e2.trust)+'%'+(e2.hostile?' HOSTIL':''):'')+
+    '</h4><div class="dvrow">'+
+    devBtn('echo1','GERAR ECHO·01')+devBtn('echo2','GERAR ECHO·02')+
+    devBtn('echoclear','REMOVER ECHOS','warn')+'</div>'+
+    '<div class="dvrow" style="margin-top:5px">'+
+    '<input class="dvin" id="dev-trust" type="number" min="0" max="100" value="50">'+
+    devBtn('trust1','SET CONF 01')+devBtn('trust2','SET CONF 02')+
+    devBtn('trust+','CONF +10')+devBtn('trust-','CONF −10')+'</div>'+
+    '<div class="dvrow" style="margin-top:5px">'+
+    devBtn('role1','FORÇAR GUARDIÃO')+devBtn('role2','FORÇAR DISRUPTOR')+
+    devBtn('rolecd','RESET COOLDOWN')+devBtn('speak','FORÇAR FALA')+'</div>'+
+    '<div class="dvrow" style="margin-top:5px">'+
+    devBtn('diss1','DISSONÂNCIA 01','warn')+devBtn('diss2','DISSONÂNCIA 02','warn')+
+    devBtn('dissend','ENCERRAR DISSONÂNCIA')+'</div>';
+
+  h+='<h4>STATUS</h4><div class="dvrow">';
+  for(const st of DEV_STATUS_IDS)h+=devBtn('s:'+st,st.toUpperCase());
+  h+=devBtn('curse','CURSE (ORÁCULO)')+devBtn('statusall','APLICAR EM TODOS')+
+    devBtn('clearstatus','LIMPAR STATUS','warn')+'</div>';
+
+  h+='<h4>MÓDULOS / LOJA</h4><div class="dvrow">'+
+    '<input class="dvin wide" id="dev-mod" placeholder="id do módulo">'+
+    devBtn('grant','CONCEDER')+devBtn('listmod','LISTAR ATUAIS')+
+    devBtn('shop','ABRIR LOJA')+devBtn('reroll','REROLL')+'</div>'+
+    '<div class="dvrow" style="margin-top:5px">';
+  for(const it of ITEMS)h+=devBtn('mod:'+it.id,it.id);
+  h+='</div>';
+
+  h+='<h4>OPERADOR (PRÓXIMA RUN)</h4><div class="dvrow">';
+  for(const c of CHARS)h+=devBtn('op:'+c.id,c.nm);
+  h+='</div>';
+
+  h+='<h4>DEBUG</h4><div class="dvrow">'+
+    devBtn('reso','RESSONÂNCIA → LOG')+devBtn('bossdbg','BOSS INTEL → LOG')+
+    '</div>';
+
+  h+='<div id="dev-log">'+(_devLog.join('\n')||'—')+'</div>';
+  el.innerHTML=h;
+  return true;
+}
+function devNum(id,def){
+  const el=document.getElementById(id);
+  const v=Number(el&&el.value);
+  return isFinite(v)?v:def;
+}
+function devCommand(c){
+  if(!DEV_MODE)return false;
+  if(c.indexOf('e:')===0)return DEV.spawnEnemy(c.slice(2),1);
+  if(c.indexOf('m:')===0)return DEV.spawnMiniBoss(c.slice(2));
+  if(c.indexOf('s:')===0)return DEV.applyStatus(c.slice(2),false);
+  if(c.indexOf('mod:')===0)return DEV.grantModule(c.slice(4));
+  if(c.indexOf('op:')===0)return DEV.setOperatorNextRun(c.slice(3));
+  switch(c){
+    case 'pause':      return devSetPausePolicy(!devPausesGame);
+    case 'info':       return DEV.toggleInfo();
+    case 'close':      return devClosePanel();
+    case 'off':        return devDisable();
+    case 'gowave':     return DEV.goToWave(devNum('dev-wave',1));
+    case 'nextwave':   return DEV.nextWave();
+    case 'startwave':  return DEV.startWave();
+    case 'clearwave':  return DEV.clearWave();
+    case 'clearenemies':return DEV.clearEnemies();
+    case 'clearmini':  return DEV.clearMiniBoss();
+    case 'boss':       return DEV.spawnBoss();
+    case 'heal':       return DEV.heal();
+    case 'fullhp':     return DEV.fullHp();
+    case 'invuln':     return DEV.toggleInvuln();
+    case 'coins100':   return DEV.addCoins(100);
+    case 'coins1000':  return DEV.addCoins(1000);
+    case 'spd2':       return DEV.setSpeed(2);
+    case 'spd1':       return DEV.setSpeed(1);
+    case 'kill':       return DEV.killPlayer();
+    case 'shfull':     return DEV.fillShield();
+    case 'shzero':     return DEV.zeroShield();
+    case 'shbreak':    return DEV.breakShield();
+    case 'shmax':      return DEV.setShieldMax((player?player.shieldMax:0)+20);
+    case 'echo1':      return DEV.spawnEcho(1);
+    case 'echo2':      return DEV.spawnEcho(2);
+    case 'echoclear':  return DEV.clearEchoes();
+    case 'trust1':     return DEV.setTrust(1,devNum('dev-trust',50));
+    case 'trust2':     return DEV.setTrust(2,devNum('dev-trust',50));
+    case 'trust+':     {const a=DEV.addTrust(1,10),b=DEV.addTrust(2,10);
+                        return a!==false||b!==false;}
+    case 'trust-':     {const a=DEV.addTrust(1,-10),b=DEV.addTrust(2,-10);
+                        return a!==false||b!==false;}
+    case 'role1':      return DEV.forceRole(1);
+    case 'role2':      return DEV.forceRole(2);
+    case 'rolecd':     DEV.resetRoleCd(1);return DEV.resetRoleCd(2);
+    case 'speak':      return DEV.forceSpeak(1)||DEV.forceSpeak(2);
+    case 'diss1':      return DEV.dissonance(1);
+    case 'diss2':      return DEV.dissonance(2);
+    case 'dissend':    DEV.endDissonance(1);return DEV.endDissonance(2);
+    case 'curse':      return DEV.curse(6);
+    case 'statusall':  return DEV.applyStatus('burn',true);
+    case 'clearstatus':return DEV.clearStatus();
+    case 'grant':      return DEV.grantModule((document.getElementById('dev-mod')||{}).value);
+    case 'listmod':    return devLog('MÓDULOS: '+(DEV.listModules().join(', ')||'nenhum'));
+    case 'shop':       return DEV.openShop();
+    case 'reroll':     return DEV.reroll();
+    case 'reso':       return devLog('RESO '+JSON.stringify(DEV.resonanceDebug()));
+    case 'bossdbg':    return devLog('BOSS '+JSON.stringify(DEV.bossDebug()));
+  }
+  return false;
+}
+(function bindDevPanel(){
+  const el=document.getElementById('devpanel');
+  if(!el||!el.addEventListener)return;
+  el.addEventListener('click',ev=>{
+    const t=ev.target;
+    if(!t||!t.getAttribute)return;
+    const c=t.getAttribute('data-c');
+    if(!c)return;
+    ev.stopPropagation();
+    devCommand(c);
+    if(devPanelOpen)devRender();
+  });
+  el.addEventListener('mousedown',ev=>ev.stopPropagation());
+})();
+
+/* =====================================================================
+   HUD DE DEBUG EM TEMPO REAL — chamado pelo loop; no-op fora do DEV
+   ===================================================================== */
+function devTick(dt){
+  if(!DEV_MODE||!devInfoOn)return;
+  _devFpsAcc+=dt;_devFpsN++;
+  _devInfoAcc+=dt;
+  if(_devInfoAcc<.2)return;
+  _devInfoAcc=0;
+  if(_devFpsAcc>0){_devFps=_devFpsN/_devFpsAcc;_devFpsAcc=0;_devFpsN=0;}
+  const el=document.getElementById('devinfo');
+  if(!el)return;
+  const p=player,e1=DEV.echo(1),e2=DEV.echo(2);
+  const ln=[];
+  ln.push('FPS        '+_devFps.toFixed(0));
+  ln.push('ESTADO     '+state+(devTainted?' · DEBUG':''));
+  ln.push('ONDA       '+wave+'/'+MAX_WAVE);
+  ln.push('INIMIGOS   '+enemies.length);
+  if(p){
+    ln.push('HP         '+Math.ceil(p.hp)+'/'+p.maxHp+(p.devInvuln?' (INV)':''));
+    ln.push('ESCUDO     '+Math.ceil(p.shield)+'/'+p.shieldMax);
+    ln.push('SH DELAY   '+(p.shieldDelayT||0).toFixed(2)+'/'+(p.shieldDelay||0));
+    ln.push('CURSE      '+(p.curseT||0).toFixed(1)+'s');
+    ln.push('CRÉDITOS   ◈'+p.coins);
+  }
+  ln.push('MINICHEFE  '+(miniBoss?miniBoss.mb.id+' '+
+    Math.round(miniBoss.hp/miniBoss.maxHp*100)+'%':'—'));
+  const bd=DEV.bossDebug();
+  ln.push('BOSS       '+(bd?bd.mode+(bd.alive?' F'+bd.phase:'')+
+    ' dash'+bd.dashAdapt:'—'));
+  const fe=e=>e?(Math.round(e.trust)+'% '+(e.hostile?'HOSTIL':
+    (e.roleT>0?'PAPEL ON':'ok'))+' cd'+Math.max(0,e.roleCd||0).toFixed(1)):'—';
+  ln.push('ECHO·01    '+fe(e1));
+  ln.push('ECHO·02    '+fe(e2));
+  const r=DEV.resonanceDebug();
+  if(r&&r.target)ln.push('RESO       '+r.lastTag+' '+r.lastHitAgo+'s · micro '+
+    r.microTag+' '+r.microAgo+'s');
+  el.textContent=ln.join('\n');
+}
+/* ---- expõe o namespace no console apenas em build de desenvolvimento ---- */
+if(IS_DEV_BUILD){
+  try{window.ECHO_DEV={DEV,enable:devEnable,disable:devDisable,toggle:devToggle};}
+  catch(e){}
+}
+
 setAudio(audioOn);
 showTitle();
 requestAnimationFrame(loop);
