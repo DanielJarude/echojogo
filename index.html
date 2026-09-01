@@ -1039,7 +1039,20 @@ const EDEFS={
   shooter:{hp:36, spd:150, r:15, dmg:8,  xp:7,  color:'#ffd166'},
   tank   :{hp:180,spd:66,  r:27, dmg:32, xp:15, color:'#ff2f5e'},
   spawner:{hp:210,spd:34,  r:24, dmg:12, xp:18, color:'#39d98a'},
-  anomaly:{hp:44, spd:186, r:14, dmg:18, xp:12, color:'#c56bff'}
+  anomaly:{hp:44, spd:186, r:14, dmg:18, xp:12, color:'#c56bff'},
+  /* ---- INIMIGOS RESTAURADOS DO ARQUÉTIPO HISTÓRICO (adaptados ao sistema moderno) ---- */
+  // ENXAME: frágil e velocíssimo, vem em bando e força movimentação constante
+  swarm  :{hp:12, spd:322, r:9,  dmg:6,  xp:3,  color:'#ff8df5'},
+  // ORBITADOR: circula o alvo mantendo raio fixo, dispara rajadas — obriga mira preditiva
+  orbiter:{hp:34, spd:205, r:12, dmg:9,  xp:6,  color:'#8ff6ff'},
+  // BLINDADO: lento com escudo frontal — precisa ser flanqueado ou atingido pelas costas
+  bulwark:{hp:78, spd:112, r:18, dmg:16, xp:9,  color:'#c9a9ff'},
+  // CISÃO: ao morrer, divide-se em dois fragmentos menores e mais rápidos
+  splitter:{hp:62, spd:168, r:16, dmg:13, xp:11, color:'#ff9d3c'},
+  // LEVIANO: alterna entre fases — intangível e mais rápido em ciclos, imune em fase fantasma
+  phantom :{hp:52, spd:212, r:13, dmg:15, xp:14, color:'#bffbff'},
+  // SINGULAR: poço gravitacional que puxa o jogador e reflete parte do dano direto
+  singular:{hp:190,spd:96,  r:24, dmg:24, xp:30, color:'#ff4df0'}
 };
 /* ---- BALANCEAMENTO DOS ECOS ----
    Os Ecos são APOIO, não substitutos. Dano muito reduzido, cadência
@@ -2336,6 +2349,7 @@ function enterDissonance(e){
   spawnShards(e.x,e.y,'#ff2f5e',20,6);
   banner('DISSONÂNCIA CRÍTICA','ECHO·0'+e.slot+' SE VOLTOU CONTRA VOCÊ — 12s');
   toast('ECHO·0'+e.slot+' ESTÁ HOSTIL');
+  echoReact('dissonance');
   AUDIO.tone(110,1.3,'sawtooth',.09,-40);
   AUDIO.tone(74,1.6,'square',.07,-22);
   AUDIO.noise(1.2,.06,420,.6,'lowpass');
@@ -2351,6 +2365,96 @@ function dissolveEcho(e,reason){
   toast('ECHO·0'+e.slot+' DESINTEGROU-SE '+(reason||''));
   AUDIO.echoShatter();
   AUDIO.noise(.7,.05,700,.8);
+}
+
+/* =====================================================================
+   SISTEMA DE FALA DOS ECOS — reações contextuais com cooldown
+   Os Ecos falam em momentos-chave, nunca como spam.
+   ===================================================================== */
+const ECHO_LINES={
+  waveStart:[
+    'CICLO DETECTADO.','ELES VÊM.','PREPARAR PARA CONTATO.',
+    'SENDO ASSIMILADOS.','ONDA SE APROXIMA.','ANOVA ENTRADA.'
+  ],
+  killStreak:[
+    'SINCRONIA ESTÁVEL.','EFICIÊNCIA REGISTRADA.','RESSONÂNCIA ÓTIMA.',
+    'PADRÃO RECONHECIDO.','FLUXO CORRETO.'
+  ],
+  playerHurt:[
+    'INTEGRIDADE COMPROMETIDA.','CUIDADO.','DANO DETECTADO.',
+    'RECALIBRAR POSIÇÃO.'
+  ],
+  shieldBreak:[
+    'ESCUDO ROMPIDO.','PROTEÇÃO ZERO.','EXPOSTO.',
+    'REGENERAR ESCUDO.'
+  ],
+  lowHp:[
+    'INTEGRIDADE CRÍTICA.','COLAPSO IMINENTE.','RECUPERAR.',
+    'PRIORIDADE: SOBREVIVER.'
+  ],
+  echoHit:[
+    'ABSORVENDO.','HOLDING.','MANTENDO POSIÇÃO.',
+    'ESTRUTURA INTACTA.'
+  ],
+  resonance:[
+    'ECO SINCRONIZADO.','FREQUÊNCIA ALINHADA.','CONEXÃO ESTÁVEL.',
+    'RESSONÂNCIA COMPLETA.'
+  ],
+  dissonance:[
+    'EU NÃO SOU MAIS VOCÊ.','VOCÊ ME PERDEU.','A CONEXÃO QUEBROU.',
+    'NÃO RECONHEÇO MAIS.'
+  ],
+  dissonanceEnd:[
+    'RETORNO.','RECONEXÃO.','SINAL RESTAURADO.',
+    'VOLTEI.'
+  ],
+  miniboss:[
+    'ENTIDADE DETECTADA.','AMBIENTE INSTÁVEL.','ALVO PRIORITÁRIO.',
+    'PREPARAR PARA ENFRENTAMENTO.'
+  ],
+  trustHigh:[
+    'SINTONIA COMPLETA.','CONFIANÇA TOTAL.','VÍNCULO ESTÁVEL.',
+    'ALINHAMENTO PERFEITO.'
+  ],
+  trustLow:[
+    'SINAL ENFRAQUECENDO.','CONEXÃO INSTÁVEL.','DIVERGÊNCIA DETECTADA.',
+    'ALINHAMENTO PERDIDO.'
+  ],
+  bossDeath:[
+    'PARADOXO DISSOLVIDO.','CICLO CONCLUÍDO.','FRATURA SELADA.',
+    'FINAL ALCANÇADO.'
+  ]
+};
+let _echoSpeakCd=0;
+const ECHO_SPEAK_INTERVAL=8;  // mínimo 8s entre falas
+function echoSpeak(e,txt,color){
+  if(!e||!e.alive)return;
+  if(_echoSpeakCd>0)return;
+  _echoSpeakCd=ECHO_SPEAK_INTERVAL;
+  floatText(e.x,e.y-e.r-34,txt,color||e.hue||'#8ff6ff');
+  AUDIO.tone(rand(600,800),.08,'sine',.018,120);
+}
+function echoReact(event,data){
+  if(!echoes.length)return;
+  if(_echoSpeakCd>0)return;
+  const live=echoes.filter(e=>e.alive&&!e.hostile);
+  if(!live.length)return;
+  const lines=ECHO_LINES[event];
+  if(!lines||!lines.length)return;
+  // apenas 35% de chance por evento para evitar spam
+  if(Math.random()>.35)return;
+  const e=live[randi(0,live.length-1)];
+  const txt=lines[randi(0,lines.length-1)];
+  const col=event==='dissonance'?'#ff2f5e':
+    event==='dissonanceEnd'?'#8ff6ff':
+    event==='playerHurt'||event==='lowHp'||event==='shieldBreak'?'#ff8095':
+    event==='trustLow'?'#ff8095':
+    event==='trustHigh'||event==='resonance'?'#8ff6ff':
+    event==='killStreak'?'#7dffc4':
+    event==='miniboss'?'#ffd166':
+    event==='bossDeath'?'#ff4df0':
+    '#bffbff';
+  echoSpeak(e,txt,col);
 }
 
 /* --------------- CATÁLOGO: 8 ITENS PASSIVOS COM TRADE-OFF --------------- */
@@ -4762,6 +4866,25 @@ function nearestEnemy(x,y,range){
 function damageEnemy(e,d,srcx,srcy,crit,isDot){
   if(e.spawnT>0||e.dead)return;
   if(e.phaseT>0)return;                  // Anômalo fora de fase é intangível
+  // LEVIANO: intangível enquanto em fase fantasma
+  if(e.type==='phantom'&&e.ghostT>0)return;
+  // BLINDADO: escudo frontal absorve 72% do dano vindo de frente
+  if(e.type==='bulwark'&&e.shieldAng!==undefined&&srcx!==undefined){
+    const inc=Math.atan2(e.y-srcy,e.x-srcx);
+    let diff=Math.abs(((inc-e.shieldAng+Math.PI*3)%TAU)-Math.PI);
+    if(diff>2.05){                       // veio de frente (contra o escudo)
+      d*=.28;
+      spawnParticles(e.x+Math.cos(e.shieldAng)*e.r,
+        e.y+Math.sin(e.shieldAng)*e.r,'#c9a9ff',3,150,.2,2);
+      if(Math.random()<.3)floatText(e.x,e.y-e.r-10,'BLOQUEADO','#c9a9ff');
+      AUDIO.tone(rand(300,360),.04,'square',.012,-80);
+    }
+  }
+  // SINGULAR: reflete 25% do dano direto recebido de volta ao jogador
+  if(e.type==='singular'&&curAttacker===player&&!isDot&&Math.random()<.35){
+    const prev=curAttacker;curAttacker=null;
+    damagePlayer(d*.25);curAttacker=prev;
+  }
   d*=statusDmgMul(e);                    // corrosão amplifica todo dano
   // ---- SINERGIAS DE STATUS ----
   const atk=curAttacker;
@@ -4839,6 +4962,7 @@ function triggerResonance(e,by,baseDmg){
   spawnShards(e.x,e.y,'#8ff6ff',16,6);
   spawnParticles(e.x,e.y,'#eaffff',26,420,.6,3.5);
   floatText(e.x,e.y-e.r-16,'◆ RESSONÂNCIA','#8ff6ff');
+  echoReact('resonance');
   // acorde harmônico
   AUDIO.tone(523,.5,'sine',.06,0);
   AUDIO.tone(784,.46,'sine',.05,0,.05);
@@ -4918,6 +5042,18 @@ function killEnemy(e){
     banner('ARAUTO DESTRUÍDO','◈ '+bonus+' CRÉDITOS · +40 INTEGRIDADE');
     toast('MINI-CHEFE ELIMINADO');
     AUDIO.victory();
+  }
+  // CISÃO: divide-se em dois fragmentos menores ao morrer
+  if(e.type==='splitter'&&!e.isShard&&enemies.length<ENEMY_BUDGET){
+    for(let i=0;i<2;i++){
+      const a=rand(0,TAU);
+      const c2=spawnEnemy('splitter',
+        clamp(e.x+Math.cos(a)*26,20,ARENA.w-20),
+        clamp(e.y+Math.sin(a)*26,20,ARENA.h-20),Math.max(1,wave));
+      c2.isShard=true;c2.r*=.62;c2.hp=c2.maxHp=c2.maxHp*.35;
+      c2.spd*=1.35;c2.xp=Math.round(c2.xp*.4);c2.spawnT=.25;
+    }
+    spawnRing(e.x,e.y,'#ff9d3c',6,80,.45);
   }
   if(e.type==='shadow'){
     spawnRing(e.x,e.y,e.color,6,150,.6);
@@ -5268,7 +5404,8 @@ function explodeOrb(p){
    SISTEMA DE 20 ONDAS · ELITES · CHEFE FINAL "O PARADOXO"
    ===================================================================== */
 const MAX_WAVE=20;
-const MINI_WAVE=10;          // onda do mini-chefe "O ARAUTO DA FRATURA"
+const MINI_WAVES=[5,10,15];  // ondas com mini-chefes
+const MINI_WAVE=10;          // (mantido para compatibilidade de avisos)
 const ENEMY_BUDGET=46;       // teto de entidades simultâneas (protege o FPS)
 function edgeSpawn(){
   let x,y,tries=0;
@@ -5286,21 +5423,32 @@ function edgeSpawn(){
    arquétipos mais perigosos, respeitando um teto de performance. */
 function waveComp(n){
   const c={
-    chaser : clamp(3+Math.floor(n*1.15),3,18),
-    shooter: n>=2?clamp(1+Math.floor(n/1.8),0,10):0,
-    tank   : n>=4?clamp(Math.floor((n-2)/2.4),0,7):0,
+    chaser : clamp(2+Math.floor(n*.8),2,12),
+    swarm  : n>=1?clamp(2+Math.floor(n*.6),2,9):0,
+    orbiter: n>=2?clamp(1+Math.floor(n*.4),0,6):0,
+    shooter: n>=3?clamp(1+Math.floor(n/2),0,8):0,
+    bulwark: n>=4?clamp(1+Math.floor((n-4)/2.8),0,4):0,
+    tank   : n>=5?clamp(Math.floor((n-3)/2.8),0,6):0,
     anomaly: n>=5?clamp(Math.floor((n-3)/2.2),0,7):0,
     spawner: n>=7?clamp(Math.floor((n-4)/3.6),0,4):0,
+    splitter: n>=6?clamp(1+Math.floor((n-6)/3.5),0,4):0,
+    phantom : n>=8?clamp(1+Math.floor((n-8)/3.2),0,3):0,
+    singular: n>=13?clamp(1+Math.floor((n-13)/4),0,2):0,
     elite  : n>=6?clamp(Math.floor((n-3)/3.2),0,6):0
   };
   // corta proporcionalmente se o total estourar o orçamento de entidades
-  const total=c.chaser+c.shooter+c.tank+c.anomaly+c.spawner+c.elite;
+  let total=0;for(const k in c)total+=c[k];
   if(total>ENEMY_BUDGET){
     const f=ENEMY_BUDGET/total;
-    c.chaser=Math.max(3,Math.floor(c.chaser*f));
+    c.chaser=Math.max(2,Math.floor(c.chaser*f));
+    c.swarm=Math.max(2,Math.floor(c.swarm*f));
     c.shooter=Math.floor(c.shooter*f);
+    c.orbiter=Math.floor(c.orbiter*f);
     c.anomaly=Math.floor(c.anomaly*f);
+    c.bulwark=Math.floor(c.bulwark*f);
     c.tank=Math.max(1,Math.floor(c.tank*f));
+    c.phantom=Math.max(1,Math.floor(c.phantom*f));
+    c.singular=Math.max(1,Math.floor(c.singular*f));
   }
   return c;
 }
@@ -5315,32 +5463,79 @@ function makeElite(e,variant){
   }
 }
 /* =====================================================================
-   MINI-CHEFE (ONDA 10) — "O ARAUTO DA FRATURA"
-   Juggernaut blindado: investidas telegrafadas, rajadas radiais e
-   invocação de escolta. Placas de blindagem quebram uma a uma.
+   CATÁLOGO DE MINI-CHEFES — pool de 8 variantes sorteadas
+   Ondas 5, 10 e 15: 1 miniboss por onda (selecionado do pool)
+   Cada um altera stats base e adiciona habilidades únicas.
+   Todos compartilham: investida telegrafada + rajada radial + escolta.
    ===================================================================== */
+const MINIBOSS=[
+ {id:'herald',nm:'O ARAUTO DA FRATURA',c:'#ff9d3c',
+  hp:1.0,spd:1.0,r:44,plates:6,
+  sk:{charge:1,burst:1,summon:1},
+  desc:'Investidas telegrafadas, rajada radial e escolta.'},
+ {id:'furnace',nm:'A FORNALHA VIVA',c:'#ff5c2f',
+  hp:1.25,spd:.72,r:48,plates:7,
+  sk:{burn:1,nova:1,trail:1},
+  desc:'Deixa rastro de fogo e detona novas incendiárias.'},
+ {id:'sentinel',nm:'A SENTINELA ESPELHADA',c:'#8ff6ff',
+  hp:1.05,spd:.9,r:42,plates:8,
+  sk:{reflect:1,shieldUp:1},
+  desc:'Reflete projéteis e ergue escudos defensivos.'},
+ {id:'brood',nm:'A MATRIZ PROLÍFERA',c:'#39d98a',
+  hp:1.15,spd:.62,r:46,plates:5,
+  sk:{swarmSpawn:1,heal:1,burst:1},
+  desc:'Gera enxames sem parar e regenera vida.'},
+ {id:'duelist',nm:'O DUELISTA FANTASMA',c:'#ff3d68',
+  hp:.70,spd:1.55,r:34,plates:3,
+  sk:{blink:1,slash:1},
+  desc:'Extremamente rápido, ataca em investidas curtas.'},
+ {id:'colossus',nm:'O COLOSSO DORMENTE',c:'#ff2f5e',
+  hp:1.75,spd:.45,r:56,plates:10,
+  sk:{quake:1,slam:1},
+  desc:'Lentíssimo e brutal. Ondas sísmicas em área.'},
+ {id:'oracle',nm:'O ORÁCULO DISSONANTE',c:'#ffd166',
+  hp:.90,spd:1.0,r:40,plates:5,
+  sk:{curse:1,burst:1},
+  desc:'Amaldiçoa seu dano e dispara rajadas amaldiçoadas.'},
+ {id:'leech',nm:'O SANGUESUGA TEMPORAL',c:'#a8ff3d',
+  hp:1.0,spd:1.1,r:40,plates:4,
+  sk:{drain:1,corrode:1,summon:1},
+  desc:'Drena sua vida à distância e corrói armadura.'}
+];
+function pickMiniBoss(n){
+  const pool=MINIBOSS.filter(m=>{
+    if(n<=5)return m.hp<=1.15;
+    if(n<=10)return true;
+    return m.hp>=.8;
+  });
+  return pool[randi(0,pool.length-1)]||MINIBOSS[0];
+}
 function spawnMiniBoss(n){
-  const hp=Math.round((760+n*46)*(1+.10*echoQueue.length));
+  const def=pickMiniBoss(n);
+  const scale=1+(n-5)*.08;
+  const hp=Math.round((520+n*54)*def.hp*scale*(1+.08*echoQueue.length));
   const p=edgeSpawn();
-  const b={type:'miniboss',x:p.x,y:p.y,vx:0,vy:0,r:44,
-    hp,maxHp:hp,dmg:26*diffDmg(n),spd:104*diffSpd(n),xp:150,
-    color:'#ff9d3c',aim:0,touchCd:0,slowT:0,spawnT:1.6,flashT:0,strafe:1,
+  const b={type:'miniboss',x:p.x,y:p.y,vx:0,vy:0,r:def.r,
+    hp,maxHp:hp,dmg:Math.round((20+n*1.1)*def.hp),spd:(96+n*2)*def.spd,xp:150,
+    color:def.c,aim:0,touchCd:0,slowT:0,spawnT:1.6,flashT:0,strafe:1,
+    mb:def,sk:def.sk,
     phase:1,t:0,
-    plates:6,plateMax:6,                    // blindagem visual/mecânica
+    plates:def.plates,plateMax:def.plates,
     chargeCd:3.4,telegraphT:0,dashT:0,dashDx:0,dashDy:0,
-    burstCd:2.6,summonCd:9,
-    spinAng:0,ring:0,core:0};
+    burstCd:2.6,summonCd:9,skillCd:rand(2,4),
+    spinAng:0,ring:0,core:0,trailT:0};
   enemies.push(b);
   miniBoss=b;
   $('bosswrap').classList.add('on');
-  $('bossnm').textContent='O   A R A U T O   D A   F R A T U R A';
+  $('bossnm').textContent=def.nm.toUpperCase().replace(/ /g,'   ');
   $('bossnm').style.color='#ffd9a8';
-  $('bossnm').style.textShadow='0 0 18px #ff9d3c';
-  $('bosssub').textContent='MINI-CHEFE · ONDA 10 · BLINDAGEM '+b.plates+'/'+b.plateMax;
-  $('bossfill').style.background='linear-gradient(90deg,#ff9d3c,#ffd166,#ff5c7a)';
-  banner('O ARAUTO DA FRATURA','MINI-CHEFE — QUEBRE A BLINDAGEM');
+  $('bossnm').style.textShadow='0 0 18px '+def.c;
+  $('bosssub').textContent='MINI-CHEFE · ONDA '+n+' · BLINDAGEM '+b.plates+'/'+b.plateMax;
+  $('bossfill').style.background='linear-gradient(90deg,'+def.c+',#ffd166,#ff5c7a)';
+  banner(def.nm,'MINI-CHEFE — '+def.desc);
   shake=Math.max(shake,14);
   AUDIO.bossRoar();
+  echoReact('miniboss');
   return b;
 }
 function miniBossHUD(){
@@ -5433,7 +5628,7 @@ function updateMiniBoss(e,dt){
 
   /* ---- ESCOLTA ---- */
   e.summonCd-=dt;
-  if(e.summonCd<=0&&enemies.length<ENEMY_BUDGET){
+  if(e.summonCd<=0&&enemies.length<ENEMY_BUDGET&&(e.sk.summon||e.mb.id==='herald')){
     e.summonCd=e.phase===2?7:11;
     for(let i=0;i<(e.phase===2?3:2);i++){
       const a=rand(0,TAU),rr=e.r+52;
@@ -5441,11 +5636,105 @@ function updateMiniBoss(e,dt){
       const sy=clamp(e.y+Math.sin(a)*rr,30,ARENA.h-30);
       const c=spawnEnemy('chaser',sx,sy,Math.max(1,wave));
       c.spawnT=.5;
-      spawnRing(sx,sy,'#ff9d3c',6,66,.5);
+      spawnRing(sx,sy,e.color,6,66,.5);
     }
-    toast('O ARAUTO CONVOCOU ESCOLTA');
+    toast(e.mb.nm+' CONVOCOU ESCOLTA');
     AUDIO.tone(220,.35,'sawtooth',.04,-120);
   }
+
+  /* ================= HABILIDADES DA VARIANTE ================= */
+  const SK=e.sk||{};
+  e.skillCd-=dt;
+  const pdx=p.x-e.x,pdy=p.y-e.y,pd=Math.hypot(pdx,pdy)||1;
+
+  // DUELISTA / BLINK: teleporte ofensivo
+  if(SK.blink&&e.skillCd<=0){
+    e.skillCd=2.6;
+    const a=Math.atan2(pdy,pdx)+Math.PI;
+    const rr=rand(70,130);
+    spawnParticles(e.x,e.y,e.color,18,300,.5,3.5);
+    spawnRing(e.x,e.y,e.color,8,120,.5);
+    e.x=clamp(p.x+Math.cos(a)*rr,e.r,ARENA.w-e.r);
+    e.y=clamp(p.y+Math.sin(a)*rr,e.r,ARENA.h-e.r);
+    spawnRing(e.x,e.y,e.color,6,110,.5);
+    aberr=Math.max(aberr,.5);
+    AUDIO.tone(1300,.14,'square',.035,-700);
+    if(SK.slash){e.telegraphT=.28;}
+  }
+
+  // FORNALHA: rastro incendiário
+  if(SK.trail){
+    e.trailT-=dt;
+    if(e.trailT<=0){
+      e.trailT=.28;
+      projectiles.push({x:e.x+rand(-14,14),y:e.y+rand(-14,14),vx:0,vy:0,
+        r:16,dmg:e.dmg*.30,life:4.5,type:'eorb',team:'enemy',
+        color:'#ff7a2f',aoe:0});
+      spawnParticles(e.x,e.y,'#ff7a2f',2,70,.5,3);
+    }
+  }
+  // FORNALHA: nova incendiária
+  if(SK.nova&&e.skillCd<=0){
+    e.skillCd=6.5;
+    const R=260;
+    spawnRing(e.x,e.y,'#ff7a2f',14,R,.8);
+    spawnShards(e.x,e.y,'#ff7a2f',16,6);
+    if(dist2(p.x,p.y,e.x,e.y)<R*R)damagePlayer(e.dmg*.8);
+    shake=Math.max(shake,12);AUDIO.boom();
+  }
+
+  // MATRIZ: gera enxames + regenera
+  if(SK.swarmSpawn&&e.skillCd<=0&&enemies.length<ENEMY_BUDGET){
+    e.skillCd=4.2;
+    for(let i=0;i<3;i++){
+      const a=rand(0,TAU),rr=e.r+40;
+      const c2=spawnEnemy('swarm',
+        clamp(e.x+Math.cos(a)*rr,30,ARENA.w-30),
+        clamp(e.y+Math.sin(a)*rr,30,ARENA.h-30),Math.max(1,wave));
+      c2.spawnT=.4;
+    }
+    spawnRing(e.x,e.y,'#39d98a',8,90,.5);
+    AUDIO.tone(340,.25,'sawtooth',.035,-120);
+  }
+  if(SK.heal&&e.hp<e.maxHp)e.hp=Math.min(e.maxHp,e.hp+e.maxHp*.012*dt);
+
+  // COLOSSO: tremor sísmico
+  if(SK.quake&&e.skillCd<=0){
+    e.skillCd=5.5;
+    const R=300;
+    spawnRing(e.x,e.y,'#ff2f5e',18,R,.9);
+    shake=Math.max(shake,20);
+    if(dist2(p.x,p.y,e.x,e.y)<R*R){
+      damagePlayer(e.dmg*.7);
+      const a=Math.atan2(p.y-e.y,p.x-e.x);
+      p.vx+=Math.cos(a)*520;p.vy+=Math.sin(a)*520;
+    }
+    AUDIO.boom();AUDIO.tone(70,.6,'sine',.09,-24);
+  }
+
+  // ORÁCULO: maldição que reduz dano
+  if(SK.curse&&e.skillCd<=0){
+    e.skillCd=9;
+    p.curseT=6;
+    banner('MALDIÇÃO DISSONANTE','SEU DANO CAIU 30% POR 6s');
+    spawnRing(p.x,p.y,'#ffd166',10,160,.7);
+    AUDIO.tone(200,.5,'sawtooth',.05,-80);
+  }
+
+  // SANGUESUGA: dreno à distância
+  if(SK.drain&&e.skillCd<=0&&pd<520){
+    e.skillCd=5;
+    e.drainT=2.2;
+    AUDIO.tone(150,.5,'sine',.05,60);
+  }
+  if(e.drainT>0){
+    e.drainT-=dt;
+    if(Math.random()<dt*4){
+      damagePlayer(e.dmg*.13);
+      e.hp=Math.min(e.maxHp,e.hp+e.dmg*.2);
+    }
+  }
+  if(SK.corrode&&Math.random()<dt*.5)applyStatus(p,'corrode',3,.1,e);
 }
 function drawMiniBoss(e){
   const intro=e.spawnT>0?1-e.spawnT/1.6:1;
@@ -5532,9 +5821,15 @@ function spawnWave(n){
   if(n>=MAX_WAVE){spawnBoss();return;}
   const c=waveComp(n),list=[];
   for(let i=0;i<c.chaser;i++)list.push('chaser');
+  for(let i=0;i<(c.swarm||0);i++)list.push('swarm');
+  for(let i=0;i<(c.orbiter||0);i++)list.push('orbiter');
   for(let i=0;i<c.shooter;i++)list.push('shooter');
+  for(let i=0;i<(c.bulwark||0);i++)list.push('bulwark');
   for(let i=0;i<c.tank;i++)list.push('tank');
   for(let i=0;i<c.anomaly;i++)list.push('anomaly');
+  for(let i=0;i<(c.splitter||0);i++)list.push('splitter');
+  for(let i=0;i<(c.phantom||0);i++)list.push('phantom');
+  for(let i=0;i<(c.singular||0);i++)list.push('singular');
   for(const t of list){const p=edgeSpawn();spawnEnemy(t,p.x,p.y,n);}
   // Invocadores ancoram perto das bordas da arena
   for(let i=0;i<c.spawner;i++){
@@ -5562,8 +5857,8 @@ function spawnWave(n){
       elites++;
     }
   }
-  // ---- MINI-CHEFE NA ONDA 10 ----
-  if(n===MINI_WAVE){
+  // ---- MINI-CHEFES NAS ONDAS 5, 10 E 15 ----
+  if(MINI_WAVES.indexOf(n)>=0){
     spawnMiniBoss(n);
     sWave();
     return;
@@ -5571,10 +5866,11 @@ function spawnWave(n){
   let sub='INIMIGOS DETECTADOS: '+(list.length+c.spawner+elites);
   if(n===1)sub='CICLO INICIADO — SOBREVIVA ATÉ A ONDA 20';
   else if(elites)sub+=' · '+elites+' ELITE'+(elites>1?'S':'')+' NA ARENA';
-  if(n===MINI_WAVE-1)sub='ALGO PESADO SE APROXIMA NA PRÓXIMA ONDA';
+  if(MINI_WAVES.indexOf(n+1)>=0)sub='ALGO PESADO SE APROXIMA NA PRÓXIMA ONDA';
   if(n===MAX_WAVE-1)sub='ÚLTIMA ONDA ANTES DA SINGULARIDADE';
   banner('ONDA '+String(n).padStart(2,'0')+' / 20',sub);
   sWave();
+  echoReact('waveStart');
 }
 
 /* ---------- análise adaptativa das runs anteriores ---------- */
@@ -5972,6 +6268,64 @@ function updateEnemy(e,dt){
     }
     if(Math.random()<dt*.25)e.strafe*=-1;
   }
+
+  /* ---- ENXAME: investida em zigue-zague, frágil mas velocíssimo ---- */
+  if(e.type==='swarm'){
+    e.wob=(e.wob||rand(0,TAU))+dt*7.5;
+    const px2=-my,py2=mx;
+    const amp=Math.sin(e.wob)*.55;
+    mx+=px2*amp;my+=py2*amp;
+    const l2=Math.hypot(mx,my)||1;mx/=l2;my/=l2;
+  }
+
+  /* ---- ORBITADOR: mantém raio fixo e circula o alvo, dispara rajadas ---- */
+  if(e.type==='orbiter'){
+    if(e.orbDir===undefined)e.orbDir=Math.random()<.5?1:-1;
+    const want=210;
+    const px2=-dy/d,py2=dx/d;
+    const radial=(d-want)/want;
+    mx=(dx/d)*clamp(radial*1.6,-1,1)+px2*e.orbDir;
+    my=(dy/d)*clamp(radial*1.6,-1,1)+py2*e.orbDir;
+    const l2=Math.hypot(mx,my)||1;mx/=l2;my/=l2;
+    e.fireT=(e.fireT||rand(1,2))-dt;
+    if(e.fireT<=0&&d<430){
+      e.fireT=rand(1.9,2.6)/mEff.enemyAggr;
+      const a=Math.atan2(dy,dx);
+      projectiles.push({x:e.x+Math.cos(a)*(e.r+4),y:e.y+Math.sin(a)*(e.r+4),
+        vx:Math.cos(a)*380,vy:Math.sin(a)*380,r:5,dmg:e.dmg,life:2.6,
+        type:'eorb',team:'enemy',color:'#8ff6ff',aoe:0});
+      AUDIO.tone(520,.06,'square',.012,90);
+    }
+    if(Math.random()<dt*.18)e.orbDir*=-1;
+  }
+
+  /* ---- BLINDADO: escudo frontal — só toma dano cheio pelas costas ---- */
+  if(e.type==='bulwark'){
+    e.shieldAng=Math.atan2(dy,dx);
+    spd*=.9;
+  }
+
+  /* ---- LEVIANO: fase de intangibilidade cíclica ---- */
+  if(e.type==='phantom'){
+    e.phT=(e.phT||rand(1,3))-dt;
+    if(e.phT<=0){
+      e.ghostT=(e.ghostT||0)>0?0:1.3;
+      e.phT=e.ghostT>0?1.3:rand(2.2,3.4);
+      spawnParticles(e.x,e.y,'#bffbff',10,200,.4,2.5);
+    }
+    if(e.ghostT>0){e.ghostT-=dt;spd*=1.5;}
+  }
+
+  /* ---- SINGULAR: puxa o jogador para si ---- */
+  if(e.type==='singular'){
+    e.pulseA=(e.pulseA||0)+dt*2;
+    if(d<420&&d>1){
+      const pull=(1-d/420)*260*dt;
+      player.vx+=(e.x-player.x)/d*pull;
+      player.vy+=(e.y-player.y)/d*pull;
+    }
+  }
+
   e.vx+=(mx*spd-e.vx)*Math.min(1,5*dt);
   e.vy+=(my*spd-e.vy)*Math.min(1,5*dt);
   e.x=clamp(e.x+e.vx*dt,e.r,ARENA.w-e.r);
@@ -6027,6 +6381,7 @@ function updateEcho(e,dt){
       e.recoil=0;e.erratic=0;e.glitchT=0;e.glitchAmp=0;
       banner('DISSONÂNCIA TERMINADA','ECHO·0'+e.slot+' RETORNOU AO SEU LADO');
       toast('ECHO·0'+e.slot+' NÃO É MAIS HOSTIL');
+      echoReact('dissonanceEnd');
       return;
     }
     if(e.recoil>0)e.recoil=Math.max(0,e.recoil-dt*7);
@@ -6263,6 +6618,8 @@ function updatePlayer(dt){
       spawnRing(p.x,p.y,'#9d7bff',6,80,.5);
     }
   }
+  // maldição do Oráculo: dano reduzido 30%
+  if(p.curseT>0)p.curseT-=dt;
   if(p.tempT>0){
     p.tempT-=dt;
     if(p.tempT<=0&&p.tempPen>0){
@@ -6307,6 +6664,7 @@ function updatePlayer(dt){
     if(p.entropy)mul*=1+Math.min(.60,(p.waveKills||0)*.01);// ENTROPIA
     if(p.harvestStack)                                     // REVENANT
       mul*=1+Math.min(.75,(p.harvStacks||0)*p.harvestStack);
+    if(p.curseT>0)mul*=.70;                                // MALDIÇÃO DO ORÁCULO
     fireWeaponFrom(p,wdef,'ally',mul);
     if(p.doubleTap&&Math.random()<p.doubleTap)           // PRISMA FRATURADO
       fireWeaponFrom(p,wdef,'ally',mul);
@@ -6661,6 +7019,7 @@ function pickEnding(){
 function onVictory(){
   if(state==='victory')return;
   state='victory';firing=false;
+  echoReact('bossDeath');
   boss=null;$('bosswrap').classList.remove('on');
   // dissolve tudo que restou da distorção (Ecos Sombrios, tiros, beacons)
   for(const e of enemies){
@@ -7642,6 +8001,115 @@ function drawEnemy(e){
       ctx.strokeStyle='rgba(255,255,255,.8)';ctx.lineWidth=2;
       ctx.beginPath();ctx.arc(0,0,R*1.5,0,TAU);ctx.stroke();
     }
+  }else if(e.type==='swarm'){
+    /* ENXAME — inseto veloz e frágil, asas vibrando */
+    const fl=Math.sin(runTime*26+(e.phase0||0));
+    ctx.shadowColor=e.color;ctx.shadowBlur=flash?18:9;
+    ctx.fillStyle=flash?'#fff':'rgba(255,141,245,.45)';
+    ctx.beginPath();
+    ctx.ellipse(-R*.1,-R*.75,R*.55,R*.26,fl*.4,0,TAU);ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(-R*.1, R*.75,R*.55,R*.26,-fl*.4,0,TAU);ctx.fill();
+    ctx.fillStyle=flash?'#fff':e.color;
+    ctx.beginPath();
+    ctx.moveTo(R*1.15,0);ctx.lineTo(-R*.55,R*.52);
+    ctx.lineTo(-R*.25,0);ctx.lineTo(-R*.55,-R*.52);
+    ctx.closePath();ctx.fill();
+    ctx.shadowBlur=0;
+    ctx.fillStyle=flash?'#fff':'#ffe0fb';
+    ctx.beginPath();ctx.arc(R*.42,0,R*.17,0,TAU);ctx.fill();
+  }else if(e.type==='orbiter'){
+    /* ORBITADOR — anel giratório com núcleo suspenso */
+    const sp=runTime*3.2;
+    ctx.shadowColor=e.color;ctx.shadowBlur=flash?20:11;
+    ctx.strokeStyle=flash?'#fff':e.color;ctx.lineWidth=R*.16;
+    ctx.setLineDash([R*.7,R*.5]);ctx.lineDashOffset=-sp*R;
+    ctx.beginPath();ctx.arc(0,0,R*.92,0,TAU);ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.shadowBlur=0;
+    const og=radGrad2('orb|'+(R|0)+'|'+(flash?1:0),0,0,1,0,0,R*.6,
+      flash?'#fff':'#eaffff',flash?'#fff':'#2b6b7d');
+    ctx.fillStyle=og;
+    ctx.beginPath();ctx.arc(0,0,R*.5,0,TAU);ctx.fill();
+    ctx.fillStyle=flash?'#fff':e.color;
+    ctx.fillRect(R*.4,-R*.13,R*.8,R*.26);
+    ctx.fillStyle=flash?'#fff':'#dffdff';
+    for(let i=0;i<2;i++){
+      const sa=sp+i*Math.PI;
+      ctx.beginPath();
+      ctx.arc(Math.cos(sa)*R*.92,Math.sin(sa)*R*.92,R*.15,0,TAU);ctx.fill();
+    }
+  }else if(e.type==='bulwark'){
+    /* BLINDADO — escudo frontal em placa, corpo compacto */
+    ctx.shadowColor=e.color;ctx.shadowBlur=flash?18:9;
+    const bg=linGrad2('bw|'+(R|0)+'|'+(flash?1:0),-R,-R,R,R,
+      flash?'#fff':'#7a5ba8',flash?'#fff':'#2e1c47');
+    ctx.fillStyle=bg;
+    ctx.beginPath();
+    for(let i=0;i<5;i++){const an=i/5*TAU+.6;
+      ctx[i?'lineTo':'moveTo'](Math.cos(an)*R*.78,Math.sin(an)*R*.78);}
+    ctx.closePath();ctx.fill();
+    ctx.shadowBlur=0;
+    ctx.fillStyle=flash?'#fff':'#f2e0ff';
+    ctx.beginPath();ctx.arc(-R*.12,0,R*.24,0,TAU);ctx.fill();
+    ctx.save();
+    ctx.shadowColor='#c9a9ff';ctx.shadowBlur=14;
+    ctx.strokeStyle=flash?'#fff':'#dcc4ff';ctx.lineWidth=R*.26;
+    ctx.beginPath();ctx.arc(0,0,R*1.05,-1.02,1.02);ctx.stroke();
+    ctx.globalAlpha=.22;ctx.strokeStyle='#c9a9ff';ctx.lineWidth=R*.55;
+    ctx.beginPath();ctx.arc(0,0,R*1.05,-1.02,1.02);ctx.stroke();
+    ctx.restore();
+    ctx.strokeStyle=flash?'#fff':'#8f6fc4';ctx.lineWidth=R*.11;
+    ctx.beginPath();
+    ctx.moveTo(R*.3,-R*.5);ctx.lineTo(R*.85,-R*.62);
+    ctx.moveTo(R*.3, R*.5);ctx.lineTo(R*.85, R*.62);
+    ctx.stroke();
+  }else if(e.type==='splitter'){
+    /* CISÃO — casca rachada que se parte ao morrer */
+    ctx.shadowColor=e.color;ctx.shadowBlur=flash?18:9;
+    ctx.fillStyle=flash?'#fff':e.color;
+    ctx.beginPath();
+    ctx.moveTo(R,0);ctx.lineTo(R*.2,R*.9);ctx.lineTo(-R*.8,R*.5);
+    ctx.lineTo(-R*.8,-R*.5);ctx.lineTo(R*.2,-R*.9);
+    ctx.closePath();ctx.fill();
+    ctx.shadowBlur=0;
+    ctx.strokeStyle=flash?'#fff':'#3d2205';ctx.lineWidth=R*.14;
+    ctx.beginPath();
+    ctx.moveTo(R*.7,-R*.3);ctx.lineTo(-R*.2,R*.15);ctx.lineTo(R*.3,R*.6);
+    ctx.stroke();
+  }else if(e.type==='phantom'){
+    /* LEVIANO — silhueta translúcida que oscila entre fases */
+    const gh=(e.ghostT||0)>0;
+    ctx.globalAlpha=a*(gh?.28:.9);
+    ctx.shadowColor=e.color;ctx.shadowBlur=gh?24:12;
+    ctx.strokeStyle=flash?'#fff':e.color;ctx.lineWidth=R*.16;
+    ctx.beginPath();
+    ctx.moveTo(R,0);ctx.lineTo(-R*.5,R*.8);
+    ctx.quadraticCurveTo(-R*.9,0,-R*.5,-R*.8);
+    ctx.closePath();ctx.stroke();
+    if(!gh){ctx.fillStyle=flash?'#fff':'rgba(191,251,255,.25)';ctx.fill();}
+    ctx.shadowBlur=0;
+    ctx.fillStyle=flash?'#fff':'#eaffff';
+    ctx.beginPath();ctx.arc(R*.25,0,R*.18,0,TAU);ctx.fill();
+    ctx.globalAlpha=a;
+  }else if(e.type==='singular'){
+    /* SINGULAR — poço gravitacional com anéis colapsando */
+    const pa=e.pulseA||0;
+    ctx.strokeStyle=flash?'#fff':e.color;ctx.lineWidth=2;
+    for(let i=0;i<3;i++){
+      const rr=R*(1.7-((pa*.35+i*.33)%1)*1.1);
+      ctx.globalAlpha=a*(rr/(R*1.7))*.8;
+      ctx.beginPath();ctx.arc(0,0,Math.max(2,rr),0,TAU);ctx.stroke();
+    }
+    ctx.globalAlpha=a;
+    ctx.shadowColor=e.color;ctx.shadowBlur=flash?26:18;
+    const sg=radGrad2('sing|'+(R|0)+'|'+(flash?1:0),0,0,1,0,0,R,
+      flash?'#fff':'#ff9df7','rgba(20,0,20,0)');
+    ctx.fillStyle=sg;
+    ctx.beginPath();ctx.arc(0,0,R*.85,0,TAU);ctx.fill();
+    ctx.shadowBlur=0;
+    ctx.fillStyle='#12000f';
+    ctx.beginPath();ctx.arc(0,0,R*.35,0,TAU);ctx.fill();
   }else{
     /* TANQUE — mecha pesado, placas e canhão de impacto */
     // pernas hidráulicas
@@ -8124,6 +8592,7 @@ function loop(now){
   if(state==='play'){
     const sdt=dt;
     runTime+=sdt;
+    if(_echoSpeakCd>0)_echoSpeakCd-=sdt;
     updatePlayer(sdt);
     for(const e of echoes)updateEcho(e,sdt);
     for(let i=0;i<enemies.length;i++)updateEnemy(enemies[i],sdt);
@@ -8428,12 +8897,18 @@ function renderCodexBody(){
   }else if(codexTab==='enemies'){
     const ED=[
       ['chaser','PERSEGUIDOR','Predador insectoide veloz. Persegue em linha reta e ataca por contato.','#ff4d6d'],
+      ['swarm','ENXAME','Frágil e velocíssimo. Vem em bando e ataca em zigue-zague — força movimentação constante.','#ff8df5'],
+      ['orbiter','ORBITADOR','Circula você mantendo distância fixa e dispara rajadas. Exige mirar liderando o alvo.','#8ff6ff'],
       ['shooter','ATIRADOR','Drone flutuante. Mantém distância média e dispara orbes carregados.','#ffd166'],
+      ['bulwark','BLINDADO','Escudo frontal absorve 72% do dano. Precisa ser flanqueado ou atingido pelas costas.','#c9a9ff'],
       ['tank','TANQUE','Mecha pesado e lento. Vida altíssima e dano de contato massivo.','#ff2f5e'],
       ['spawner','INVOCADOR DE FALHAS','Ancora-se nas bordas e abre fendas que geram Perseguidores a cada 6s.','#39d98a'],
       ['anomaly','ANÔMALO TEMPORAL','Teleporta a cada 4s para trás de você e desfere uma investida rápida.','#c56bff'],
+      ['splitter','CISÃO','Ao morrer, divide-se em dois fragmentos menores e mais rápidos.','#ff9d3c'],
+      ['phantom','LEVIANO','Alterna entre fases: fica intangível e acelera, imune a todo dano.','#bffbff'],
+      ['singular','SINGULAR','Poço gravitacional. Puxa você para si e reflete 25% do dano direto.','#ff4df0'],
       ['elite','VARIANTES ELITE','A partir da onda 5: escudo regenerativo ou aura de lentidão. Vida ×2.3.','#8ff6ff'],
-      ['miniboss','O ARAUTO DA FRATURA','Mini-chefe da onda 10. Investidas telegrafadas, rajada radial, 6 placas de blindagem e escolta.','#ff9d3c'],
+      ['miniboss','MINI-CHEFES','Encontros especiais nas ondas 5, 10 e 15. Cada um com ataques e mecânicas únicos.','#ff9d3c'],
       ['boss','O PARADOXO','Chefe final da onda 20. Adapta-se às suas runs anteriores e invoca Ecos Sombrios na fase 2.','#ff4df0']
     ];
     h='<div class="cxgrid">';
