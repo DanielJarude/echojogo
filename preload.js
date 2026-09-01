@@ -16,9 +16,23 @@ const INBOUND = [
   'echo:gpu-status'
 ];
 
+/* Canal de build informado pelo processo principal via additionalArguments.
+   'dev' apenas em execução não empacotada (npm start / npm run dev). */
+function readArg(name, fallback) {
+  const pre = '--' + name + '=';
+  const hit = (process.argv || []).find((a) => a.startsWith(pre));
+  return hit ? hit.slice(pre.length) : fallback;
+}
+const CHANNEL = readArg('echo-channel', 'release') === 'dev' ? 'dev' : 'release';
+
 const api = {
   isElectron: true,
   platform: process.platform,
+
+  /* ---- Build / Modo Desenvolvedor ---- */
+  channel: CHANNEL,                 // 'dev' | 'release'
+  isDev: CHANNEL === 'dev',
+  version: readArg('echo-version', ''),
 
   /* ---- Tela cheia nativa ---- */
   setFullScreen: (value) => ipcRenderer.invoke('echo:set-fullscreen', !!value),
