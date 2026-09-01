@@ -6680,6 +6680,15 @@ function fireMelee(src,def,team,mul){
         hits++;
       }
     }
+    /* PR 10 — CONTENÇÃO corpo a corpo: o mesmo arco alcança um Echo
+       DISSONANTE, consumindo a integridade da ruptura (sem recompensa). */
+    if(src===player)for(const ec of echoes){
+      if(!isHostileEcho(ec))continue;
+      const dx=ec.x-src.x,dy=ec.y-src.y,d=Math.hypot(dx,dy);
+      if(d>reach+ec.r)continue;
+      const da=Math.abs(((Math.atan2(dy,dx)-src.aim+Math.PI*3)%TAU)-Math.PI);
+      if(da<=half+Math.atan2(ec.r,Math.max(24,d))){containEcho(ec,dmg,src.x,src.y);hits++;}
+    }
   }else{
     const dx=player.x-src.x,dy=player.y-src.y,d=Math.hypot(dx,dy);
     if(d<=reach+player.r){
@@ -6738,6 +6747,13 @@ function fireBeam(src,def,team,mul,dt){
       if(proj<0||proj>bd)continue;
       if(Math.abs(rx*uy-ry*ux)<e.r+7){bd=proj;best=e;}
     }
+    /* PR 10: o feixe também contém um Echo DISSONANTE no caminho */
+    if(src===player)for(const ec of echoes){
+      if(!isHostileEcho(ec))continue;
+      const rx=ec.x-ox,ry=ec.y-oy,proj=rx*ux+ry*uy;
+      if(proj<0||proj>bd)continue;
+      if(Math.abs(rx*uy-ry*ux)<ec.r+7){bd=proj;best=ec;}
+    }
   }else{
     const rx=player.x-ox,ry=player.y-oy,proj=rx*ux+ry*uy;
     if(proj>0&&proj<bd&&Math.abs(rx*uy-ry*ux)<player.r+7){bd=proj;best=player;}
@@ -6750,7 +6766,10 @@ function fireBeam(src,def,team,mul,dt){
   src.beamT=.09;
   const dmg=def.dmg*mul*(src.beamRamp||1);
   if(best){
-    if(team==='ally')damageEnemy(best,dmg,ox,oy,(src.beamRamp||1)>=def.rampMax*.92);
+    if(team==='ally'){
+      if(isHostileEcho(best))containEcho(best,dmg,ox,oy);
+      else damageEnemy(best,dmg,ox,oy,(src.beamRamp||1)>=def.rampMax*.92);
+    }
     else damagePlayer(dmg);
     const hx=ox+ux*bd,hy=oy+uy*bd;
     if(Math.random()<.6)spawnParticles(hx,hy,def.color,2,220,.22,2.2);
@@ -9275,6 +9294,20 @@ function updateProjectiles(dt){
           break;
         }
       }
+      /* PR 10 — CONTENÇÃO: se o disparo não acertou inimigo algum, ele
+         ainda pode atingir um Echo DISSONANTE. O dano vai para a
+         integridade da ruptura (nunca para o HP do Echo) e não gera
+         XP, créditos, loot, abate, lifesteal, status ou moral. */
+      if(!dead&&p.owner===player){
+        for(const ec of echoes){
+          if(!isHostileEcho(ec))continue;
+          const rr=ec.r+p.r;
+          if(dist2(p.x,p.y,ec.x,ec.y)<rr*rr){
+            containEcho(ec,p.dmg,p.x,p.y);
+            dead=true;break;
+          }
+        }
+      }
     }else{
       // REBOBINADOR CINÉTICO: dash reflete projéteis inimigos
       if(player.dashReflect&&player.dashT>0&&
@@ -9292,8 +9325,13 @@ function updateProjectiles(dt){
         const rr=player.r+p.r;
         if(dist2(p.x,p.y,player.x,player.y)<rr*rr){damagePlayer(p.dmg);dead=true;}
       }
-      if(!dead)for(const ec of echoes){ // Ecos absorvem projéteis inimigos
+      if(!dead)for(const ec of echoes){ // Ecos ALIADOS absorvem projéteis inimigos
         if(!ec.alive||ec===p.owner)continue;   // não absorve o próprio disparo
+        /* PR 10: um Echo em ruptura não serve de escudo para você (e um
+           disparo de Echo hostil nunca fere o outro Echo — Echo↔Echo é
+           assunto do PR 14). */
+        if(!echoAllied(ec))continue;
+        if(p.owner&&p.owner!==player&&p.owner.slot)continue;
         const rr=ec.r+p.r+3;
         if(dist2(p.x,p.y,ec.x,ec.y)<rr*rr){damageEcho(ec,p.dmg);dead=true;break;}
       }
