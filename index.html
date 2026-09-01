@@ -2125,6 +2125,7 @@ function echoesReact(c,g,v){
   const dec=moralDom({comp:c*3,greed:g*3,viol:v*3});
   for(const e of echoes){
     if(!e.alive)continue;
+    if(e.hostile)continue;
     if(dec==='neutro'||e.dom==='neutro'){e.trust=clamp(e.trust+2,0,100);continue;}
     if(dec===e.dom){
       e.trust=clamp(e.trust+18,0,100);e.trustFx=.9;
@@ -5642,7 +5643,15 @@ function updateEcho(e,dt){
   /* ---------- ESTADO HOSTIL (Dissonância) ---------- */
   if(e.hostile){
     e.hostileT-=dt;
-    if(e.hostileT<=0){dissolveEcho(e,'APÓS A DISSONÂNCIA');return;}
+    if(e.hostileT<=0){
+      e.hostile=false;e.hostileT=0;
+      e.trust=Math.max(e.trust,34);
+      e.fireTimer=0;e.beamT=0;e.beamRamp=1;e.beamTarget=null;
+      e.recoil=0;e.erratic=0;e.glitchT=0;e.glitchAmp=0;
+      banner('DISSONÂNCIA TERMINADA','ECHO·0'+e.slot+' RETORNOU AO SEU LADO');
+      toast('ECHO·0'+e.slot+' NÃO É MAIS HOSTIL');
+      return;
+    }
     if(e.recoil>0)e.recoil=Math.max(0,e.recoil-dt*7);
     if(e.beamT>0)e.beamT-=dt;
     // alveja o inimigo OU o jogador — o que estiver mais perto
