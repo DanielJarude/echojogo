@@ -1994,6 +1994,7 @@ function makeEcho(data,slot){
     ownedW:(data.owned||STARTER_WEAPONS).slice(),
     dom:data.dom||'neutro',moralSrc:data.moral||{comp:0,greed:0,viol:0},
     trust:slot===1?60:46,trustFx:0,fleeT:0,
+    roleCd:slot===1?6:8,roleT:0,roleFx:0,shieldPot:0,   // papéis táticos
     hostile:false,hostileT:0,curW:0,beamT:0,beamRamp:1,beamTarget:null,
     beamLen:0,recoil:0,swingDir:1,
     mul:(data.dmgMul||1)*ECHO_MUL[slot]*boost*mEff.echoPower,
@@ -2457,6 +2458,73 @@ function echoReact(event,data){
   echoSpeak(e,txt,col);
 }
 
+/* --------------- PAPÉIS TÁTICOS DOS ECOS --------------- */
+const ECHO_ROLE=[null,
+  {id:'guardian',nm:'GUARDIÃO',c:'#46e0ff'},
+  {id:'disruptor',nm:'DISRUPTOR',c:'#ff4df0'}
+];
+function echoRoleTick(e,dt){
+  // Eco hostil ou desconfiança total desliga o papel
+  if(!e.alive||e.hostile||trustTier(e)===0){e.roleT=0;return;}
+  const tier=trustTier(e);
+  if(e.roleFx>0)e.roleFx-=dt;
+  // confiança acelera o cooldown: tier 2 = ×1.35, tier 0 = ×0.55
+  e.roleCd-=dt*(tier===2?1.35:(tier===0?.55:1));
+  if(e.roleCd>0)return;
+  const pot=(tier===2?1.35:(tier===0?.6:1));
+  if(e.slot===1){
+    /* ---- GUARDIÃO: barreira de cobertura ---- */
+    e.roleCd=7.5;e.roleT=4.2;e.roleFx=.6;
+    e.shieldPot=0.22*pot;   // redução de dano concedida ao jogador
+    spawnRing(e.x,e.y,'#46e0ff',12,150,.7);
+    spawnRing(player.x,player.y,'#8ff6ff',8,110,.6);
+    echoSpeak(e,'COBERTURA ATIVA.','#8ff6ff');
+    AUDIO.tone(520,.3,'sine',.04,140);
+  }else{
+    /* ---- DISRUPTOR: pulso temporal em área ---- */
+    e.roleCd=9;e.roleFx=.6;
+    const R=190*pot;
+    spawnRing(e.x,e.y,'#ff4df0',14,R,.75);
+    spawnShards(e.x,e.y,'#ff4df0',10,5);
+    const prev=curAttacker;curAttacker=e;
+    let hit=0;
+    for(const en of enemies){
+      if(en.dead||en.spawnT>0)continue;
+      if(dist2(en.x,en.y,e.x,e.y)>R*R)continue;
+      applyStatus(en,'chill',2.6*pot,.30,e);
+      applyStatus(en,'corrode',3.5*pot,.10*pot,e);
+      damageEnemy(en,10*pot,e.x,e.y,false);
+      hit++;
+    }
+    curAttacker=prev;
+    if(hit)echoSpeak(e,'DISTORÇÃO LIBERADA.','#ff9df7');
+    aberr=Math.max(aberr,.45);
+    AUDIO.tone(180,.4,'sawtooth',.04,-70);
+  }
+}
+function drawEchoRole(e){
+  if(!e.alive||e.hostile)return;
+  if(e.slot===1&&e.roleT>0){
+    // campo de cobertura ligando o Guardião ao jogador
+    const k=clamp(e.roleT/4.2,0,1);
+    ctx.save();
+    ctx.globalAlpha=.16*k;
+    ctx.strokeStyle='#46e0ff';ctx.lineWidth=2;
+    ctx.setLineDash([8,9]);ctx.lineDashOffset=-runTime*24;
+    ctx.beginPath();ctx.moveTo(e.x,e.y);ctx.lineTo(player.x,player.y);ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha=.22*k;
+    ctx.beginPath();ctx.arc(player.x,player.y,player.r+22,0,TAU);ctx.stroke();
+    ctx.restore();
+  }
+  if(e.roleFx>0){
+    ctx.save();
+    ctx.globalAlpha=e.roleFx;
+    ctx.strokeStyle=ECHO_ROLE[e.slot].c;ctx.lineWidth=2;
+    ctx.beginPath();ctx.arc(e.x,e.y,e.r+14+(1-e.roleFx)*20,0,TAU);ctx.stroke();
+    ctx.restore();
+  }
+}
 /* --------------- CATÁLOGO: 8 ITENS PASSIVOS COM TRADE-OFF --------------- */
 const ITEMS=[
  {id:'nucleo',nm:'NÚCLEO INSTÁVEL',desc:'+30% DANO · −15% VIDA MÁXIMA',price:34,color:'#ff5c7a',
@@ -2571,7 +2639,27 @@ const ITEMS=[
  {id:'su_regen',nm:'TECIDO AUTORREPARADOR',rar:2,
   desc:'REGENERA 2.2 HP/s FORA DE COMBATE · +25 DE VIDA MÁXIMA',
   price:40,color:'#7dffc4',
-  apply:p=>{p.regen=(p.regen||0)+2.2;p.maxHp+=25;p.hp+=25;}}
+  apply:p=>{p.regen=(p.regen||0)+2.2;p.maxHp+=25;p.hp+=25;}},
+
+ {id:'su_sorte',nm:'DADO VICIADO',rar:2,
+  desc:'25% DE CHANCE DE CURAR 14 HP AO ABATER · +12% DE SORTE',
+  price:40,color:'#7dffc4',
+  apply:p=>{p.healChance=(p.healChance||0)+.25;p.healAmount=(p.healAmount||14);}},
+
+ {id:'su_critcura',nm:'BISTURI SIMBIÓTICO',rar:2,
+  desc:'CADA CRÍTICO CURA 4 HP · +8% DE CHANCE CRÍTICA',
+  price:44,color:'#8ff6ff',
+  apply:p=>{p.critHeal=(p.critHeal||0)+4;p.crit+=.08;}},
+
+ {id:'su_exec',nm:'PROTOCOLO DE EXECUÇÃO',rar:3,
+  desc:'EXECUTA ALVOS ABAIXO DE 12% DE VIDA · CURA 6 HP POR EXECUÇÃO',
+  price:56,color:'#ff2f5e',
+  apply:p=>{p.execThreshold=(p.execThreshold||0)+.12;}},
+
+ {id:'su_dotcrit',nm:'AGULHA RESSONANTE',rar:3,
+  desc:'EFEITOS DE STATUS PODEM CAUSAR CRÍTICO (30%)',
+  price:54,color:'#ffd166',
+  apply:p=>{p.dotCrit=(p.dotCrit||0)+.30;}}
 ];
 /* raridade dos módulos derivada do preço (mantém o catálogo enxuto) */
 (function assignItemRarity(){
@@ -4885,6 +4973,13 @@ function damageEnemy(e,d,srcx,srcy,crit,isDot){
     const prev=curAttacker;curAttacker=null;
     damagePlayer(d*.25);curAttacker=prev;
   }
+  // SENTINELA: escudo ativo reduz 75% do dano; janela vulnerável aumenta 30%
+  if(e.type==='miniboss'){
+    if(e.shieldUpState==='active')d*=.25;
+    else if(e.shieldUpState==='vulnerable')d*=1.30;
+    // COLOSSO: fase dormente reduz 60% do dano
+    if(e.sleepDmgRed)d*=(1-e.sleepDmgRed);
+  }
   d*=statusDmgMul(e);                    // corrosão amplifica todo dano
   // ---- SINERGIAS DE STATUS ----
   const atk=curAttacker;
@@ -4899,6 +4994,11 @@ function damageEnemy(e,d,srcx,srcy,crit,isDot){
     player.hp=Math.min(player.maxHp,player.hp+d*atk.globalLifesteal);
   if(atk&&atk.critChain&&crit&&!isDot)chainShock(e,d*.5,1,atk);
   if(isDot){                             // dano contínuo não gera ressonância
+    // AGULHA RESSONANTE: DoT pode causar crítico
+    if(player&&player.dotCrit&&Math.random()<player.dotCrit){
+      d*=1.8;
+      spawnParticles(e.x,e.y,'#ffd166',3,160,.2,2);
+    }
     e.hp-=d;e.flashT=Math.max(e.flashT,.05);
     if(e.hp<=0)killEnemy(e);
     return;
@@ -4907,12 +5007,29 @@ function damageEnemy(e,d,srcx,srcy,crit,isDot){
   if(curAttacker){
     const isP=(curAttacker===player);
     const tag=isP?'p':'e'+(curAttacker.slot||0);
+    let resoFired=false;
     if(e.lastTag&&e.lastTag!==tag&&(runTime-(e.lastTagT||-9))<0.5&&
        (e.lastTag==='p'||tag==='p')&&!(e.resoCd>0)){
       e.resoCd=(player&&player.resoPower>1)?.6:1.1;
       triggerResonance(e,curAttacker,d);
+      resoFired=true;
     }
     e.lastTag=tag;e.lastTagT=runTime;
+    // ---- MICRO-RESSONÂNCIA: jogador + Echo em < 1.6s (mas >= 0.5s) ----
+    // Só ativa se a Ressonância plena NÃO disparou (evita double-dip)
+    if(!resoFired&&e.microTag&&e.microTag!==tag&&
+       (runTime-(e.microT||-9))<1.6&&(runTime-(e.microT||-9))>=0.5&&
+       (e.microTag==='p'||tag==='p')&&!(e.microCd>0)){
+      e.microCd=.55;
+      d*=1.22;
+      spawnParticles(e.x,e.y,'#8ff6ff',5,180,.25,2.2);
+      spawnRing(e.x,e.y,'#8ff6ff',3,26,.22);
+      AUDIO.tone(rand(880,980),.05,'sine',.014,120);
+      if(!isP&&curAttacker&&curAttacker.syncT!==undefined){
+        curAttacker.syncT=2;curAttacker.syncHits=(curAttacker.syncHits||0)+1;
+      }
+    }
+    e.microTag=tag;e.microT=runTime;
   }
   // ESCUDO DE ELITE absorve antes da vida
   if(e.elite==='shield'&&e.shield>0){
@@ -4945,7 +5062,19 @@ function damageEnemy(e,d,srcx,srcy,crit,isDot){
     if(curAttacker===player)bumpProg('crits');
     if(cfg.dmgnum)floatText(e.x,e.y-e.r-8,'✦ '+Math.round(d),'#fff6b0');
     spawnParticles(e.x,e.y,'#fff6b0',7,260,.32,3);
+    // BISTURI SIMBIÓTICO: cura ao crítico
+    if(curAttacker===player&&player&&player.critHeal){
+      player.hp=Math.min(player.maxHp,player.hp+player.critHeal);
+    }
   }else spawnParticles(e.x,e.y,e.color,3,190,.25,2.5);
+  // PROTOCOLO DE EXECUÇÃO: execução de alvos abaixo do limiar
+  if(player&&player.execThreshold&&e.hp>0&&e.hp<=d&&
+     e.hp<e.maxHp*player.execThreshold&&curAttacker===player){
+    e.hp=0;
+    player.hp=Math.min(player.maxHp,player.hp+6);
+    floatText(e.x,e.y-e.r-20,'EXECUTADO','#ff2f5e');
+    spawnShards(e.x,e.y,'#ff2f5e',8,5);
+  }
   if(e.hp<=0)killEnemy(e);
   else sHit();
 }
@@ -4983,7 +5112,7 @@ function triggerResonance(e,by,baseDmg){
 }
 function updateResonance(dt){
   if(resoFlash>0)resoFlash=Math.max(0,resoFlash-dt*2.6);
-  for(const e of enemies)if(e.resoCd>0)e.resoCd-=dt;
+  for(const e of enemies){if(e.resoCd>0)e.resoCd-=dt;if(e.microCd>0)e.microCd-=dt;}
 }
 function killEnemy(e){
   e.dead=true;kills++;
@@ -4996,6 +5125,13 @@ function killEnemy(e){
     player.waveKills=(player.waveKills||0)+1;              // MOTOR DE ENTROPIA
     if(player.killDash&&player.dashCd>0)                   // AMPULHETA QUEBRADA
       player.dashCd=Math.max(0,player.dashCd-player.dashCdMax*player.killDash);
+    // DADO VICIADO: chance de cura ao abater
+    if(player.healChance&&Math.random()<player.healChance&&player.hp>0){
+      const amt=player.healAmount||14;
+      player.hp=Math.min(player.maxHp,player.hp+amt);
+      floatText(player.x,player.y-20,'+'+amt+' HP','#7dffc4');
+    }
+    // PROTOCOLO DE EXECUÇÃO: execute já foi tratado em damageEnemy
     // REVENANT: cada abate cura e acumula dano até o fim da onda
     if(player.harvestHeal&&player.hp>0){
       player.hp=Math.min(player.maxHp,player.hp+player.harvestHeal);
@@ -5098,7 +5234,12 @@ function damagePlayer(d){
   }
   if(player.dashT>0||player.invT>0)return;   // i-frames do dash / retorno de modal
   if(state!=='play')return;                  // nunca sofre dano com o tempo travado
-  const real=d*player.dmgTakenMul*mEff.playerDmgTaken;   // Violência te expõe
+  // GUARDIÃO (Eco·01): barreira ativa reduz dano recebido
+  let dmgRed=0;
+  for(const e of echoes){
+    if(e.alive&&!e.hostile&&e.slot===1&&e.roleT>0)dmgRed+=(e.shieldPot||0);
+  }
+  const real=d*(1-Math.min(.5,dmgRed))*player.dmgTakenMul*mEff.playerDmgTaken;
   if(!(real>0))return;
   /* ---- ESCUDO DO OPERADOR: absorve dano antes da Integridade ----
      O dano restante (após Shield) segue exatamente o pipeline antigo:
@@ -5735,6 +5876,120 @@ function updateMiniBoss(e,dt){
     }
   }
   if(SK.corrode&&Math.random()<dt*.5)applyStatus(p,'corrode',3,.1,e);
+
+  /* ---- SENTINELA: escudo defensivo + reflexão ---- */
+  if(SK.shieldUp){
+    e.shieldUpCd=(e.shieldUpCd||8);
+    e.shieldUpCd-=dt;
+    if(e.shieldUpState==='active'){
+      e.shieldUpT-=dt;
+      if(e.shieldUpT<=0){e.shieldUpState='vulnerable';e.shieldUpT=2;}
+    }else if(e.shieldUpState==='vulnerable'){
+      e.shieldUpT-=dt;
+      if(e.shieldUpT<=0)e.shieldUpState=null;
+    }else if(e.shieldUpState==='telegraph'){
+      e.shieldUpT-=dt;
+      if(e.shieldUpT<=0){e.shieldUpState='active';e.shieldUpT=4;
+        spawnRing(e.x,e.y,'#8ff6ff',e.r,e.r+80,.6);
+        AUDIO.tone(520,.3,'sine',.04,140);
+      }
+    }else if(e.shieldUpCd<=0){
+      e.shieldUpCd=12;e.shieldUpState='telegraph';e.shieldUpT=1.5;
+      spawnRing(e.x,e.y,'#8ff6ff',e.r,e.r+40,.4);
+    }
+  }
+  if(SK.reflect){
+    e.reflectCd=(e.reflectCd||6);
+    e.reflectCd-=dt;
+    if(e.reflectState==='active'){
+      e.reflectT-=dt;
+      // reflete projéteis inimigos próximos
+      for(let i=projectiles.length-1;i>=0;i--){
+        const pr=projectiles[i];
+        if(pr.team!=='enemy')continue;
+        if(dist2(pr.x,pr.y,e.x,e.y)<(e.r+50)*(e.r+50)){
+          pr.vx*=-1.2;pr.vy*=-1.2;pr.team='ally';pr.color='#8ff6ff';pr.dmg*=1.5;
+          spawnParticles(pr.x,pr.y,'#8ff6ff',3,120,.3,2);
+        }
+      }
+      if(e.reflectT<=0)e.reflectState=null;
+    }else if(e.reflectState==='telegraph'){
+      e.reflectT-=dt;
+      if(e.reflectT<=0){e.reflectState='active';e.reflectT=2.5;
+        AUDIO.tone(700,.2,'square',.03,-200);
+      }
+    }else if(e.reflectCd<=0){
+      e.reflectCd=7;e.reflectState='telegraph';e.reflectT=1;
+      spawnRing(e.x,e.y,'#bffbff',e.r,e.r+30,.3);
+    }
+  }
+
+  /* ---- COLOSSO: fases DORMENTE / DESPERTO ---- */
+  if(SK.quake){
+    e.sleepPhase=e.sleepPhase||'awake';   // começa desperto
+    e.sleepT=e.sleepT||0;
+    if(e.sleepPhase==='awake'){
+      e.sleepT-=dt;
+      if(e.sleepT<=0){
+        e.sleepPhase='dormant';e.sleepT=4.5;
+        e.sleepDmgRed=.60;   // 60% redução de dano
+        spawnRing(e.x,e.y,'#ff2f5e',e.r,e.r+100,.7);
+        shake=Math.max(shake,8);
+        AUDIO.tone(90,.6,'sine',.06,-24);
+      }
+    }else if(e.sleepPhase==='dormant'){
+      e.sleepT-=dt;
+      // imóvel: força velocidade a zero
+      e.vx*=.85;e.vy*=.85;
+      if(e.sleepT<=0){
+        e.sleepPhase='awake';e.sleepT=7;e.sleepDmgRed=0;
+        // transição: quake de despertar
+        const R2=340;
+        spawnRing(e.x,e.y,'#ff9d3c',20,R2,.9);
+        shake=Math.max(shake,22);
+        if(dist2(p.x,p.y,e.x,e.y)<R2*R2){
+          damagePlayer(e.dmg*.8);
+          const a2=Math.atan2(p.y-e.y,p.x-e.x);
+          p.vx+=Math.cos(a2)*600;p.vy+=Math.sin(a2)*600;
+        }
+        AUDIO.boom();AUDIO.tone(70,.7,'sine',.09,-24);
+      }
+    }
+  }
+
+  /* ---- ARAUTO: fraturas temporais (marcação de área) ---- */
+  if(e.mb&&e.mb.id==='herald'){
+    e.fractureCd=(e.fractureCd||8);
+    e.fractureCd-=dt;
+    if(e.fractureCd<=0){
+      e.fractureCd=e.phase===2?5:8;
+      // coloca 2 marcas temporais na posição do jogador
+      for(let i=0;i<2;i++){
+        const fx=p.x+rand(-60,60),fy=p.y+rand(-60,60);
+        e.fractures=(e.fractures||[]);
+        e.fractures.push({x:fx,y:fy,t:1.5,r:90});
+      }
+      AUDIO.tone(440,.2,'sine',.03,-120);
+    }
+    // atualiza fraturas: detonam após timer
+    if(e.fractures){
+      for(let i=e.fractures.length-1;i>=0;i--){
+        const f=e.fractures[i];
+        f.t-=dt;
+        if(f.t<=0){
+          // detonação
+          spawnRing(f.x,f.y,'#ffd166',6,f.r,.5);
+          spawnShards(f.x,f.y,'#ffd166',6,4);
+          if(dist2(p.x,p.y,f.x,f.y)<f.r*f.r){
+            damagePlayer(e.dmg*.45);
+            applyStatus(p,'chill',1.8,.25);
+          }
+          e.fractures.splice(i,1);
+          AUDIO.tone(280,.15,'square',.025,-80);
+        }
+      }
+    }
+  }
 }
 function drawMiniBoss(e){
   const intro=e.spawnT>0?1-e.spawnT/1.6:1;
@@ -5802,6 +6057,65 @@ function drawMiniBoss(e){
     ctx.strokeStyle='#ff9d3c';ctx.lineWidth=3;
     ctx.beginPath();ctx.arc(e.x,e.y,R+200*(e.spawnT/1.6),0,TAU);ctx.stroke();
     ctx.restore();
+  }
+  // SENTINELA: escudo defensivo visual
+  if(e.shieldUpState==='telegraph'){
+    ctx.save();ctx.globalAlpha=.4+.3*Math.sin(runTime*12);
+    ctx.strokeStyle='#8ff6ff';ctx.lineWidth=3;
+    ctx.setLineDash([6,6]);ctx.lineDashOffset=-runTime*30;
+    ctx.beginPath();ctx.arc(e.x,e.y,R+18,0,TAU);ctx.stroke();
+    ctx.setLineDash([]);ctx.restore();
+  }else if(e.shieldUpState==='active'){
+    ctx.save();ctx.globalAlpha=.5+.2*Math.sin(runTime*6);
+    ctx.strokeStyle='#8ff6ff';ctx.lineWidth=4;
+    ctx.beginPath();ctx.arc(e.x,e.y,R+16,0,TAU);ctx.stroke();
+    ctx.globalAlpha=.12;ctx.fillStyle='#8ff6ff';
+    ctx.beginPath();ctx.arc(e.x,e.y,R+16,0,TAU);ctx.fill();
+    ctx.restore();
+  }else if(e.shieldUpState==='vulnerable'){
+    ctx.save();ctx.globalAlpha=.35;
+    ctx.strokeStyle='#ff5c7a';ctx.lineWidth=2;
+    ctx.setLineDash([4,8]);
+    ctx.beginPath();ctx.arc(e.x,e.y,R+12,0,TAU);ctx.stroke();
+    ctx.setLineDash([]);ctx.restore();
+  }
+  // SENTINELA: reflexão ativa
+  if(e.reflectState==='telegraph'){
+    ctx.save();ctx.globalAlpha=.3+.2*Math.sin(runTime*16);
+    ctx.strokeStyle='#bffbff';ctx.lineWidth=2;
+    ctx.beginPath();ctx.arc(e.x,e.y,R+24,0,TAU);ctx.stroke();
+    ctx.restore();
+  }else if(e.reflectState==='active'){
+    ctx.save();ctx.globalAlpha=.25;
+    ctx.strokeStyle='#bffbff';ctx.lineWidth=3;
+    ctx.beginPath();ctx.arc(e.x,e.y,R+50,0,TAU);ctx.stroke();
+    ctx.restore();
+  }
+  // COLOSSO: fase dormente
+  if(e.sleepPhase==='dormant'){
+    const k=clamp(e.sleepT/4.5,0,1);
+    ctx.save();ctx.globalAlpha=.35*k;
+    ctx.fillStyle='rgba(100,50,150,.4)';
+    ctx.beginPath();ctx.arc(e.x,e.y,R+20,0,TAU);ctx.fill();
+    ctx.globalAlpha=.6;ctx.strokeStyle='#b080ff';ctx.lineWidth=2;
+    ctx.setLineDash([10,8]);ctx.lineDashOffset=-runTime*12;
+    ctx.beginPath();ctx.arc(e.x,e.y,R+20,0,TAU);ctx.stroke();
+    ctx.setLineDash([]);ctx.restore();
+  }
+  // ARAUTO: fraturas temporais
+  if(e.fractures){
+    for(const f of e.fractures){
+      const k=clamp(1-f.t/1.5,0,1);
+      ctx.save();ctx.globalAlpha=.3+k*.4;
+      ctx.strokeStyle='#ffd166';ctx.lineWidth=2+k*2;
+      ctx.beginPath();ctx.arc(f.x,f.y,f.r*k,0,TAU);ctx.stroke();
+      if(k>.7){
+        ctx.globalAlpha=(k-.7)/.3*.35;
+        ctx.fillStyle='#ffd166';
+        ctx.beginPath();ctx.arc(f.x,f.y,f.r*.4,0,TAU);ctx.fill();
+      }
+      ctx.restore();
+    }
   }
 }
 function spawnWave(n){
@@ -6028,11 +6342,13 @@ function updateBoss(e,dt){
   }
 
   /* --- HABILIDADE ADAPTATIVA --- */
+  // ADAPTAÇÃO: jogadores que dasham muito recebem ondas de choque mais rápidas
+  const dashAdapt=(bossIntel&&bossIntel.dashes>2)?-.8:0;
   if(e.mode==='ranged'){
     // Ecos usaram longo alcance → anéis de choque expulsam quem fica longe
     e.shockT-=dt;
     if(e.shockT<=0){
-      e.shockT=e.phase===2?4.2:6.0;
+      e.shockT=(e.phase===2?4.2:6.0)+dashAdapt;
       e.shocks.push({x:e.x,y:e.y,r:40,max:900,hit:false});
       AUDIO.bossShock();shake=Math.max(shake,6);
       toast('ANEL DE CHOQUE — APROXIME-SE DO NÚCLEO');
@@ -6520,6 +6836,9 @@ function updateEcho(e,dt){
   if(act===2&&!beyond){ // dash gravado → rastro fantasma
     spawnParticles(e.x,e.y,e.hue,2,120,.25,2);
   }
+  // PAPÉIS TÁTICOS: Guardião (slot 1) e Disruptor (slot 2)
+  if(e.roleT>0)e.roleT-=dt;
+  echoRoleTick(e,dt);
   pushGhost(e.ghosts,e.x,e.y,16);
   ageGhosts(e.ghosts,dt);
 }
@@ -7719,6 +8038,8 @@ function drawEchoEntity(e){
       ctx.fillRect(e.x-(n*w)/2+i*w+1,e.y+e.r+7,5,5);
     }
   }
+  // PAPÉIS TÁTICOS: efeito visual de Guardião/Disruptor
+  drawEchoRole(e);
 }
 function drawBoss(e){
   const intro=e.spawnT>0?1-e.spawnT/2.2:1;
@@ -8695,6 +9016,107 @@ function loop(now){
 const codexEl=$('codex'),cxTitle=$('cx-title'),cxSub=$('cx-sub'),
   cxTabs=$('cx-tabs'),cxBody=$('cx-body'),cxFoot=$('cx-foot');
 let codexMode='arsenal',codexTab='chars';
+const LORE_WORLD={
+  short:'O Núcleo Ômega era a âncora que mantinha uma única linha temporal '+
+        'coerente. Quando colapsou, o tempo deixou de correr — passou a '+
+        '<b>repetir</b>. Cada morte fratura o ciclo e imprime sua última '+
+        'tentativa na arena. Você não recomeça sozinho: recomeça diante '+
+        'de quem você já foi.',
+  full:[
+    {t:'O NÚCLEO ÔMEGA',
+     d:'Era a âncora causal do setor: uma singularidade contida que '+
+       'mantinha passado, presente e futuro alinhados em uma única linha '+
+       'coerente. Enquanto o Ômega girava, o tempo se comportava.'},
+    {t:'O COLAPSO',
+     d:'Ninguém registrou a causa — os registros também foram fraturados. '+
+       'Em 0.4 segundos o Núcleo cedeu e a linha temporal se estilhaçou em '+
+       'ciclos paralelos que se sobrepõem, colidem e se devoram. A arena '+
+       'que você pisa é um desses fragmentos, preso em repetição.'},
+    {t:'OS CICLOS FRATURADOS',
+     d:'Cada morte não encerra nada: fratura o ciclo mais uma vez e grava '+
+       'sua última tentativa na estrutura do lugar. Essa gravação retorna '+
+       'como um ECO — uma versão sua condenada a repetir cada movimento '+
+       'que você fez. O protocolo permite manter dois. O terceiro é '+
+       'descartado para sempre.'},
+    {t:'O PARADOXO',
+     d:'Algo no centro da fratura aprendeu a se alimentar das repetições. '+
+       'Quanto mais você tenta, mais ele conhece você — porque é feito das '+
+       'suas próprias tentativas. Vencê-lo exige quebrar o padrão que ele '+
+       'já memorizou.'},
+    {t:'OS OPERADORES',
+     d:'Oito assinaturas conseguiram permanecer estáveis o suficiente para '+
+       'atravessar fraturas sem se dissolver. Cada uma resolveu o colapso '+
+       'de um jeito diferente — e nenhuma delas está inteiramente certa.'},
+    {t:'A LOJA TEMPORAL',
+     d:'Entre uma onda e outra abre-se um nódulo de manutenção que não '+
+       'deveria existir. Ninguém o opera. Os créditos que você arranca dos '+
+       'destroços são aceitos sem questionamento, e o estoque muda a cada '+
+       'visita — como se alguém do outro lado estivesse tentando adivinhar '+
+       'do que você vai precisar.'},
+    {t:'OS SINAIS',
+     d:'A fratura emite chamados: sobreviventes feridos, mercadores '+
+       'renegados, altares, cofres e coisas que apenas fingem ser um pedido '+
+       'de ajuda. Cada resposta sua é registrada. O ciclo aprende que tipo '+
+       'de pessoa você é — e os seus Ecos aprendem junto.'},
+    {t:'COMPAIXÃO · GANÂNCIA · VIOLÊNCIA',
+     d:'Não existe escolha certa, apenas consequência. Poupar fortalece '+
+       'quem caminha com você, mas enfraquece seu golpe. Extrair enche seus '+
+       'bolsos e esvazia o mercado. Matar sem hesitar te torna mortal — e '+
+       'ensina a arena a ser mortal de volta.'},
+    {t:'O NÍVEL DE AMEAÇA',
+     d:'Certos artefatos rompem lacres que seguravam camadas mais profundas '+
+       'da fratura. Aceitá-los multiplica sua recompensa e liberta coisas '+
+       'que estavam contidas por um bom motivo: cisões, leviões, carrascos '+
+       'e, no fundo de tudo, singularidades.'}
+  ],
+  extra:[
+    {t:'ARMAMENTO RECUPERADO',c:'#8fd6ff',
+     d:'Nada aqui foi fabricado para esta guerra. Cada arma é um artefato '+
+       'recolhido de uma linha temporal que já terminou — rifles de plasma '+
+       'de exércitos que perderam, lâminas de duelistas que morreram, '+
+       'feixes de singularidade de engenheiros que causaram o colapso. '+
+       'Você luta com os destroços de todas as tentativas anteriores.'},
+    {t:'OS ECOS',c:'#46e0ff',
+     d:'Quando você morre, a fratura não apaga: <b>copia</b>. Cada '+
+       'movimento, cada disparo, cada hesitação fica gravada e retorna '+
+       'como um Eco. O protocolo sustenta dois simultâneos — o terceiro '+
+       'se dissolve e some para sempre. O ECHO·01 estabiliza o espaço ao '+
+       'seu redor; o ECHO·02, mais degradado, distorce o tempo dos '+
+       'inimigos. Eles observam suas escolhas. E julgam.'},
+    {t:'CONFIANÇA E REBELIÃO',c:'#ff2f5e',
+     d:'Um Eco foi você — mas foi <b>uma</b> versão sua, com um conjunto '+
+       'específico de decisões. Quando o presente contradiz o que ele foi, '+
+       'a assinatura entra em dissonância. Primeiro ele questiona. Depois '+
+       'ele para de te cobrir. E se a ruptura for total, ele vira a arma '+
+       'contra você — não por ódio, mas porque acredita que o ciclo '+
+       'recomeçaria melhor sem você nele.'},
+    {t:'O ARAUTO E OS OUTROS',c:'#ff9d3c',
+     d:'Nas dobras mais densas da fratura, fragmentos de máquinas '+
+       'colapsadas se fundiram em coisas grandes demais para uma onda '+
+       'comum. Oito assinaturas conhecidas: arautos, fornalhas, '+
+       'sentinelas, matrizes, duelistas, colossos, oráculos e sanguessugas. '+
+       'Nenhum deles deveria conseguir existir. Todos existem.'},
+    {t:'O PARADOXO',c:'#ff4df0',
+     d:'Não é um inimigo: é um <b>acúmulo</b>. Tudo o que você já tentou '+
+       'foi absorvido por ele, e por isso ele responde às suas táticas '+
+       'antes de você executá-las. Se seus Ecos lutaram de longe, ele '+
+       'fecha o espaço. Se lutaram de perto, ele escapa e te puxa. Na '+
+       'segunda fase, invoca versões sombrias das suas próprias runs. '+
+       'Derrotá-lo exige fazer algo que você nunca fez.'},
+    {t:'OS TRÊS DESFECHOS',c:'#7dffc4',
+     d:'Quando o Paradoxo cede, o que sobra depende de quem você foi. '+
+       '<b>O Libertador</b> dissolve o ciclo em luz e dispensa os Ecos do '+
+       'dever. <b>O Tirano do Ciclo</b> não destrói a distorção — herda '+
+       'o lugar dela. <b>O Paradoxo Eterno</b> acontece quando suas '+
+       'contradições foram tão extremas que ambos os finais ocorrem ao '+
+       'mesmo tempo, em superposição permanente.'},
+    {t:'PONTOS DE MEMÓRIA',c:'#c9a9ff',
+     d:'Um resíduo consegue atravessar a fratura intacto: a memória do '+
+       'que você aprendeu. Ela não devolve armas nem créditos, mas ajusta '+
+       'levemente a próxima tentativa. É a única coisa neste lugar que '+
+       'realmente se acumula.'}
+  ]
+};
 const CX_TABS=[
   {id:'chars',  nm:'OPERADORES'},
   {id:'weapons',nm:'ARMAS'},
@@ -8702,6 +9124,7 @@ const CX_TABS=[
   {id:'upgrades',nm:'UPGRADES'},
   {id:'enemies',nm:'INIMIGOS'},
   {id:'status', nm:'EFEITOS DE STATUS'},
+  {id:'lore',   nm:'ARQUIVO ÔMEGA'},
   {id:'prog',   nm:'PROGRESSO'}
 ];
 function openCodex(mode){
@@ -8920,6 +9343,29 @@ function renderCodexBody(){
     }
     h+='</div>';
     cxFoot.textContent='INIMIGOS ESCALAM EM VIDA, DANO E VELOCIDADE A CADA ONDA';
+  }else if(codexTab==='lore'){
+    h='<div style="max-width:840px;margin:0 auto 6px">';
+    h+='<div style="font-family:Consolas,monospace;font-size:13px;line-height:2;'+
+      'color:rgba(198,218,232,.88);margin-bottom:22px;text-align:center">'+
+      LORE_WORLD.short+'</div>';
+    for(const sec of LORE_WORLD.full){
+      h+='<div style="margin-bottom:20px">'+
+        '<div style="font-family:Consolas,monospace;font-size:12.5px;'+
+          'letter-spacing:.3em;color:#bffbff">'+sec.t+'</div>'+
+        '<div style="font-family:Consolas,monospace;font-size:12.5px;'+
+          'line-height:1.95;color:rgba(198,218,232,.92);margin-top:7px">'+
+          sec.d+'</div></div>';
+    }
+    h+='<div class="tsec" style="margin:4px 0 12px">'+
+      'REGISTROS COMPLEMENTARES</div><div class="cxgrid">';
+    for(const x of LORE_WORLD.extra){
+      h+='<div class="cxitem"><div class="cxinfo">'+
+        '<div class="cxnm" style="color:'+x.c+'">'+x.t+'</div>'+
+        '<div class="cxlore" style="border-top:none;padding-top:7px">'+
+        x.d+'</div></div></div>';
+    }
+    h+='</div>';
+    cxFoot.textContent=LORE_WORLD.full.length+' REGISTROS · '+LORE_WORLD.extra.length+' DOSSIÊS';
   }else if(codexTab==='prog'){
     const st=[
       ['ABATES TOTAIS',prog.kills],['RUNS COMPLETAS',prog.runs],

@@ -17,6 +17,7 @@ let src=m[1];
 src+=';globalThis.__t={'+
   'EDEFS,MINIBOSS,MINI_WAVES,MAX_WAVE,MINI_WAVE,ENEMY_BUDGET,'+
   'CHARS,ITEMS,UPGRADES,UNLOCKS,WEAPONS,'+
+  'ECHO_ROLE,LORE_WORLD,'+
   'makePlayer,damagePlayer,regenPlayerShield,startRun,setChar,curChar,'+
   'itemById,mEff,waveComp,spawnEnemy,killEnemy,'+
   'getState:()=>state,getPlayer:()=>player,setPlayer:p=>{player=p;},'+
@@ -476,6 +477,242 @@ ok('curseT reduz dano do jogador',()=>{
 ok('Sistema de fala tem cooldown implementado',()=>{
   assert(src.includes('_echoSpeakCd'),'deve ter variável de cooldown');
   assert(src.includes('ECHO_SPEAK_INTERVAL'),'deve ter constante de intervalo');
+});
+
+/* ====================== PAPÉIS TÁTICOS DOS ECOS ====================== */
+ok('ECHO_ROLE existe com Guardião e Disruptor',()=>{
+  assert(t.ECHO_ROLE,'ECHO_ROLE deve existir');
+  assert.strictEqual(t.ECHO_ROLE.length,3,'deve ter 3 slots (null + 2)');
+  assert.strictEqual(t.ECHO_ROLE[1].id,'guardian');
+  assert.strictEqual(t.ECHO_ROLE[2].id,'disruptor');
+});
+
+ok('Ecos nascem com campos de papel (roleCd, roleT, roleFx)',()=>{
+  assert(src.includes('roleCd:'),'makeEcho deve inicializar roleCd');
+  assert(src.includes('roleT:0'),'makeEcho deve inicializar roleT');
+  assert(src.includes('roleFx:0'),'makeEcho deve inicializar roleFx');
+});
+
+ok('echoRoleTick existe e processa ambos os slots',()=>{
+  assert(src.includes('function echoRoleTick'),'deve ter função echoRoleTick');
+  assert(src.includes('GUARDIÃO: barreira'),'deve ter lógica de Guardião');
+  assert(src.includes('DISRUPTOR: pulso'),'deve ter lógica de Disruptor');
+});
+
+ok('drawEchoRole existe e renderiza efeitos visuais',()=>{
+  assert(src.includes('function drawEchoRole'),'deve ter função drawEchoRole');
+  assert(src.includes('#46e0ff'),'deve usar cor do Guardião');
+});
+
+ok('echoRoleTick é chamado no updateEcho',()=>{
+  assert(src.includes('echoRoleTick(e,dt)'),'updateEcho deve chamar echoRoleTick');
+});
+
+ok('Guardião reduz dano em damagePlayer',()=>{
+  assert(src.includes('e.shieldPot'),'damagePlayer deve ler shieldPot do Guardião');
+  assert(src.includes('e.slot===1&&e.roleT>0'),'deve verificar slot e timer ativo');
+});
+
+ok('Papéis desativam em tier 0 (desconfiança)',()=>{
+  assert(src.includes('trustTier(e)===0'),'deve verificar tier de confiança');
+});
+
+ok('Papéis desativam quando Eco está hostil',()=>{
+  const fn=src.substring(src.indexOf('function echoRoleTick'),src.indexOf('function echoRoleTick')+600);
+  assert(fn.includes('e.hostile'),'deve verificar estado hostil');
+});
+
+ok('Disruptor aplica chill e corrode',()=>{
+  const fn=src.substring(src.indexOf('DISRUPTOR: pulso'),src.indexOf('DISRUPTOR: pulso')+500);
+  assert(fn.includes("'chill'"),'deve aplicar chill');
+  assert(fn.includes("'corrode'"),'deve aplicar corrode');
+});
+
+/* ====================== MICRO-RESSONÂNCIA ====================== */
+ok('Micro-Ressonância existe no código',()=>{
+  assert(src.includes('MICRO-RESSONÂNCIA'),'deve ter seção de Micro-Ressonância');
+  assert(src.includes('microTag'),'deve usar microTag');
+  assert(src.includes('microCd'),'deve usar microCd');
+});
+
+ok('Micro-Ressonância dá bônus de dano +22%',()=>{
+  assert(src.includes('d*=1.22'),'deve multiplicar dano por 1.22');
+});
+
+ok('Micro-Ressonância tem janela de 1.6s',()=>{
+  assert(src.includes('<1.6'),'janela deve ser menor que 1.6s');
+});
+
+ok('Micro-Ressonância não dispara junto com Ressonância plena',()=>{
+  const block=src.substring(src.indexOf('SINCRONIA TEMPORAL'),src.indexOf('SINCRONIA TEMPORAL')+1500);
+  assert(block.includes('resoFired'),'deve rastrear se Ressonância disparou');
+  assert(block.includes('!resoFired'),'Micro deve verificar que Ressonância não disparou');
+});
+
+ok('MicroCd é decrementado no loop',()=>{
+  assert(src.includes('microCd-=dt'),'microCd deve ser decrementado');
+});
+
+/* ====================== SENTINELA (MINIBOSS) ====================== */
+ok('Sentinela tem shieldUp funcional',()=>{
+  assert(src.includes('SK.shieldUp'),'deve processar shieldUp');
+  assert(src.includes("e.shieldUpState==='active'"),'deve ter estado ativo');
+  assert(src.includes("e.shieldUpState==='vulnerable'"),'deve ter estado vulnerável');
+  assert(src.includes("e.shieldUpState==='telegraph'"),'deve ter estado de telegraph');
+});
+
+ok('Sentinela tem reflect funcional',()=>{
+  assert(src.includes('SK.reflect'),'deve processar reflect');
+  assert(src.includes("e.reflectState==='active'"),'deve ter estado de reflexão ativa');
+  assert(src.includes("pr.team='ally'"),'deve converter projéteis inimigos');
+});
+
+ok('Sentinela tem redução de dano no damageEnemy',()=>{
+  assert(src.includes("shieldUpState==='active'")&&src.includes('d*=.25'),
+    'escudo ativo deve reduzir dano');
+  assert(src.includes("shieldUpState==='vulnerable'")&&src.includes('d*=1.30'),
+    'vulnerável deve aumentar dano');
+});
+
+/* ====================== COLOSSO (SONO/VIGÍLIA) ====================== */
+ok('Colosso tem fases dormente/desperto',()=>{
+  assert(src.includes("e.sleepPhase==='dormant'"),'deve ter fase dormente');
+  assert(src.includes("e.sleepPhase==='awake'"),'deve ter fase desperta');
+});
+
+ok('Colosso dormente tem redução de dano',()=>{
+  assert(src.includes('sleepDmgRed'),'deve ter campo de redução');
+  assert(src.includes('e.sleepDmgRed'),'damageEnemy deve ler sleepDmgRed');
+});
+
+ok('Colosso desperta com quake',()=>{
+  const block=src.substring(src.indexOf('COLOSSO: fases'),src.indexOf('COLOSSO: fases')+800);
+  assert(block.includes('quake de despertar'),'transição deve ter quake');
+});
+
+/* ====================== ARAUTO (FRATURAS) ====================== */
+ok('Arauto tem fraturas temporais',()=>{
+  assert(src.includes("e.mb.id==='herald'"),'deve verificar se é Arauto');
+  assert(src.includes('e.fractures'),'deve ter array de fraturas');
+  assert(src.includes('fractureCd'),'deve ter cooldown de fratura');
+});
+
+ok('Fraturas do Arauto detonam com dano',()=>{
+  const start=src.indexOf('ARAUTO: fraturas temporais (marcação');
+  const block=src.substring(start,start+1000);
+  assert(block.includes('damagePlayer'),'fraturas devem causar dano');
+  assert(block.includes("'chill'"),'fraturas devem aplicar slow');
+});
+
+/* ====================== LORE_WORLD / CODEX ====================== */
+ok('LORE_WORLD existe com short, full e extra',()=>{
+  assert(t.LORE_WORLD,'LORE_WORLD deve existir');
+  assert(t.LORE_WORLD.short,'deve ter texto curto');
+  assert(Array.isArray(t.LORE_WORLD.full),'full deve ser array');
+  assert(Array.isArray(t.LORE_WORLD.extra),'extra deve ser array');
+});
+
+ok('LORE_WORLD tem pelo menos 9 entradas full',()=>{
+  assert(t.LORE_WORLD.full.length>=9,'deve ter pelo menos 9 registros');
+});
+
+ok('LORE_WORLD tem pelo menos 5 dossiês extra',()=>{
+  assert(t.LORE_WORLD.extra.length>=5,'deve ter pelo menos 5 dossiês');
+});
+
+ok('Codex tem tab de lore (ARQUIVO ÔMEGA)',()=>{
+  assert(src.includes("id:'lore'"),'CX_TABS deve ter lore');
+  assert(src.includes('ARQUIVO ÔMEGA'),'tab deve ser chamada ARQUIVO ÔMEGA');
+});
+
+ok('Codex renderiza lore sem erro',()=>{
+  assert(src.includes("codexTab==='lore'"),'deve ter branch de renderização');
+  assert(src.includes('LORE_WORLD.full'),'deve iterar sobre full');
+  assert(src.includes('LORE_WORLD.extra'),'deve iterar sobre extra');
+});
+
+/* ====================== MÓDULOS HISTÓRICOS ====================== */
+ok('DADO VICIADO (su_sorte) existe',()=>{
+  const item=t.ITEMS.find(i=>i.id==='su_sorte');
+  assert(item,'su_sorte deve existir em ITEMS');
+  assert(item.apply,'deve ter função apply');
+});
+
+ok('BISTURI SIMBIÓTICO (su_critcura) existe',()=>{
+  const item=t.ITEMS.find(i=>i.id==='su_critcura');
+  assert(item,'su_critcura deve existir em ITEMS');
+  assert(item.apply,'deve ter função apply');
+});
+
+ok('PROTOCOLO DE EXECUÇÃO (su_exec) existe',()=>{
+  const item=t.ITEMS.find(i=>i.id==='su_exec');
+  assert(item,'su_exec deve existir em ITEMS');
+});
+
+ok('AGULHA RESSONANTE (su_dotcrit) existe',()=>{
+  const item=t.ITEMS.find(i=>i.id==='su_dotcrit');
+  assert(item,'su_dotcrit deve existir em ITEMS');
+});
+
+ok('healChance tem consumidor em killEnemy',()=>{
+  assert(src.includes('player.healChance'),'killEnemy deve ler healChance');
+  assert(src.includes('healAmount'),'deve usar healAmount');
+});
+
+ok('critHeal tem consumidor em damageEnemy',()=>{
+  assert(src.includes('player.critHeal'),'damageEnemy deve ler critHeal');
+});
+
+ok('execThreshold tem consumidor em damageEnemy',()=>{
+  assert(src.includes('player.execThreshold'),'damageEnemy deve ler execThreshold');
+  assert(src.includes('EXECUTADO'),'deve ter feedback de execução');
+});
+
+ok('dotCrit tem consumidor em damageEnemy',()=>{
+  assert(src.includes('player.dotCrit'),'damageEnemy deve ler dotCrit');
+});
+
+/* ====================== BOSS ADAPTATIVO ====================== */
+ok('Boss usa analyzeEchoData para adaptar comportamento',()=>{
+  assert(src.includes('bossIntel=a'),'spawnBoss deve salvar análise');
+  assert(src.includes('a.mode'),'deve usar mode para adaptar');
+});
+
+ok('Boss adapta ondas de choque a jogadores que dasham muito',()=>{
+  assert(src.includes('dashAdapt'),'deve ter adaptação por dash');
+  assert(src.includes('bossIntel.dashes'),'deve ler contagem de dashes');
+});
+
+/* ====================== SHIELD INTEGRITY ====================== */
+ok('Guardião não quebra Shield do player',()=>{
+  const block=src.substring(src.indexOf('GUARDIÃO (Eco·01)'),src.indexOf('GUARDIÃO (Eco·01)')+400);
+  assert(!block.includes('shield=0'),'não deve zerar shield');
+});
+
+ok('Disruptor não interfere com Shield dos Echos',()=>{
+  const block=src.substring(src.indexOf('DISRUPTOR: pulso'),src.indexOf('DISRUPTOR: pulso')+600);
+  assert(!block.includes('shield=0'),'não deve zerar shield do Echo');
+});
+
+/* ====================== IDENTIDADE DOS MINIBOSSES ====================== */
+ok('Fornalha tem rastro de fogo',()=>{
+  assert(src.includes('SK.trail'),'deve ter rastro incendiário');
+});
+
+ok('Matriz gera swarms',()=>{
+  assert(src.includes('SK.swarmSpawn'),'deve ter swarmSpawn');
+});
+
+ok('Duelista tem teleporte',()=>{
+  assert(src.includes('SK.blink'),'deve ter blink');
+});
+
+ok('Oráculo tem maldição',()=>{
+  assert(src.includes('SK.curse'),'deve ter curse');
+});
+
+ok('Sanguesuga tem dreno',()=>{
+  assert(src.includes('SK.drain'),'deve ter drain');
 });
 
 /* ====================== RESULTADO ====================== */
