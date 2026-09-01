@@ -5389,15 +5389,18 @@ function openEvent(kind){
   else renderAmbush();
   sfx(300,.35,'sine',.05,-120);
 }
+/* PR 10: a prévia usa EXATAMENTE o avaliador de produção (leitura pura,
+   nada é aplicado). Dois Ecos podem mostrar veredictos opostos. */
 function echoOpinion(vec){
-  const dec=moralDom({comp:vec[0]*3,greed:vec[1]*3,viol:vec[2]*3});
   let out='';
   for(const e of echoes){
-    if(!e.alive)continue;
-    if(dec==='neutro'||e.dom==='neutro')continue;
-    const ok=dec===e.dom;
+    if(!e.alive||!echoAllied(e))continue;
+    const r=evaluateEchoReaction(e,{kind:'moral',
+      vec:{comp:vec[0],greed:vec[1],viol:vec[2]}});
+    if(!r.value)continue;
+    const ok=r.value>0,strong=Math.abs(r.value)>=2;
     out+='<div class="cmoral" style="color:'+(ok?'#8ff6ff':'#ff8095')+'">ECHO·0'+e.slot+
-      (ok?' APROVA (+CONFIANÇA)':' REPUDIA (−CONFIANÇA)')+'</div>';
+      (ok?(strong?' RECONHECE':' APROVA'):(strong?' REJEITA':' DIVERGE'))+'</div>';
   }
   return out;
 }
@@ -5649,7 +5652,7 @@ function renderGhost(){
     (!live.length||player.coins<cost),()=>{
       player.coins-=cost;
       for(const e of live){
-        e.hp=e.maxHp;e.trust=clamp(e.trust+22,0,100);e.trustFx=.9;
+        e.hp=e.maxHp;changeEchoTrust(e,22,'event_signal_boost');
         spawnRing(e.x,e.y,e.hue,8,110,.7);
         floatText(e.x,e.y-34,'SINAL RESTAURADO','#8ff6ff');
       }
@@ -5665,10 +5668,12 @@ function renderGhost(){
       smMul(player,'fireRate','event.transmissao.rate','TRANSMISSÃO DRENADA +18% CADÊNCIA',1.18);
       player.upgLog.push('TRANSMISSÃO DRENADA (+18% CADÊNCIA)');
       for(const e of live){
-        e.hp=Math.max(1,e.hp*.5);e.trust=clamp(e.trust-30,0,100);e.trustFx=-.9;
+        e.hp=Math.max(1,e.hp*.5);changeEchoTrust(e,-30,'event_signal_drain');
         spawnShards(e.x,e.y,'#ff4d6d',10,5);
         floatText(e.x,e.y-34,'SINAL DRENADO','#ff8095');
-        if(e.trust<=0&&!e.hostile)enterDissonance(e);
+        /* PR 10: uma escolha isolada NUNCA rebela o Echo na hora — ela
+           empurra a pressão de ruptura, que o jogador consegue ver. */
+        relAddPressure(e,44);
       }
       spawnRing(player.x,player.y,'#ff4df0',10,140,.7);
       floatText(player.x,player.y-30,'+18% CADÊNCIA','#ff4df0');
@@ -5986,7 +5991,7 @@ child(){
       player.hp=player.maxHp=player.maxHp+18;
       for(const e of echoes){
         if(!e.alive)continue;
-        e.trust=clamp(e.trust+25,0,100);e.trustFx=.9;e.hp=e.maxHp;
+        changeEchoTrust(e,25,'event_child_guided');e.hp=e.maxHp;
       }
       spawnRing(player.x,player.y,'#8ff6ff',10,190,1);
       AUDIO.levelUp();toast('ECO GUIADO EM PAZ');
@@ -5998,8 +6003,8 @@ child(){
       smMul(player,'damage','event.residuo.damage','CONSUMIR RESÍDUO +20% DANO',1.20);
       for(const e of echoes){
         if(!e.alive)continue;
-        e.trust=clamp(e.trust-35,0,100);e.trustFx=-.9;
-        if(e.trust<=0&&!e.hostile)enterDissonance(e);
+        changeEchoTrust(e,-35,'event_child_consumed');
+        relAddPressure(e,50);   // pressão, não rebelião instantânea (PR 10)
       }
       spawnShards(beacon.x,beacon.y,'#8ff6ff',22,7);
       toast('RESÍDUO CONSUMIDO · +20% DANO');
@@ -7085,6 +7090,9 @@ function damageEnemy(e,d,srcx,srcy,crit,isDot){
       if(!isP&&curAttacker&&curAttacker.syncT!==undefined){
         curAttacker.syncT=2;curAttacker.syncHits=(curAttacker.syncHits||0)+1;
       }
+      // PR 10: janela curta de sintonia → aprovação mínima, com cooldown
+      // próprio (13s). Nunca farmável e sempre menor que a plena.
+      if(!isP&&curAttacker&&curAttacker.trust!=null)echoRelResonance(curAttacker,true);
     }
     e.microTag=tag;e.microT=runTime;
   }
@@ -7169,9 +7177,9 @@ function triggerResonance(e,by,baseDmg){
     }
   }
   curAttacker=prev;
-  // recompensa a sintonia: confiança sobe no Echo participante
-  if(by&&by!==player&&by.trust!=null&&!by.hostile)
-    by.trust=clamp(by.trust+3,0,100);
+  // recompensa a sintonia: confiança sobe no Echo participante (PR 10:
+  // ponto único de mutação, com motivo e retornos decrescentes)
+  if(by&&by!==player&&by.trust!=null&&!by.hostile)echoRelResonance(by,false);
 }
 function updateResonance(dt){
   if(resoFlash>0)resoFlash=Math.max(0,resoFlash-dt*2.6);

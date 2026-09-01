@@ -552,9 +552,25 @@ ok('código do PR 9 não referencia trust/Dissonância/Resonance (auditoria de f
 ok('pickEnding (finais) permanece intocado — PR 10.5 é futuro',()=>{
   assert(/function pickEnding\(\)\{\s*const dark=moral\.greed\+moral\.viol/.test(RAWSRC));
 });
-ok('echoesReact (regra de trust PRÉ-existente) permanece intocada',()=>{
-  assert(/e\.trust=clamp\(e\.trust\+18,0,100\)/.test(RAWSRC),'+18 na ressonância');
-  assert(/e\.trust=clamp\(e\.trust-26,0,100\)/.test(RAWSRC),'−26 na dissonância');
+/* SUPERSEDIDO PELO PR 10 (documentado no relatório e em ECHO_RELATIONSHIP.md).
+   O guarda original travava os literais `+18/−26` de confiança por escolha
+   moral — exatamente a oscilação que o PR 10 foi mandatado a substituir.
+   A INVARIANTE que este teste realmente protegia continua valendo e é o
+   que se verifica agora: quem reage às escolhas morais é echoesReact, o
+   PR 9 continua sem tocar em confiança, e nenhuma mutação de trust ficou
+   espalhada em echoesReact. */
+ok('echoesReact continua sendo o ponto de reação moral (agora via PR 10)',()=>{
+  const i=RAWSRC.indexOf('function echoesReact');
+  assert(i>0,'echoesReact existe');
+  const fn=RAWSRC.slice(i,RAWSRC.indexOf('\n}',i));
+  assert(/echoesEvaluate\s*\(/.test(fn),'roteia pela camada central de avaliação');
+  assert(!/\.trust\s*=/.test(fn),'nenhuma mutação direta de confiança');
+  assert(!/e\.trust=clamp\(e\.trust\+18,0,100\)/.test(RAWSRC),
+    'PR 10: a oscilação +18 por escolha foi removida');
+  assert(!/e\.trust=clamp\(e\.trust-26,0,100\)/.test(RAWSRC),
+    'PR 10: a oscilação −26 por escolha foi removida');
+  assert(/function changeEchoTrust/.test(RAWSRC),
+    'toda mutação de confiança passa por changeEchoTrust');
 });
 ok('Dissonância/Resonance não consultam afinidade moral (auditoria de fonte)',()=>{
   const f=name=>{
