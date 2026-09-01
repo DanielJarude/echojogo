@@ -367,6 +367,14 @@
     border-top:1px solid rgba(70,224,255,.14);
     border-bottom:1px solid rgba(70,224,255,.14);padding:13px 0;}
   #p-stats b{color:#e8fbff;font-weight:normal;}
+  /* PR 10 — painel de relação Player ↔ Echo (pausa) */
+  #p-rel{font-family:Consolas,monospace;font-size:var(--fs-xs);letter-spacing:.13em;
+    color:#8fb3c6;line-height:1.75;margin:-8px 0 18px;text-align:left;}
+  #p-rel .rcard{border:1px solid rgba(70,224,255,.16);border-radius:3px;
+    padding:8px 10px;margin-top:7px;background:rgba(70,224,255,.035);}
+  #p-rel .rhead{display:flex;justify-content:space-between;gap:10px;color:#cfe9f5;}
+  #p-rel .rmem{color:rgba(160,200,220,.72);font-style:italic;margin-top:3px;}
+  #p-rel b{color:#e8fbff;font-weight:normal;}
   .pbtn{display:block;width:100%;margin-top:10px;padding:13px 12px;cursor:pointer;
     font-family:Consolas,monospace;font-size:var(--fs-md);letter-spacing:.28em;color:#bffbff;
     border:1px solid rgba(70,224,255,.42);background:rgba(70,224,255,.05);
@@ -651,6 +659,7 @@
   <div id="p-tag">CICLO SUSPENSO</div>
   <div id="p-title">P A U S A</div>
   <div id="p-stats"></div>
+  <div id="p-rel"></div>
   <div class="pbtn" id="p-resume">CONTINUAR [ESC]</div>
   <div class="pbtn" id="p-cfg">⚙ CONFIGURAÇÕES<small>ÁUDIO · TELA CHEIA · GRÁFICOS</small></div>
   <div class="pbtn" id="p-codex">◈ ARSENAL<small>CATÁLOGO DE ARMAS E INIMIGOS</small></div>
@@ -1777,10 +1786,37 @@ function pauseGame(){
         '</b> / V <b>'+moral.viol+'</b> · MÓDULOS AFINS <b>'+countAttunedItems(player)+
         '/'+player.items.length+'</b>';
     })();
+  const _pr=document.getElementById('p-rel');
+  if(_pr)_pr.innerHTML=relationPanelHTML();
   const _pv=document.getElementById('p-ver');
   if(_pv)_pv.textContent=ECHO_VERSION_LABEL+(DEV_MODE?'  ·  DEV MODE':'');
   pm.classList.add('on');
   AUDIO.tone(330,.16,'sine',.04,-90);
+}
+/* PR 10 — RELATIONSHIP UI: estado do vínculo em linguagem humana.
+   Mostra personalidade, relação, confiança e a memória recente — nunca
+   a fórmula, nunca a pressão crua (§34). */
+function relationPanelHTML(){
+  if(!echoes.length)return '';
+  let h='<div style="letter-spacing:.4em;color:rgba(160,220,240,.55)">RELAÇÃO · PLAYER ↔ ECHO</div>';
+  for(const e of echoes){
+    if(!e)continue;
+    const rs=echoRelState(e);
+    const P=e.pers||(e.ps&&PERSONALITIES[e.ps.id])||null;
+    const ds=(e.dis&&e.dis.st)||'stable';
+    const warn=(ds==='unstable')?' · <b style="color:'+DIS_COLOR.unstable+'">SINAL INSTÁVEL</b>':
+      (echoInRupture(e)?' · <b style="color:'+DIS_COLOR[ds]+'">'+DIS_LABEL[ds]+'</b>':'');
+    const mm=(e.rel&&e.rel.mm&&e.rel.mm.length)?e.rel.mm[e.rel.mm.length-1]:null;
+    h+='<div class="rcard"><div class="rhead"><span>ECHO·0'+e.slot+
+      (e.alive?'':' <b style="color:#ff8095">OFFLINE</b>')+'</span>'+
+      '<span>'+(P?P.lab:'—')+'</span></div>'+
+      'RELAÇÃO <b style="color:'+rs.col+'">'+rs.lab+'</b> · '+
+      'CONFIANÇA <b>'+Math.round(e.trust)+'</b>'+warn+
+      (mm?'<div class="rmem">“'+relMomentText(mm)+'”</div>'
+         :'<div class="rmem">Nenhuma memória marcante ainda.</div>')+
+      '</div>';
+  }
+  return h;
 }
 function resumeGame(){
   if(state!=='paused')return;
@@ -3034,19 +3070,28 @@ function setChip(el,slot,echo){
   el.className='chip';
   if(!echo){el.textContent='ECHO·0'+slot+' — INATIVO';return;}
   if(!echo.alive){el.classList.add('dead');el.textContent='ECHO·0'+slot+' — OFFLINE';return;}
-  if(echo.hostile){
+  /* PR 10: o chip do HUD lê a máquina de estados — nunca um boolean solto */
+  const _ds=(echo.dis&&echo.dis.st)||'stable';
+  if(_ds==='fracturing'||_ds==='hostile'||_ds==='recovering'){
     el.classList.add('dead');
     el.style.textDecoration='none';
-    el.style.borderColor='rgba(255,47,94,.85)';
-    el.textContent='ECHO·0'+slot+' — ⚠ HOSTIL '+echo.hostileT.toFixed(1)+'s';
+    el.style.borderColor=_ds==='hostile'?'rgba(255,47,94,.85)':
+      (_ds==='fracturing'?'rgba(255,157,60,.85)':'rgba(143,246,255,.85)');
+    el.textContent='ECHO·0'+slot+' — ⚠ '+DIS_LABEL[_ds]+
+      (_ds==='hostile'&&echo.dis.integMax>0
+        ? ' · RUPTURA '+Math.round(clamp(echo.dis.integ/echo.dis.integMax,0,1)*100)+'%'
+        : ' '+Math.max(0,echo.dis.t).toFixed(1)+'s');
     return;
   }
   el.style.textDecoration='';
   el.classList.add(slot===1?'on1':'on2');
   const t=trustTier(echo);
-  el.textContent='ECHO·0'+slot+' — ATIVO · '+DOM_SHORT[echo.dom]+' · CONF '+TRUST_NAME[t]+
+  const rs=echoRelState(echo);
+  el.textContent='ECHO·0'+slot+' — '+rs.lab+' · CONF '+TRUST_NAME[t]+
+    (_ds==='unstable'?' · ⚠ INSTÁVEL':'')+
     (echo.itemIds.length?' · ◈'+echo.itemIds.length:'');
-  if(t===0)el.style.borderColor='rgba(255,77,109,.55)';
+  if(_ds==='unstable')el.style.borderColor='rgba(255,209,102,.8)';
+  else if(t===0)el.style.borderColor='rgba(255,77,109,.55)';
   else if(t===2)el.style.borderColor='rgba(125,255,196,.7)';
   else el.style.borderColor='';
 }
@@ -10575,33 +10620,69 @@ function drawShip(x,y,aim,r,color,alpha,glitchy,wi,pal){
 }
 function drawEchoEntity(e){
   if(!e.alive)return;
-  /* ---------- ECHO HOSTIL (Dissonância) ---------- */
-  if(e.hostile){
-    const warn=.5+.5*Math.sin(runTime*16);
+  /* ===================================================================
+     VISUAL DERIVADO DO ESTADO LÓGICO (PR 10 §97)
+     Não existe estado visual próprio: tudo lê e.dis.st, então imagem e
+     regra nunca dessincronizam.
+       FRATURANDO  → laranja, glitch crescente, anel fechando (sem dano)
+       DISSONANTE  → vermelho hostil, contorno pulsante, medidor de ruptura
+       REINTEGRANDO→ ciano, colapso e reconstrução (sem dano)
+       INSTÁVEL    → aliado, mas com cintilação e rótulo de alerta
+     =================================================================== */
+  const _ds=(e.dis&&e.dis.st)||'stable';
+  if(_ds==='fracturing'||_ds==='hostile'||_ds==='recovering'){
+    const hostile=_ds==='hostile';
+    const frac=_ds==='fracturing';
+    const col=DIS_COLOR[_ds];
+    const pulse=.5+.5*Math.sin(runTime*(hostile?16:22));
+    // rastro corrompido
     for(let i=0;i<e.ghosts.length;i++){
       const g=e.ghosts[i];
-      ctx.globalAlpha=(i/e.ghosts.length)*.22;ctx.fillStyle='#ff2f5e';
+      ctx.globalAlpha=(i/e.ghosts.length)*(hostile?.22:.16);
+      ctx.fillStyle=col;
       ctx.beginPath();ctx.arc(g.x,g.y,e.r*.8,0,TAU);ctx.fill();
     }
     ctx.globalAlpha=1;
+    const jit=frac?(3+pulse*5):(hostile?4:2);
     ctx.save();ctx.globalCompositeOperation='lighter';
-    drawUnit(e.x+rand(-4,4),e.y+rand(-2,2),e.aim,e.r,{
-      body:'rgba(120,10,30,.95)',dark:'rgba(50,2,12,.98)',edge:'#ff2f5e',
-      glow:'#ff2f5e',visor:'#ffe0e6',head:'rgba(110,8,26,.95)',wep:'#ff2f5e'
-    },{alpha:.9,glitch:true,wi:e.curW|0,walk:.8,recoil:e.recoil||0,phase:e.seed});
+    drawUnit(e.x+rand(-jit,jit),e.y+rand(-jit*.5,jit*.5),e.aim,e.r,{
+      body:hostile?'rgba(120,10,30,.95)':(frac?'rgba(120,64,10,.92)':'rgba(30,96,124,.9)'),
+      dark:'rgba(50,2,12,.98)',edge:col,glow:col,
+      visor:hostile?'#ffe0e6':'#eaffff',
+      head:hostile?'rgba(110,8,26,.95)':'rgba(70,60,80,.9)',wep:col
+    },{alpha:hostile?.9:.78,glitch:true,wi:e.curW|0,walk:.8,
+       recoil:e.recoil||0,phase:e.seed});
     ctx.restore();
-    // anel de alerta hostil + contagem regressiva
     ctx.save();
-    ctx.strokeStyle='rgba(255,47,94,'+(.45+warn*.45)+')';ctx.lineWidth=2;
+    // anel de estado: fecha na telegrafia, pulsa na hostilidade, abre no retorno
+    const prog=e.dis.t>0?clamp(e.dis.t/(frac?DIS.telegraph:
+      (hostile?DIS.hostileDur:DIS.recoverDur)),0,1):0;
+    const ringR=frac?(e.r+14+prog*30):(_ds==='recovering'?(e.r+14+(1-prog)*26):(e.r+15));
+    ctx.strokeStyle=col;ctx.globalAlpha=hostile?(.45+pulse*.45):(.35+pulse*.5);
+    ctx.lineWidth=2;
     ctx.setLineDash([6,7]);ctx.lineDashOffset=-runTime*26;
-    ctx.beginPath();ctx.arc(e.x,e.y,e.r+15,0,TAU);ctx.stroke();
+    ctx.beginPath();ctx.arc(e.x,e.y,ringR,0,TAU);ctx.stroke();
     ctx.setLineDash([]);
+    // contorno de ruptura (torna o Echo reconhecível instantaneamente)
+    ctx.globalAlpha=.30+pulse*.35;ctx.lineWidth=3;
+    ctx.beginPath();ctx.arc(e.x,e.y,e.r+5,0,TAU);ctx.stroke();
+    ctx.globalAlpha=1;
     ctx.font='11px Consolas,monospace';ctx.textAlign='center';
-    ctx.fillStyle='#ff8095';
-    ctx.fillText('⚠ HOSTIL '+e.hostileT.toFixed(1)+'s',e.x,e.y-e.r-16);
-    ctx.fillStyle='rgba(0,0,0,.45)';ctx.fillRect(e.x-16,e.y-e.r-10,32,3);
-    ctx.fillStyle='#ff2f5e';
-    ctx.fillRect(e.x-16,e.y-e.r-10,32*clamp(e.hostileT/12,0,1),3);
+    ctx.fillStyle=col;
+    ctx.fillText('ECHO·0'+e.slot+' · '+DIS_LABEL[_ds],e.x,e.y-e.r-26);
+    if(hostile){
+      // MEDIDOR DE RUPTURA: o jogador vê a contenção progredindo
+      const k=e.dis.integMax>0?clamp(e.dis.integ/e.dis.integMax,0,1):0;
+      ctx.fillStyle='rgba(255,128,149,.9)';
+      ctx.fillText('RUPTURA '+Math.round(k*100)+'%',e.x,e.y-e.r-15);
+      ctx.fillStyle='rgba(0,0,0,.45)';ctx.fillRect(e.x-20,e.y-e.r-10,40,4);
+      ctx.fillStyle='#ff2f5e';ctx.fillRect(e.x-20,e.y-e.r-10,40*k,4);
+      ctx.strokeStyle='rgba(255,47,94,.55)';ctx.lineWidth=1;
+      ctx.strokeRect(e.x-20.5,e.y-e.r-10.5,41,5);
+    }else{
+      ctx.fillStyle='rgba(255,209,102,.9)';
+      ctx.fillText(frac?'NÃO CAUSA DANO AINDA':'SEM HOSTILIDADE',e.x,e.y-e.r-15);
+    }
     ctx.restore();
     return;
   }
@@ -10651,6 +10732,20 @@ function drawEchoEntity(e){
   ctx.fillText('ECHO·0'+e.slot+' · '+DOM_NAME[e.dom],e.x,e.y-e.r-24);
   ctx.fillStyle=tier===2?'#8ff6ff':(tier===1?'rgba(200,220,230,.7)':'#ff8095');
   ctx.fillText('CONF '+TRUST_NAME[tier]+(tier===0&&e.ambush?' · DESERTANDO':''),e.x,e.y-e.r-15);
+  /* PR 10 — TELEGRAFIA: antes de qualquer ruptura o Echo já avisa. */
+  if(e.dis&&e.dis.st==='unstable'){
+    const fl=.45+.55*Math.abs(Math.sin(runTime*7));
+    ctx.save();
+    ctx.globalAlpha=fl;
+    ctx.fillStyle=DIS_COLOR.unstable;
+    ctx.fillText('⚠ INSTÁVEL '+Math.round(relPressurePct(e)*100)+'%',e.x,e.y-e.r-35);
+    ctx.strokeStyle=DIS_COLOR.unstable;ctx.lineWidth=1.4;ctx.globalAlpha=fl*.5;
+    ctx.setLineDash([4,6]);ctx.lineDashOffset=runTime*18;
+    ctx.beginPath();ctx.arc(e.x,e.y,e.r+11,0,TAU);ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+    if(Math.random()<.05)spawnParticles(e.x,e.y,DIS_COLOR.unstable,1,90,.25,2);
+  }
   if(e.trustFx){
     ctx.globalAlpha=Math.abs(e.trustFx);
     ctx.strokeStyle=e.trustFx>0?'#8ff6ff':'#ff4d6d';ctx.lineWidth=2;
@@ -11757,6 +11852,19 @@ const LORE_WORLD={
        'o lugar dela. <b>O Paradoxo Eterno</b> acontece quando suas '+
        'contradições foram tão extremas que ambos os finais ocorrem ao '+
        'mesmo tempo, em superposição permanente.'},
+    {t:'MEMÓRIA E RELAÇÃO',c:'#8ff6ff',
+     d:'Um Eco não é um dispositivo: é uma versão sua que <b>lembra quem '+
+       'era</b>. Cada decisão importante que você toma é comparada com a '+
+       'run que o gerou — e ele aprova, discorda ou ignora. Ecos '+
+       'diferentes chegam a veredictos diferentes sobre a mesma escolha, '+
+       'porque a referência de cada um é a própria memória.<br><br>'+
+       'A <b>confiança</b> evolui em passos pequenos: nenhuma escolha '+
+       'isolada define o vínculo, mas a insistência define. Divergir não '+
+       'é um erro — é uma história diferente, com falas mais tensas e uma '+
+       'assinatura menos estável. Quando a divergência se acumula, o sinal '+
+       'do Eco começa a <b>oscilar</b> antes de romper. Esse aviso é real: '+
+       'quem observa consegue evitar a ruptura, contê-la quando acontece e '+
+       'reconstruir a relação depois.'},
     {t:'PONTOS DE MEMÓRIA',c:'#c9a9ff',
      d:'Um resíduo consegue atravessar a fratura intacto: a memória do '+
        'que você aprendeu. Ela não devolve armas nem créditos, mas ajusta '+
