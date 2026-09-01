@@ -1769,7 +1769,14 @@ function pauseGame(){
     'ARMA <b>'+w.nm+'</b> · ARSENAL <b>'+player.owned.length+'/'+WEAPONS.length+'</b> · '+
     'MÓDULOS <b>'+player.items.length+'</b><br>'+
     'ECHO·01 <b>'+(echoes[0]?(echoes[0].alive?'ATIVO':'OFFLINE'):'INATIVO')+'</b> · '+
-    'ECHO·02 <b>'+(echoes[1]?(echoes[1].alive?'ATIVO':'OFFLINE'):'INATIVO')+'</b>';
+    'ECHO·02 <b>'+(echoes[1]?(echoes[1].alive?'ATIVO':'OFFLINE'):'INATIVO')+'</b><br>'+
+    (function(){   // PR 9: perfil moral resumido + sintonia da build
+      const pr=getMoralProfile(),dom=moralDom();
+      return 'PERFIL MORAL <b style="color:'+DOM_COLOR[dom]+'">'+DOM_NAME[dom]+'</b> ('+
+        MORAL_STATE_LABEL[pr.state]+') · C <b>'+moral.comp+'</b> / G <b>'+moral.greed+
+        '</b> / V <b>'+moral.viol+'</b> · MÓDULOS AFINS <b>'+countAttunedItems(player)+
+        '/'+player.items.length+'</b>';
+    })();
   const _pv=document.getElementById('p-ver');
   if(_pv)_pv.textContent=ECHO_VERSION_LABEL+(DEV_MODE?'  ·  DEV MODE':'');
   pm.classList.add('on');
@@ -3155,6 +3162,7 @@ function applyMoral(){
 const TIER_NAME=['','DESPERTO','DOMINANTE','CONSUMIDO'];
 function moralGain(c,g,v){
   moral.comp+=c;moral.greed+=g;moral.viol+=v;applyMoral();
+  applyMoralTuning(player);   // PR 9: sintonia dos módulos acompanha o perfil
   const p=[];
   if(c)p.push('COMPAIXÃO +'+c);
   if(g)p.push('GANÂNCIA +'+g);
@@ -3208,6 +3216,260 @@ function echoesReact(c,g,v){
   }
 }
 function trustTier(e){return e.trust>=68?2:(e.trust>=34?1:0);}
+
+/* =====================================================================
+   MORALIDADE 2.0 (PR 9) — PERFIL MORAL DERIVADO + SINTONIA DE ITENS
+   ---------------------------------------------------------------------
+   FONTE DE VERDADE: o objeto `moral` {comp,greed,viol} continua sendo o
+   único estado moral persistido (checkpoint/save inalterados). Tudo aqui
+   é DERIVADO e recalculável: perfil normalizado, sintonia de itens e
+   vieses leves de loja/eventos. Nada disso toca trust, Dissonância,
+   Resonance, personalidade de Echo ou finais (PRs 10/10.5/13).
+   · Balanceamento centralizado em MORAL_BALANCE (sem magic numbers).
+   · Sintonia é CONTÍNUA (produto escalar), nunca binária.
+   · Itens sem entrada em MORAL_AFFINITY são NEUTROS — nenhum item é
+     bloqueado ou obrigatório por moralidade.
+   · Efeitos de stat passam SEMPRE pelo Stat Modifier Pipeline com ids
+     estáveis `moral:item:<itemId>:<stat>` — derivados, excluídos do
+     checkpoint e recalculados no resume (nunca duplicam).
+   ===================================================================== */
+const MORAL_BALANCE={
+  affinity:{
+    /* produto escalar de um perfil perfeitamente equilibrado (1/3):
+       abaixo/na linha de base a sintonia não gera efeito algum */
+    baseline:1/3,
+    /* teto de bônus contextual por eixo (efeito máximo por item) */
+    maxBonus:{comp:.05,greed:.08,viol:.05},
+    /* cortes dos níveis de sintonia (sobre o match 0..1) */
+    levels:{divergent:.22,neutral:.45,attuned:.72}
+  },
+  shopBias:.10,      // peso máximo ×1.10 no sorteio de módulos da loja
+  eventBias:.30,     // peso máximo ×1.30 no sorteio de eventos
+  profile:{
+    minTotal:3,      // soma bruta mínima para o perfil "acordar"
+    dominantGap:.18, // vantagem normalizada do 1º sobre o 2º → DOMINANTE
+    balancedSpread:.12 // dispersão máxima 1º−3º → EQUILIBRADO
+  }
+};
+const MORAL_AXES=['comp','greed','viol'];
+const MORAL_AXIS_LABEL={comp:'COMPAIXÃO',greed:'GANÂNCIA',viol:'VIOLÊNCIA'};
+const MORAL_STATE_LABEL={neutral:'NEUTRO',dominant:'DOMINANTE',mixed:'MISTO',balanced:'EQUILIBRADO'};
+
+/* ---- PERFIL MORAL CENTRAL (cache por chave — nunca por frame) ---- */
+let _moralProfCache=null,_moralProfKey='';
+function getMoralProfile(m){
+  const src=m||moral;
+  const c=Math.max(0,+src.comp||0),g=Math.max(0,+src.greed||0),v=Math.max(0,+src.viol||0);
+  const key=c+'|'+g+'|'+v;
+  if(!m&&_moralProfCache&&_moralProfKey===key)return _moralProfCache;
+  const total=c+g+v;
+  const P=MORAL_BALANCE.profile;
+  let normalized,state,dominant,secondary,intensity,balanced;
+  if(total<=0){
+    normalized={comp:1/3,greed:1/3,viol:1/3};
+    state='neutral';dominant=null;secondary=null;intensity=0;balanced=true;
+  }else{
+    normalized={comp:c/total,greed:g/total,viol:v/total};
+    const rank=MORAL_AXES.map(a=>[a,normalized[a]]).sort((x,y)=>y[1]-x[1]);
+    dominant=rank[0][0];secondary=rank[1][1]>0?rank[1][0]:null;
+    intensity=rank[0][1];
+    if(total<P.minTotal){state='neutral';balanced=true;}
+    else if(rank[0][1]-rank[2][1]<=P.balancedSpread){state='balanced';balanced=true;dominant=null;secondary=null;}
+    else if(rank[0][1]-rank[1][1]>=P.dominantGap){state='dominant';balanced=false;}
+    else{state='mixed';balanced=false;}
+  }
+  const prof={raw:{comp:c,greed:g,viol:v},total,normalized,
+    dominant,secondary,intensity,state,balanced};
+  if(!m){_moralProfKey=key;_moralProfCache=prof;}
+  return prof;
+}
+
+/* =====================================================================
+   SINTONIA MORAL DOS ITENS — classificação pelo QUE O ITEM FAZ
+   (proteção/cura → COMPAIXÃO · economia/risco-recompensa → GANÂNCIA ·
+   dano/execução/DoT → VIOLÊNCIA · vetores mistos quando fizer sentido).
+   Itens ausentes daqui são NEUTROS de propósito (lente, luneta,
+   espectro, colmeia, prisma2). Vetores somam 1.
+   ===================================================================== */
+const MORAL_AFFINITY={
+  nucleo     :{comp:0 ,greed:0 ,viol:1 },  // +30% dano pagando vida
+  rebob      :{comp:.4,greed:0 ,viol:.6},  // defesa convertida em dano refletido
+  coracao    :{comp:0 ,greed:0 ,viol:1 },  // cadência bruta pagando exposição
+  iman       :{comp:0 ,greed:1 ,viol:0 },  // coleta + moedas
+  placa      :{comp:1 ,greed:0 ,viol:0 },  // preservação pura (+vida)
+  olho       :{comp:0 ,greed:0 ,viol:1 },  // crítico predatório
+  paradoxo   :{comp:1 ,greed:0 ,viol:0 },  // sacrifício próprio pelos Ecos
+  estilhaco  :{comp:0 ,greed:0 ,viol:1 },  // dano/cadência à queima-roupa
+  pirostase  :{comp:0 ,greed:0 ,viol:1 },  // DoT amplificado
+  criostase  :{comp:.5,greed:0 ,viol:.5},  // controle que protege e amplifica dano
+  condutor   :{comp:0 ,greed:0 ,viol:1 },  // correntes e crítico agressivo
+  catalis    :{comp:0 ,greed:0 ,viol:1 },  // corrosão/sangramento ×2
+  ferrao     :{comp:0 ,greed:0 ,viol:1 },  // caça a alvos marcados
+  sifao      :{comp:.5,greed:0 ,viol:.5},  // sustento através do dano
+  reator     :{comp:0 ,greed:0 ,viol:1 },  // pressão ofensiva contínua
+  vinganca   :{comp:0 ,greed:0 ,viol:1 },  // confronto no limite da vida
+  usura      :{comp:0 ,greed:1 ,viol:0 },  // créditos pagando risco
+  ressonador :{comp:1 ,greed:0 ,viol:0 },  // cooperação com os Ecos
+  carapaca   :{comp:.6,greed:0 ,viol:.4},  // defesa reativa
+  entropia   :{comp:0 ,greed:0 ,viol:1 },  // dano alimentado por abates
+  ampulheta  :{comp:.4,greed:0 ,viol:.6},  // mobilidade alimentada por abates
+  talisma    :{comp:1 ,greed:0 ,viol:0 },  // preservação máxima (reviver)
+  espinho    :{comp:.4,greed:0 ,viol:.6},  // punição por contato
+  su_vampiro :{comp:.6,greed:0 ,viol:.4},  // vampirismo + cura recebida
+  su_imante  :{comp:0 ,greed:1 ,viol:0 },  // coleta ampliada
+  su_regen   :{comp:1 ,greed:0 ,viol:0 },  // regeneração e vida
+  su_sorte   :{comp:.5,greed:0 ,viol:.5},  // cura ao abater
+  su_critcura:{comp:.5,greed:0 ,viol:.5},  // crítico que cura
+  su_exec    :{comp:0 ,greed:0 ,viol:1 },  // execução
+  su_dotcrit :{comp:0 ,greed:0 ,viol:1 }   // status crítico
+};
+function getItemMoralAffinity(itemId){
+  const a=MORAL_AFFINITY[itemId];
+  return a?{comp:a.comp||0,greed:a.greed||0,viol:a.viol||0}:null;
+}
+/* match contínuo 0..1 — produto escalar afinidade·perfil normalizado */
+function calcMoralAffinityMatch(aff,prof){
+  if(!aff)return null;
+  prof=prof||getMoralProfile();
+  const sum=(aff.comp||0)+(aff.greed||0)+(aff.viol||0);
+  if(sum<=0)return null;
+  const n=prof.normalized;
+  return clamp(((aff.comp||0)*n.comp+(aff.greed||0)*n.greed+(aff.viol||0)*n.viol)/sum,0,1);
+}
+/* fator de efeito 0..1 — 0 na linha de base (perfil equilibrado) e 1 no
+   alinhamento perfeito. Nunca negativo: divergência NÃO pune o item. */
+function moralTuneFactor(match){
+  if(match==null)return 0;
+  const b=MORAL_BALANCE.affinity.baseline;
+  return clamp((match-b)/(1-b),0,1);
+}
+const MORAL_AFF_LEVELS=[
+  {id:'divergent',lab:'DIVERGENTE',c:'#9db8c8'},
+  {id:'neutral',  lab:'NEUTRA',    c:'#9db8c8'},
+  {id:'attuned',  lab:'AFIM',      c:'#8ff6ff'},
+  {id:'harmonic', lab:'HARMÔNICA', c:'#ffd166'}];
+function moralAffinityLevel(match){
+  if(match==null)return MORAL_AFF_LEVELS[1];
+  const L=MORAL_BALANCE.affinity.levels;
+  if(match<L.divergent)return MORAL_AFF_LEVELS[0];
+  if(match<L.neutral)return MORAL_AFF_LEVELS[1];
+  if(match<L.attuned)return MORAL_AFF_LEVELS[2];
+  return MORAL_AFF_LEVELS[3];
+}
+
+/* ---- efeitos derivados no Stat Pipeline (ids estáveis, recalculáveis) ---- */
+function moralTuneModId(itemId,stat){return 'moral:item:'+itemId+':'+stat;}
+function isMoralTuneModId(id){return typeof id==='string'&&id.indexOf('moral:item:')===0;}
+/* lista os modificadores que UM item geraria com o perfil atual */
+function moralTuneModsFor(itemId,prof){
+  const aff=getItemMoralAffinity(itemId);
+  if(!aff)return [];
+  const tune=moralTuneFactor(calcMoralAffinityMatch(aff,prof));
+  if(tune<=0)return [];
+  const it=itemById(itemId),nm=it?it.nm:itemId;
+  const B=MORAL_BALANCE.affinity.maxBonus,out=[];
+  const mk=(stat,mul,lab)=>{
+    if(Math.abs(mul-1)<1e-4)return;
+    out.push({id:moralTuneModId(itemId,stat),stat,type:'mult',value:mul,
+      stacks:'replace',label:lab});
+  };
+  /* temática por eixo: proteção · economia · ofensiva */
+  if(aff.comp>0)mk('dmgTaken',1-B.comp*aff.comp*tune,'SINTONIA '+nm+' · PROTEÇÃO');
+  if(aff.greed>0)mk('coinMul',1+B.greed*aff.greed*tune,'SINTONIA '+nm+' · CRÉDITOS');
+  if(aff.viol>0)mk('damage',1+B.viol*aff.viol*tune,'SINTONIA '+nm+' · OFENSIVA');
+  return out;
+}
+/* recalcula TODA a sintonia (chamado quando moral ou itens mudam;
+   nunca por frame). Remove os derivados antigos e regenera do zero. */
+function applyMoralTuning(p){
+  p=p||player;
+  if(!p)return false;
+  smInit(p);
+  p.sm=p.sm.filter(m=>!isMoralTuneModId(m.id));
+  const prof=getMoralProfile();
+  for(const id of (p.items||[]))
+    for(const mod of moralTuneModsFor(id,prof))p.sm.push(mod);
+  smRefresh(p);
+  return true;
+}
+/* quantos módulos instalados estão em sintonia AFIM ou melhor */
+function countAttunedItems(p){
+  p=p||player;
+  if(!p||!p.items)return 0;
+  const prof=getMoralProfile();
+  let n=0;
+  for(const id of p.items){
+    const m=calcMoralAffinityMatch(getItemMoralAffinity(id),prof);
+    if(m!=null&&m>=MORAL_BALANCE.affinity.levels.neutral)n++;
+  }
+  return n;
+}
+
+/* ---- UI: rótulos de sintonia (texto/cores existentes, sem assets) ---- */
+function moralAffinityAxes(aff){
+  return MORAL_AXES.filter(a=>aff[a]>0).sort((x,y)=>aff[y]-aff[x]);
+}
+const MORAL_AXIS_COLOR={comp:'#7dffc4',greed:'#ffd166',viol:'#ff5c7a'};
+function moralAffinityTagHTML(itemId,showCurrent){
+  const aff=getItemMoralAffinity(itemId);
+  if(!aff)return '';
+  const axes=moralAffinityAxes(aff).map(a=>
+    '<span style="color:'+MORAL_AXIS_COLOR[a]+'">'+MORAL_AXIS_LABEL[a]+'</span>').join(' / ');
+  let s='<div class="cmoral">SINTONIA: '+axes;
+  if(showCurrent&&player){
+    const lv=moralAffinityLevel(calcMoralAffinityMatch(aff,getMoralProfile()));
+    s+=' · ATUAL: <b style="color:'+lv.c+'">'+lv.lab+'</b>';
+  }
+  return s+'</div>';
+}
+/* frase única de tooltip — sem revelar a fórmula */
+function moralAffinityPhrase(itemId){
+  const aff=getItemMoralAffinity(itemId);
+  if(!aff)return '';
+  const ph={comp:'perfis compassivos',greed:'perfis gananciosos',viol:'perfis violentos'};
+  const axes=moralAffinityAxes(aff);
+  const txt=axes.map(a=>ph[a]).join(' e ');
+  return 'Este módulo responde melhor a '+txt+'.';
+}
+
+/* ---- LOJA: viés pequeno a favor de módulos afinados (nunca bloqueia) ---- */
+function moralShopWeight(item){
+  const aff=getItemMoralAffinity(item.id);
+  if(!aff)return 1;
+  return 1+MORAL_BALANCE.shopBias*moralTuneFactor(calcMoralAffinityMatch(aff,getMoralProfile()));
+}
+function pickWeightedMoral(list,waveN){
+  let tot=0;
+  for(const o of list)tot+=rarityWeight(o.rar||0,waveN)*moralShopWeight(o);
+  if(tot<=0)return list[randi(0,list.length-1)];
+  let r=Math.random()*tot;
+  for(const o of list){
+    r-=rarityWeight(o.rar||0,waveN)*moralShopWeight(o);
+    if(r<=0)return o;
+  }
+  return list[list.length-1];
+}
+
+/* ---- EVENTOS: perfil dominante puxa LEVEMENTE oportunidades afins.
+   (variação local e pequena — o Diretor de Fratura é assunto do PR 13) ---- */
+const EVENT_AFFINITY={
+  survivor:'comp',prisoner:'comp',child:'comp',shrine:'comp',
+  merchant:'greed',vault:'greed',market:'greed',gambler:'greed',
+  ambush:'viol',reactor:'viol',hunger:'viol',forge:'viol'
+};
+function moralEventWeight(kind){
+  const ax=EVENT_AFFINITY[kind];
+  if(!ax)return 1;
+  return 1+MORAL_BALANCE.eventBias*getMoralProfile().normalized[ax];
+}
+function pickEventKind(){
+  let tot=0;
+  const ws=EV_KINDS.map(k=>{const w=moralEventWeight(k);tot+=w;return w;});
+  let r=Math.random()*tot;
+  for(let i=0;i<EV_KINDS.length;i++){r-=ws[i];if(r<=0)return EV_KINDS[i];}
+  return EV_KINDS[EV_KINDS.length-1];
+}
+
 /* ---- DISSONÂNCIA MORAL CRÍTICA: confiança 0% → Echo hostil por 12s ---- */
 function enterDissonance(e){
   e.hostile=true;e.hostileT=12;e.trust=0;
@@ -3575,7 +3837,14 @@ function giveItem(it,free){
   bumpProg('items');
   player.items.push(it.id);it.apply(player);
   player.hp=clamp(player.hp,1,player.maxHp);
+  applyMoralTuning(player);   // PR 9: recalcula a sintonia com o novo módulo
   toast((free?'SAQUEADO: ':'INSTALADO: ')+it.nm);
+  const _aff=getItemMoralAffinity(it.id);
+  if(_aff){
+    const _lv=moralAffinityLevel(calcMoralAffinityMatch(_aff,getMoralProfile()));
+    if(_lv.id==='attuned'||_lv.id==='harmonic')
+      toast('SINTONIA '+_lv.lab+' · O MÓDULO RESPONDE AO SEU PERFIL');
+  }
   floatText(player.x,player.y-32,it.nm,it.color);
   spawnRing(player.x,player.y,it.color,10,115,.6);sLvl();
 }
@@ -3991,7 +4260,7 @@ function rollShop(){
     isItemUnlocked(i.id));
   shopItems=lockI?[lockI]:[];
   while(shopItems.length<2&&ip.length){
-    const pick=pickWeighted(ip,wave);
+    const pick=pickWeightedMoral(ip,wave);   // PR 9: viés pequeno p/ sintonia
     shopItems.push(ip.splice(ip.indexOf(pick),1)[0]);
   }
   // ---- ARMAS AVANÇADAS ----
@@ -4137,7 +4406,8 @@ function renderShop(){
   for(const it of shopItems){
     const pr=priceItem(it),poor=player.coins<pr;
     mRow2.appendChild(mkCard(
-      '<span style="color:'+it.color+'">'+it.nm+'</span>'+rarTag(it.rar),it.desc,
+      '<span style="color:'+it.color+'">'+it.nm+'</span>'+rarTag(it.rar),
+      it.desc+moralAffinityTagHTML(it.id,true),
       '<div class="cprice">◈ '+pr+'</div>',poor,()=>{
         player.coins-=pr;giveItem(it,false);
         if(isLocked('item',it.id))shopLock=null;
@@ -4246,7 +4516,7 @@ function spawnBeacon(){
   let kind;
   if(evCount===0)kind='survivor';
   else if(evCount===1)kind='merchant';
-  else kind=EV_KINDS[randi(0,EV_KINDS.length-1)];
+  else kind=pickEventKind();   // PR 9: viés leve pelo perfil moral
   evCount++;
   beacon={x:ARENA.w/2+rand(-260,260),y:ARENA.h/2+rand(-170,170),r:36,kind,t:0,life:38,pulse:0};
   const L=EV_LABEL[kind];
@@ -8691,8 +8961,9 @@ function smBuildCheckpoint(reason,waveOverride){
       owned:player.owned.slice(),wi:player.wi,maxSlots:player.maxSlots,
       /* módulos e histórico (upgLog é só para exibição) */
       items:player.items.slice(),upgLog:player.upgLog.slice(),
-      /* modificadores PERMANENTES do pipeline (temporários ficam de fora) */
-      sm:(player.sm||[]).filter(m=>m&&m.dur==null&&!m.cond)
+      /* modificadores PERMANENTES do pipeline (temporários ficam de fora;
+         PR 9: sintonia moral é DERIVADA — recalculada no resume, nunca salva) */
+      sm:(player.sm||[]).filter(m=>m&&m.dur==null&&!m.cond&&!isMoralTuneModId(m.id))
         .map(m=>({id:m.id,stat:m.stat,type:m.type,value:m.value,
           stacks:m.stacks,label:m.label})),
       /* escolhas e efeitos permanentes da run (bandeiras cruas — o
@@ -8816,7 +9087,7 @@ function resumeRun(){
      o pipeline recalcula os derivados a partir da base imutável — os
      multiplicadores NÃO são reaplicados em cima dos valores finais */
   player.sm=(Array.isArray(q.sm)?q.sm:[])
-    .filter(m=>m&&m.id&&SM_STATS[m.stat])
+    .filter(m=>m&&m.id&&SM_STATS[m.stat]&&!isMoralTuneModId(m.id))
     .map(m=>({id:String(m.id),stat:m.stat,
       type:SM_ORDER.indexOf(m.type)>=0?m.type:'mult',
       value:num(m.value,1),stacks:m.stacks||'stack',
@@ -8870,6 +9141,7 @@ function resumeRun(){
   player.wraithRush=!!q.wraithRush||!!player.wraithRush;
   player.slowAura=num(q.slowAura,player.slowAura||1);
   smRefresh(player);
+  applyMoralTuning(player);   // PR 9: sintonia derivada — recalculada, nunca duplicada
   /* Ecos do slot com a confiança do checkpoint */
   echoes=echoQueue.map((d,i)=>makeEcho(d,i+1));
   if(Array.isArray(cp.echoes))
@@ -10801,7 +11073,12 @@ function renderCodexBody(){
         '<span class="cxtag" style="color:#ffd166">◈'+it.price+'</span>'+
         (it.syn?'<span class="cxtag" style="color:'+(STATUS_COLOR[it.syn]||'#8ff6ff')+
           '">SINERGIA</span>':'');
-      h+=cxCard(shopIcon(it.id,it.color),(lk?'🔒 ':'')+it.nm,tag,it.desc,null,
+      const affHtml=MORAL_AFFINITY[it.id]
+        ?moralAffinityTagHTML(it.id,false)+
+          '<div class="cmoral" style="letter-spacing:.05em;opacity:.75">'+
+          moralAffinityPhrase(it.id)+'</div>'
+        :'';
+      h+=cxCard(shopIcon(it.id,it.color),(lk?'🔒 ':'')+it.nm,tag,it.desc+affHtml,null,
         unlockBarHTML('i',it.id),lk);
     }
     h+='</div>';
@@ -10866,6 +11143,37 @@ function renderCodexBody(){
         x.d+'</div></div></div>';
     }
     h+='</div>';
+    /* ---- PR 9: OS TRÊS SENTIMENTOS · SINTONIA MORAL (explicação curta;
+       lore profunda de finais/facções pertence aos PRs futuros) ---- */
+    h+='<div class="tsec" style="margin:22px 0 12px">OS TRÊS SENTIMENTOS · SINTONIA MORAL</div>'+
+      '<div class="cxgrid">'+
+      '<div class="cxitem"><div class="cxinfo">'+
+        '<div class="cxnm" style="color:#7dffc4">COMPAIXÃO</div>'+
+        '<div class="cxlore" style="border-top:none;padding-top:7px">'+
+        'Preservar, proteger, cooperar, sacrificar-se. Não é bondade — é a recusa '+
+        'de deixar o ciclo consumir mais alguém. Módulos de proteção e recuperação '+
+        'respondem a este sentimento.</div></div></div>'+
+      '<div class="cxitem"><div class="cxinfo">'+
+        '<div class="cxnm" style="color:#ffd166">GANÂNCIA</div>'+
+        '<div class="cxlore" style="border-top:none;padding-top:7px">'+
+        'Acumular, otimizar, arriscar por recompensa. Não é maldade — é a aposta '+
+        'de que recursos suficientes compram uma saída. Módulos econômicos '+
+        'respondem a este sentimento.</div></div></div>'+
+      '<div class="cxitem"><div class="cxinfo">'+
+        '<div class="cxnm" style="color:#ff5c7a">VIOLÊNCIA</div>'+
+        '<div class="cxlore" style="border-top:none;padding-top:7px">'+
+        'Confrontar, destruir, dominar. Não é crueldade — é a convicção de que a '+
+        'fratura só entende força direta. Módulos ofensivos respondem a este '+
+        'sentimento.</div></div></div>'+
+      '<div class="cxitem"><div class="cxinfo">'+
+        '<div class="cxnm" style="color:#8ff6ff">SINTONIA</div>'+
+        '<div class="cxlore" style="border-top:none;padding-top:7px">'+
+        'Suas decisões moldam um perfil — e certos módulos entram em sintonia com '+
+        'ele, ganhando uma eficiência contextual discreta (DIVERGENTE · NEUTRA · '+
+        'AFIM · HARMÔNICA). Nenhum módulo é bloqueado por moralidade: sintonia é '+
+        'identidade, não prisão. As escolhas também abrem pequenas oportunidades: '+
+        'eventos e ofertas tendem a ecoar o que a sua run está se tornando.</div></div></div>'+
+      '</div>';
     /* ---- PR 8: leitura técnica dos Ecos desta memória ----
        Arquivo Ômega registra o COMPORTAMENTO observado na run de origem
        (identidade), não o relacionamento (PR 10) nem escolhas morais
@@ -12229,6 +12537,89 @@ const DEV={
   state(){
     return {DEV_MODE,IS_DEV_BUILD,devTainted,devPanelOpen,devInfoOn,
       version:ECHO_VERSION,wave,state,enemies:enemies.length};
+  },
+
+/* ------------------------ MORALITY 2.0 (PR 9) ----------------------- */
+  /* Define valores morais crus da run (contamina: devTaint). */
+  setMoral(c,g,v){
+    if(!devReady())return false;
+    const n=x=>clamp(Math.round(Number(x)||0),0,99);
+    moral.comp=n(c);moral.greed=n(g);moral.viol=n(v);
+    _lastTier={c:moralTier(moral.comp),g:moralTier(moral.greed),v:moralTier(moral.viol)};
+    applyMoral();applyMoralTuning(player);
+    devTaint();devLog('MORAL = C'+moral.comp+' / G'+moral.greed+' / V'+moral.viol);
+    hudAcc=1;updateHUD(true);
+    return getMoralProfile();
+  },
+  setMoralAxis(axis,v){
+    if(!devReady())return false;
+    if(MORAL_AXES.indexOf(axis)<0)return false;
+    const m={comp:moral.comp,greed:moral.greed,viol:moral.viol};
+    m[axis]=v;
+    return DEV.setMoral(m.comp,m.greed,m.viol);
+  },
+  moralPreset(id){
+    if(!devReady())return false;
+    const P={
+      compassion:[10,0,0],greed:[0,10,0],violence:[0,0,10],
+      balanced:[5,5,5],mix_cg:[7,7,1],mix_gv:[1,7,7],mix_cv:[7,1,7],
+      zero:[0,0,0]};
+    const p=P[id];
+    if(!p)return false;
+    devLog('PRESET MORAL: '+id.toUpperCase());
+    return DEV.setMoral(p[0],p[1],p[2]);
+  },
+  /* Força o recálculo completo do perfil + sintonia (inspeção). */
+  moralRecalc(){
+    if(!devReady())return false;
+    _moralProfCache=null;_moralProfKey='';
+    applyMoral();applyMoralTuning(player);
+    devTaint();devLog('MORAL RECALCULADA');
+    return getMoralProfile();
+  },
+  /* Inspetores — leitura pura, não contaminam a run. */
+  moralProfile(){
+    if(!DEV_MODE)return null;
+    return getMoralProfile();
+  },
+  moralItems(){
+    if(!DEV_MODE)return null;
+    const prof=getMoralProfile();
+    return ITEMS.map(it=>{
+      const aff=getItemMoralAffinity(it.id);
+      const match=calcMoralAffinityMatch(aff,prof);
+      return {id:it.id,nm:it.nm,owned:!!(player&&player.items.indexOf(it.id)>=0),
+        aff:aff||null,match:match==null?null:+match.toFixed(3),
+        level:moralAffinityLevel(match).lab};
+    });
+  },
+  moralItemDebug(id){
+    if(!DEV_MODE)return null;
+    const it=itemById(id);
+    if(!it)return null;
+    const prof=getMoralProfile();
+    const aff=getItemMoralAffinity(id);
+    const match=calcMoralAffinityMatch(aff,prof);
+    return {
+      id,nm:it.nm,baseEffect:it.desc,
+      aff:aff||null,
+      match:match==null?null:+match.toFixed(3),
+      tune:+moralTuneFactor(match).toFixed(3),
+      level:moralAffinityLevel(match).lab,
+      mods:moralTuneModsFor(id,prof).map(m=>({id:m.id,stat:m.stat,value:+m.value.toFixed(4)})),
+      active:!!(player&&player.items.indexOf(id)>=0),
+      shopWeight:+moralShopWeight(it).toFixed(3)
+    };
+  },
+  /* Simula uma escolha moral pelo MESMO caminho da produção (moralGain):
+     tiers, mEff, sintonia e feedback reagem de verdade. */
+  simulateMoralChoice(axis,amount){
+    if(!devReady())return false;
+    if(MORAL_AXES.indexOf(axis)<0)return false;
+    const a=clamp(Math.round(Number(amount)||1),1,10);
+    devTaint();devLog('ESCOLHA SIMULADA: '+MORAL_AXIS_LABEL[axis]+' +'+a);
+    moralGain(axis==='comp'?a:0,axis==='greed'?a:0,axis==='viol'?a:0);
+    return getMoralProfile();
   }
 };
 
@@ -12256,6 +12647,44 @@ function devStatInspectorHTML(stat){
   }
   if(!bd.lines.length)s+='<div class="row mod"><span>sem modificadores</span><span></span></div>';
   s+='<div class="row final"><span>FINAL</span><b>'+fmt(bd.final)+'</b></div></div>';
+  return s;
+}
+/* ---- MORAL INSPECTOR (PR 9) — perfil + sintonia dos módulos da run ---- */
+function devMoralInspectorHTML(){
+  const prof=getMoralProfile();
+  const f=x=>(Math.round(x*1000)/1000).toFixed(3).replace('.',',');
+  let s='<div class="insp">';
+  s+='<div class="row"><span>RAW C / G / V</span><b>'+prof.raw.comp+' / '+
+    prof.raw.greed+' / '+prof.raw.viol+'</b></div>';
+  s+='<div class="row"><span>NORMALIZED</span><b>C '+f(prof.normalized.comp)+
+    ' · G '+f(prof.normalized.greed)+' · V '+f(prof.normalized.viol)+'</b></div>';
+  s+='<div class="row final"><span>ESTADO</span><b>'+MORAL_STATE_LABEL[prof.state]+
+    (prof.dominant?' · '+MORAL_AXIS_LABEL[prof.dominant]:'')+
+    (prof.secondary?' / '+MORAL_AXIS_LABEL[prof.secondary]:'')+'</b></div>';
+  s+='<div class="row"><span>INTENSIDADE</span><b>'+f(prof.intensity)+
+    '</b></div>'+
+    '<div class="row"><span>BALANCED</span><b>'+(prof.balanced?'SIM':'NÃO')+'</b></div>';
+  if(player&&player.items.length){
+    for(const id of player.items){
+      const it=itemById(id);if(!it)continue;
+      const aff=getItemMoralAffinity(id);
+      if(!aff){
+        s+='<div class="row mod inactive"><span>'+it.nm+'</span><span class="val">NEUTRO</span></div>';
+        continue;
+      }
+      const match=calcMoralAffinityMatch(aff,prof);
+      const lv=moralAffinityLevel(match);
+      const mods=moralTuneModsFor(id,prof);
+      s+='<div class="row mod"><span>'+it.nm+' · C'+aff.comp+'/G'+aff.greed+'/V'+aff.viol+
+        '</span><span class="val" style="color:'+lv.c+'">'+lv.lab+' '+f(match)+'</span></div>';
+      for(const m of mods)
+        s+='<div class="row mod"><span>&nbsp;&nbsp;'+m.stat+'</span><span class="val">×'+
+          f(m.value)+'</span></div>';
+    }
+  }else{
+    s+='<div class="row mod"><span>sem módulos instalados</span><span></span></div>';
+  }
+  s+='</div>';
   return s;
 }
 function devRender(){
@@ -12365,6 +12794,28 @@ function devRender(){
   h+=devBtn('curse','CURSE (ORÁCULO)')+devBtn('statusall','APLICAR EM TODOS')+
     devBtn('clearstatus','LIMPAR STATUS','warn')+'</div>';
 
+  /* ---- MORALITY 2.0 (PR 9) ---- */
+  {
+    const mp=getMoralProfile();
+    h+='<h4>MORALITY 2.0 · '+MORAL_STATE_LABEL[mp.state]+
+      (mp.dominant?' · '+MORAL_AXIS_LABEL[mp.dominant]:'')+'</h4>'+
+      '<div class="dvrow">'+
+      '<input class="dvin" id="dev-mc" type="number" min="0" max="99" value="'+moral.comp+'" title="Compaixão">'+
+      '<input class="dvin" id="dev-mg" type="number" min="0" max="99" value="'+moral.greed+'" title="Ganância">'+
+      '<input class="dvin" id="dev-mv" type="number" min="0" max="99" value="'+moral.viol+'" title="Violência">'+
+      devBtn('msetall','SET C/G/V')+devBtn('mrecalc','RECALCULAR')+'</div>'+
+      '<div class="dvrow" style="margin-top:5px">'+
+      devBtn('mp:compassion','C 10/0/0')+devBtn('mp:greed','G 0/10/0')+
+      devBtn('mp:violence','V 0/0/10')+devBtn('mp:balanced','BAL 5/5/5')+'</div>'+
+      '<div class="dvrow" style="margin-top:5px">'+
+      devBtn('mp:mix_cg','MIX C/G')+devBtn('mp:mix_gv','MIX G/V')+
+      devBtn('mp:mix_cv','MIX C/V')+devBtn('mp:zero','ZERAR','warn')+'</div>'+
+      '<div class="dvrow" style="margin-top:5px">'+
+      devBtn('msimc','ESCOLHA +2 COMP')+devBtn('msimg','ESCOLHA +2 GANÂ')+
+      devBtn('msimv','ESCOLHA +2 VIOL')+devBtn('mitems','ITENS → LOG')+'</div>'+
+      devMoralInspectorHTML();
+  }
+
   h+='<h4>MÓDULOS / LOJA</h4><div class="dvrow">'+
     '<input class="dvin wide" id="dev-mod" placeholder="id do módulo">'+
     devBtn('grant','CONCEDER')+devBtn('listmod','LISTAR ATUAIS')+
@@ -12411,6 +12862,7 @@ function devCommand(c){
   if(c.indexOf('s:')===0)return DEV.applyStatus(c.slice(2),false);
   if(c.indexOf('mod:')===0)return DEV.grantModule(c.slice(4));
   if(c.indexOf('op:')===0)return DEV.setOperatorNextRun(c.slice(3));
+  if(c.indexOf('mp:')===0)return DEV.moralPreset(c.slice(3));
   switch(c){
     case 'pause':      return devSetPausePolicy(!devPausesGame);
     case 'info':       return DEV.toggleInfo();
@@ -12466,6 +12918,17 @@ function devCommand(c){
     case 'reroll':     return DEV.reroll();
     case 'reso':       return devLog('RESO '+JSON.stringify(DEV.resonanceDebug()));
     case 'bossdbg':    return devLog('BOSS '+JSON.stringify(DEV.bossDebug()));
+    case 'msetall':    return DEV.setMoral(devNum('dev-mc',0),devNum('dev-mg',0),devNum('dev-mv',0));
+    case 'mrecalc':    return DEV.moralRecalc();
+    case 'msimc':      return DEV.simulateMoralChoice('comp',2);
+    case 'msimg':      return DEV.simulateMoralChoice('greed',2);
+    case 'msimv':      return DEV.simulateMoralChoice('viol',2);
+    case 'mitems':{
+      const list=DEV.moralItems()||[];
+      devLog('SINTONIA: '+list.filter(x=>x.aff).map(x=>x.id+'='+x.level+
+        (x.match!=null?'('+x.match+')':'')).join(' · '));
+      return true;
+    }
     case 'statinsp':{
       const sel=document.getElementById('dev-stat');
       const st=sel&&sel.value&&SM_STATS[sel.value]?sel.value:'damage';
