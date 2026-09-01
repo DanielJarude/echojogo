@@ -156,6 +156,23 @@ próxima `startRun()` limpa.
 
 ---
 
+## 4.1 MORALITY 2.0 (PR 9)
+
+Seção própria no painel com o **Moral Inspector** (raw C/G/V, normalizado,
+estado, dominante/secundário, intensidade e a sintonia de cada módulo
+instalado, com os modificadores gerados).
+
+Comandos: `DEV.setMoral(c,g,v)` · `DEV.setMoralAxis(axis,v)` ·
+`DEV.moralPreset(id)` (presets `compassion / greed / violence / balanced /
+mix_cg / mix_gv / mix_cv / zero`) · `DEV.moralRecalc()` ·
+`DEV.simulateMoralChoice(axis,n)` — todos contaminam (`devTaint`).
+Inspetores de leitura pura (não contaminam): `DEV.moralProfile()` ·
+`DEV.moralItems()` · `DEV.moralItemDebug(id)`.
+
+Detalhes do sistema em `MORALITY_SYSTEM.md`.
+
+---
+
 ## 5. O que o DEV MODE **não** faz
 
 - não muda valores base em `CHARS`, `EDEFS`, `MINIBOSS`, `ITEMS` ou `UPGRADES`;
