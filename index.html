@@ -314,8 +314,9 @@
     color:rgba(140,175,195,.45);margin-top:16px;line-height:1.9;}
 
   /* ---------- seletor de operador na tela-título ---------- */
-  #ov-char{display:flex;gap:9px;margin-top:26px;flex-wrap:wrap;justify-content:center;
-    align-items:flex-start;}
+  /* grade 4 × 2 para os 8 operadores (VECTOR…PYRE / HARDEN…REVENANT) */
+  #ov-char{display:grid;grid-template-columns:repeat(4,96px);gap:9px;
+    margin-top:26px;justify-content:center;align-items:stretch;}
   .chpick{width:96px;padding:9px 6px;border:1px solid rgba(120,150,170,.24);
     background:rgba(6,14,24,.6);border-radius:3px;cursor:pointer;text-align:center;
     transition:all .14s;}
@@ -329,6 +330,7 @@
   .chpick.on .cn{color:#eaffff;}
   .chpick.lock{opacity:.34;filter:grayscale(.85);cursor:help;}
   .chpick.lock:hover{transform:none;}
+  @media(max-width:560px){#ov-char{grid-template-columns:repeat(2,96px);}}
 
   /* ---------- TOOLTIP ---------- */
   #tip{position:fixed;z-index:60;pointer-events:none;display:none;
@@ -411,6 +413,11 @@
     color:rgba(180,215,235,.75);background:rgba(70,224,255,.07);
     border:1px solid rgba(70,224,255,.16);padding:2px 7px;border-radius:2px;}
   .cxfx{font-family:Consolas,monospace;font-size:8.5px;letter-spacing:.16em;margin-top:7px;}
+  .cxlore{font-family:Consolas,monospace;font-size:9px;line-height:1.7;
+    color:#c9dce8;margin-top:8px;padding-top:7px;
+    border-top:1px solid rgba(70,224,255,.14);}
+  .cxlore b{color:#7dffc4;}
+  .cxlore .ql{color:#ffd166;font-style:italic;}
   .cxstart{font-family:Consolas,monospace;font-size:8px;letter-spacing:.2em;
     color:#7dffc4;border:1px solid rgba(125,255,196,.4);padding:2px 6px;
     border-radius:2px;margin-left:6px;}
@@ -1543,7 +1550,7 @@ function loadEchoes(){
 
 /* ---------------- fábricas ---------------- */
 /* =====================================================================
-   PERSONAGENS JOGÁVEIS — 5 operadores com stats, arsenal e paleta únicos
+   PERSONAGENS JOGÁVEIS — 8 operadores com stats, arsenal, palette e lore únicos
    ===================================================================== */
 const CHARS=[
  {id:'vector',nm:'VECTOR',role:'EQUILIBRADO',color:'#9ff3ff',
@@ -1558,6 +1565,13 @@ const CHARS=[
   perk:'Sem fraquezas. Ganha +1 reroll grátis em toda loja.',
   desc:'O operador padrão do protocolo. Estatísticas balanceadas e '+
        'um reroll extra por visita à Loja Temporal.',
+  title:'A ÂNCORA DE ESTABILIDADE',
+  lore:'Quando o Núcleo Ômega colapsou, tudo o que existia começou a '+
+       'divergir — cada linha temporal puxando para um lado. VECTOR foi '+
+       'a resposta da Fundação: um operador sem picos e sem abismos, '+
+       'calibrado para permanecer <b>idêntico a si mesmo</b> em qualquer '+
+       'ciclo. É o único cuja assinatura não se degrada entre fraturas.',
+  quote:'"Eu não sou o mais forte. Sou o que ainda está aqui."',
   apply:p=>{p.freeRerolls+=1;}},
 
  {id:'wraith',nm:'WRAITH',role:'ASSASSINO',color:'#c56bff',
@@ -1572,6 +1586,13 @@ const CHARS=[
   perk:'Dash quase instantâneo. +11% de dano por 2s após o dash.',
   desc:'Frágil e letal. Vive do reposicionamento constante: cada dash '+
        'deixa um rastro de fase que amplifica o próximo golpe.',
+  title:'A SOMBRA DE NEON',
+  lore:'Processa a realidade a uma taxa que o corpo humano não suporta — '+
+       'e por isso já não resta muito de humano nela. WRAITH enxerga o '+
+       'combate em quadros congelados e escolhe onde estar antes de a '+
+       'ameaça existir. Cada deslocamento queima um rastro de <b>neon '+
+       'roxo</b> que leva três segundos para o espaço reabsorver.',
+  quote:'"Vocês veem o presente. Eu já saí dele."',
   apply:p=>{p.wraithRush=true;}},
 
  {id:'bulwark',nm:'BULWARK',role:'FORTALEZA',color:'#8ff6ff',
@@ -1586,6 +1607,13 @@ const CHARS=[
   perk:'Recebe −22% de dano. Regenera 1.5 HP/s fora de combate.',
   desc:'Blindagem pesada e passo lento. Absorve punição que mataria '+
        'qualquer outro operador e se recompõe quando não é atingido.',
+  title:'A MURALHA AMBULANTE',
+  lore:'Blindagem cinética de dezesseis camadas, projetada não para vencer, '+
+       'mas para <b>não ceder</b>. BULWARK foi construído a partir dos '+
+       'destroços das comportas que seguraram a primeira onda do colapso. '+
+       'Cada placa que veste já falhou uma vez — e foi refundida para não '+
+       'falhar de novo. Ele avança devagar porque nada consegue empurrá-lo.',
+  quote:'"Passa por mim. Eu espero."',
   apply:p=>{p.dmgTakenMul*=.78;p.regen=1.5;}},
 
  {id:'pyre',nm:'PYRE',role:'INCENDIÁRIO',color:'#ff7a2f',
@@ -1600,7 +1628,58 @@ const CHARS=[
   perk:'Status +45% de potência. Inimigos que morrem em chamas explodem.',
   desc:'Especialista em dano contínuo. Transforma multidões em '+
        'reações em cadeia de fogo que se alimentam sozinhas.',
+  title:'A CHAMA PURIFICADORA',
+  lore:'Carrega reatores térmicos que jamais deveriam ter saído do '+
+       'confinamento. PYRE acredita que uma linha temporal contaminada '+
+       'não se conserta — se <b>queima</b>. O fogo quântico que ela libera '+
+       'não consome matéria: consome a probabilidade daquele futuro ter '+
+       'existido. O que arde por sua mão nunca esteve lá.',
+  quote:'"Não estou destruindo. Estou corrigindo."',
   apply:p=>{p.stBoost=(p.stBoost||1)*1.45;p.burnSpread=true;}},
+
+ {id:'warden',nm:'HARDEN',role:'TÁTICO',color:'#39d98a',
+  pal:{body:'#2c6b4f',dark:'#0f2c20',edge:'#39d98a',glow:'#7dffc4',
+       visor:'#d9fff0',head:'#358060'},
+  hp:112,speed:300,dmg:.94,rate:1,crit:.06,dashCd:2.0,r:15,slots:4,
+  /* ESCUDO alto e regen mediana — linha de frente: segura dano enquanto os
+     campos de status fazem o trabalho */
+  shieldMax:42,shieldRegen:5.5,shieldDelay:3.2,shieldStart:1,
+  guns:['acid','glaive'],
+  sp:{id:'turret',nm:'TORRE DE CONTENÇÃO',cd:17,
+      desc:'Implanta uma torre autônoma que atira por 12s.'},
+  perk:'Status duram +40%. Kits médicos curam o dobro.',
+  desc:'Controlador de área. Prende inimigos em campos de status e '+
+       'sustenta a linha com estruturas autônomas.',
+  title:'O TABULEIRO QUADRIDIMENSIONAL',
+  lore:'Não vê inimigos: vê <b>vetores de intenção</b> desdobrados no tempo. '+
+       'HARDEN foi estrategista de contenção antes do colapso e nunca '+
+       'desligou o hábito — para ele, a arena é um tabuleiro onde cada '+
+       'peça já revelou o próximo movimento. Ele não corre atrás do '+
+       'combate; posiciona o combate onde precisa que ele aconteça.',
+  quote:'"Você entrou no espaço que eu escolhi para você."',
+  apply:p=>{p.stDurMul=(p.stDurMul||1)*1.40;p.medBoost=2;}},
+
+ {id:'nomad',nm:'NÔMADE',role:'MERCENÁRIO',color:'#ffd166',
+  pal:{body:'#7a5f16',dark:'#33270a',edge:'#ffd166',glow:'#ffe9a8',
+       visor:'#fff6d9',head:'#8f7220'},
+  hp:92,speed:352,dmg:1.05,rate:1.05,crit:.09,dashCd:1.75,r:14,slots:5,
+  /* ESCUDO moderado — mercenário: paga para não tomar dano, não para durar */
+  shieldMax:26,shieldRegen:5.2,shieldDelay:2.4,shieldStart:1,
+  guns:['smg','katana'],
+  sp:{id:'cache',nm:'CACHE DE SUPRIMENTOS',cd:20,
+      desc:'Invoca caixa com créditos, cura e um upgrade aleatório.'},
+  perk:'+45% de créditos. Loja custa 15% menos. 5 slots de arma.',
+  desc:'Sobrevive pelo comércio. Acumula recursos rápido e carrega '+
+       'o maior arsenal do protocolo.',
+  title:'O VAGANTE DAS ZONAS MORTAS',
+  lore:'Não jura lealdade a Fundação nenhuma. O NÔMADE cruza as zonas '+
+       'mortas entre ciclos negociando sucata, informação e cadáveres de '+
+       'tecnologia — e sempre sai com mais do que entrou. Para ele o '+
+       'colapso do Ômega não foi tragédia: foi a <b>maior liquidação da '+
+       'história</b>. Carrega o arsenal mais variado porque nunca recusa '+
+       'um negócio.',
+  quote:'"O mundo acabou. Alguém tem que lucrar com isso."',
+  apply:p=>{p.coinMul*=1.45;p.shopPersonal=.85;}},
 
  {id:'echo0',nm:'ECHO-0',role:'RESSONANTE',color:'#ff4df0',
   pal:{body:'#7a2470',dark:'#2e0b2b',edge:'#ff4df0',glow:'#ff9df7',
@@ -1614,7 +1693,38 @@ const CHARS=[
   perk:'Ecos +60% de dano e vida. Começa com +60 créditos.',
   desc:'O protótipo que gerou o protocolo. Sozinho é fraco, mas '+
        'transforma suas vidas passadas em uma força devastadora.',
-  apply:p=>{p.echoBoost+=.60;p.coins+=60;}}
+  title:'O PONTO FOCAL DA ANOMALIA',
+  lore:'Estava a nove metros do Núcleo Ômega quando ele cedeu. ECHO-0 não '+
+       'sobreviveu ao colapso — foi <b>impresso</b> por ele. Ao redor de si '+
+       'a gravidade se curva e o espaço guarda memórias de futuros que '+
+       'nunca chegaram a acontecer. É o primeiro Eco de todos, e por isso '+
+       'os outros o obedecem sem hesitar.',
+  quote:'"Eu me lembro de morrer. Todas as vezes."',
+  apply:p=>{p.echoBoost+=.60;p.coins+=60;}},
+
+ {id:'revenant',nm:'REVENANT',role:'CEIFADOR',color:'#a8ff3d',
+  pal:{body:'#3f6b16',dark:'#16290a',edge:'#a8ff3d',glow:'#c9ff7a',
+       visor:'#eaffd9',head:'#4d8020'},
+  hp:66,speed:368,dmg:1.30,rate:1,crit:.11,dashCd:1.6,r:13,slots:3,
+  /* ESCUDO mínimo com regeneração veloz — risco/recompensa: quem vive
+     matando nunca sente falta de blindagem */
+  shieldMax:14,shieldRegen:8.5,shieldDelay:1.4,shieldStart:1,
+  guns:['scythe','rail'],
+  sp:{id:'harvest',nm:'COLHEITA MACABRA',cd:19,
+      desc:'Executa instantaneamente todos os inimigos abaixo de 30% '+
+           'de vida em 380px, curando por cada abate.'},
+  perk:'Cada abate cura 3 HP e dá +1.5% de dano até o fim da onda. '+
+       'Vida máxima cai 8% a cada onda vencida.',
+  desc:'Sustenta-se apenas matando. Frágil e faminto: quanto mais '+
+       'lento você limpa a arena, mais perto do colapso ele fica.',
+  title:'A ENTROPIA FEITA MÁQUINA',
+  lore:'Ninguém o construiu. REVENANT se <b>montou sozinho</b> nas zonas '+
+       'esquecidas, a partir de operadores que o ciclo já havia descartado. '+
+       'Não persegue vitória — persegue energia, porque é a única coisa que '+
+       'adia seu próprio desligamento. A cada onda superada, um pouco mais '+
+       'dele se apaga. Ele sabe disso. Continua colhendo.',
+  quote:'"Tudo termina. Eu só chego antes."',
+  apply:p=>{p.harvestHeal=3;p.harvestStack=.015;p.decayPerWave=.08;}}
 ];
 /* =====================================================================
    SISTEMA DE PROGRESSÃO — metas que desbloqueiam armas e operadores
@@ -1704,13 +1814,19 @@ const UNLOCKS={
              txt:'Alcance a onda 15',      cur:()=>prog.best,max:15},
   i_entropia:{t:'i',id:'entropia',need:()=>prog.coins>=6000,
              txt:'Acumule 6000 créditos',  cur:()=>prog.coins,max:6000},
-  /* ---- OPERADORES (2 iniciais + 3 a desbloquear) ---- */
+  /* ---- OPERADORES (2 iniciais + 6 a desbloquear) ---- */
   c_bulwark :{t:'c',id:'bulwark', need:()=>prog.runs>=5,
               txt:'Complete 5 runs',        cur:()=>prog.runs,max:5},
   c_pyre    :{t:'c',id:'pyre',    need:()=>prog.status>=800,
               txt:'Aplique 800 efeitos de status',cur:()=>prog.status,max:800},
   c_echo0   :{t:'c',id:'echo0',   need:()=>prog.wins>=1,
-              txt:'Derrote O Paradoxo',     cur:()=>prog.wins,max:1}
+              txt:'Derrote O Paradoxo',     cur:()=>prog.wins,max:1},
+  c_warden  :{t:'c',id:'warden',  need:()=>prog.status>=1500,
+              txt:'Aplique 1500 efeitos de status',cur:()=>prog.status,max:1500},
+  c_nomad   :{t:'c',id:'nomad',   need:()=>prog.coins>=10000,
+              txt:'Acumule 10000 créditos', cur:()=>prog.coins,max:10000},
+  c_revenant:{t:'c',id:'revenant',need:()=>prog.kills>=2000,
+              txt:'Elimine 2000 inimigos',  cur:()=>prog.kills,max:2000}
 };
 /* itens liberados desde o início */
 const BASE_WEAPONS=['plasma','blade','shotgun','orb','flamer','smg',
@@ -1780,9 +1896,23 @@ function flushUnlocks(){
   if(typeof refreshTitleChar==='function')refreshTitleChar();
   if(unlockQueue.length)setTimeout(flushUnlocks,2600);
 }
-const CHAR_KEY='echoChar.v1';
+/* v2: passou a guardar o índice no novo CHARS de 8 operadores.
+   Migração 1x do save antigo (5 operadores): 0..3 ficam, 4 (ECHO-0) → 6. */
+const CHAR_KEY='echoChar.v2';
+const CHAR_KEY_OLD='echoChar.v1';
+const CHAR_LEGACY_IDX=[0,1,2,3,6];   // índice do save v1 → índice em CHARS
 let charSel=0;
-try{const _c=localStorage.getItem(CHAR_KEY);if(_c!==null)charSel=clamp(_c|0,0,CHARS.length-1);}catch(e){}
+try{
+  let _c=localStorage.getItem(CHAR_KEY);
+  if(_c===null){
+    const _o=localStorage.getItem(CHAR_KEY_OLD);
+    if(_o!==null){
+      const _m=CHAR_LEGACY_IDX[_o|0];
+      charSel=clamp(_m==null?0:_m,0,CHARS.length-1);
+      localStorage.setItem(CHAR_KEY,String(charSel));
+    }
+  }else charSel=clamp(_c|0,0,CHARS.length-1);
+}catch(e){}
 function setChar(i){
   charSel=clamp(i,0,CHARS.length-1);
   try{localStorage.setItem(CHAR_KEY,String(charSel));}catch(e){}
@@ -2321,7 +2451,23 @@ const ITEMS=[
 
  {id:'espinho',nm:'COROA DE ESPINHOS',desc:'REFLETE 35% DO DANO DE CONTATO · +10% DANO RECEBIDO',
   price:33,color:'#ff5c7a',
-  apply:p=>{p.thorns=(p.thorns||0)+.35;p.dmgTakenMul*=1.10;}}
+  apply:p=>{p.thorns=(p.thorns||0)+.35;p.dmgTakenMul*=1.10;}},
+
+ {id:'su_vampiro',nm:'PRESAS DE VÁCUO',rar:2,
+  desc:'VAMPIRISMO +9% · +20% DE CURA RECEBIDA',
+  price:42,color:'#ff3d68',
+  apply:p=>{p.globalLifesteal=(p.globalLifesteal||0)+.09;
+    p.medBoost=(p.medBoost||1)*1.20;}},
+
+ {id:'su_imante',nm:'CAMPO MAGNÉTICO AMPLO',rar:1,
+  desc:'RAIO DE COLETA +120% · ITENS VOAM MAIS RÁPIDO ATÉ VOCÊ',
+  price:24,color:'#c9a9ff',
+  apply:p=>{p.pickupR*=2.20;p.pickupSpd=(p.pickupSpd||1)*1.5;}},
+
+ {id:'su_regen',nm:'TECIDO AUTORREPARADOR',rar:2,
+  desc:'REGENERA 2.2 HP/s FORA DE COMBATE · +25 DE VIDA MÁXIMA',
+  price:40,color:'#7dffc4',
+  apply:p=>{p.regen=(p.regen||0)+2.2;p.maxHp+=25;p.hp+=25;}}
 ];
 /* raridade dos módulos derivada do preço (mantém o catálogo enxuto) */
 (function assignItemRarity(){
@@ -2429,7 +2575,7 @@ function rarTag(r){
     '66;background:'+R.c+'14">'+R.nm+'</span>';
 }
 const repairCost=()=>Math.max(1,Math.round(22*Math.pow(1.5,player.repairs)*mEff.upgMul));
-const _mk=()=>((player&&player.markedUp)||1);   // marca do Croupiê
+const _mk=()=>((player&&player.markedUp)||1)*((player&&player.shopPersonal)||1);   // marca do Croupiê · desconto de loja do NÔMADE
 const priceUpg=u=>Math.max(1,Math.round(u.price*mEff.shopMul*mEff.upgMul*_mk()));
 const priceItem=i=>Math.max(1,Math.round(i.price*mEff.shopMul*_mk()));
 /* multiplicador de potência aplicado a upgrades/itens conforme a raridade */
@@ -3759,8 +3905,29 @@ function closeEvent(){
 
 /* --------------- ALIADOS / COLETÁVEIS / CENÁRIO --------------- */
 function updateAllies(dt){
-  for(const a of allies){
+  for(let ai=allies.length-1;ai>=0;ai--){
+    const a=allies[ai];
     a.t+=dt;
+    if(a.turret){          // TORRE DE CONTENÇÃO (HARDEN) — fixa, fogo autônomo
+      a.life-=dt;
+      if(a.life<=0){
+        spawnShards(a.x,a.y,'#39d98a',10,5);
+        allies.splice(ai,1);continue;
+      }
+      a.fireT=(a.fireT||0)-dt;
+      const tg=nearestEnemy(a.x,a.y,460);
+      if(tg&&a.fireT<=0){
+        a.fireT=.34;
+        const ang=Math.atan2(tg.y-a.y,tg.x-a.x);
+        projectiles.push({x:a.x+Math.cos(ang)*15,y:a.y+Math.sin(ang)*15,
+          vx:Math.cos(ang)*820,vy:Math.sin(ang)*820,r:3.4,
+          dmg:11+wave*1.4,life:1.3,type:'plasma',team:'ally',
+          color:'#39d98a',aoe:0,pierce:0,crit:false,hits:null,
+          owner:a,def:null,dist:0,maxDist:470});
+        AUDIO.tone(rand(700,780),.03,'square',.009,-200);
+      }
+      continue;
+    }
     const dx=player.x-a.x,dy=player.y-a.y,d=Math.hypot(dx,dy)||1;
     if(d>95){a.vx+=dx/d*950*dt;a.vy+=dy/d*950*dt;}
     a.vx*=Math.pow(.02,dt);a.vy*=Math.pow(.02,dt);
@@ -3794,15 +3961,17 @@ function updatePickups(dt){
     const o=pickups[i];o.t+=dt;
     o.vx*=Math.pow(.04,dt);o.vy*=Math.pow(.04,dt);
     const dx=player.x-o.x,dy=player.y-o.y,d=Math.hypot(dx,dy)||1;
-    if(d<player.pickupR){o.vx+=dx/d*1500*dt;o.vy+=dy/d*1500*dt;}
+    if(d<player.pickupR){o.vx+=dx/d*1500*(player.pickupSpd||1)*dt;
+      o.vy+=dy/d*1500*(player.pickupSpd||1)*dt;}   // CAMPO MAGNÉTICO AMPLO
     o.x+=o.vx*dt;o.y+=o.vy*dt;
     if(d<28){
       pickups.splice(i,1);
       if(o.type==='coin'){
         player.coins+=o.v;sXp();spawnParticles(o.x,o.y,'#ffd166',3,130,.2,2);
       }else{
-        player.hp=Math.min(player.maxHp,player.hp+o.v);
-        floatText(o.x,o.y-12,'+'+o.v+' HP','#7dffc4');
+        const heal=o.v*(player.medBoost||1);   // HARDEN: kits curam o dobro
+        player.hp=Math.min(player.maxHp,player.hp+heal);
+        floatText(o.x,o.y-12,'+'+Math.round(heal)+' HP','#7dffc4');
         spawnRing(o.x,o.y,'#7dffc4',5,42,.35);sLvl();
       }
     }
@@ -3824,6 +3993,28 @@ function drawWorldExtras(){
   }
   for(const a of allies){
     if(!inView(a.x,a.y,48))continue;
+    // TORRE DE CONTENÇÃO (HARDEN) — base fixa com cano orientado ao alvo
+    if(a.turret){
+      const tg=nearestEnemy(a.x,a.y,460),ang=tg?Math.atan2(tg.y-a.y,tg.x-a.x):a.t*.6;
+      ctx.save();ctx.translate(a.x,a.y);
+      ctx.shadowColor='#39d98a';ctx.shadowBlur=12;
+      ctx.fillStyle='#0f2c20';ctx.strokeStyle='#39d98a';ctx.lineWidth=1.4;
+      ctx.beginPath();ctx.arc(0,0,a.r,0,TAU);ctx.fill();ctx.stroke();
+      ctx.save();ctx.rotate(ang);
+      ctx.fillStyle='#2c6b4f';
+      ctx.fillRect(0,-3.4,a.r+9,6.8);
+      ctx.fillStyle='#7dffc4';ctx.fillRect(a.r+3,-2,a.r-6,4);
+      ctx.restore();
+      ctx.fillStyle='#39d98a';
+      ctx.beginPath();ctx.arc(0,0,4.6,0,TAU);ctx.fill();
+      ctx.shadowBlur=0;
+      const pl=Math.max(0,a.life||0);
+      ctx.fillStyle='rgba(125,255,196,.75)';
+      ctx.font='8px Consolas,monospace';ctx.textAlign='center';
+      ctx.fillText('TORRE · '+Math.ceil(pl)+'s',0,-a.r-9);
+      ctx.restore();
+      continue;
+    }
     // sobrevivente curado: médico humanoide com maleta luminosa
     const fa=Math.atan2(player.y-a.y,player.x-a.x);
     const mv=clamp(Math.hypot(a.vx,a.vy)/230,0,1);
@@ -4455,6 +4646,68 @@ function trySpecial(){
       AUDIO.boom();AUDIO.bossRoar();
       break;
     }
+    case 'harvest':{
+      // REVENANT: executa alvos enfraquecidos e converte em cura
+      const R=380*(player.aoeMul||1);
+      let reaped=0;
+      spawnRing(player.x,player.y,'#a8ff3d',16,R,.85);
+      spawnShards(player.x,player.y,'#a8ff3d',20,7);
+      const prev=curAttacker;curAttacker=player;
+      for(const en of enemies){
+        if(en.dead||en.spawnT>0)continue;
+        if(en.type==='boss'||en.type==='miniboss'){
+          damageEnemy(en,90+wave*8,player.x,player.y,true);
+          continue;
+        }
+        if(dist2(en.x,en.y,player.x,player.y)>R*R)continue;
+        if(en.hp<=en.maxHp*.30){
+          arcs.push({x1:player.x,y1:player.y,x2:en.x,y2:en.y,
+            t:0,life:.22,color:'#a8ff3d'});
+          damageEnemy(en,en.hp+50,player.x,player.y,true);
+          reaped++;
+        }else damageEnemy(en,40+wave*4,player.x,player.y,false);
+      }
+      curAttacker=prev;
+      if(reaped){
+        const heal=reaped*8;
+        player.hp=Math.min(player.maxHp,player.hp+heal);
+        floatText(player.x,player.y-34,'+'+heal+' HP · '+reaped+' COLHIDOS','#a8ff3d');
+      }
+      banner('COLHEITA MACABRA',reaped?reaped+' EXECUÇÕES':'NENHUM ALVO MADURO');
+      shake=Math.max(shake,14);aberr=Math.max(aberr,.7);
+      AUDIO.boom();AUDIO.tone(160,.5,'sawtooth',.05,-70);
+      break;
+    }
+    case 'turret':{
+      // HARDEN: torre autônoma que atira sozinha
+      allies.push({x:player.x+Math.cos(player.aim)*54,
+        y:player.y+Math.sin(player.aim)*54,
+        vx:0,vy:0,r:14,dropT:99,t:0,fighter:false,turret:true,life:12});
+      spawnRing(player.x,player.y,'#39d98a',10,150,.7);
+      banner('TORRE IMPLANTADA','12s DE FOGO AUTÔNOMO');
+      AUDIO.levelUp();
+      break;
+    }
+    case 'cache':{
+      // NÔMADE: caixa de suprimentos
+      const c2=Math.round(120*mEff.coinMul*player.coinMul);
+      player.coins+=c2;
+      player.hp=Math.min(player.maxHp,player.hp+35);
+      const pool=UPGRADES.filter(u=>isUpgUnlocked(u.id));
+      if(pool.length){
+        const u=pool[randi(0,pool.length-1)];
+        u.apply(player);player.upgLog.push(u.nm);
+        floatText(player.x,player.y-46,u.nm,'#bffbff');
+      }
+      for(let i=0;i<3;i++)pickups.push({type:'med',
+        x:player.x+rand(-70,70),y:player.y+rand(-70,70),
+        vx:0,vy:0,v:18,t:0});
+      spawnRing(player.x,player.y,'#ffd166',12,190,.8);
+      spawnShards(player.x,player.y,'#ffd166',18,6);
+      banner('CACHE ABERTO','◈'+c2+' · +35 HP · 1 UPGRADE');
+      AUDIO.victory();
+      break;
+    }
     case 'overload':{
       player.spT=7;player.spKind='overload';
       for(const e of echoes){
@@ -4619,6 +4872,13 @@ function killEnemy(e){
     player.waveKills=(player.waveKills||0)+1;              // MOTOR DE ENTROPIA
     if(player.killDash&&player.dashCd>0)                   // AMPULHETA QUEBRADA
       player.dashCd=Math.max(0,player.dashCd-player.dashCdMax*player.killDash);
+    // REVENANT: cada abate cura e acumula dano até o fim da onda
+    if(player.harvestHeal&&player.hp>0){
+      player.hp=Math.min(player.maxHp,player.hp+player.harvestHeal);
+      player.harvStacks=(player.harvStacks||0)+1;
+      if(Math.random()<.22)
+        spawnParticles(player.x,player.y,'#a8ff3d',2,110,.3,2);
+    }
   }
   // PIRÓSTASE: alvo em chamas propaga fogo ao morrer
   if(e.st&&e.st.burnT>0&&e.st.burnSrc&&e.st.burnSrc.burnSpread){
@@ -5257,7 +5517,18 @@ function drawMiniBoss(e){
 }
 function spawnWave(n){
   waveCleared=false;
-  if(player)player.waveKills=0;      // ENTROPIA zera a cada onda
+  if(player){
+    player.waveKills=0;              // ENTROPIA zera a cada onda
+    player.harvStacks=0;             // REVENANT perde o acúmulo
+    // REVENANT: a fome cobra seu preço a cada onda superada
+    if(player.decayPerWave&&n>1){
+      const lost=Math.round(player.maxHp*player.decayPerWave);
+      player.maxHp=Math.max(28,player.maxHp-lost);
+      player.hp=Math.min(player.hp,player.maxHp);
+      floatText(player.x,player.y-30,'−'+lost+' VIDA MÁX.','#a8ff3d');
+      toast('A FOME CONSOME · −'+lost+' DE VIDA MÁXIMA');
+    }
+  }
   if(n>=MAX_WAVE){spawnBoss();return;}
   const c=waveComp(n),list=[];
   for(let i=0;i<c.chaser;i++)list.push('chaser');
@@ -6034,6 +6305,8 @@ function updatePlayer(dt){
     if(p.overheat)mul*=1+.08*(p.heat||0);                // REATOR
     if(p.lowHpBonus&&p.hp<p.maxHp*.4)mul*=1+p.lowHpBonus;// VINGANÇA
     if(p.entropy)mul*=1+Math.min(.60,(p.waveKills||0)*.01);// ENTROPIA
+    if(p.harvestStack)                                     // REVENANT
+      mul*=1+Math.min(.75,(p.harvStacks||0)*p.harvestStack);
     fireWeaponFrom(p,wdef,'ally',mul);
     if(p.doubleTap&&Math.random()<p.doubleTap)           // PRISMA FRATURADO
       fireWeaponFrom(p,wdef,'ally',mul);
@@ -8062,6 +8335,8 @@ function renderCodexBody(){
           '55;background:'+C.color+'12">'+C.role+'</span>'+
         (sel&&!lk?'<span class="cxstart">SELECIONADO</span>':'')+'</div>'+
         '<div class="cxds">'+C.desc+'</div>'+
+        (C.title?'<div class="cxlore"><b>✧ '+C.title+'</b><br>'+
+          '<span class="ql">'+C.quote+'</span><br>'+C.lore+'</div>':'')+
         '<div class="cxstats">';
       for(const s of stats)h+='<span class="cxstat">'+s+'</span>';
       h+='</div>'+
@@ -8560,7 +8835,10 @@ function charTipHTML(C){
     (C.sp?'<div class="tperk" style="color:#ffd166">★ [E] '+C.sp.nm+
       ' ('+C.sp.cd+'s)<br>'+C.sp.desc+'</div>':'')+
     '<div class="tperk" style="color:'+C.color+'">◆ '+C.perk+'</div>'+
-    '<div class="tperk" style="color:rgba(160,200,220,.75)">⌖ '+guns+'</div>';
+    '<div class="tperk" style="color:rgba(160,200,220,.75)">⌖ '+guns+'</div>'+
+    (C.title?'<div class="tperk" style="color:rgba(255,209,102,.9)">✧ '+C.title+'</div>':'')+
+    (C.quote?'<div class="tperk" style="color:rgba(160,200,220,.75);font-style:italic">'+
+      C.quote+'</div>':'');
   h+=lockLineFor('c',C.id);
   return h;
 }
