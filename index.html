@@ -4046,23 +4046,283 @@ function pickEventKind(){
   return EV_KINDS[EV_KINDS.length-1];
 }
 
-/* ---- DISSONÂNCIA MORAL CRÍTICA: confiança 0% → Echo hostil por 12s ---- */
-function enterDissonance(e){
-  e.hostile=true;e.hostileT=12;e.trust=0;
+/* ---- DISSONÂNCIA MORAL CRÍTICA (PR 10 — agora ruptura em etapas) ---- */
+/* =====================================================================
+   DISSONÂNCIA 2.0 — RUPTURA REAL ENTRE PLAYER E ECHO
+   ---------------------------------------------------------------------
+   ANTES: `hostile=true` por 12s, sorteado por trust 0, sem aviso e sem
+   agência — "deu azar e meu pet ficou vermelho".
+   AGORA: máquina de estados EXPLÍCITA e única fonte de verdade
+     ESTÁVEL → INSTÁVEL → FRATURANDO → DISSONANTE → REINTEGRANDO → GRAÇA
+   · a pressão é construída por rejeições, divergência crônica e
+     desconfiança — o jogador VÊ chegando (§40);
+   · a telegrafia dá 1.2s de ruptura sem dano injusto (§43);
+   · o Echo hostil é uma versão CORROMPIDA do companheiro: mantém
+     personalidade, spacing e arma de origem (§44/§45);
+   · existe CONTENÇÃO: dano do jogador consome a integridade da ruptura e
+     encurta a Dissonância — sem gerar XP, créditos, abate ou loot (§52);
+   · o retorno é uma transição (colapso → reintegração), nunca um flip;
+   · nada disso apaga o Echo: a contenção substitui a destruição (§49).
+   ===================================================================== */
+const DIS={
+  telegraph:1.2,      // FRATURANDO: aviso antes da hostilidade real
+  hostileDur:12,      // teto de duração (idêntico ao legado)
+  recoverDur:1.4,     // REINTEGRANDO: colapso visual + volta
+  graceDur:26,        // GRAÇA: nenhuma nova Dissonância neste período
+  integMax:100,       // integridade da ruptura (medidor de contenção)
+  containMul:1.0,     // dano do jogador → integridade consumida
+  containPerHit:14,   // teto por acerto (evita burst instantâneo)
+  integDrain:1.6,     // decaimento passivo por segundo
+  cleanBonus:2.0,     // multiplicador do decaimento se o jogador não apanha
+  cleanAfter:3.0,     // segundos sem dano para valer o bônus
+  trustFloor:34,      // piso histórico de confiança pós-Dissonância
+  dmgMul:.9           // dano hostil (idêntico ao legado)
+};
+const DIS_LABEL={stable:'ESTÁVEL',unstable:'INSTÁVEL',fracturing:'FRATURANDO',
+  hostile:'DISSONANTE',recovering:'REINTEGRANDO',cooldown:'EM GRAÇA'};
+const DIS_COLOR={stable:'#8ff6ff',unstable:'#ffd166',fracturing:'#ff9d3c',
+  hostile:'#ff2f5e',recovering:'#8ff6ff',cooldown:'#7dffc4'};
+/* perfil hostil por personalidade: o Echo rebelado luta como lutava.
+   Sem personalidade → exatamente os números do sistema antigo. */
+const HOSTILE_PROFILE={
+  aggressive: {want:118,spd:292,rate:1.05},
+  cautious:   {want:300,spd:228,rate:1.50},
+  precise:    {want:246,spd:240,rate:1.34},
+  impulsive:  {want:150,spd:300,rate:1.10},
+  resilient:  {want:196,spd:242,rate:1.26},
+  opportunist:{want:172,spd:266,rate:1.20},
+  versatile:  {want:190,spd:250,rate:1.25},
+  fragmented: {want:206,spd:236,rate:1.46}
+};
+function hostileProfile(e){
+  const pid=e&&(e.pers?e.pers.id:(e.ps&&e.ps.id));
+  return HOSTILE_PROFILE[pid]||{want:190,spd:250,rate:1.25};
+}
+function echoDisLabel(e){return DIS_LABEL[(e&&e.dis&&e.dis.st)||'stable'];}
+/* percentual de pressão relativo ao limiar REAL do Echo (0..1) */
+function relPressurePct(e){
+  if(!e||!e.dis)return 0;
+  return clamp(e.dis.p/Math.max(1,relFractureAt(e)),0,1);
+}
+/* ajuste duro de confiança com motivo (resets/pisos/restore) */
+function setEchoTrust(e,v,reason){
+  if(!e||e.trust==null)return 0;
+  const before=e.trust;
+  e.trust=clamp(+v||0,0,100);
+  if(e.rel)e.rel.lastTrust={d:Math.round((e.trust-before)*100)/100,r:String(reason||'set')};
+  return e.trust;
+}
+/* -------- transições: TODA mudança de estado passa por aqui -------- */
+function echoSetDis(e,st){
+  if(!e)return false;
+  echoRelInit(e);
+  const d=e.dis;
+  if(d.st===st)return false;
+  d.st=st;d.fx=1;d.t=0;
+  if(st==='unstable'){
+    if(!d.warned){
+      d.warned=1;
+      toast('ECHO·0'+e.slot+' — SINAL INSTÁVEL');
+      const l=pickRelationLine(e,{type:'reject',reason:'moral_violence',
+        state:echoRelState(e).id,event:'trustLow'});
+      echoSpeak(e,l.txt,'#ffd166');
+      spawnRing(e.x,e.y,'#ffd166',6,70,.4);
+    }
+  }else if(st==='fracturing'){
+    d.t=DIS.telegraph;
+    e.roleT=0;e.shieldPot=0;e.roleFx=0;      // papel suspenso já na telegrafia
+    e.fireTimer=Math.max(e.fireTimer,DIS.telegraph);
+    e.beamT=0;e.beamRamp=1;e.beamTarget=null;
+    banner('FRATURA IMINENTE','ECHO·0'+e.slot+' ESTÁ SE DESLIGANDO DE VOCÊ');
+    toast('ECHO·0'+e.slot+' — FRATURANDO');
+    shake=Math.max(shake,7);aberr=Math.max(aberr,.55);
+    spawnRing(e.x,e.y,'#ff9d3c',10,150,.7);
+    spawnShards(e.x,e.y,'#ff9d3c',12,5);
+    AUDIO.tone(150,.8,'sawtooth',.06,-30);
+    AUDIO.noise(.6,.04,520,.7,'lowpass');
+  }else if(st==='recovering'){
+    d.t=DIS.recoverDur;
+    if(e.trust<DIS.trustFloor)setEchoTrust(e,DIS.trustFloor,'dissonance_floor');
+    e.fireTimer=DIS.recoverDur;e.beamT=0;e.beamRamp=1;e.beamTarget=null;
+    e.recoil=0;e.erratic=0;e.glitchT=0;e.glitchAmp=0;
+    spawnRing(e.x,e.y,'#8ff6ff',10,180,.8);
+    spawnParticles(e.x,e.y,'#eaffff',22,340,.6,3);
+    toast('ECHO·0'+e.slot+' — REINTEGRANDO');
+    AUDIO.tone(420,.5,'sine',.05,180);
+  }else if(st==='cooldown'){
+    d.grace=DIS.graceDur;d.warned=0;
+    d.p=Math.min(d.p,REL_BALANCE.pressure.unstableOff-6);
+    d.integ=0;d.integMax=0;
+    /* CONSEQUÊNCIA + RECONCILIAÇÃO: a relação lembra a ruptura, mas o
+       jogador pode reconstruí-la — nada aqui é irreversível (§55/§56). */
+    e.rel.ap=clamp(e.rel.ap+2,0,REL_BALANCE.memCap);
+    relRememberMoment(e,'reconciliation',1);
+    e.rel.last={t:'approve',r:'reconciliation',v:1,at:Math.round(runTime*10)/10};
+    banner('DISSONÂNCIA CONTIDA','ECHO·0'+e.slot+' VOLTOU AO SEU LADO');
+    const l=pickRelationLine(e,{type:'approve',reason:'reconciliation',
+      state:echoRelState(e).id,event:'dissonanceEnd'});
+    echoSpeak(e,l.txt,'#8ff6ff');
+    spawnRing(e.x,e.y,e.hue,8,140,.6);
+  }
+  return true;
+}
+/* -------- máquina de estados (tick simples, O(1)) -------- */
+function echoDissonanceTick(e,dt){
+  if(!e||!e.dis)return;
+  const d=e.dis;
+  if(d.fx>0)d.fx=Math.max(0,d.fx-dt*1.6);
+  switch(d.st){
+    case 'stable':
+      if(d.p>=REL_BALANCE.pressure.unstableAt)echoSetDis(e,'unstable');
+      break;
+    case 'unstable':
+      if(d.p>=relFractureAt(e)){echoSetDis(e,'fracturing');break;}
+      if(d.p<REL_BALANCE.pressure.unstableOff)echoSetDis(e,'stable');
+      break;
+    case 'fracturing':
+      d.t-=dt;
+      if(d.t<=0)enterDissonance(e,{organic:true});
+      break;
+    case 'hostile':break;                 // gerido por echoHostileTick
+    case 'recovering':
+      d.t-=dt;
+      if(d.t<=0)echoSetDis(e,'cooldown');
+      break;
+    case 'cooldown':
+      d.grace-=dt;
+      if(d.grace<=0)echoSetDis(e,'stable');
+      break;
+  }
+}
+/* ---- ENTRADA NA DISSONÂNCIA (caminho único: orgânico, legado e DEV) ---- */
+function enterDissonance(e,opts){
+  if(!e)return false;
+  echoRelInit(e);
+  opts=opts||{};
+  const d=e.dis;
+  if(d.st==='hostile')return false;
+  d.count=(d.count|0)+1;
+  d.p=0;d.warned=0;
+  d.integMax=DIS.integMax;d.integ=DIS.integMax;
+  d.st='hostile';d.t=DIS.hostileDur;d.fx=1;
+  e.roleT=0;e.shieldPot=0;e.roleFx=0;      // papéis suspensos (§46)
+  e.fireTimer=.35;e.beamT=0;e.beamRamp=1;e.beamTarget=null;
+  setEchoTrust(e,0,'dissonance');
+  /* a relação REGISTRA a ruptura (memória significativa + tensão) */
+  e.rel.rj=clamp(e.rel.rj+5,0,REL_BALANCE.memCap);
+  e.rel.streak=-1;e.rel.lastRejectAt=runTime;
+  e.rel.last={t:'reject',r:'dissonance',v:-2,at:Math.round(runTime*10)/10};
+  relRememberMoment(e,'dissonance',-2);
   shake=Math.max(shake,12);aberr=Math.max(aberr,.9);
   spawnRing(e.x,e.y,'#ff2f5e',10,200,.8);
   spawnRing(e.x,e.y,'#ff4df0',6,150,1.0);
   spawnShards(e.x,e.y,'#ff2f5e',20,6);
-  banner('DISSONÂNCIA CRÍTICA','ECHO·0'+e.slot+' SE VOLTOU CONTRA VOCÊ — 12s');
+  banner('DISSONÂNCIA','ECHO·0'+e.slot+' SE VOLTOU CONTRA VOCÊ — CONTENHA A RUPTURA');
   toast('ECHO·0'+e.slot+' ESTÁ HOSTIL');
   echoReact('dissonance');
   AUDIO.tone(110,1.3,'sawtooth',.09,-40);
   AUDIO.tone(74,1.6,'square',.07,-22);
   AUDIO.noise(1.2,.06,420,.6,'lowpass');
   for(let i=0;i<6;i++)AUDIO.tone(880-i*120,.3,'square',.03,-260,i*.09);
+  return true;
+}
+/* ---- CONTENÇÃO: o jogador tem agência (§50/§51) ----
+   Dano do jogador consome a INTEGRIDADE DA RUPTURA, nunca o HP do Echo.
+   Consequência direta: o Echo hostil não pode ser morto por engano e não
+   é um inimigo econômico — zero XP, créditos, loot, abate, lifesteal,
+   status, proc de módulo ou ganho moral (§52). */
+function containEcho(e,dmg,sx,sy){
+  if(!e||!e.alive||!e.dis||e.dis.st!=='hostile')return 0;
+  const raw=+dmg;
+  if(!(raw>0))return 0;
+  const applied=Math.min(raw*DIS.containMul,DIS.containPerHit);
+  e.dis.integ=Math.max(0,e.dis.integ-applied);
+  e.dis.fx=Math.max(e.dis.fx,.55);
+  spawnParticles(e.x,e.y,'#ff9d3c',5,220,.28,2.4);
+  floatText(e.x,e.y-e.r-18,'−RUPTURA','#ffd166');
+  sfx(rand(300,380),.06,'square',.02,-180);
+  if(e.dis.integ<=0){
+    floatText(e.x,e.y-e.r-32,'RUPTURA CONTIDA','#8ff6ff');
+    echoSetDis(e,'recovering');
+  }
+  return applied;
+}
+function isHostileEcho(o){return !!(o&&o.dis&&o.dis.st==='hostile'&&o.alive);}
+/* alvo de contenção mais próximo no alcance dado (nunca inimigo comum) */
+function nearestHostileEcho(x,y,rad){
+  let best=null,bd=rad*rad;
+  for(const e of echoes){
+    if(!isHostileEcho(e))continue;
+    const d=dist2(x,y,e.x,e.y);
+    if(d<bd){bd=d;best=e;}
+  }
+  return best;
+}
+/* ---- FORÇAR RECUPERAÇÃO (usado pela contenção, DEV e fim de duração) ---- */
+function forceEchoRecovery(e){
+  if(!e||!e.dis)return false;
+  if(e.dis.st!=='hostile'&&e.dis.st!=='fracturing')return false;
+  return echoSetDis(e,'recovering');
+}
+/* ---- IA HOSTIL: versão corrompida do companheiro (§44/§45/§47) ----
+   Alvo EXCLUSIVO: o jogador. Nunca ajuda contra inimigos, nunca ativa
+   papel aliado, nunca absorve fogo inimigo em favor do jogador. */
+function echoHostileTick(e,dt){
+  const d=e.dis;
+  d.t-=dt;
+  /* integridade da ruptura cede sozinha; cede mais rápido se o jogador
+     está sobrevivendo limpo (esquiva também é contenção) */
+  const clean=(runTime-_lastHurtAt)>=DIS.cleanAfter;
+  d.integ=Math.max(0,d.integ-DIS.integDrain*(clean?DIS.cleanBonus:1)*dt);
+  if(d.t<=0||d.integ<=0){echoSetDis(e,'recovering');return;}
+  if(e.recoil>0)e.recoil=Math.max(0,e.recoil-dt*7);
+  if(e.beamT>0)e.beamT-=dt;
+  const prof=hostileProfile(e);
+  const dx=player.x-e.x,dy=player.y-e.y,dd=Math.hypot(dx,dy)||1;
+  let want=prof.want;
+  /* OPORTUNISTA fecha o espaço quando você está vulnerável */
+  const pid=e.pers?e.pers.id:(e.ps&&e.ps.id);
+  if(pid==='opportunist'&&player.hp/player.maxHp<.45)want*=.62;
+  const dir=dd>want?1:-1;
+  e.x=clamp(e.x+(dx/dd)*prof.spd*dir*dt,e.r,ARENA.w-e.r);
+  e.y=clamp(e.y+(dy/dd)*prof.spd*dir*dt,e.r,ARENA.h-e.r);
+  const jitter=(pid==='fragmented'?78:46);
+  e.x+=(Math.random()-.5)*jitter*dt;e.y+=(Math.random()-.5)*jitter*dt;
+  e.aim=angTo(e.aim,Math.atan2(dy,dx),11*dt);
+  e.glitchT-=dt;
+  if(e.glitchT<=0){e.glitchT=rand(.15,.5);e.glitchAmp=rand(6,26);}
+  const w=clamp(e.curW|0,0,WEAPONS.length-1);
+  const def=WEAPONS[w];
+  e.fireTimer-=dt;
+  if(e.fireTimer<=0){
+    fireWeaponFrom(e,def,'enemy',e.mul*DIS.dmgMul);   // dano real: Shield → HP
+    e.fireTimer=def.interval*prof.rate;
+  }
+  if(Math.random()<dt*9)spawnParticles(e.x,e.y,'#ff2f5e',1,110,.3,2.2);
+  pushGhost(e.ghosts,e.x,e.y,16);
+  ageGhosts(e.ghosts,dt);
+}
+/* ---- TELEGRAFIA / REINTEGRAÇÃO: sem dano, sem papel, com sinal claro ---- */
+function echoRuptureTick(e,dt){
+  const d=e.dis;
+  e.roleT=0;e.shieldPot=0;
+  if(e.recoil>0)e.recoil=Math.max(0,e.recoil-dt*7);
+  e.glitchT-=dt;
+  if(e.glitchT<=0){e.glitchT=rand(.06,.22);e.glitchAmp=rand(10,34);}
+  const k=d.st==='fracturing'?1:-1;
+  const dx=player.x-e.x,dy=player.y-e.y,dd=Math.hypot(dx,dy)||1;
+  e.x=clamp(e.x-(dx/dd)*70*k*dt,e.r,ARENA.w-e.r);
+  e.y=clamp(e.y-(dy/dd)*70*k*dt,e.r,ARENA.h-e.r);
+  e.x+=(Math.random()-.5)*90*dt;e.y+=(Math.random()-.5)*90*dt;
+  e.aim=angTo(e.aim,Math.atan2(dy,dx),6*dt);
+  if(Math.random()<dt*14)
+    spawnParticles(e.x,e.y,d.st==='fracturing'?'#ff9d3c':'#8ff6ff',1,150,.3,2.4);
+  pushGhost(e.ghosts,e.x,e.y,16);
+  ageGhosts(e.ghosts,dt);
 }
 function dissolveEcho(e,reason){
-  e.alive=false;e.hostile=false;
+  e.alive=false;
+  if(e.dis){e.dis.st='stable';e.dis.t=0;e.dis.integ=0;e.dis.grace=0;}
   shake=Math.max(shake,10);
   spawnShards(e.x,e.y,'#ff2f5e',26,7);
   spawnParticles(e.x,e.y,'#ff8095',40,460,.9,4);
@@ -4143,7 +4403,7 @@ function echoSpeak(e,txt,color){
 function echoReact(event,data){
   if(!echoes.length)return;
   if(_echoSpeakCd>0)return;
-  const live=echoes.filter(e=>e.alive&&!e.hostile);
+  const live=echoes.filter(e=>e.alive&&!e.hostile&&echoAllied(e));
   if(!live.length)return;
   const lines=ECHO_LINES[event];
   if(!lines||!lines.length)return;
@@ -4171,8 +4431,11 @@ const ECHO_ROLE=[null,
   {id:'disruptor',nm:'DISRUPTOR',c:'#ff4df0'}
 ];
 function echoRoleTick(e,dt){
-  // Eco hostil ou desconfiança total desliga o papel
-  if(!e.alive||e.hostile||trustTier(e)===0){e.roleT=0;return;}
+  /* Eco hostil (ou em qualquer etapa da ruptura) e desconfiança total
+     desligam o papel: durante a Dissonância 2.0 nem Guardião nem
+     Disruptor podem continuar ajudando o jogador (PR 10 §46). */
+  if(!e.alive||e.hostile||!echoAllied(e)||trustTier(e)===0){
+    e.roleT=0;e.shieldPot=0;return;}
   const tier=trustTier(e);
   if(e.roleFx>0)e.roleFx-=dt;
   // confiança acelera o cooldown: tier 2 = ×1.35, tier 0 = ×0.55
@@ -4204,13 +4467,20 @@ function echoRoleTick(e,dt){
       hit++;
     }
     curAttacker=prev;
+    /* PR 10: abrir caminho para o jogador é um momento de vínculo —
+       cooldown de 20s por motivo e trustMul baixo (§27). */
+    if(hit>=3){
+      const rr=evaluateEchoReaction(e,{kind:'disruption'});
+      const ap=applyEchoReaction(e,rr,{trustMul:.35});
+      if(ap)relFeedback(e,ap);
+    }
     if(hit)echoSpeak(e,'DISTORÇÃO LIBERADA.','#ff9df7');
     aberr=Math.max(aberr,.45);
     AUDIO.tone(180,.4,'sawtooth',.04,-70);
   }
 }
 function drawEchoRole(e){
-  if(!e.alive||e.hostile)return;
+  if(!e.alive||e.hostile||!echoAllied(e))return;
   if(e.slot===1&&e.roleT>0){
     // campo de cobertura ligando o Guardião ao jogador
     const k=clamp(e.roleT/4.2,0,1);
@@ -5363,7 +5633,7 @@ function renderVault(){
    EVENTO 7 — A TRANSMISSÃO FANTASMA (interage com os Ecos)
    ===================================================================== */
 function renderGhost(){
-  const live=echoes.filter(e=>e.alive&&!e.hostile);
+  const live=echoes.filter(e=>e.alive&&echoAllied(e));
   mTitle.textContent='A TRANSMISSÃO FANTASMA';
   mDesc.innerHTML='Um sinal degradado atravessa a fratura. É a voz de uma das suas '+
     'próprias runs, pedindo reforço de sinal antes de se dissolver.<br>'+
@@ -6993,6 +7263,7 @@ function killEnemy(e){
     pickups.push({type:'med',x:e.x,y:e.y,vx:rand(-30,30),vy:rand(-30,30),v:18,t:0});
   sKill();if(e.type==='tank'){shake=Math.max(shake,7);sBoom();}
 }
+let _lastHurtAt=-999;   // PR 10: instante do último dano recebido (contenção)
 function damagePlayer(d){
   if(!(d>0))return;                          // só dano válido reinicia o escudo
   // INVULNERABILIDADE DEV — só existe com o Modo Desenvolvedor ativo
@@ -7014,10 +7285,24 @@ function damagePlayer(d){
   // GUARDIÃO (Eco·01): barreira ativa reduz dano recebido
   let dmgRed=0;
   for(const e of echoes){
-    if(e.alive&&!e.hostile&&e.slot===1&&e.roleT>0)dmgRed+=(e.shieldPot||0);
+    if(e.alive&&!e.hostile&&echoAllied(e)&&e.slot===1&&e.roleT>0)dmgRed+=(e.shieldPot||0);
   }
   const real=d*(1-Math.min(.5,dmgRed))*player.dmgTakenMul*mEff.playerDmgTaken;
   if(!(real>0))return;
+  _lastHurtAt=runTime;                      // PR 10: janela de "sobreviveu limpo"
+  /* PR 10: o Guardião cobrindo um golpe relevante é um momento de vínculo.
+     Cooldown de 20s por motivo + trustMul baixo — a barreira automática
+     JAMAIS vira farm de confiança (§26). */
+  if(dmgRed>0&&d>=8){
+    for(const e of echoes){
+      if(e.alive&&echoAllied(e)&&e.slot===1&&e.roleT>0&&(e.shieldPot||0)>0){
+        const rr=evaluateEchoReaction(e,{kind:'protection'});
+        const ap=applyEchoReaction(e,rr,{trustMul:.35});
+        if(ap)relFeedback(e,ap);
+        break;
+      }
+    }
+  }
   if(runSt)runSt.dt+=Math.min(real,9999);   // PR 8: dano recebido (estilo de troca)
   /* ---- ESCUDO DO OPERADOR: absorve dano antes da Integridade ----
      O dano restante (após Shield) segue exatamente o pipeline antigo:
@@ -7097,7 +7382,7 @@ function regenPlayerShield(p,dt){
    (independente de FPS). Fica SUSPENSO durante a Dissonância
    (e.hostile===true); o escudo restante ainda absorve dano. */
 function regenEchoShield(e,dt){
-  if(!e.alive||e.hostile)return;                  // suspenso durante Dissonância
+  if(!e.alive||e.hostile||!echoAllied(e))return;  // suspenso durante a ruptura
   if(e.shieldDelayT>0){e.shieldDelayT=Math.max(0,e.shieldDelayT-dt);return;}
   if(e.shield>=e.shieldMax)return;
   e.shield=Math.min(e.shieldMax,e.shield+e.shieldMax*e.shieldRegen*dt);
@@ -8109,7 +8394,7 @@ function updateBoss(e,dt){
         }
       }
       for(const ec of echoes){                 // feixes também ferem os Ecos
-        if(!ec.alive)continue;
+        if(!ec.alive||!echoAllied(ec))continue;  // PR 10: nunca durante a ruptura
         const ex=ec.x-e.x,ey=ec.y-e.y,pr=ex*ux+ey*uy;
         if(pr>0&&pr<e.beamLen&&Math.abs(ex*uy-ey*ux)<12+ec.r&&Math.random()<dt*2.2)
           damageEcho(ec,7);
@@ -8484,48 +8769,14 @@ function enemiesNear(x,y,rad){
 }
 function updateEcho(e,dt){
   if(!e.alive)return;
-  regenEchoShield(e,dt);            // escudo regenera (suspenso durante Dissonância)
+  regenEchoShield(e,dt);            // escudo regenera (suspenso durante a ruptura)
   if(e.trustFx)e.trustFx*=Math.pow(.12,dt);
-  /* ---------- ESTADO HOSTIL (Dissonância) ---------- */
-  if(e.hostile){
-    e.hostileT-=dt;
-    if(e.hostileT<=0){
-      e.hostile=false;e.hostileT=0;
-      e.trust=Math.max(e.trust,34);
-      e.fireTimer=0;e.beamT=0;e.beamRamp=1;e.beamTarget=null;
-      e.recoil=0;e.erratic=0;e.glitchT=0;e.glitchAmp=0;
-      banner('DISSONÂNCIA TERMINADA','ECHO·0'+e.slot+' RETORNOU AO SEU LADO');
-      toast('ECHO·0'+e.slot+' NÃO É MAIS HOSTIL');
-      echoReact('dissonanceEnd');
-      return;
-    }
-    if(e.recoil>0)e.recoil=Math.max(0,e.recoil-dt*7);
-    if(e.beamT>0)e.beamT-=dt;
-    // alveja o inimigo OU o jogador — o que estiver mais perto
-    let tgt=nearestEnemy(e.x,e.y,560);
-    const dp=Math.hypot(player.x-e.x,player.y-e.y);
-    if(!tgt||dp<Math.hypot(tgt.x-e.x,tgt.y-e.y))tgt={x:player.x,y:player.y,isPlayer:true};
-    const dx=tgt.x-e.x,dy=tgt.y-e.y,dd=Math.hypot(dx,dy)||1;
-    const want=190;
-    const dir=dd>want?1:-1;
-    e.x=clamp(e.x+(dx/dd)*250*dir*dt,e.r,ARENA.w-e.r);
-    e.y=clamp(e.y+(dy/dd)*250*dir*dt,e.r,ARENA.h-e.r);
-    e.x+=(Math.random()-.5)*46*dt;e.y+=(Math.random()-.5)*46*dt;
-    e.aim=angTo(e.aim,Math.atan2(dy,dx),11*dt);
-    e.glitchT-=dt;
-    if(e.glitchT<=0){e.glitchT=rand(.15,.5);e.glitchAmp=rand(6,26);}
-    const w=clamp(e.curW|0,0,WEAPONS.length-1);
-    const def=WEAPONS[w];
-    e.fireTimer-=dt;
-    if(e.fireTimer<=0){
-      fireWeaponFrom(e,def,'enemy',e.mul*.9);   // dano real contra o jogador
-      e.fireTimer=def.interval*1.25;
-    }
-    if(Math.random()<dt*9)spawnParticles(e.x,e.y,'#ff2f5e',1,110,.3,2.2);
-    pushGhost(e.ghosts,e.x,e.y,16);
-    ageGhosts(e.ghosts,dt);
-    return;
-  }
+  /* PR 10: relação + máquina de estados da Dissonância (O(1) por tick) */
+  relTick(e,dt);
+  const _dst=e.dis?e.dis.st:'stable';
+  /* ---------- RUPTURA (Dissonância 2.0) — uma fonte de verdade ---------- */
+  if(_dst==='fracturing'||_dst==='recovering'){echoRuptureTick(e,dt);return;}
+  if(_dst==='hostile'){echoHostileTick(e,dt);return;}
   const tr=e.data.trail,last=tr.length-1;
   while(e.pi<last&&tr[e.pi+1][0]<=runTime)e.pi++;
   const cp=tr[e.pi],nx=tr[Math.min(e.pi+1,last)];
@@ -9859,6 +10110,7 @@ function startRun(){
   /* Se o Modo Desenvolvedor já estiver ligado quando a run começa, ela
      nasce marcada como debug. Caso contrário, começa limpa. */
   devTainted=!!DEV_MODE;
+  _lastHurtAt=-999;                 // PR 10: janela de contenção começa limpa
   resetRunWorld();
   player=makePlayer();
   echoes=echoQueue.map((d,i)=>makeEcho(d,i+1));
