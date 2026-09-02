@@ -1,0 +1,215 @@
+# ECHO — SANDBOX: LABORATÓRIO DO JOGADOR (PR 11.5)
+
+> Modo de teste livre: monte um operador, um preset de build e uma onda
+> inicial; brinque com a arena sem que NADA seja registrado na progressão
+> real. Seções §N correspondem aos comentários em `index.html` e são
+> referenciadas por `tests/sandbox.test.js`.
+
+> **R4 — SANDBOX É UM MODO GLOBAL E TEMPORÁRIO / NÃO PERTENCE A NENHUM
+> SAVE SLOT.** O laboratório vive **apenas no MENU INICIAL GLOBAL** (botão
+> `SANDBOX` do título) e **não pertence a Save 1, 2 ou 3**: ao abrir,
+> NENHUM slot é carregado (`curSlot=0`) — nem prog, nem meta, nem Ecos,
+> nem checkpoint, nem unlocks são herdados; o estado do laboratório é uma
+> **sessão temporária própria** (`sandboxSessionInfo`, `slot` sempre `0`)
+> que nasce e morre com a sessão. Nunca é usado como Save Slot 4, nunca
+> tem "Continuar Sandbox" e fechar o jogo dentro dele volta ao menu
+> normal. Na saída o contexto real é **recarregado do arquivo**
+> (`activateSlot(_sbSlotBak)`), e o `lastSlot` persistente nunca muda.
+> O botão SANDBOX só existe no menu global — dentro de um save (menu do
+> slot, confirmações, morte, vitória) ele é removido do overlay.
+
+---
+
+## 1. PRINCÍPIO CENTRAL — ISOLAMENTO TOTAL (§73)
+
+Com o laboratório ativo (`sandboxRun`), **nenhuma função de persistência
+age**. O arquivo do save em localStorage fica byte a byte idêntico antes,
+durante e depois de uma sessão (testado para os 3 slots).
+
+**Defesa em profundidade:** o próprio `smCommit()` — o único escritor de
+`echoSave.v3` — recusa gravar com `sandboxRun||sandboxMode`. Mesmo que um
+writer futuro esqueça o guard próprio, nada é persistido.
+
+**Unlock é SOBREPOSIÇÃO, nunca gravação (§5/§6):** o sandbox não usa
+"unlock-all" escrevendo no save. `is*Unlocked` sobrepõe disponibilidade
+quando `sandboxActive()` — exatamente o padrão
+`isContentAvailable(id){ if (sandboxRun||sandboxSetupOpen) return true;
+return realUnlockState(id); }`. Nenhuma chave é acrescentada a
+`prog.seen`, nem temporariamente.
+
+**Janela pós-laboratório (§3):** sair do sandbox NÃO pode desbloquear as
+condições já merecidas pelo save real. `sandboxHoldUnlocks` é ligada ao
+ABRIR o preparo e suprime `checkUnlocks` (inclusive o do `showTitle` pós-
+saída); ela só é liberada por uma **run real** (`startRun` com
+`sandboxRun=false`) — o jogo normal continua sincronizando unlocks
+pendentes como sempre.
+
+| Função | Comportamento no sandbox |
+|---|---|
+| `saveProg()` | `return false` — prog intocado |
+| `saveMeta()` | `return false` — meta/memória intocada |
+| `saveEchoes()` | `return false` + aviso em console — laboratório não cria Echo |
+| `bumpProg(k,n)` | no-op — abates/ondas/vitórias de teste não alimentam records |
+| `checkUnlocks()` | `return false` — nada desbloqueia, nem com condições verdadeiras |
+| `captureCheckpoint()` | `return false` (§91) — laboratório não cria Continue Run |
+
+Flags (topo do arquivo): `sandboxMode` (tela de preparo),
+`sandboxRun` (run ativa), `sandboxCfg {char,preset,wave}` (setup da sessão —
+não persiste), `_sbEchoQueueBak`/`_sbCharBak` (backups de restauração).
+`sandboxActive()` = `sandboxMode||sandboxRun`.
+
+**Coerência DEV (§92):** `startRun` mantém `devTainted=!!DEV_MODE`; as ações
+do sandbox não chamam `devTaint()` — ex.: `removeItemById(p,id,taint=false)`
+não marca a run (o default `taint=true` permanece para o jogo real).
+
+---
+
+## 2. UNLOCK-ALL (§76)
+
+Dentro do sandbox `isCharUnlocked` / `isWeaponUnlocked` / `isItemUnlocked` /
+`isUpgUnlocked` retornam **true para qualquer id** — todo o conteúdo da alpha
+(operadores, 27 armas, módulos, upgrades, minibosses e o chefe) fica
+disponível. Fora do sandbox os gates progressivos normais voltam a valer.
+
+---
+
+## 3. FLUXO DE ENTRADA (§74–§78)
+
+```
+MENU INICIAL GLOBAL → botão SANDBOX → sandboxOpenSetup()
+  modo independente: curSlot=0 · prog/meta/Ecos zerados · _sbSlotBak anota
+  o contexto real · state='title' + openCodex('sandbox') → tela de preparo
+  INICIAR TESTE → sandboxStart()        → run de laboratório
+```
+
+**Backdrop inerte (§1/§18):** clicar fora do painel do preparo NÃO faz
+nada — não fecha, não volta ao menu, não muda state, não limpa a config.
+As únicas saídas clicáveis são **VOLTAR AO MENU** (rodapé do codex, que
+executa `sandboxCloseSetup` e cai no menu principal com overlay coerente)
+e o **ESC** (mesma regra, intencional e consistente).
+
+**Robustez do INICIAR TESTE (§32/§33):** `sandboxStart` valida a cfg
+(`sandboxValidateCfg` → operador/preset/onda); config inválida deixa o
+botão **desabilitado com o motivo** no próprio botão e qualquer exceção é
+tratada: o preparo volta a abrir com uma caixa vermelha `✕ FALHA AO
+INICIAR O TESTE — <motivo>` + toast + `console.error`. Nenhuma falha fica
+silenciosa — o botão nunca "não faz nada".
+
+- **Preparo (§77):** `renderSandboxSetup` lista os 8 operadores (com
+  `⌗ N SLOTS` reais), 6 presets de build (`shieldbreak`, `fullshield`,
+  `crit`, `status`, `dash`, `economy`) e ondas iniciais `SB_WAVES =
+  [1,3,5,10,15,20]` (20 = chefe). ESC volta ao menu; o setup não é salvo.
+- **Início (§75):** como nada é herdado, `sandboxStart` apenas roda com
+  `echoQueue=[]` (o laboratório nunca tem Ecos reais), troca o operador
+  via `sandboxSetChar` (ver seção 5), dá **+500 créditos de teste**
+  (`giveSandboxCredits`), aplica o preset escolhido e pula para a onda
+  inicial se `>1`. Nada disso é persistido — a sessão morre na saída.
+- **Chip SANDBOX** (`#sb-chip`, canto inferior esquerdo): acende durante a
+  run; clicável — abre/fecha o painel (mesmo atalho F1).
+- **Banner:** "SANDBOX ATIVO — NADA É REGISTRADO · F1 ABRE O PAINEL".
+
+---
+
+## 4. DURANTE A RUN (§79–§86)
+
+**Painel de laboratório (F1 ou chip):** `state='sandbox'` (entra em
+`frozen` — o tempo do jogo para). O **chip `⌖ SANDBOX · [F1] LABORATÓRIO`
+existe somente com `sandboxRun===true`** (`display:none` por padrão, classe
+`on` ligada em `sandboxStart` e desligada em `sandboxRestoreReal`) — em run
+normal, no menu principal ou após sair, nada dele aparece. O handler da
+tecla **F1** só age com `sandboxRun && (state==='play'||state==='sandbox')`;
+fora disso a tecla é consumida sem qualquer efeito (§13). Seções
+renderizadas em `#sb-body`:
+
+- **JOGADOR (§82):** encher HP, encher/quebrar escudo, limpar status,
+  resetar cooldowns.
+- **AJUSTES DO JOGADOR (§12–§18/§20):** ajustes temporários de teste que
+  passam SEMPRE pelo Stat Modifier Pipeline com source IDs exclusivos —
+  `sandbox:damage`, `sandbox:crit`, `sandbox:speed`, `sandbox:shield_max`,
+  `sandbox:shield_regen` — portanto `BASE + SANDBOX MODIFIER = FINAL`:
+  - **CRÉDITOS:** −100/−10/+10/+100 e `MAX ◈9999` (para testar economia).
+    A loja normal não abre no sandbox (eventos desligados), mas os
+    créditos permanecem funcionais para qualquer sistema dependente
+    (coinMul, condições de unlock, etc).
+  - **HP:** ENCHER · DANO −25 · +25 · SET 1 (clamp: nunca NaN/negativo).
+  - **ESCUDO:** ENCHER · **QUEBRAR (PIPELINE REAL)** · ±10. Quebrar dispara
+    o MESMO caminho do combate: `shieldFx('break')`, `runSt.sb++`,
+    `echoReact('shieldBreak')` e `itemEmit('onShieldBreak', …)` — itens da
+    PR 11 (ex.: PULSO DE FRATURA) procam de verdade e entram em cooldown.
+  - **DANO ±10% · CRÍTICO ±5% · VELOCIDADE ±10% · SHIELD MÁX ±10 ·
+    REGEN ±1** (multiplicativo/flat conforme o stat).
+  - **RESETAR AJUSTES:** remove SOMENTE os mods `sandbox:*` — itens,
+    operador, moral e status normais permanecem.
+  - **NADA disto persiste:** o laboratório não grava nada e `sandboxExit`
+    chama `stripSandboxMods(player)` (§18).
+- **ARSENAL (§78/§79):** grade de slots do operador com contador
+  `N/max SLOTS (IDENTIDADE DE <OP>)`; por slot: EQUIPAR · SUBSTITUIR ·
+  REMOVER; slots vazios: + ADICIONAR; ações globais: TROCAR ARMAS DE SLOT
+  (SWAP) e LIMPAR ARSENAL.
+  - **Swap (§85):** armar → clique na arma de ORIGEM (rótulo `FONTE`) →
+    clique no slot de DESTINO → `swapWeaponSlots` (mesmos contratos do
+    arsenal: ativa acompanha a arma, nada de cooldown/stats resetados).
+- **Módulos (§80/§81):** adicionar/remover qualquer item (`pickitem`); a
+  remoção usa `removeItemById(p,id,false)` — sem taint.
+- **ARENA (§83/§84):** pular para qualquer onda (`sandboxJumpTo`, inclusive
+  20 = O PARADOXO), gerar grupo de inimigos (`SB_ETYPES`, 11 tipos), limpar
+  arena, invocar o chefe.
+- **Ondas arbitrárias sem records:** `sandboxJumpTo` limpa a arena e spawna
+  a onda escolhida; **beacon e micro-eventos são gated por `!sandboxRun`** —
+  nenhum evento narrativo nasce no laboratório.
+
+**Fluxo de aquisição (§62/§123):** ao pedir uma arma com arsenal cheio, o
+painel pergunta **"SUBSTITUIR QUAL SLOT?"** (`sbPendingWi`) e substitui o
+slot escolhido via `grantWeapon(wi,false,s)` — sem reordenar os demais.
+
+---
+
+## 5. OPERADOR DE TESTE vs OPERADOR REAL (§73)
+
+`setChar` real **persiste no slot** (`smRoot.slots[curSlot].char`).
+`sandboxSetChar` troca apenas `charSel` em memória:
+
+- `sandboxStart` guarda o operador real em `_sbCharBak` antes de trocar;
+- `sandboxRestoreReal` devolve `charSel`, a fila de Ecos (mesmas
+  referências), apaga o chip e restaura o texto do botão de voltar;
+- o slot real NUNCA é reescrito pelo laboratório (testado).
+
+---
+
+## 6. FINS DE SESSÃO
+
+| Saída | Função | Comportamento |
+|---|---|---|
+| Morte (§89) | `onPlayerDeath → sandboxDeath` | overlay **"TESTE ENCERRADO"** — "NENHUM ECO FOI CRIADO · NADA FOI REGISTRADO"; `state='fracture'`; nenhum Echo, nenhum save |
+| Vitória (§90) | `onVictory → sandboxVictory` | overlay **"TESTE CONCLUÍDO"** — nenhum final/variante/epílogo/Ponto de Memória; meta intocada |
+| REINICIAR TESTE (§88) | `ov-go` (clique/Enter/Space) → `sandboxRestart` | limpa entidades, restaura o real, reinicia o MESMO setup (`sandboxCfg`) |
+| ALTERAR BUILD (§87) | `ov-back` → `sandboxEndToSetup` | encerra e volta à tela de preparo (onda redefinida para 1) |
+| **VOLTAR AO MENU PRINCIPAL** (§11) | `ov-exitmenu` (clique) → `sandboxExit(true)` | limpa o estado sandbox, sai da run, **não salva active run, não cria Echo, não altera progressão** → **MENU INICIAL GLOBAL** |
+| VOLTAR AO MENU (rodapé do preparo) | `cx-close`/ESC → `sandboxCloseSetup` → `sandboxExit` | encerra o preparo e volta ao **MENU INICIAL GLOBAL** (nunca a Save Slots) |
+
+**R4 — TODA saída do laboratório vai ao MENU INICIAL GLOBAL** (`showTitle`),
+nunca à tela de Save Slots. `sandboxExit` limpa `sandboxRun`/`sandboxMode`,
+desmonta a run e chama `sandboxRestoreReal`, que recarrega o contexto real
+**do arquivo** (`activateSlot(_sbSlotBak)` — prog, meta, Ecos e operador do
+save de onde o jogador veio; sem contexto prévio, apenas volta ao menu).
+
+Morte e vitória exibem as **3 opções claras**: `REINICIAR TESTE` ·
+`ALTERAR BUILD` · `⌂ VOLTAR AO MENU PRINCIPAL` — todas com binding de
+CLIQUE real (e Enter/Space reinicia). `sandboxExit` seta `state='title'`
+explicitamente (sem overlays fantasma). `devInfo` exibe sufixo
+`· SANDBOX` enquanto ativo.
+
+---
+
+## 7. GARANTIAS (RESUMO TESTADO — `tests/sandbox.test.js`)
+
+1. Save em localStorage idêntico antes/durante/depois da sessão.
+2. Morte/vitória não criam Echo, não gravam final, não mudam prog/meta.
+3. Restart restaura exatamente o mesmo setup (e mantém o modo); exit
+   devolve o modo normal **recarregado do arquivo** (prog, meta, Ecos e
+   operador do slot de origem — conteúdo idêntico, objetos recriados).
+4. `sandboxSetChar` não persiste; `setChar` real persiste.
+5. Unlock-all dentro; gates normais fora.
+6. Beacon/micro-eventos nunca nascem no laboratório.
+7. Ações do painel (swap, substituição de slot §62, remoção de item) não
+   produzem taint nem tocam a progressão.

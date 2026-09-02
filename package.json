@@ -12,7 +12,7 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --enable-logging",
-    "test": "node tests/shield.test.js && node tests/operators.test.js && node tests/legacy-restore.test.js && node tests/devmode.test.js && node tests/statmods.test.js && node tests/items-build-rework.test.js && node tests/saveslots.test.js && node tests/personality.test.js && node tests/morality.test.js && node tests/relationship.test.js && node tests/events.test.js && node tests/endings.test.js",
+    "test": "node tests/shield.test.js && node tests/operators.test.js && node tests/legacy-restore.test.js && node tests/devmode.test.js && node tests/statmods.test.js && node tests/items-build-rework.test.js && node tests/formatters.test.js && node tests/saveslots.test.js && node tests/arsenal.test.js && node tests/sandbox.test.js && node tests/tab.test.js && node tests/personality.test.js && node tests/morality.test.js && node tests/relationship.test.js && node tests/events.test.js && node tests/endings.test.js",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "prebuild": "npm run clean",
     "build": "electron-builder --win portable --x64",

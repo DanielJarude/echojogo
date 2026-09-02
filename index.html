@@ -88,6 +88,19 @@
     font-size:9px;letter-spacing:.14em;color:rgba(143,246,255,.95);}
   #shbar.empty #shfill{opacity:.16;box-shadow:none;}
   #shbar.empty #shnum{color:rgba(255,180,130,.45);}
+  /* PR 11.5 — feedback do escudo (§18): hit, quebra e regeneração */
+  @keyframes shHit{0%{box-shadow:0 0 20px rgba(255,233,168,.95),
+    inset 0 0 12px rgba(255,233,168,.55);}100%{box-shadow:0 0 10px rgba(255,209,102,.35);}}
+  #shbar.hit{animation:shHit .32s ease-out;}
+  @keyframes shBreak{0%{box-shadow:0 0 30px rgba(143,246,255,1),
+    inset 0 0 16px rgba(143,246,255,.8);transform:scaleY(2.1);}
+    100%{box-shadow:0 0 0 rgba(143,246,255,0);transform:scaleY(1);}}
+  #shbar.break{animation:shBreak .6s ease-out;}
+  @keyframes shRegen{0%,100%{border-color:rgba(255,209,102,.28);}
+    50%{border-color:rgba(255,233,168,.9);}}
+  #shbar.regen{animation:shRegen 1.2s ease-in-out infinite;}
+  #shbar.regen:after{content:'REGEN';position:absolute;right:2px;top:-13px;
+    font-size:9px;letter-spacing:.14em;color:rgba(255,233,168,.8);}
   #midtop{text-align:center;}
   #wave{font-family:Consolas,monospace;font-size:var(--fs-wave);letter-spacing:.35em;
     color:#eaffff;text-shadow:0 0 14px var(--cy);}
@@ -110,19 +123,22 @@
     box-shadow:0 0 10px rgba(150,110,255,.5);transition:width .12s;}
   #lvl{font-family:Consolas,monospace;font-size:var(--fs-md);color:#cdb9ff;letter-spacing:.18em;margin-top:3px;}
   #weapwrap{position:absolute;right:16px;bottom:16px;display:flex;gap:8px;align-items:flex-end;}
-  .wslot{width:136px;padding:7px 9px;border:1px solid rgba(120,140,160,.22);
-    background:rgba(4,12,20,.55);border-radius:2px;transition:all .15s;}
+  /* PR 11.5 §61: cards compactos — o card ATIVO fica maior/claro; os outros
+     viram resumo. Cinco slots ainda cabem sem comer a arena. */
+  .wslot{width:122px;padding:6px 8px;border:1px solid rgba(120,140,160,.22);
+    background:rgba(4,12,20,.55);border-radius:2px;transition:all .15s;opacity:.78;}
   .wslot .key{font-family:Consolas,monospace;font-size:var(--fs-xs);color:rgba(160,190,210,.5);
     letter-spacing:.2em;}
-  .wslot .nm{font-size:var(--fs-sm);letter-spacing:.14em;color:#9db8c8;margin-top:2px;}
+  .wslot .nm{font-size:var(--fs-sm);letter-spacing:.1em;color:#9db8c8;margin-top:2px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .wslot .wrange{font-family:Consolas,monospace;font-size:var(--fs-3xs);letter-spacing:.12em;
     color:rgba(150,200,225,.55);margin-top:3px;}
-  .wslot.empty{opacity:.32;border-style:dashed;}
+  .wslot.empty{opacity:.32;border-style:dashed;width:92px;}
   .wslot.empty .nm{color:rgba(140,170,190,.55);}
   .wslot.act .wrange{color:rgba(190,240,255,.85);}
   .wslot svg{display:block;margin:4px 0 2px;opacity:.75;}
-  .wslot.act{border-color:var(--cy);box-shadow:0 0 14px rgba(70,224,255,.3),
-    inset 0 0 12px rgba(70,224,255,.07);}
+  .wslot.act{opacity:1;border-color:var(--cy);width:138px;
+    box-shadow:0 0 14px rgba(70,224,255,.3),inset 0 0 12px rgba(70,224,255,.07);}
   .wslot.act .nm{color:#d8f7ff;}
   #dashwrap{position:absolute;right:16px;bottom:104px;width:136px;}
   #dashbar{height:6px;margin-top:4px;background:rgba(70,224,255,.08);
@@ -282,6 +298,18 @@
   .cmoral{font-family:Consolas,monospace;font-size:var(--fs-xs);letter-spacing:.2em;margin-top:10px;}
   .cprice{font-family:Consolas,monospace;font-size:var(--fs-md);letter-spacing:.14em;
     color:var(--gold);margin-top:10px;}
+  /* ---------- PR 11.5 §12 — hierarquia leve de item cards ----------
+     básico → sinérgico (acento ciano) → transformador (selo magenta).
+     Cor + símbolo + texto juntos (§13 — nunca só cor). */
+  .card.card-syn{border-left:3px solid rgba(70,224,255,.55);}
+  .synribbon{font-family:Consolas,monospace;font-size:var(--fs-3xs);letter-spacing:.2em;
+    color:rgba(143,246,255,.85);margin-top:8px;}
+  .card.card-tr{border-color:rgba(255,77,240,.55);
+    background:linear-gradient(180deg,rgba(28,10,32,.78),rgba(8,18,28,.7));}
+  .card.card-tr:hover{border-color:#ff9df7;
+    box-shadow:0 6px 26px rgba(255,77,240,.22);}
+  .trribbon{font-family:Consolas,monospace;font-size:var(--fs-3xs);letter-spacing:.24em;
+    color:#ff9df7;margin-top:9px;}
   .mfoot{display:flex;justify-content:space-between;align-items:center;margin-top:20px;
     border-top:1px solid rgba(70,224,255,.14);padding-top:15px;gap:12px;flex-wrap:wrap;}
   .btn{font-family:Consolas,monospace;font-size:var(--fs-md);letter-spacing:.26em;color:#bffbff;
@@ -297,16 +325,16 @@
   #m-owned{font-family:Consolas,monospace;font-size:var(--fs-xs);letter-spacing:.14em;
     color:rgba(150,180,200,.6);margin-top:14px;line-height:1.8;}
 
-  /* ---------- créditos + perfil moral oculto ---------- */
+  /* ---------- créditos + perfil moral compacto (PR 11.5) ---------- */
   #coinp{text-align:right;padding:6px 12px;}
   #coinsp{font-family:Consolas,monospace;font-size:var(--fs-2xl);letter-spacing:.16em;color:var(--gold);
     text-shadow:0 0 12px rgba(255,209,102,.45);}
-  #moralp{display:flex;gap:7px;justify-content:flex-end;margin-top:2px;}
-  .mbar{width:62px;}
-  .mbar u{font-family:Consolas,monospace;font-size:var(--fs-3xs);letter-spacing:.14em;display:block;
-    text-align:center;opacity:.5;text-decoration:none;color:#a9c6d6;}
-  .mbar i{display:block;height:3px;margin-top:3px;background:rgba(255,255,255,.10);position:relative;}
-  .mbar i b{position:absolute;left:0;top:0;bottom:0;width:0%;display:block;transition:width .35s;}
+  /* PR 11.5: percentuais de moralidade saíram do HUD; ficou só o chip do
+     perfil dominante com pips de tier — detalhes no TAB [Ficha de Combate] */
+  #moralp{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:2px;
+    font-family:Consolas,monospace;font-size:var(--fs-sm);letter-spacing:.16em;white-space:nowrap;}
+  #moralp b{font-weight:600;}
+  #moral-tiers{display:inline-flex;align-items:center;}
 
   /* ---------- barra de vida do chefe ---------- */
   #bosswrap{position:fixed;top:96px;left:50%;transform:translateX(-50%);width:min(760px,86vw);
@@ -434,6 +462,167 @@
   #tip .tlock{font-family:Consolas,monospace;font-size:var(--fs-xs);letter-spacing:.1em;
     color:#ffd166;margin-top:9px;padding-top:8px;
     border-top:1px solid rgba(255,209,102,.22);}
+  /* PR 11.5 §11 — hierarquia de tooltip: seções rotuladas */
+  #tip .tsec{font-family:Consolas,monospace;font-size:var(--fs-3xs);letter-spacing:.26em;
+    color:rgba(140,180,205,.62);margin-top:10px;display:block;}
+  #tip .tsec:first-of-type{margin-top:0;}
+  #tip .tline{font-family:Consolas,monospace;font-size:var(--fs-xs);line-height:1.7;
+    color:#c3dcea;display:block;}
+  #tip .tcond{font-family:Consolas,monospace;font-size:var(--fs-xs);color:#8ff6ff;}
+  #tip .tcost{font-family:Consolas,monospace;font-size:var(--fs-xs);color:#ffb386;}
+  #tip .tsyn{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;}
+  #tip .tsyn span{font-family:Consolas,monospace;font-size:var(--fs-3xs);letter-spacing:.1em;
+    color:#c9a9ff;border:1px solid rgba(197,107,255,.4);background:rgba(197,107,255,.08);
+    padding:2px 6px;border-radius:2px;}
+  #tip .tcard-tr{margin-top:8px;font-family:Consolas,monospace;font-size:var(--fs-xs);
+    letter-spacing:.18em;color:#ff9df7;}
+
+  /* =====================================================================
+     PR 11.5 §25 — REGISTRO DE COMBATE (TAB)
+     Mesma linguagem visual do jogo: painéis escuros, borda ciano fina,
+     monoespaçada para números. Não é um menu DEV — é profundidade da run.
+     ===================================================================== */
+  #sheet{position:fixed;inset:4%;z-index:40;display:none;flex-direction:column;
+    border:1px solid rgba(70,224,255,.35);border-radius:4px;
+    background:linear-gradient(180deg,rgba(5,12,20,.96),rgba(3,7,13,.98));
+    box-shadow:0 20px 80px rgba(0,0,0,.9),0 0 40px rgba(70,224,255,.08);
+    color:#cfeffc;}
+  #sheet.on{display:flex;animation:sheetIn .14s ease-out;}
+  @keyframes sheetIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;}}
+  .shead{display:flex;justify-content:space-between;align-items:center;gap:16px;
+    padding:14px 20px 12px;border-bottom:1px solid rgba(70,224,255,.18);}
+  .shead-l{min-width:0;}
+  .s-tag{font-family:Consolas,monospace;font-size:var(--fs-head);letter-spacing:.4em;
+    color:#eaffff;text-shadow:0 0 16px var(--cy);}
+  .s-sub{font-family:Consolas,monospace;font-size:var(--fs-xs);letter-spacing:.2em;
+    color:rgba(160,220,240,.6);margin-top:4px;}
+  .s-headhint{font-family:Consolas,monospace;font-size:var(--fs-3xs);letter-spacing:.2em;
+    color:rgba(255,233,168,.7);text-align:right;line-height:1.8;flex:none;}
+  .sbody{flex:1;overflow-y:auto;padding:18px 20px;}
+  .sbody::-webkit-scrollbar{width:8px;}
+  .sbody::-webkit-scrollbar-thumb{background:rgba(70,224,255,.25);border-radius:4px;}
+  .sfoot{padding:10px 20px;border-top:1px solid rgba(70,224,255,.18);
+    font-family:Consolas,monospace;font-size:var(--fs-3xs);letter-spacing:.18em;
+    color:rgba(150,190,210,.55);}
+  .sgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
+  @media(max-width:1100px){.sgrid{grid-template-columns:repeat(2,1fr);}}
+  .span-3{grid-column:1/-1;}
+  .span-2{grid-column:span 2;}
+  .ssect{border:1px solid rgba(70,224,255,.16);border-radius:3px;
+    background:rgba(6,14,24,.6);padding:12px 14px;min-width:0;}
+  .ssect h4{font-family:Consolas,monospace;font-size:var(--fs-xs);letter-spacing:.3em;
+    color:rgba(159,243,255,.85);margin-bottom:10px;font-weight:400;
+    border-bottom:1px solid rgba(70,224,255,.12);padding-bottom:7px;}
+  .srow{display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+    padding:4px 0;font-size:var(--fs-sm);}
+  .srow .k{font-family:Consolas,monospace;font-size:var(--fs-xs);letter-spacing:.14em;
+    color:rgba(160,200,225,.72);}
+  .srow .v{font-family:Consolas,monospace;font-size:var(--fs-md);color:#eaffff;
+    white-space:nowrap;}
+  .srow .v small{color:rgba(150,190,210,.55);font-size:var(--fs-3xs);}
+  /* linha de stat expansível (smBreakdown §36) */
+  .srow.brk{cursor:pointer;border-radius:2px;}
+  .srow.brk:hover{background:rgba(70,224,255,.07);}
+  .srow.brk .v:after{content:' ▸';color:rgba(143,246,255,.5);font-size:var(--fs-3xs);}
+  .srow.brk.open .v:after{content:' ▾';color:rgba(143,246,255,.9);}
+  .sbrk{margin:2px 0 8px;padding:8px 10px;border-left:2px solid rgba(70,224,255,.4);
+    background:rgba(70,224,255,.05);display:none;}
+  .sbrk.on{display:block;}
+  .sbrk .bline{display:flex;justify-content:space-between;gap:10px;
+    font-family:Consolas,monospace;font-size:var(--fs-2xs);color:#a9cce0;
+    padding:2px 0;}
+  .sbrk .bline.bt{border-top:1px dashed rgba(70,224,255,.25);margin-top:4px;
+    padding-top:5px;color:#eaffff;}
+  .sbrk .bline .bv{white-space:nowrap;}
+  /* arsenal da ficha (§43–53) */
+  .aslot{display:flex;align-items:center;gap:12px;padding:8px 10px;margin-bottom:6px;
+    border:1px solid rgba(120,150,170,.25);border-radius:3px;background:rgba(4,12,20,.5);
+    cursor:pointer;transition:all .12s;min-width:0;}
+  .aslot:hover{border-color:rgba(70,224,255,.5);background:rgba(10,26,40,.6);}
+  .aslot.act{border-color:rgba(125,255,196,.65);
+    box-shadow:0 0 14px rgba(125,255,196,.15),inset 0 0 12px rgba(125,255,196,.05);}
+  .aslot.sel{border-color:#ffd166;box-shadow:0 0 16px rgba(255,209,102,.3);}
+  .aslot.empty{opacity:.4;border-style:dashed;cursor:default;}
+  .aslot .anum{font-family:Consolas,monospace;font-size:var(--fs-lg);color:rgba(159,243,255,.9);
+    width:30px;text-align:center;flex:none;}
+  .aslot .anm{flex:1;min-width:0;font-family:Consolas,monospace;font-size:var(--fs-md);
+    letter-spacing:.1em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .aslot .ast{font-family:Consolas,monospace;font-size:var(--fs-3xs);letter-spacing:.2em;
+    color:rgba(150,190,210,.6);flex:none;}
+  .aslot.act .ast{color:#7dffc4;}
+  .aslot .abtns{display:flex;gap:6px;flex:none;}
+  .asbtn{font-family:Consolas,monospace;font-size:var(--fs-3xs);letter-spacing:.14em;
+    padding:4px 9px;border:1px solid rgba(120,160,190,.35);border-radius:2px;
+    color:#a9cce0;cursor:pointer;white-space:nowrap;}
+  .asbtn:hover{border-color:var(--cy);color:#eaffff;background:rgba(70,224,255,.1);}
+  .ashint{font-family:Consolas,monospace;font-size:var(--fs-3xs);letter-spacing:.16em;
+    color:rgba(255,209,102,.75);padding:6px 2px 2px;min-height:20px;}
+  /* itens da build na ficha (§39) */
+  .bpill{display:inline-flex;align-items:center;gap:7px;margin:0 6px 6px 0;
+    padding:5px 10px;border:1px solid rgba(120,150,170,.3);border-radius:2px;
+    background:rgba(4,12,20,.55);font-family:Consolas,monospace;font-size:var(--fs-xs);
+    cursor:pointer;transition:all .12s;}
+  .bpill:hover{border-color:var(--cy);background:rgba(10,26,40,.6);}
+  .bpill.tr{border-color:rgba(255,77,240,.55);color:#ffc7fb;}
+  .bpill .bstate{color:rgba(255,233,168,.85);font-size:var(--fs-3xs);}
+  .ssyn{display:flex;flex-wrap:wrap;gap:6px;}
+  .ssyn span{font-family:Consolas,monospace;font-size:var(--fs-xs);letter-spacing:.14em;
+    color:#8ff6ff;border:1px solid rgba(70,224,255,.4);background:rgba(70,224,255,.07);
+    padding:4px 10px;border-radius:2px;}
+
+  /* =====================================================================
+     PR 11.5 — SANDBOX: painel de laboratório + chip (§70/§79/§93)
+     Aparência de feature do jogo (§93): mesma linguagem visual da ficha,
+     com acento verde-menta para separar do combate real.
+     ===================================================================== */
+  #sb-chip{position:fixed;left:16px;bottom:132px;z-index:11;display:none;
+    cursor:pointer;border-color:rgba(125,255,196,.4);color:#a9e8c9;}
+  #sb-chip.on{display:block;}
+  #sb-chip:hover{border-color:#7dffc4;color:#eafff4;}
+  #sandboxp{position:fixed;inset:4%;z-index:42;display:none;flex-direction:column;
+    border:1px solid rgba(125,255,196,.4);border-radius:4px;
+    background:linear-gradient(180deg,rgba(4,14,12,.96),rgba(2,8,10,.98));
+    box-shadow:0 20px 80px rgba(0,0,0,.9),0 0 40px rgba(125,255,196,.07);
+    color:#cfeffc;}
+  #sandboxp.on{display:flex;animation:sheetIn .14s ease-out;}
+  #sandboxp .sfoot{border-top-color:rgba(125,255,196,.18);color:rgba(125,255,196,.55);}
+  #sandboxp .shead{border-bottom-color:rgba(125,255,196,.18);}
+  #sandboxp .ssect{border-color:rgba(125,255,196,.16);}
+  #sandboxp .ssect h4{color:rgba(125,255,196,.85);border-bottom-color:rgba(125,255,196,.12);}
+  /* PR 11.5 §31–§33: feedback do preparo + falha de início visível */
+  .sbfail{border:1px solid rgba(255,92,122,.55);background:rgba(255,92,122,.10);
+    color:#ffb3c2;font-family:Consolas,monospace;font-size:var(--fs-sm);
+    padding:10px 14px;margin-bottom:14px;letter-spacing:.4px;}
+  .sbgo.dis{opacity:.45;filter:grayscale(.6);cursor:not-allowed;}
+  .sbgo.dis:hover{transform:none;}
+  .sbchar{cursor:pointer;transition:border-color .12s,box-shadow .12s;}
+  .sbchar:hover{border-color:rgba(125,255,196,.5)!important;transform:translateY(-2px);}
+  .sbbtn{cursor:pointer;transition:border-color .12s,background .12s;}
+  .sbbtn:hover{border-color:#7dffc4!important;background:rgba(125,255,196,.08);}
+  .sbbtn.dis{opacity:.4;pointer-events:none;}
+  .sbgo:active{transform:scale(.985);}
+  /* §8: slot vazio apontando como destino no Registro (TAB) */
+  .aslot.dst .anm{color:rgba(125,255,196,.75);}
+  .aslot.dst{border-style:dashed;border-color:rgba(125,255,196,.45);cursor:pointer;}
+  .sbrow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:4px;}
+  .sbrow .asbtn.sbcur{border-color:#7dffc4;color:#eafff4;background:rgba(125,255,196,.12);}
+  .sbopts{display:flex;flex-wrap:wrap;gap:6px;}
+  .sbbtn{font-family:Consolas,monospace;font-size:var(--fs-xs);letter-spacing:.12em;
+    padding:5px 11px;border:1px solid rgba(120,160,190,.35);border-radius:2px;
+    color:#a9cce0;cursor:pointer;transition:all .12s;}
+  .sbbtn:hover{border-color:var(--cy);color:#eaffff;background:rgba(70,224,255,.1);}
+  .sbbtn.on{border-color:#7dffc4;color:#eafff4;background:rgba(125,255,196,.14);}
+  .sbbtn.dis{opacity:.35;cursor:not-allowed;}
+  .sbchars{display:flex;flex-wrap:wrap;gap:10px;}
+  .sbchar{width:112px;padding:10px 6px;text-align:center;border:1px solid rgba(120,150,170,.3);
+    border-radius:3px;background:rgba(4,12,20,.55);cursor:pointer;transition:all .12s;}
+  .sbchar:hover{border-color:var(--cy);transform:translateY(-2px);}
+  .sbchar .cn{font-family:Consolas,monospace;font-size:var(--fs-sm);letter-spacing:.1em;
+    margin-top:6px;color:#cfeffc;}
+  .sbchar .cr{font-family:Consolas,monospace;font-size:var(--fs-3xs);letter-spacing:.14em;
+    color:rgba(150,190,210,.55);margin-top:2px;}
+  .sbgo{margin-top:16px;padding:12px 20px;text-align:center;cursor:pointer;}
+  .sbpick{border-top:1px dashed rgba(125,255,196,.25);margin-top:8px;}
 
   /* ---------- itens bloqueados no codex ---------- */
   .cxitem.lock{opacity:.42;filter:grayscale(.75);}
@@ -450,6 +639,14 @@
     background:rgba(70,224,255,.04);transition:all .14s;}
   .ovbtn:hover{color:#e8fbff;border-color:var(--cy);background:rgba(70,224,255,.16);
     box-shadow:0 0 18px rgba(70,224,255,.22);transform:translateY(-2px);}
+  .ovbtn small{display:block;font-size:var(--fs-3xs);letter-spacing:.14em;
+    color:rgba(150,190,210,.55);margin-top:4px;}
+  /* PR 11.5: SANDBOX é um recurso do jogador — destaque próprio, contido */
+  #ov-sandbox{border-color:rgba(125,255,196,.4);color:#a9e8c9;}
+  #ov-sandbox small{color:rgba(125,255,196,.5);}
+  #ov-sandbox:hover{color:#eafff4;border-color:#7dffc4;background:rgba(125,255,196,.12);
+    box-shadow:0 0 18px rgba(125,255,196,.2);}
+  #ov-exitmenu:hover{color:#eafff4;border-color:#7dffc4;background:rgba(125,255,196,.12);}
 
   /* ---------- painéis de Arsenal e Configurações ---------- */
   #codex{position:fixed;inset:0;z-index:34;display:none;align-items:center;
@@ -636,10 +833,12 @@
       <div class="panel" id="coinp"><span class="lbl">CRÉDITOS</span><div id="coinsp">◈ 0</div></div>
       <div class="chip" id="chip1">ECHO·01 — INATIVO</div>
       <div class="chip" id="chip2">ECHO·02 — INATIVO</div>
-      <div id="moralp">
-        <div class="mbar"><u>COMP</u><i><b id="mb-c" style="background:#7dffc4"></b></i></div>
-        <div class="mbar"><u>GANÂ</u><i><b id="mb-g" style="background:#ffd166"></b></i></div>
-        <div class="mbar"><u>VIOL</u><i><b id="mb-v" style="background:#ff5c7a"></b></i></div>
+      <!-- PR 11.5: percentuais de moralidade saem do HUD (vão para o TAB).
+           Aqui fica só o perfil dominante — feedback imediato, sem poluição. -->
+      <div class="chip" id="moralp" title="Perfil moral — detalhes no TAB [TAB]">
+        <span class="lbl">PERFIL</span>
+        <b id="moral-dom">NEUTRO</b>
+        <span id="moral-tiers"></span>
       </div>
     </div>
   </div>
@@ -713,16 +912,45 @@
   <div id="ov-go">INICIAR CICLO</div>
   <div id="ov-actions">
     <div class="ovbtn slotact" id="ov-back">VOLTAR AO MENU</div>
+    <div class="ovbtn slotact" id="ov-exitmenu" style="display:none">⌂ VOLTAR AO MENU PRINCIPAL</div>
     <div class="hint">ENTER — NOVA RUN · ESC — VOLTAR AO MENU</div>
   </div>
   <div id="ov-char"></div>
   <div id="ov-menu">
     <div class="ovbtn" id="ov-arsenal">◈ ARSENAL</div>
+    <div class="ovbtn" id="ov-sandbox">⌖ SANDBOX<small>TESTE OPERADORES, ARMAS E BUILDS SEM AFETAR SUA PROGRESSÃO</small></div>
     <div class="ovbtn" id="ov-config">⚙ CONFIGURAÇÕES</div>
   </div>
   <div id="ov-echos"></div>
   <div id="ov-frac-lines"></div>
   <div id="ov-ver">ECHO</div>
+</div>
+
+<!-- ===== PR 11.5 — REGISTRO DE COMBATE (TAB) — detalhes da run atual ===== -->
+<div id="sheet">
+  <div class="shead">
+    <div class="shead-l">
+      <div class="s-tag" id="s-tag">REGISTRO DE COMBATE</div>
+      <div class="s-sub" id="s-sub">—</div>
+    </div>
+    <div class="s-headhint" id="s-hint">TEMPO SUSPENSO · SEM I-FRAMES AO FECHAR</div>
+  </div>
+  <div class="sbody" id="s-body"></div>
+  <div class="sfoot" id="s-foot">TAB — ABRIR/FECHAR · ESC — CANCELA SELEÇÃO / FECHA · ARSENAL: CLIQUE EM 2 SLOTS PARA TROCAR</div>
+</div>
+
+<!-- ===== PR 11.5 — SANDBOX: laboratório do jogador (§69–94) ===== -->
+<div id="sb-chip" class="chip">⌖ SANDBOX · [F1] LABORATÓRIO</div>
+<div id="sandboxp">
+  <div class="shead">
+    <div class="shead-l">
+      <div class="s-tag" style="text-shadow:0 0 16px #7dffc4">LABORATÓRIO SANDBOX</div>
+      <div class="s-sub" id="sb-sub">TEMPO SUSPENSO · NADA AQUI AFETA SUA PROGRESSÃO</div>
+    </div>
+    <div class="s-headhint">F1 / ESC — FECHAR</div>
+  </div>
+  <div class="sbody" id="sb-body"></div>
+  <div class="sfoot">SANDBOX NÃO CRIA ECO · NÃO REGISTRA FINAL · NÃO DÁ PROGRESSÃO</div>
 </div>
 
 <div id="tip"></div>
@@ -777,6 +1005,77 @@ function angTo(cur,tgt,step){
   let d=(tgt-cur)%TAU;
   if(d>Math.PI)d-=TAU; if(d<-Math.PI)d+=TAU;
   return cur+clamp(d,-step,step);
+}
+
+/* =====================================================================
+   FORMATAÇÃO CENTRAL DE NÚMEROS (PR 11.5)
+   ---------------------------------------------------------------------
+   ÚNICA fonte de formatação para HUD, TAB (Ficha de Combate), Loja,
+   Pausa, Codex e tooltips. Nada de .toFixed()/Math.round espalhados
+   pela UI de jogador — importe daqui.
+
+   Regras de precisão contextual (documentadas em UI_UX_SYSTEM.md):
+   · inteiros permanecem inteiros ............ 17      → "17"
+   · quebrados recebem no máx. 1 casa ........ 32.325  → "32.3"
+   · percentual sempre com 1 casa quando útil. 0.3253  → "32.5%"
+   · compacto apenas em contexto de escala ... 15400   → "15.4K"
+   · tempo de cooldown/ação .................. 1.275s  → "1.3s"
+   ===================================================================== */
+const MINUS='−';                        // sinal tipográfico (igual ao resto da UI)
+function fmtNum(v,maxDec){
+  if(v==null||!isFinite(v))return '—';
+  if(maxDec==null)maxDec=1;
+  const p=Math.pow(10,maxDec);
+  /* arredondamento half-away-from-zero (Math.round puro enviesaria
+     negativos para cima: -3.25 → -3.2 em vez de -3.3) */
+  let r=Math.round(Math.abs(v)*p)/p*(v<0?-1:1);
+  if(Object.is(r,-0))r=0;
+  if(Number.isInteger(r))return String(r);
+  return r.toFixed(maxDec).replace(/\.?0+$/,'');
+}
+/* stat genérico de combate (dano, alcance em px, áreas) */
+function fmtStat(v,maxDec){return fmtNum(v,maxDec==null?1:maxDec);}
+/* fração 0..n → percentual: fmtPct(.3253) → "32.5%" · fmtPct(1) → "100%" */
+function fmtPct(v,maxDec){
+  if(v==null||!isFinite(v))return '—';
+  return fmtNum(v*100,maxDec==null?1:maxDec)+'%';
+}
+/* escala compacta — só onde o valor exato não importa: 1200→"1.2K" (§9) */
+function fmtCompact(v){
+  if(v==null||!isFinite(v))return '—';
+  const s=v<0?MINUS:'',a=Math.abs(v);
+  if(a>=1e9)return s+fmtNum(a/1e9,2)+'B';
+  if(a>=1e6)return s+fmtNum(a/1e6,2)+'M';
+  if(a>=1e3)return s+fmtNum(a/1e3,1)+'K';
+  return s+fmtNum(a,a<100?1:0);
+}
+/* tempo de relógio de run: fmtTime(83.2) → "01:23" */
+function fmtTime(s){
+  if(s==null||!isFinite(s))return '—:—';
+  s=Math.max(0,s);
+  const m=Math.floor(s/60),sec=Math.floor(s%60);
+  return String(m).padStart(2,'0')+':'+String(sec).padStart(2,'0');
+}
+/* duração/cooldown curto: fmtSec(1.275) → "1.3s" · fmtSec(30) → "30s" */
+function fmtSec(s,maxDec){
+  if(s==null||!isFinite(s))return '—';
+  return fmtNum(s,maxDec==null?1:maxDec)+'s';
+}
+/* taxa por segundo: fmtRate(3.2) → "3.2/s" */
+function fmtRate(v,maxDec){
+  if(v==null||!isFinite(v))return '—';
+  return fmtNum(v,maxDec==null?1:maxDec)+'/s';
+}
+/* multiplicador: fmtMult(1.275) → "×1.28" (2 casas: precisão importa aqui) */
+function fmtMult(v,maxDec){
+  if(v==null||!isFinite(v))return '—';
+  return '×'+fmtNum(v,maxDec==null?2:maxDec);
+}
+/* delta percentual: fmtSigned(.3) → "+30%" · fmtSigned(-.15) → "−15%" */
+function fmtSigned(v,maxDec){
+  if(v==null||!isFinite(v)||Math.abs(v)<5e-7)return '±0%';
+  const s=v>0?'+':MINUS;
+  return s+fmtNum(Math.abs(v)*100,maxDec==null?1:maxDec)+'%';
 }
 
 /* ---------------- canvas ---------------- */
@@ -1001,7 +1300,12 @@ function initAudio(){AUDIO.init();AUDIO.enabled=audioOn;AUDIO.musicOn=musicOn;}
    ===================================================================== */
 const CFG_KEY='echoCfg.v1';
 let cfg={music:1,shake:1,aberr:1,parts:1,quality:1,dmgnum:1,autofire:0,
-  rumble:1,aimAssist:1};
+  rumble:1,aimAssist:1,
+  /* PR 11.5 — acessibilidade & controle de informação */
+  flash:1,            // 1 NORMAL · .55 REDUCED (picos de flash/aberração)
+  tabMode:'toggle',   // PR 11.5 §26: TOGGLE é o PADRÃO (TAB abre/fecha); 'hold' continua disponível nas Configurações
+  hudPreset:'full'    // 'full' (padrão) — reserva futura p/ HUD mínimo
+};
 function loadCfg(){
   try{
     const r=localStorage.getItem(CFG_KEY);
@@ -1009,6 +1313,9 @@ function loadCfg(){
       if(c&&typeof c==='object')for(const k in cfg)
         if(c[k]!==undefined)cfg[k]=c[k];}
   }catch(e){}
+  /* migração: dmgnum legado era binário (1=ligado). O novo 1 é REDUCED;
+     quem tinha "ligado" passa a ver FULL — comportamento idêntico ao antigo. */
+  if(cfg.dmgnum===true)cfg.dmgnum=2;
   applyCfg();
 }
 function saveCfg(){try{localStorage.setItem(CFG_KEY,JSON.stringify(cfg));}catch(e){}}
@@ -1020,7 +1327,12 @@ function applyCfg(){
   if(typeof scheduleResize==='function')scheduleResize();
 }
 let musicOn=true;
-const SHAKE_MUL=()=>cfg.shake?1:0;
+/* tremor de tela em níveis: 1 · .75 · .5 · .25 · 0 (§23) */
+const SHAKE_MUL=()=>(cfg.shake==null?1:cfg.shake);
+/* flash/aberração em 2 níveis: NORMAL (1) · REDUCED (.55) (§24) */
+const FLASH_MUL=()=>cfg.flash==null?1:cfg.flash;
+/* pico de aberração cromática — único ponto que aplica o nível de flash */
+function aberrPeak(v){aberr=Math.max(aberr,v*FLASH_MUL());}
 const ABERR_MUL=()=>cfg.aberr?1:0;
 const PARTS_MUL=()=>cfg.parts?1:.35;
 /* wrapper legado usado em todo o motor */
@@ -1233,7 +1545,7 @@ const LS_KEY='echoRuns.v1';
    ECHO_VERSION deve permanecer igual ao "version" do package.json.
    O teste tests/devmode.test.js falha se os dois divergirem.
    ===================================================================== */
-const ECHO_VERSION='0.6.6-alpha';
+const ECHO_VERSION='0.7.0-alpha';
 const ECHO_VERSION_LABEL='ECHO  v'+ECHO_VERSION+'  ·  PLAYTEST';
 
 /* =====================================================================
@@ -1262,6 +1574,30 @@ function detectDevBuild(){
 const IS_DEV_BUILD=detectDevBuild();
 let DEV_MODE=false;        // NUNCA inicia ligado — nem em build de dev
 let devTainted=false;      // a run atual foi tocada por ferramentas DEV?
+/* =====================================================================
+   PR 11.5 §69–76 — SANDBOX (laboratório do JOGADOR, distinto do DEV)
+   sandboxMode : a tela de preparação do Sandbox está aberta (menu)
+   sandboxRun  : uma run de Sandbox está ativa
+   · NÃO depende de devTainted (§72): flag própria e explícita.
+   · Isolamento total (§73): nenhuma função de persistência/gravação age
+     com sandboxRun — meta, prog, Codex, finais, evars, records, unlocks
+     e echoQueue do save real ficam intocados.
+   · Sandbox libera TODO o conteúdo em Alpha (§76): is*Unlocked → true.
+   ===================================================================== */
+let sandboxMode=false;
+let sandboxRun=false;
+/* R4: o Sandbox é um MODO INDEPENDENTE dos save slots. Ao entrar,
+   nenhum slot é carregado como base: o laboratório roda sobre estado
+   TEMPORÁRIO próprio (prog/meta/eco zerados, curSlot=0) e o contexto do
+   modo normal é guardado aqui para ser RECARREGADO DO ARQUIVO na saída.
+   O save nunca é backing store do sandbox (§4/§5/§8/§9). */
+let _sbSlotBak=0;
+/* §3: janela iniciada ao ENTRAR no sandbox e só liberada por uma run
+   REAL — mostra título/select logo após sair NÃO pode desbloquear nada
+   (checkUnlocks do showTitle ficaria a dever gravações pendentes). */
+let sandboxHoldUnlocks=false;
+const sandboxCfg={char:0,preset:'',wave:1};   // setup da sessão (não persiste)
+function sandboxActive(){return sandboxMode||sandboxRun;}
 /* Marca a run como "suja": nada dela pode atravessar para os sistemas
    permanentes (Ecos salvos, progressão, meta-progresso, recordes). */
 function devTaint(){
@@ -1288,7 +1624,7 @@ const keys={},keyPulse={}; let mouse={x:0,y:0}, firing=false;
 const MOVE_CODES=new Set(['KeyW','KeyA','KeyS','KeyD',
   'ArrowUp','ArrowDown','ArrowLeft','ArrowRight']);
 window.addEventListener('keydown',e=>{
-  if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();
+  if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Tab'].includes(e.code))e.preventDefault();
   // painel de Arsenal/Configurações captura o input
   const _cx=document.getElementById('codex');
   if(_cx&&_cx.classList.contains('on')){
@@ -1330,6 +1666,8 @@ window.addEventListener('keydown',e=>{
   }
   if(state==='victory'){
     if(e.code==='KeyM')setAudio(!audioOn);
+    /* sandbox: ENTER reinicia o teste (nenhum final foi registrado) */
+    if(sandboxRun&&(e.code==='Enter'||e.code==='Space'))beginNextRun();
     return;
   }
   // ---- PAUSA [ESC] — o roteamento real fica em onGameEsc() ----
@@ -1338,7 +1676,27 @@ window.addEventListener('keydown',e=>{
     if(!e.repeat)onGameEsc();
     return;
   }
+  /* PR 11.5 §79/§13: F1 só faz algo DENTRO de uma run de Sandbox.
+     Em run normal (ou em qualquer outro estado): return — não abre
+     overlay, não muda state, não intercepta nada além do default. */
+  if(e.code==='F1'){
+    e.preventDefault();
+    if(!e.repeat&&sandboxRun&&(state==='play'||state==='sandbox'))
+      sbPanelToggle();                     // abrir (play) e fechar (painel)
+    return;
+  }
+  /* PR 11.5 §26 — TAB abre o Registro de Combate
+     HOLD (padrão): abrir no pressionar, fechar ao soltar.
+     TOGGLE: aperte para abrir, aperte de novo para fechar. */
+  if(e.code==='Tab'){
+    if(e.repeat)return;
+    if(cfg.tabMode==='toggle')sheetToggle();
+    else if(sheetOpen)sheetHide();          // TOGGLE pode estar desatualizado
+    else sheetShow();
+    return;
+  }
   if(state==='paused')return;              // menu de pausa captura todo o input
+  if(state==='sheet'||state==='sandbox')return; // registro/laboratório capturam o input
   if(e.code==='KeyM'){setAudio(!audioOn);
     toast(audioOn?'ÁUDIO ATIVO':'ÁUDIO MUDO');return;}
   if(state!=="play")return;
@@ -1349,12 +1707,16 @@ window.addEventListener('keydown',e=>{
     keys[e.code]=true;
     keyPulse[e.code]=performance.now();
   }
-  if(e.code==='Digit1')setWeaponSlot(0);
-  if(e.code==='Digit2')setWeaponSlot(1);
-  if(e.code==='Digit3')setWeaponSlot(2);
-  if(e.code==='Digit4')setWeaponSlot(3);
-  if(e.code==='Digit5')setWeaponSlot(4);
+  /* PR 11.5 §54: seleção por slot — só responde se o operador POSSUI o slot
+     (setWeaponSlot valida contra owned.length; operadores de 2 slots
+     ignoram 3–5, e a arquitetura aceita qualquer maxSlots). */
+  if(e.code==='Digit1'||e.code==='Numpad1')setWeaponSlot(0);
+  if(e.code==='Digit2'||e.code==='Numpad2')setWeaponSlot(1);
+  if(e.code==='Digit3'||e.code==='Numpad3')setWeaponSlot(2);
+  if(e.code==='Digit4'||e.code==='Numpad4')setWeaponSlot(3);
+  if(e.code==='Digit5'||e.code==='Numpad5')setWeaponSlot(4);
   if(e.code==='KeyQ')cycleWeapon(1);
+  if(e.code==='KeyX')quickSwitchWeapon();   // §55: Q já é ciclar — X alterna
   if(e.code==='KeyE')trySpecial();
   if(e.code==='Space')tryDash();
 });
@@ -1363,6 +1725,9 @@ window.addEventListener('keyup',e=>{
     keys[e.code]=false;
     delete keyPulse[e.code];
   }
+  /* PR 11.5 §26: soltar TAB fecha no modo HOLD — fechar nunca concede
+     i-frames nem avança o mundo (§28). */
+  if(e.code==='Tab'&&cfg.tabMode!=='toggle'&&sheetOpen)sheetHide();
 });
 // Captura também no document para cobrir overlays internos do Electron.
 document.addEventListener('keyup',e=>{
@@ -1484,6 +1849,7 @@ function pollGamepad(){
   // ---- navegação de menus ----
   const cxOpen=codexEl&&codexEl.classList.contains('on');
   if(padEdge(gp,PB.START)){
+    if(sheetOpen){sheetHide();return;}      // PR 11.5: START fecha a ficha
     if(cxOpen)closeCodex();
     else if(state==='play')pauseGame();
     else if(state==='paused')resumeGame();
@@ -1492,6 +1858,7 @@ function pollGamepad(){
     return;
   }
   if(padEdge(gp,PB.B)){
+    if(sheetOpen){sheetHide();return;}
     if(cxOpen){closeCodex();return;}
     if(state==='paused'){resumeGame();return;}
     if(state==='slots'){showTitle();return;}
@@ -1547,6 +1914,7 @@ function pollGamepad(){
   if(padEdge(gp,PB.LB))cycleWeapon(-1);
   if(padEdge(gp,PB.RB))cycleWeapon(1);
   if(padEdge(gp,PB.Y))cycleWeapon(1);
+  if(padEdge(gp,PB.UP))sheetShow();        // PR 11.5: D-PAD ↑ abre a ficha
   if(padEdge(gp,PB.SELECT))openCodex('organizer');
 }
 window.addEventListener('mousemove',e=>{
@@ -1561,7 +1929,8 @@ window.addEventListener('mousedown',e=>{
   // BOTÕES DA UI NÃO INICIAM A RUN (mousedown dispara antes do click)
   const t=e.target;
   if(t&&t.closest&&t.closest('#ov-menu,#ov-char,#ov-slots,#ov-slotacts,'+
-    '#ov-actions,#pause-menu,#modal,#endwrap,#codex,#devpanel'))return;
+    '#ov-actions,#pause-menu,#modal,#endwrap,#codex,#devpanel,#sheet,'+
+    '#sb-chip,#sandboxp'))return;
   if(state==='title'){showSlotSelect();return;}          // PR 7.5: escolhe memória
   if(state==='slots'||state==='slotMenu'||state==='slotConfirm')return;
   if(state==='fracture'){
@@ -1570,7 +1939,13 @@ window.addEventListener('mousedown',e=>{
     if(fracT>0.45)beginNextRun();
     return;
   }
-  if(state==='shop'||state==='event'||state==='paused'||state==='victory')return;
+  if(state==='shop'||state==='event'||state==='paused')return;
+  if(state==='victory'){
+    /* sandbox: clique em qualquer lugar = REINICIAR SANDBOX (§89/§90) */
+    if(sandboxRun)beginNextRun();
+    return;
+  }
+  if(state==='sheet'||state==='sandbox')return; // registro/laboratório capturam
   if(e.button===0)firing=true;
   if(e.button===2)tryDash();
 });
@@ -1760,9 +2135,25 @@ function onGameEsc(){
   if(typeof devPanelOpen!=='undefined'&&devPanelOpen){devClosePanel();return;}
   // 1. modais de loja / evento (não podem ser fechados por ESC: exigem escolha)
   if(state==='shop'||state==='event')return;
-  // 2. painel de Arsenal / Configurações
+  // 1.5 PR 11.5 §111/§112: ficha e laboratório nunca empilham — ESC fecha.
+  // §7: se houver seleção de swap armada, ESC CANCELA a seleção primeiro.
+  if(state==='sheet'){
+    if(sheetSel>=0){sheetSel=-1;AUDIO.ui(520);sheetRender(true);return;}
+    sheetHide();return;
+  }
+  if(state==='sandbox'){
+    if(sbSwapA!==-1||sbPick!=null||sbItemPick||sbPendingWi!=null){
+      sbSwapA=-1;sbPick=null;sbItemPick=false;sbPendingWi=null;
+      AUDIO.ui(520);sbRender();return;
+    }
+    sbPanelClose();return;
+  }
+  // 2. painel de Arsenal / Configurações (no Sandbox: volta ao menu)
   const cx=document.getElementById('codex');
-  if(cx&&cx.classList.contains('on')){closeCodex();return;}
+  if(cx&&cx.classList.contains('on')){
+    if(codexMode==='sandbox'&&!sandboxRun){sandboxCloseSetup();return;}
+    closeCodex();return;
+  }
   // 3. menu de pausa
   if(state==='play'){pauseGame();return;}
   if(state==='paused'){resumeGame();return;}
@@ -1774,13 +2165,14 @@ function pauseGame(){
   const pm=document.getElementById('pause-menu');
   const w=WEAPONS[player.wi];
   document.getElementById('p-stats').innerHTML=
-    'SAVE <b>0'+curSlot+'</b> · ONDA <b>'+String(Math.max(1,wave)).padStart(2,'0')+' / 20</b> · '+
+    (curSlot>=1?('SAVE <b>0'+curSlot+'</b>'):('<b>MODO SANDBOX</b>'))+
+    ' · ONDA <b>'+String(Math.max(1,wave)).padStart(2,'0')+' / 20</b> · '+
     'NÍVEL <b>'+player.level+'</b> · ABATES <b>'+kills+'</b><br>'+
     'INTEGRIDADE <b>'+Math.max(0,Math.ceil(player.hp))+' / '+player.maxHp+'</b> · '+
     'ESCUDO <b>'+Math.max(0,Math.ceil(player.shield))+' / '+player.shieldMax+'</b> · '+
     'CRÉDITOS <b>◈'+player.coins+'</b><br>'+
-    'ARMA <b>'+w.nm+'</b> · ARSENAL <b>'+player.owned.length+'/'+WEAPONS.length+'</b> · '+
-    'MÓDULOS <b>'+player.items.length+'</b><br>'+
+    'ARMA <b>'+w.nm+'</b> · ARSENAL <b>'+countWeapons(player)+'/'+player.maxSlots+
+    ' SLOTS</b> · MÓDULOS <b>'+player.items.length+'</b><br>'+
     'ECHO·01 <b>'+(echoes[0]?(echoes[0].alive?'ATIVO':'OFFLINE'):'INATIVO')+'</b> · '+
     'ECHO·02 <b>'+(echoes[1]?(echoes[1].alive?'ATIVO':'OFFLINE'):'INATIVO')+'</b><br>'+
     (function(){   // PR 9: perfil moral resumido + sintonia da build
@@ -1847,6 +2239,1109 @@ function abortRun(){
   onPlayerDeath();                       // vira Echo 1 e aplica a fila de Ecos
 }
 
+/* =====================================================================
+   PR 11.5 §25–42 — REGISTRO DE COMBATE (TAB / RUN DETAIL)
+   ---------------------------------------------------------------------
+   Profundidade da run, não ferramenta técnica (§37: nada de IDs fonte,
+   confiança oculta do Echo, pressão de Dissonância crua ou flags debug).
+   COMPORTAMENTO (§26/§27/§28):
+   · HOLD (padrão): abrir segurando TAB, fechar ao soltar. TOGGLE via
+     Configurações.
+   · O tempo PAUSA enquanto aberta (decisão documentada: sem exploit —
+     o mundo congela como na pausa, e fechar NÃO concede i-frames nem
+     restaura/toca cooldowns: nada avança enquanto aberta).
+   · Custo fechado: zero (só o atalho de teclado existe).
+   · Custo aberto: re-render sob demanda por assinatura de estado —
+     nunca por frame.
+   ===================================================================== */
+let sheetOpen=false;
+let sheetSel=-1;              // slot armado para TROCA no arsenal
+let sheetBrk=Object.create(null);   // stats expandidos (smBreakdown)
+let _sheetAcc=0,_sheetSig='';
+
+function sheetEl(){return document.getElementById('sheet');}
+function sheetCanOpen(){
+  if(typeof devPanelOpen!=='undefined'&&devPanelOpen)return false; // DEV > TAB
+  const cx=document.getElementById('codex');
+  if(cx&&cx.classList.contains('on'))return false;                 // painéis > TAB
+  return state==='play'&&!!player;
+}
+function sheetShow(){
+  if(sheetOpen||!sheetCanOpen())return;
+  sheetOpen=true;sheetSel=-1;
+  releaseAllInput();
+  state='sheet';                       // tempo congelado (§27 — PAUSAR)
+  sheetEl().classList.add('on');
+  sheetRender(true);
+  AUDIO.tone(660,.1,'sine',.03,180);
+}
+function sheetHide(){
+  if(!sheetOpen)return;
+  sheetOpen=false;sheetSel=-1;
+  sheetEl().classList.remove('on');
+  /* §28: fechar o TAB NÃO dá invulnerabilidade nem mexe em timers —
+     diferente do menu de pausa (0.5s de fase), aqui nada é concedido. */
+  state='play';
+  AUDIO.tone(440,.08,'sine',.025,-120);
+}
+function sheetToggle(){
+  if(sheetOpen){sheetHide();return;}
+  if(sheetCanOpen())sheetShow();
+}
+/* rótulo humano do estado visível de um item (§40 — nada de itemState cru) */
+function itemHumanState(p,id){
+  const st=p&&p.itemState?p.itemState[id]:null;
+  if(!st)return '';
+  const out=[];
+  if(st.cd>0)out.push('CD '+fmtSec(st.cd));
+  if(st.critLock)out.push('CRIT PRONTO');
+  if(st.pierceT>0)out.push('ATIVO '+fmtSec(st.pierceT));
+  if(st.dashT>0)out.push('ATIVO '+fmtSec(st.dashT));
+  if(st.windowT>0)out.push('JANELA '+fmtSec(st.windowT));
+  return out.join(' · ');
+}
+/* linha de stat com breakdown expansível (§35/§36) */
+function smValTxt(type,v){
+  if(type==='mult')return fmtMult(v);
+  if(type==='add')return fmtSigned(v);
+  return (v>0?'+':v<0?MINUS:'')+fmtNum(Math.abs(v),2);   // flat: valor cru
+}
+function sheetStatRow(stat,label,val,extra){
+  const bd=smBreakdown(player,stat);
+  const has=bd&&bd.lines&&bd.lines.length;
+  const open=!!sheetBrk[stat];
+  let h='<div class="srow'+(has?' brk':'')+(open?' open':'')+'"'+
+    (has?' data-brk="'+stat+'"':'')+'><span class="k">'+label+'</span>'+
+    '<span class="v">'+val+(extra?' <small>'+extra+'</small>':'')+'</span></div>';
+  if(has&&open){
+    let flat=0,add=0,mult=1;
+    for(const ln of bd.lines){
+      if(ln.active){
+        if(ln.type==='flat')flat+=ln.value;
+        else if(ln.type==='add')add+=ln.value;
+        else if(ln.type==='mult')mult*=ln.value;
+      }
+      h+='<div class="sbrk on"><span class="bline"'+(ln.active?'':' style="opacity:.45"')+
+        '><span>· '+(ln.label||'mod')+
+        (ln.temp?' <small>('+fmtSec(ln.dur)+')</small>':'')+
+        (ln.active?'':' <small>[inativo]</small>')+
+        '</span><span class="bv">'+smValTxt(ln.type,ln.value)+'</span></span></div>';
+    }
+    h+='<div class="sbrk on"><span class="bline"><span>BASE</span>'+
+      '<span class="bv">'+fmtNum(bd.base,2)+'</span></span>'+
+      (flat?'<span class="bline"><span>FLAT</span><span class="bv">'+
+        (flat>0?'+':MINUS)+fmtNum(Math.abs(flat),2)+'</span></span>':'')+
+      (add?'<span class="bline"><span>ADD</span><span class="bv">'+fmtSigned(add)+'</span></span>':'')+
+      (mult!==1?'<span class="bline"><span>MULT</span><span class="bv">'+fmtMult(mult)+'</span></span>':'')+
+      '<span class="bline bt"><span>FINAL</span><span class="bv">'+fmtNum(bd.final,2)+'</span></span></div>';
+  }
+  return h;
+}
+/* ---- ARSENAL da ficha (§43–53): todos os slots REAIS do operador ---- */
+function sheetArsenalHTML(){
+  /* PR 11.5 §5–§8: TROCA EM 2 CLIQUES — clique no slot (seleciona) →
+     clique no destino (arma OU vazio) → swap imediato. Clicar de novo
+     no selecionado CANCELA. Sem botões MOVER/confirmar. */
+  const n=countWeapons(player);
+  let h='';
+  for(let s=0;s<player.maxSlots;s++){
+    const wi=player.owned[s];
+    if(wi==null){
+      h+='<div class="aslot empty'+(sheetSel>=0?' dst':'')+'" data-aslot="'+s+'">'+
+        '<span class="anum">'+(s+1)+'</span>'+
+        '<span class="anm">— VAZIO —</span>'+
+        '<span class="ast">'+(sheetSel>=0?'RECEBER AQUI':'SLOT LIVRE')+'</span></div>';
+      continue;
+    }
+    const d=WEAPONS[wi],act=player.wi===wi,sel=sheetSel===s;
+    h+='<div class="aslot'+(act?' act':'')+(sel?' sel':'')+'" data-aslot="'+s+'">'+
+      '<span class="anum">'+(s+1)+'</span>'+
+      '<span class="anm" style="color:'+d.color+'">'+d.nm+'</span>'+
+      '<span class="ast">'+(sel?'SELECIONADO':(act?'◄ ATIVA':d.tag))+'</span>'+
+      '<span class="abtns">'+
+      (act?'':'<span class="asbtn" data-a="eq">EQUIPAR</span>')+
+      '</span></div>';
+  }
+  return h;
+}
+function sheetBindArsenal(){
+  const body=$('s-body');
+  body.querySelectorAll('[data-aslot]').forEach(el=>{
+    const s=parseInt(el.dataset.aslot,10);
+    el.querySelectorAll('.asbtn').forEach(b=>{
+      b.addEventListener('click',ev=>{ev.stopPropagation();sheetArsenalAction(s,b.dataset.a);});
+    });
+    el.addEventListener('click',()=>sheetArsenalAction(s,'click'));
+  });
+}
+function sheetArsenalAction(slot,action){
+  if(!player||slot<0||slot>=player.maxSlots)return;
+  if(action==='eq'){                        // equipar (botão discreto)
+    if(player.owned[slot]!=null)setWeaponSlot(slot);
+    sheetRender(true);return;
+  }
+  /* §7: clicar de novo no slot selecionado CANCELA a seleção */
+  if(sheetSel===slot){
+    sheetSel=-1;AUDIO.ui(520);
+    sheetRender(true);return;
+  }
+  /* §5/§6: segundo clique executa o SWAP imediatamente (arma ou vazio).
+     §8: destino vazio MOVE a arma. §9: a ativa acompanha a arma. */
+  if(sheetSel>=0&&sheetSel!==slot){
+    const a=sheetSel,wa=player.owned[a],wb=player.owned[slot];
+    sheetSel=-1;
+    if(swapWeaponSlots(a,slot)){            // §50: função central · §58: estado preservado
+      toast(wb==null?('SLOT '+(a+1)+' → '+(slot+1)+': '+
+        (wa!=null?WEAPONS[wa].nm+' MOVIDA':''))
+        :('SLOTS '+(a+1)+' ⇄ '+(slot+1)+' TROCADOS'));
+      AUDIO.ui(880);
+    }
+    sheetRender(true);return;
+  }
+  /* §8: clique em slot vazio sem seleção não faz nada (só feedback) */
+  if(player.owned[slot]==null){sheetRender(true);return;}
+  sheetSel=slot;AUDIO.ui(760);sheetRender(true);
+}
+/* assinatura barata: só campos que alteram a ficha (§108) */
+function sheetSignature(){
+  const p=player;
+  let e='';for(const ec of echoes)e+=Math.round(ec.trust)+','+(ec.alive?1:0)+';';
+  return [p.owned.join(','),p.wi,p.level,wave,kills,
+    p.items.join(','),p.itemVer||0,
+    moral.comp,moral.greed,moral.viol,
+    Math.ceil(p.hp),Math.ceil(p.shield),p.coins|0,e,
+    Object.keys(sheetBrk).filter(k=>sheetBrk[k]).join('.')].join('|');
+}
+function sheetRender(force){
+  if(!sheetOpen||!player)return;
+  const sig=sheetSignature();
+  if(!force&&sig===_sheetSig)return;
+  _sheetSig=sig;
+  const p=player,C=curChar();
+  const w=WEAPONS[p.wi];
+  $('s-sub').textContent=C.nm+' · ONDA '+String(Math.max(1,wave)).padStart(2,'0')+
+    ' / 20 · NV '+p.level+' · '+fmtTime(runTime)+' · ABATES '+kills;
+  const dmgMul=calcDamageMul(p)*mEff.dmgMul;
+  const wRate=w.interval/(p.fireRateMul||1);
+  const wDps=(w.dmg*dmgMul*(w.count||1))/wRate;
+  /* ---------- OFENSIVA / DEFESA / MOBILIDADE / ECONOMIA ---------- */
+  let h='<div class="sgrid">';
+  h+='<div class="ssect"><h4>OPERADOR</h4>'+
+    '<div class="srow"><span class="k">NOME</span><span class="v" style="color:'+C.color+'">'+C.nm+'</span></div>'+
+    '<div class="srow"><span class="k">ARQUÉTIPO</span><span class="v" style="font-size:var(--fs-sm)">'+C.role+'</span></div>'+
+    '<div class="srow"><span class="k">PASSIVA</span><span class="v" style="font-size:var(--fs-xs);white-space:normal;text-align:right;max-width:70%">'+C.perk+'</span></div>'+
+    (C.sp?'<div class="srow"><span class="k">ESPECIAL [E]</span><span class="v" style="font-size:var(--fs-sm)">'+C.sp.nm+
+      ' <small>'+(p.spCd>0?fmtSec(p.spCd):'PRONTA')+'</small></span></div>':'')+
+    '<div class="srow"><span class="k">ARMA ATIVA</span><span class="v" style="color:'+w.color+';font-size:var(--fs-sm)">'+w.nm+'</span></div>'+
+    '</div>';
+  h+='<div class="ssect"><h4>DEFESA</h4>'+
+    '<div class="srow"><span class="k">INTEGRIDADE</span><span class="v">'+fmtStat(Math.max(0,p.hp),0)+' / '+fmtNum(p.maxHp)+'</span></div>'+
+    '<div class="srow"><span class="k">ESCUDO</span><span class="v">'+fmtStat(p.shield,0)+' / '+fmtNum(p.shieldMax)+
+      (p.shieldMax>0?' <small>'+(p.shieldDelayT>0?fmtSec(p.shieldDelayT)+' P/ REGEN':'REGEN LIBERADO')+'</small>':'')+'</span></div>'+
+    sheetStatRow('shieldRegen','REGEN. ESCUDO',fmtRate(smGet(p,'shieldRegen')))+
+    sheetStatRow('shieldDelay','DELAY ESCUDO',fmtSec(smGet(p,'shieldDelay')))+
+    sheetStatRow('dmgTaken','DANO RECEBIDO',fmtMult(smGet(p,'dmgTaken')*mEff.playerDmgTaken))+
+    ((p.regen||mEff.regen)?'<div class="srow"><span class="k">REGEN. VIDA</span><span class="v">'+fmtRate((p.regen||0)+mEff.regen)+'</span></div>':'')+
+    '</div>';
+  h+='<div class="ssect"><h4>OFENSIVA</h4>'+
+    sheetStatRow('damage','DANO',fmtMult(smGet(p,'damage')),'· EFETIVO '+fmtMult(dmgMul))+
+    '<div class="srow"><span class="k">DANO/PROJÉTIL</span><span class="v">'+fmtStat(w.dmg*dmgMul)+'</span></div>'+
+    sheetStatRow('fireRate','CADÊNCIA',fmtMult(smGet(p,'fireRate')),'· '+fmtRate(1/wRate)+' (ARMA)')+
+    '<div class="srow"><span class="k">DPS ESTIMADO</span><span class="v">'+fmtStat(wDps,0)+'</span></div>'+
+    sheetStatRow('crit','CRÍTICO',fmtPct(smGet(p,'crit')))+
+    sheetStatRow('critMul','DANO CRÍT.',fmtMult(smGet(p,'critMul')))+
+    sheetStatRow('range','ALCANCE',fmtMult(smGet(p,'range')),'· '+fmtStat(weaponRange(w,p),0)+'px')+
+    sheetStatRow('projSpd','VEL. PROJÉTIL',fmtMult(smGet(p,'projSpd')))+
+    sheetStatRow('aoe','ÁREA',fmtMult(smGet(p,'aoe')))+
+    sheetStatRow('pierce','PERFURAÇÃO','+'+fmtStat(smGet(p,'pierce'),0))+
+    '</div>';
+  h+='<div class="ssect"><h4>MOBILIDADE</h4>'+
+    sheetStatRow('speed','VELOCIDADE',fmtStat(smGet(p,'speed'),0)+'px/s')+
+    '<div class="srow"><span class="k">DASH</span><span class="v">'+
+      (p.dashCd>0?fmtSec(p.dashCd)+' <small>RECARGA</small>':'PRONTO')+
+      ' <small>'+fmtSec(p.dashCdMax)+' CICLO</small></span></div>'+
+    (C.sp?'<div class="srow"><span class="k">ESPECIAL</span><span class="v">'+
+      (p.spT>0?'ATIVO '+fmtSec(p.spT):(p.spCd>0?fmtSec(p.spCd):'PRONTA'))+
+      ' <small>'+C.sp.cd+'s CICLO</small></span></div>':'')+
+    '</div>';
+  h+='<div class="ssect"><h4>ECONOMIA</h4>'+
+    '<div class="srow"><span class="k">CRÉDITOS</span><span class="v" style="color:var(--gold)">◈ '+fmtCompact(p.coins)+'</span></div>'+
+    sheetStatRow('coinMul','MULT. MOEDAS',fmtMult(smGet(p,'coinMul')*mEff.coinMul))+
+    sheetStatRow('pickupR','RAIO DE COLETA',fmtStat(smGet(p,'pickupR'),0)+'px')+
+    '<div class="srow"><span class="k">PREÇO DA LOJA</span><span class="v">'+fmtMult(mEff.shopMul*(p.shopPersonal||1))+'</span></div>'+
+    '</div>';
+  /* ---------- ARSENAL (§43) ---------- */
+  h+='<div class="ssect span-3"><h4>ARSENAL · '+countWeapons(p)+'/'+p.maxSlots+' SLOTS — '+
+    C.nm.toUpperCase()+'</h4>'+sheetArsenalHTML()+
+    '<div class="ashint" id="as-hint">'+
+    (sheetSel>=0?'SELECIONADO — ESCOLHA O SLOT DE DESTINO (clique de novo no slot para CANCELAR · slot vazio MOVE a arma)':
+      'CLIQUE EM UM SLOT E DEPOIS EM OUTRO PARA TROCAR (SWAP) · CLIQUE DE NOVO CANCELA · TECLAS 1–'+p.maxSlots+' EM COMBATE · X VOLTA PARA A ARMA ANTERIOR')+
+    '</div></div>';
+  /* ---------- BUILD (§38/§39/§40) ---------- */
+  h+='<div class="ssect span-2"><h4>BUILD — SINERGIAS ATIVAS</h4>';
+  const syn=activeSynergies(p);
+  h+=syn.length?'<div class="ssyn">'+syn.map(s=>'<span>'+s+'</span>').join('')+'</div>'
+    :'<div class="srow"><span class="k">NENHUMA SINERGIA ATIVA AINDA</span></div>';
+  h+='<div style="margin-top:12px">';
+  if(p.items.length){
+    for(const id of p.items){
+      const it=itemById(id);if(!it)continue;
+      const st=itemHumanState(p,id);
+      h+='<span class="bpill'+(it.transformer?' tr':'')+'" data-itip="'+id+'" style="color:'+it.color+'">'+
+        (it.transformer?'◆ ':'')+it.nm+(st?' <span class="bstate">'+st+'</span>':'')+'</span>';
+    }
+  }else h+='<span class="bpill" style="opacity:.5;cursor:default">NENHUM MÓDULO INSTALADO</span>';
+  h+='</div></div>';
+  /* ---------- MORALIDADE (§41) ---------- */
+  const mrow=(lab,v,col)=>{
+    const t=moralTier(v);
+    return '<div class="srow"><span class="k">'+lab+'</span><span class="v" style="color:'+col+'">'+
+      fmtStat(v,0)+(t?' <small>'+TIER_NAME[t]+'</small>':'')+'</span></div>';
+  };
+  const prof=getMoralProfile();
+  h+='<div class="ssect"><h4>MORALIDADE</h4>'+
+    '<div class="srow"><span class="k">PERFIL</span><span class="v" style="color:'+DOM_COLOR[moralDom()]+'">'+DOM_NAME[moralDom()]+'</span></div>'+
+    mrow('COMPAIXÃO',moral.comp,'#7dffc4')+
+    mrow('GANÂNCIA',moral.greed,'#ffd166')+
+    mrow('VIOLÊNCIA',moral.viol,'#ff5c7a')+
+    (mEff.conflict?'<div class="srow"><span class="k">CONFLITO</span><span class="v" style="color:#ff4df0">ATIVO</span></div>':'')+
+    '<div class="srow"><span class="k">MÓDULOS AFINS</span><span class="v">'+countAttunedItems(p)+'/'+p.items.length+'</span></div>'+
+    (prof&&prof.state?'<div class="srow"><span class="k">ESTADO</span><span class="v" style="font-size:var(--fs-xs)">'+MORAL_STATE_LABEL[prof.state]+'</span></div>':'')+
+    '</div>';
+  h+='</div>';
+  /* ---------- ECO (§42) — humano, sem internals ---------- */
+  if(echoes.length){
+    h+='<div class="sgrid" style="margin-top:14px">';
+    for(const e of echoes){
+      const rs=echoRelState(e),P=e.pers||(e.ps&&PERSONALITIES[e.ps.id])||null;
+      const ds=(e.dis&&e.dis.st)||'stable';
+      h+='<div class="ssect"><h4>ECHO·0'+e.slot+(e.alive?'':' — OFFLINE')+'</h4>'+
+        '<div class="srow"><span class="k">PERSONALIDADE</span><span class="v" style="font-size:var(--fs-sm)">'+(P?P.lab:'—')+'</span></div>'+
+        '<div class="srow"><span class="k">RELAÇÃO</span><span class="v" style="color:'+rs.col+';font-size:var(--fs-sm)">'+rs.lab+'</span></div>'+
+        '<div class="srow"><span class="k">CONFIANÇA</span><span class="v">'+fmtStat(e.trust,0)+'% <small>'+TRUST_NAME[trustTier(e)]+'</small></span></div>'+
+        (ds!=='stable'?'<div class="srow"><span class="k">SINAL</span><span class="v" style="color:'+(DIS_LABEL[ds]?'#ff8095':'#8ff6ff')+';font-size:var(--fs-xs)">'+
+          (DIS_LABEL[ds]||ds)+'</span></div>':'')+
+        '</div>';
+    }
+    h+='</div>';
+  }
+  $('s-body').innerHTML=h;
+  sheetBindArsenal();
+  /* tooltips dos itens (§39) */
+  $('s-body').querySelectorAll('[data-itip]').forEach(el=>{
+    const it=itemById(el.dataset.itip);
+    if(it)bindTip(el,()=>itemTipHTML(it));
+  });
+  /* breakdown por clique (§36) */
+  $('s-body').querySelectorAll('[data-brk]').forEach(el=>{
+    el.addEventListener('click',()=>{
+      const k=el.dataset.brk;
+      sheetBrk[k]=!sheetBrk[k];
+      AUDIO.ui(560);
+      sheetRender(true);
+    });
+  });
+}
+
+/* =====================================================================
+   PR 11.5 §69–94 — SANDBOX (MODO LABORATÓRIO DO JOGADOR)
+   ---------------------------------------------------------------------
+   §70 DEV ≠ SANDBOX: DEV é diagnóstico técnico; SANDBOX é recurso do
+   jogador, com UI própria (tela de preparo + painel de laboratório).
+   §73 Nenhuma progressão: ver guarda global sandboxRun + protetores em
+   saveProg/saveMeta/saveEchoes/bumpProg/checkUnlocks/captureCheckpoint.
+   §76 Todo conteúdo liberado em Alpha (operadores/armas/itens/inimigos).
+   §88 Eventos narrativos DESATIVADOS por padrão (laboratório de combate).
+   §89/§90 Morte → "TESTE ENCERRADO"; vitória → "TESTE CONCLUÍDO" —
+   nenhum Echo criado, nenhum final registrado.
+   §91 Sandbox não cria Continue Run e não é persistido nesta PR.
+   ===================================================================== */
+const SB_WAVES=[1,3,5,10,15,20];
+/* estado TEMPORÁRIO do laboratório — equivalente a sandboxSession
+   (operator/arsenal/itens/stats/enemies morrem ao sair — §8) */
+function sandboxSessionInfo(){
+  return {operator:sandboxCfg.char,preset:sandboxCfg.preset,
+    wave:sandboxCfg.wave,active:sandboxRun,slot:0};   // slot 0 = nenhum
+}
+function sandboxOpenSetup(){
+  initAudio();
+  /* R4: NENHUM save slot é carregado como base (§5/§9). O contexto do
+     modo normal é apenas ANOTADO; prog/meta/Ecos do laboratório nascem
+     zerados e tudo morre na saída. */
+  _sbSlotBak=curSlot;
+  curSlot=0;                           // §4: nenhum slot ativo
+  activeRun=null;
+  meta={mem:0,spd:0,reroll:0,vault:0,wins:0,endings:[],evars:[]};
+  prog={kills:0,runs:0,waves:0,best:0,wins:0,bosses:0,minis:0,
+    elites:0,crits:0,dashes:0,coins:0,items:0,events:0,echoKills:0,
+    reso:0,melee:0,status:0,seen:[]};
+  echoQueue=[];                        // nenhum Echo é herdado
+  charSel=clamp(sandboxCfg.char,0,CHARS.length-1);
+  sandboxMode=true;
+  sandboxHoldUnlocks=true;             // §3: a partir daqui nada desbloqueia
+  ovMenuVisible(false);
+  hideOverlay();
+  state='title';                       // fora de run enquanto no preparo
+  openCodex('sandbox');
+}
+function sandboxCloseSetup(){
+  sandboxMode=false;
+  closeCodex();
+  if(!sandboxRun){sandboxRestoreReal();showTitle();}   // R4: menu global
+}
+/* ---- tela de preparo (§77): operador + preset + onda inicial ---- */
+function renderSandboxSetup(){
+  cxTitle.textContent='S A N D B O X';
+  cxSub.textContent='LABORATÓRIO DE COMBATE — NADA AQUI AFETA SUA PROGRESSÃO';
+  cxTabs.style.display='none';
+  const C=CHARS[clamp(sandboxCfg.char,0,CHARS.length-1)];
+  let h='<div class="sect">1 · OPERADOR DE TESTE — TODOS LIBERADOS NO SANDBOX</div>'+
+    '<div class="sbchars">';
+  CHARS.forEach((c,i)=>{
+    h+='<div class="sbchar'+(i===sandboxCfg.char?' on':'')+'" data-sbchar="'+i+'"'+
+      ' style="'+(i===sandboxCfg.char?'border-color:'+c.color+';box-shadow:0 0 16px '+c.color+'44':'')+'">'+
+      charPortrait(c,40).replace('class="cicon" ','')+
+      '<div class="cn" style="color:'+(i===sandboxCfg.char?c.color:'')+'">'+c.nm+'</div>'+
+      '<div class="cr">'+c.role+'</div>'+
+      '<div class="cr" style="font-family:Consolas,monospace;opacity:.75">⌗ '+c.slots+' SLOTS</div></div>';
+  });
+  h+='</div>';
+  h+='<div class="sect">2 · BUILD INICIAL (OPCIONAL)</div><div class="sbopts">';
+  h+='<div class="sbbtn'+(sandboxCfg.preset===''?' on':'')+'" data-sbpreset="">VAZIA</div>';
+  for(const k of ['shieldbreak','fullshield','crit','status','dash','economy']){
+    const P=BUILD_PRESETS[k];
+    if(!P)continue;
+    h+='<div class="sbbtn'+(sandboxCfg.preset===k?' on':'')+'" data-sbpreset="'+k+'">'+P.name+'</div>';
+  }
+  h+='</div>';
+  h+='<div class="sect">3 · ONDA INICIAL</div><div class="sbopts">';
+  for(const wv of SB_WAVES)
+    h+='<div class="sbbtn'+(sandboxCfg.wave===wv?' on':'')+'" data-sbwave="'+wv+'">'+
+      (wv>=MAX_WAVE?'20 · CHEFE':String(wv).padStart(2,'0'))+'</div>';
+  h+='</div>';
+  const _cfgv=sandboxValidateCfg();
+  h+='<div class="sbgo btn go'+(_cfgv.ok?'':' dis')+'" id="sb-start">'+
+    (_cfgv.ok?('INICIAR TESTE — '+C.nm+' · '+
+      (sandboxCfg.preset?BUILD_PRESETS[sandboxCfg.preset].name:'BUILD VAZIA')+
+      ' · ONDA '+(sandboxCfg.wave>=MAX_WAVE?'20 (CHEFE)':sandboxCfg.wave))
+      :('INICIAR TESTE INDISPONÍVEL — '+_cfgv.reason))+'</div>'+
+    '<div class="cfgds" style="margin-top:14px;line-height:1.9">'+
+    'O Sandbox pausa o jogo ao abrir o painel (F1), libera todas as armas, '+
+    'itens, minibosses e o chefe, e <b>não cria Echo, não registra final, '+
+    'não dá meta-moeda e não desbloqueia nada</b>. Eventos narrativos ficam '+
+    'desligados. Ao morrer: TESTE ENCERRADO.</div>';
+  cxBody.innerHTML=h;
+  cxBody.querySelectorAll('[data-sbchar]').forEach(el=>{
+    el.addEventListener('click',()=>{
+      sandboxCfg.char=parseInt(el.dataset.sbchar,10);
+      AUDIO.ui(700);renderSandboxSetup();
+    });
+    const c=CHARS[parseInt(el.dataset.sbchar,10)];
+    bindTip(el,()=>charTipHTML(c));
+  });
+  cxBody.querySelectorAll('[data-sbpreset]').forEach(el=>{
+    el.addEventListener('click',()=>{
+      sandboxCfg.preset=el.dataset.sbpreset;
+      AUDIO.ui(620);renderSandboxSetup();
+    });
+  });
+  cxBody.querySelectorAll('[data-sbwave]').forEach(el=>{
+    el.addEventListener('click',()=>{
+      sandboxCfg.wave=parseInt(el.dataset.sbwave,10);
+      AUDIO.ui(620);renderSandboxSetup();
+    });
+  });
+  const go=cxBody.querySelector('#sb-start');
+  if(go)go.addEventListener('click',ev=>{
+    ev.stopPropagation();
+    try{sandboxStart();}
+    catch(e){console.error('[ECHO/SANDBOX] clique INICIAR TESTE:',e);
+      sbStartFail((e&&e.message)||String(e));}
+  });
+  cxFoot.textContent='ESC — VOLTAR AO MENU · O SETUP DO SANDBOX NÃO É SALVO';
+}
+/* ---- início da run de laboratório ---- */
+/* setChar persiste no slot real — o laboratório troca de operador SEM
+   tocar no registro do save (§73) */
+function sandboxSetChar(i){
+  charSel=clamp(i,0,CHARS.length-1);
+}
+/* §32: valida a configuração do preparo — {ok,reason} para o botão */
+function sandboxValidateCfg(){
+  if(!Number.isInteger(sandboxCfg.char)||sandboxCfg.char<0||
+     sandboxCfg.char>=CHARS.length)
+    return {ok:false,reason:'OPERADOR INVÁLIDO'};
+  if(sandboxCfg.preset&&!BUILD_PRESETS[sandboxCfg.preset])
+    return {ok:false,reason:'PRESET INEXISTENTE: '+sandboxCfg.preset};
+  if(SB_WAVES.indexOf(sandboxCfg.wave)<0)
+    return {ok:false,reason:'ONDA INICIAL INVÁLIDA'};
+  return {ok:true,reason:''};
+}
+/* §33: falha NUNCA é silenciosa — mensagem clara na UI + console DEV */
+function sbStartFail(msg){
+  try{
+    console.error('[ECHO/SANDBOX] falha ao iniciar o teste: '+msg);
+    const body=$('cx-body');
+    if(body){
+      const old=body.querySelector('.sbfail');
+      if(old)old.remove();
+      const d=document.createElement('div');
+      d.className='sbfail';
+      d.textContent='✕ FALHA AO INICIAR O TESTE — '+msg+
+        ' (o motivo também aparece no console do jogo)';
+      body.insertBefore(d,body.firstChild);
+    }
+    toast('SANDBOX: FALHA AO INICIAR — '+msg);
+  }catch(e){console.error('[ECHO/SANDBOX] sbStartFail:',e);}
+}
+function sandboxStart(){
+  if(sandboxRun)return true;
+  const v=sandboxValidateCfg();            // §32: recusa configs inválidas
+  if(!v.ok){sbStartFail(v.reason);return false;}
+  try{
+    sandboxMode=false;
+    sandboxRun=true;
+    closeCodex();
+    /* §75/R4: nenhum Eco entra no laboratório — a fila já nasce vazia
+       no modo independente (nada é lido do save). */
+    echoQueue=[];
+    sandboxSetChar(sandboxCfg.char);
+    hideOverlay();
+    startRun();                            // devTainted=!!DEV_MODE (§92 ok)
+    giveSandboxCredits(500);               // crédito de teste (só sandbox)
+    if(sandboxCfg.preset&&BUILD_PRESETS[sandboxCfg.preset])
+      applyBuildPreset(sandboxCfg.preset,player);
+    if(sandboxCfg.wave>1)sandboxJumpTo(sandboxCfg.wave);
+    const chip=$('sb-chip');if(chip)chip.classList.add('on');
+    banner('SANDBOX ATIVO','LABORATÓRIO — NADA É REGISTRADO · F1 ABRE O PAINEL');
+    return true;
+  }catch(e){
+    /* §33: qualquer exceção volta ao preparo com o motivo EXIBIDO —
+       o botão nunca "não faz nada". */
+    console.error('[ECHO/SANDBOX] exceção ao iniciar o teste:',e);
+    sandboxRun=false;sandboxMode=true;sbPanelClose();sandboxRestoreReal();
+    try{hideOverlay();}catch(_e){}
+    sandboxOpenSetup();
+    sbStartFail((e&&e.message)||String(e));
+    return false;
+  }
+}
+/* =====================================================================
+   §12–§18 · §20 — AJUSTES DO JOGADOR (laboratório)
+   Stats NUNCA são editados direto: passam pelo Stat Modifier Pipeline
+   com source IDs exclusivos (sandbox:damage, sandbox:crit, sandbox:speed,
+   sandbox:shield_max, sandbox:shield_regen). RESETAR remove SOMENTE esses
+   mods — itens, operador, moral e status normais permanecem. Nada disto
+   persiste: o laboratório não grava nada e a saída remove tudo (§18).
+   ===================================================================== */
+const SB_MOD_IDS={
+  damage:'sandbox:damage',crit:'sandbox:crit',speed:'sandbox:speed',
+  shieldMax:'sandbox:shield_max',shieldRegen:'sandbox:shield_regen'};
+function _sbModsOf(p){
+  if(!p._sbMods)p._sbMods={damage:1,crit:0,speed:1,shieldMax:0,shieldRegen:0};
+  return p._sbMods;
+}
+function sbApplyMod(stat,dir){
+  const p=player;if(!p)return;
+  if(!SB_MOD_IDS[stat])return;
+  const m=_sbModsOf(p);
+  const step={damage:.1,crit:.05,speed:.1,shieldMax:10,shieldRegen:1}[stat];
+  if(stat==='damage')m.damage=clamp(+(m.damage*(dir>0?1+step:1-step)).toFixed(4),.1,10);
+  else if(stat==='speed')m.speed=clamp(+(m.speed*(dir>0?1+step:1-step)).toFixed(4),.1,10);
+  else m[stat]=clamp(m[stat]+step*dir,{crit:[0,1],shieldMax:[0,200],shieldRegen:[0,60]}[stat][0],
+      {crit:[0,1],shieldMax:[0,200],shieldRegen:[0,60]}[stat][1]);
+  /* re-aplica do zero: mods sandbox são os únicos com esses source ids */
+  for(const s in SB_MOD_IDS)smRemoveId(p,SB_MOD_IDS[s]);
+  if(m.damage!==1)smMul(p,'damage',SB_MOD_IDS.damage,'SANDBOX · DANO',m.damage);
+  if(m.crit)smFlat(p,'crit',SB_MOD_IDS.crit,'SANDBOX · CRÍTICO',m.crit);
+  if(m.speed!==1)smMul(p,'speed',SB_MOD_IDS.speed,'SANDBOX · VELOCIDADE',m.speed);
+  if(m.shieldMax)smFlat(p,'shieldMax',SB_MOD_IDS.shieldMax,'SANDBOX · ESCUDO MÁX',m.shieldMax);
+  if(m.shieldRegen)smFlat(p,'shieldRegen',SB_MOD_IDS.shieldRegen,'SANDBOX · REGEN ESCUDO',m.shieldRegen);
+  smRefresh(p);
+}
+/* §17: remove APENAS os modificadores do sandbox */
+function sbResetMods(){
+  const p=player;if(!p)return;
+  for(const s in SB_MOD_IDS)smRemoveId(p,SB_MOD_IDS[s]);
+  p._sbMods={damage:1,crit:0,speed:1,shieldMax:0,shieldRegen:0};
+  smRefresh(p);
+  toast('SANDBOX: AJUSTES RESETADOS (itens e moral preservados)');
+}
+/* saída do laboratório: tira TUDO que o sandbox colocou no player (§18) */
+function stripSandboxMods(p){
+  if(!p)return;
+  for(const s in SB_MOD_IDS)smRemoveId(p,SB_MOD_IDS[s]);
+  p._sbMods=null;
+}
+/* §15: quebra de escudo pelo PIPELINE REAL — dispara exatamente o mesmo
+   caminho do combate (feedback §18 da PR 11.5 + runSt.sb + echoReact +
+   itemEmit('onShieldBreak') para os itens da PR 11 testarem de verdade). */
+function sandboxBreakShield(){
+  const p=player;if(!p)return;
+  if(p.shield<=0){toast('SANDBOX: O ESCUDO JÁ ESTÁ QUEBRADO');return;}
+  const shieldAntes=p.shield;
+  p.shield=0;p.shieldDelayT=p.shieldDelay;
+  resetPerfectShield(p);
+  shieldFx('break');
+  floatText(p.x,p.y-30,'ESCUDO ROMPIDO','#8ff6ff',FTEXT_SPEAK);
+  spawnRing(p.x,p.y,'#8ff6ff',8,72,.42);
+  spawnRing(p.x,p.y,'#ffffff',4,96,.3);
+  aberrPeak(.35);
+  AUDIO.tone(rand(300,360),.18,'sine',.04,-140);
+  AUDIO.tone(rand(180,220),.3,'sawtooth',.03,-90,.05);
+  if(runSt)runSt.sb++;
+  echoReact('shieldBreak');
+  itemEmit('onShieldBreak',{player:p,real:shieldAntes,absorbed:shieldAntes});
+  toast('SANDBOX: PIPELINE REAL DE SHIELD BREAK DISPARADO');
+}
+function giveSandboxCredits(n){
+  if(!sandboxRun||!player)return;
+  player.coins=clamp((player.coins||0)+n,0,999999);
+}
+/* R4: devolve o MODO NORMAL — o contexto (slot anterior, prog, meta,
+   Ecos, operador) é RECARREGADO DO ARQUIVO, nunca dos espelhos que o
+   laboratório usou como rascunho (§9/§44). */
+function sandboxRestoreReal(){
+  const chip=$('sb-chip');if(chip)chip.classList.remove('on');
+  const _ob=$('ov-back');
+  if(_ob)_ob.textContent='VOLTAR AO MENU';
+  if(_sbSlotBak>=1&&smRoot){activateSlot(_sbSlotBak);}
+  _sbSlotBak=0;
+}
+/* ---- fim do laboratório: restaura o estado real do save ---- */
+function sandboxExit(toMenu){
+  if(!sandboxRun&&!sandboxMode)return;
+  sandboxRun=false;sandboxMode=false;
+  sbPanelClose();
+  _sbResetPicks();
+  sandboxClearRunState();               // §14: spawn state da arena some
+  /* §18: nenhum ajuste do laboratório atravessa para o jogo real */
+  if(player){stripSandboxMods(player);}
+  sandboxRestoreReal();
+  ovExitMenu(false);
+  $('endwrap').classList.remove('on');
+  overlay.classList.remove('hidden');
+  /* PR 11.5 §11/§21: sai da run de verdade e volta SEMPRE ao MENU
+     INICIAL GLOBAL — o Sandbox não passa por Save Slots na saída. */
+  state='title';
+  showTitle();
+}
+/* zera todos os fluxos armados do painel (swap/pick/pendência) */
+function _sbResetPicks(){
+  sbSwapA=-1;sbPick=null;sbItemPick=false;sbPendingWi=null;
+}
+/* encerra o teste e volta para a tela de preparo (ALTERAR BUILD) */
+function sandboxEndToSetup(){
+  sandboxRun=false;
+  sbPanelClose();
+  _sbResetPicks();
+  sandboxClearRunState();
+  if(player){stripSandboxMods(player);}   // §8: sessão anterior descartada
+  sandboxCfg.wave=1;
+  sandboxOpenSetup();                     // R4: preparo SEM passar por slots
+}
+/* limpa a arena sem tocar em progression (§84 limpar inimigos) */
+function sandboxClearEnemies(){
+  for(const e of enemies){e.dead=true;
+    spawnShards(e.x,e.y,e.color,6,4);}
+  enemies.length=0;projectiles.length=0;beacon=null;
+  if(miniBoss){miniBoss=null;clearMiniBossHUD();}
+  if(boss){boss=null;$('bosswrap').classList.remove('on');}
+}
+/* pula para uma onda arbitrória (§83) — sem records */
+function sandboxJumpTo(n){
+  if(!player)return;
+  n=clamp(n|0,1,MAX_WAVE);
+  sandboxClearEnemies();
+  wave=n;
+  waveCleared=false;waveActive=true;wavePause=2.8;
+  $('bosswrap').classList.remove('on');
+  spawnWave(n);                            // n>=20 despacha O PARADOXO
+  scheduleBeacon();                        // gated: sandbox não gera beacon
+  banner('ONDA '+String(n).padStart(2,'0'),n>=MAX_WAVE?'CHEFE FINAL':'TESTE SANDBOX');
+}
+/* ---- morte no laboratório (§89): TESTE ENCERRADO, sem Echo ---- */
+function sandboxDeath(){
+  state='fracture';fracT=0;shake=14;
+  sDie();
+  spawnParticles(player.x,player.y,'#9ff3ff',40,460,1,4);
+  spawnRing(player.x,player.y,'#7dffc4',10,240,.8);
+  ovTitle.textContent='TESTE ENCERRADO';
+  ovTitle.setAttribute('data-t','TESTE ENCERRADO');
+  ovTitle.style.fontSize='44px';ovTitle.classList.add('glitch');
+  ovSub.textContent='SANDBOX — NENHUM ECO FOI CRIADO · NADA FOI REGISTRADO';
+  ovBody.innerHTML=
+    'ONDA TESTADA <b>'+String(Math.max(1,wave)).padStart(2,'0')+'</b> · '+
+    'OPERADOR <b>'+curChar().nm+'</b> · TEMPO <b>'+fmtTime(runTime)+'</b><br>'+
+    'ABATES NESTE TESTE: <b>'+kills+'</b> — O LABORATÓRIO NÃO ALIMENTA '+
+    'RECORDES, UNLOCKS OU A MEMÓRIA DOS ECOS.';
+  ovFrac.innerHTML='<span class="good">PROGRESSÃO REAL INTACTA</span>';
+  ovEchos.textContent='';
+  ovGo.textContent='REINICIAR TESTE';
+  ovExitMenu(true);                          // §11: 3 opções claras
+  ovMenuVisible(false);
+  const _act=$('ov-actions');
+  if(_act)_act.classList.add('on');
+  const _ob=$('ov-back');
+  if(_ob)_ob.textContent='ALTERAR BUILD';
+  overlay.classList.remove('hidden');
+}
+/* reinicia o MESMO setup (REINICIAR SANDBOX / ENTER na morte/vitória) */
+function sandboxRestart(){
+  sbPanelClose();
+  _sbResetPicks();
+  sandboxClearRunState();
+  hideOverlay();
+  /* R4: continua no MODO independente (sandboxRun segue true, curSlot 0)
+     — reinicia a sessão com o mesmo operador/build/onda, sem persistir */
+  startRun();
+  giveSandboxCredits(500);
+  if(sandboxCfg.preset&&BUILD_PRESETS[sandboxCfg.preset])
+    applyBuildPreset(sandboxCfg.preset,player);
+  if(sandboxCfg.wave>1)sandboxJumpTo(sandboxCfg.wave);
+  const chip=$('sb-chip');if(chip)chip.classList.add('on');
+  banner('SANDBOX ATIVO','LABORATÓRIO — NADA É REGISTRADO · F1 ABRE O PAINEL');
+}
+/* limpa entidades do teste anterior antes de reiniciar */
+function sandboxClearRunState(){
+  enemies=[];projectiles=[];xporbs=[];parts=[];ftexts=[];pickups=[];allies=[];
+  swings=[];arcs=[];beacon=null;boss=null;miniBoss=null;
+  $('bosswrap').classList.remove('on');$('endwrap').classList.remove('on');
+  echoes=[];
+}
+/* ---- vitória no laboratório (§90): TESTE CONCLUÍDO, sem final ---- */
+function sandboxVictory(){
+  state='victory';firing=false;
+  boss=null;$('bosswrap').classList.remove('on');
+  for(const e of enemies){e.dead=true;}
+  enemies.length=0;projectiles.length=0;beacon=null;
+  shake=18;aberrPeak(.8);
+  AUDIO.victory();
+  ovTitle.textContent='TESTE CONCLUÍDO';
+  ovTitle.setAttribute('data-t','TESTE CONCLUÍDO');
+  ovTitle.style.fontSize='44px';ovTitle.classList.add('glitch');
+  ovSub.textContent='O PARADOXO CAIU NO LABORATÓRIO — NENHUM FINAL FOI REGISTRADO';
+  ovBody.innerHTML=
+    'O chefe foi derrotado em ambiente de teste.<br>'+
+    '<b style="color:#7dffc4">Nenhum final, variante, epílogo ou Ponto de '+
+    'Memória foi registrado.</b><br>Sua progressão real permanece exatamente '+
+    'como estava.';
+  ovFrac.innerHTML='';
+  ovEchos.textContent='';
+  ovGo.textContent='REINICIAR TESTE';
+  ovExitMenu(true);                          // §11: 3 opções claras
+  ovMenuVisible(false);
+  const _act=$('ov-actions');
+  if(_act)_act.classList.add('on');
+  const _ob=$('ov-back');
+  if(_ob)_ob.textContent='ALTERAR BUILD';
+  overlay.classList.remove('hidden');
+}
+/* =====================================================================
+   PAINEL DE LABORATÓRIO (em run) — §79–§86
+   ===================================================================== */
+let sbPanelOpen=false;
+function sbPanelCanOpen(){return sandboxRun&&state==='play'&&!!player;}
+function sbPanelShow(){
+  if(sbPanelOpen||!sbPanelCanOpen())return;
+  sbPanelOpen=true;
+  releaseAllInput();
+  state='sandbox';                         // tempo congelado
+  $('sandboxp').classList.add('on');
+  sbRender();
+  AUDIO.tone(760,.1,'sine',.03,160);
+}
+function sbPanelClose(){
+  if(!sbPanelOpen)return;
+  sbPanelOpen=false;
+  $('sandboxp').classList.remove('on');
+  if(state==='sandbox')state='play';
+}
+function sbPanelToggle(){
+  if(sbPanelOpen)sbPanelClose();
+  else if(sbPanelCanOpen())sbPanelShow();
+}
+const SB_ETYPES=['chaser','shooter','tank','spawner','anomaly','swarm','orbiter',
+  'bulwark','splitter','phantom','singular'];
+function sbRender(){
+  if(!sbPanelOpen||!player)return;
+  const p=player,C=curChar();
+  let h='<div class="sgrid">';
+  /* ---- JOGADOR (§82) ---- */
+  h+='<div class="ssect"><h4>JOGADOR</h4>'+
+    '<div class="srow"><span class="k">HP</span><span class="v">'+fmtStat(Math.max(0,p.hp),0)+' / '+fmtNum(p.maxHp)+'</span></div>'+
+    '<div class="srow"><span class="k">ESCUDO</span><span class="v">'+fmtStat(p.shield,0)+' / '+fmtNum(p.shieldMax)+'</span></div>'+
+    '<div class="sbrow">'+
+    '<span class="asbtn" data-sb="fullhp">ENCHER HP</span>'+
+    (p.shieldMax>0?'<span class="asbtn" data-sb="fullsh">ENCHER ESCUDO</span>'+
+      '<span class="asbtn" data-sb="breaksh">QUEBRAR ESCUDO</span>':'')+
+    '<span class="asbtn" data-sb="clearst">LIMPAR STATUS</span>'+
+    '<span class="asbtn" data-sb="resetcd">RESETAR COOLDOWNS</span>'+
+    '</div></div>';
+  /* ---- §12–§18/§20: AJUSTES DO JOGADOR (não salvos, pipeline sandbox:*) ---- */
+  const _sbm=_sbModsOf(p);
+  h+='<div class="ssect"><h4>AJUSTES DO JOGADOR <span style="opacity:.55">· NÃO SÃO SALVOS</span></h4>'+
+    '<div class="srow"><span class="k">CRÉDITOS</span><span class="v">◈'+fmtCompact(p.coins|0)+'</span></div>'+
+    '<div class="sbrow"><span class="asbtn" data-sb="crd-100">−100</span>'+
+    '<span class="asbtn" data-sb="crd-10">−10</span>'+
+    '<span class="asbtn" data-sb="crd+10">+10</span>'+
+    '<span class="asbtn" data-sb="crd+100">+100</span>'+
+    '<span class="asbtn" data-sb="crdmax">MAX ◈9999</span></div>'+
+    '<div class="srow"><span class="k">HP</span><span class="v">'+fmtStat(Math.max(0,p.hp),0)+' / '+fmtNum(p.maxHp)+'</span></div>'+
+    '<div class="sbrow"><span class="asbtn" data-sb="fullhp">ENCHER</span>'+
+    '<span class="asbtn" data-sb="hp-25">DANO −25</span>'+
+    '<span class="asbtn" data-sb="hp+25">+25</span>'+
+    '<span class="asbtn" data-sb="hp1">SET 1</span></div>'+
+    '<div class="srow"><span class="k">ESCUDO</span><span class="v">'+fmtStat(Math.max(0,p.shield),0)+' / '+fmtNum(p.shieldMax)+'</span></div>'+
+    '<div class="sbrow"><span class="asbtn" data-sb="fullsh">ENCHER</span>'+
+    '<span class="asbtn" data-sb="breaksh">QUEBRAR (PIPELINE REAL)</span>'+
+    '<span class="asbtn" data-sb="sh-10">−10</span>'+
+    '<span class="asbtn" data-sb="sh+10">+10</span></div>'+
+    '<div class="srow"><span class="k">DANO</span><span class="v">'+
+      (p.dmgMul!==p._smBase?.dmg?'×'+fmtMult(_sbm.damage)+' ('+fmtMult(p.dmgMul)+' TOTAL)':fmtMult(p.dmgMul)+' BASE')+'</span></div>'+
+    '<div class="sbrow"><span class="asbtn" data-sb="mod:damage:-1">−10%</span>'+
+    '<span class="asbtn" data-sb="mod:damage:1">+10%</span>'+
+    '<span class="asbtn" data-sb="mod:crit:-1">CRIT −5%</span>'+
+    '<span class="asbtn" data-sb="mod:crit:1">CRIT +5%</span></div>'+
+    '<div class="sbrow"><span class="asbtn" data-sb="mod:speed:-1">VEL −10%</span>'+
+    '<span class="asbtn" data-sb="mod:speed:1">VEL +10%</span>'+
+    '<span class="asbtn" data-sb="mod:shieldMax:-1">SH.MAX −10</span>'+
+    '<span class="asbtn" data-sb="mod:shieldMax:1">SH.MAX +10</span>'+
+    '<span class="asbtn" data-sb="mod:shieldRegen:-1">REGEN −1</span>'+
+    '<span class="asbtn" data-sb="mod:shieldRegen:1">REGEN +1</span></div>'+
+    '<div class="sbrow"><span class="asbtn" data-sb="resetmods" style="border-color:rgba(255,209,102,.5);color:#ffd166">RESETAR AJUSTES (mantém itens e moral)</span></div>'+
+    '</div>';
+  /* ---- ARSENAL (§79/§78) ---- */
+  h+='<div class="ssect span-2"><h4>ARSENAL · '+countWeapons(p)+'/'+p.maxSlots+
+    ' SLOTS (IDENTIDADE DE '+C.nm+')</h4>';
+  for(let s=0;s<p.maxSlots;s++){
+    const wi=p.owned[s];
+    if(wi==null){
+      h+='<div class="aslot empty"><span class="anum">'+(s+1)+'</span>'+
+        '<span class="anm">— VAZIO —</span><span class="abtns">'+
+        '<span class="asbtn" data-sbadd="'+s+'">+ ADICIONAR</span></span></div>';
+      continue;
+    }
+    const d=WEAPONS[wi];
+    h+='<div class="aslot'+(p.wi===wi?' act':'')+(sbSwapA===s?' sel':'')+
+      '"'+(sbSwapA!==-1?' data-sbslot="'+s+'" style="cursor:pointer"':'')+'>'+
+      '<span class="anum">'+(s+1)+'</span>'+
+      '<span class="anm" style="color:'+d.color+'">'+d.nm+'</span>'+
+      '<span class="ast">'+(sbSwapA===s?'FONTE':(p.wi===wi?'◄ ATIVA':d.tag))+'</span>'+
+      '<span class="abtns">'+
+      (sbSwapA>=0?'':
+        (p.wi===wi?'':'<span class="asbtn" data-sbeq="'+s+'">EQUIPAR</span>')+
+        '<span class="asbtn" data-sbrep="'+s+'">SUBSTITUIR</span>'+
+        (p.owned.length>1?'<span class="asbtn" data-sbrm="'+s+'">REMOVER</span>':''))+
+      '</span></div>';
+  }
+  h+='<div class="sbrow" style="margin-top:8px">'+
+    '<span class="asbtn" data-sb="swapmode">'+(sbSwapA!==-1?'CANCELAR TROCA':'TROCAR ARMAS DE SLOT (SWAP)')+'</span>'+
+    '<span class="asbtn" data-sb="clearars">LIMPAR ARSENAL</span>'+
+    '</div>'+
+    (sbSwapA!==-1?'<div class="ashint">'+(sbSwapA>=0?
+      'FONTE: SLOT '+(sbSwapA+1)+' — CLIQUE NO SLOT DE DESTINO PARA TROCAR':
+      'CLIQUE NA ARMA DE ORIGEM')+'</div>':'');
+  if(sbPick!=null&&sbPendingWi==null){
+    h+='<div class="sbpick"><div class="sect" style="margin:10px 0 6px">ESCOLHA A ARMA '+
+      (typeof sbPick==='number'?'PARA SUBSTITUIR O SLOT '+(sbPick+1):'PARA ADICIONAR')+'</div><div class="sbopts">';
+    WEAPONS.forEach((w,i)=>{
+      h+='<span class="sbbtn" data-sbw="'+i+'" style="border-color:'+w.color+'55;color:'+w.color+'">'+w.nm+'</span>';
+    });
+    h+='</div><div class="sbrow"><span class="asbtn" data-sb="cancelpick">CANCELAR</span></div></div>';
+  }
+  /* §62: arsenal cheio → SUBSTITUIR QUAL SLOT? */
+  if(sbPendingWi!=null){
+    const pd=WEAPONS[sbPendingWi];
+    h+='<div class="sbpick"><div class="sect" style="margin:10px 0 6px">ARSENAL CHEIO — '+
+      'SUBSTITUIR QUAL SLOT COM <span style="color:'+pd.color+'">'+pd.nm+'</span>?</div><div class="sbrow">';
+    player.owned.forEach((owi,s)=>{
+      h+='<span class="sbbtn" data-sbslotpick="'+s+'">['+(s+1)+'] '+
+        (owi==null?'(VAZIO)':WEAPONS[owi].nm)+'</span>';
+    });
+    h+='<span class="asbtn" data-sb="cancelpick">CANCELAR</span></div></div>';
+  }
+  h+='</div>';
+  /* ---- ITENS (§80/§81) ---- */
+  h+='<div class="ssect span-2"><h4>ITENS · '+p.items.length+' INSTALADOS</h4><div class="sbrow">';
+  for(const id of p.items){
+    const it=itemById(id);if(!it)continue;
+    h+='<span class="bpill" data-sbitip="'+id+'" style="color:'+it.color+'">'+
+      (it.transformer?'◆ ':'')+it.nm+' <b class="bx" data-sbrmit="'+id+'" title="remover">✕</b></span>';
+  }
+  if(!p.items.length)h+='<span class="bpill" style="opacity:.5;cursor:default">BUILD VAZIA</span>';
+  h+='</div><div class="sbrow" style="margin-top:6px">';
+  for(const k of ['shieldbreak','fullshield','crit','status','dash','economy']){
+    const P=BUILD_PRESETS[k];if(!P)continue;
+    h+='<span class="asbtn" data-sbpreset="'+k+'">PRESET '+P.name+'</span>';
+  }
+  h+='<span class="asbtn" data-sb="clearbuild">LIMPAR BUILD</span>'+
+     '<span class="asbtn" data-sb="pickitem">+ ADICIONAR ITEM</span></div>';
+  if(sbItemPick){
+    h+='<div class="sbpick"><div class="sect" style="margin:10px 0 6px">ADICIONAR MÓDULO — CATÁLOGO COMPLETO</div><div class="sbopts">';
+    for(const it of ITEMS){
+      const owned=p.items.indexOf(it.id)>=0;
+      h+='<span class="sbbtn'+(owned?' dis':'')+'" data-sbitem="'+it.id+'" style="border-color:'+it.color+'55;color:'+it.color+'">'+
+        (it.transformer?'◆ ':'')+it.nm+'</span>';
+    }
+    h+='</div><div class="sbrow"><span class="asbtn" data-sb="cancelpick">CANCELAR</span></div></div>';
+  }
+  h+='</div>';
+  /* ---- ONDA (§83) ---- */
+  h+='<div class="ssect"><h4>ONDA · ATUAL '+wave+'</h4><div class="sbrow">';
+  for(const wv of SB_WAVES)
+    h+='<span class="asbtn'+(wave===wv?' sbcur':'')+'" data-sbwave="'+wv+'">'+(wv>=MAX_WAVE?'CHEFE':wv)+'</span>';
+  h+='<span class="asbtn" data-sbwave="'+Math.min(MAX_WAVE,wave+1)+'">+1</span>';
+  h+='<span class="asbtn" data-sbwave="'+Math.max(1,wave-1)+'">−1</span>';
+  h+='</div></div>';
+  /* ---- INIMIGOS (§84) / MINIBOSS (§85) / CHEFE (§86) ---- */
+  h+='<div class="ssect"><h4>INIMIGOS</h4><div class="sbrow">';
+  for(const t of SB_ETYPES)h+='<span class="asbtn" data-sbspawn="'+t+'">'+t.toUpperCase()+'</span>';
+  h+='<span class="asbtn" data-sb="group">GRUPO ×6</span>'+
+     '<span class="asbtn" data-sb="clear" style="border-color:rgba(255,92,122,.5);color:#ffb3c2">LIMPAR ARENA</span></div></div>';
+  h+='<div class="ssect"><h4>MINIBOSSES</h4><div class="sbrow">';
+  MINIBOSS.forEach(mb=>{h+='<span class="asbtn" data-sbmini="'+mb.id+'">'+mb.nm+'</span>';});
+  h+='</div></div>';
+  h+='<div class="ssect"><h4>CHEFE</h4><div class="sbrow">'+
+    (boss?'<span class="bpill" style="cursor:default;color:#ff9df7">O PARADOXO EM ARENA</span>':
+      '<span class="asbtn" data-sb="boss">SPAWNAR O PARADOXO</span>')+
+    '</div></div>';
+  h+='</div>';
+  h+='<div class="sbrow" style="margin-top:12px">'+
+    '<span class="asbtn" data-sb="end">ENCERRAR TESTE</span>'+
+    '<span class="asbtn" data-sb="menu">SAIR PARA O MENU</span>'+
+    '<span class="cfgds" style="flex:1;text-align:right">SANDBOX NÃO REGISTRA NADA — PROGRESSÃO REAL INTACTA</span></div>';
+  $('sb-body').innerHTML=h;
+  sbBind();
+}
+let sbSwapA=-1,sbPick=null,sbItemPick=false,sbPendingWi=null;
+function sbSpawnPos(){
+  const a=rand(0,TAU),R=220;
+  return {x:clamp(player.x+Math.cos(a)*R,40,ARENA.w-40),
+          y:clamp(player.y+Math.sin(a)*R,40,ARENA.h-40)};
+}
+function sbBind(){
+  const body=$('sb-body');
+  body.querySelectorAll('[data-sb]').forEach(el=>{
+    el.addEventListener('click',ev=>{ev.stopPropagation();sbAction(el.dataset.sb);});
+  });
+  /* fluxo de TROCA do painel: origem → destino (§79) */
+  body.querySelectorAll('[data-sbslot]').forEach(el=>{
+    el.addEventListener('click',ev=>{
+      ev.stopPropagation();
+      const s=parseInt(el.dataset.sbslot,10);
+      if(sbSwapA===-2){sbSwapA=s;}
+      else if(sbSwapA>=0&&s!==sbSwapA){
+        swapWeaponSlots(sbSwapA,s);
+        toast('SLOTS '+(sbSwapA+1)+' ⇄ '+(s+1)+' TROCADOS');
+        sbSwapA=-1;
+      }else sbSwapA=-1;
+      sbRender();
+    });
+  });
+  body.querySelectorAll('[data-sbeq]').forEach(el=>{
+    el.addEventListener('click',ev=>{ev.stopPropagation();
+      setWeaponSlot(parseInt(el.dataset.sbeq,10));sbRender();});
+  });
+  body.querySelectorAll('[data-sbrm]').forEach(el=>{
+    el.addEventListener('click',ev=>{ev.stopPropagation();
+      sandboxRemoveSlot(parseInt(el.dataset.sbrm,10));});
+  });
+  body.querySelectorAll('[data-sbadd]').forEach(el=>{
+    el.addEventListener('click',ev=>{ev.stopPropagation();
+      sbPick='add';sbPendingWi=null;sbRender();});
+  });
+  body.querySelectorAll('[data-sbrep]').forEach(el=>{
+    el.addEventListener('click',ev=>{ev.stopPropagation();
+      sbPick=parseInt(el.dataset.sbrep,10);sbPendingWi=null;sbRender();});
+  });
+  body.querySelectorAll('[data-sbw]').forEach(el=>{
+    el.addEventListener('click',ev=>{ev.stopPropagation();
+      const wi=parseInt(el.dataset.sbw,10);
+      if(typeof sbPick==='number'){          // substituição direta de slot
+        grantWeapon(wi,false,sbPick);
+        sbPick=null;
+        toast('SANDBOX: '+WEAPONS[wi].nm+' NO ARSENAL');
+      }else if(countWeapons(player)<player.maxSlots){  // slot livre (§123)
+        grantWeapon(wi,false,null);
+        sbPick=null;
+        toast('SANDBOX: '+WEAPONS[wi].nm+' NO ARSENAL');
+      }else{                                 // cheio → SUBSTITUIR QUAL SLOT? (§62)
+        sbPendingWi=wi;
+      }
+      AUDIO.ui(820);buildWeaponHUD();sbRender();
+    });
+    const w=WEAPONS[parseInt(el.dataset.sbw,10)];
+    if(w)bindTip(el,()=>weaponTipHTML(w));
+  });
+  body.querySelectorAll('[data-sbslotpick]').forEach(el=>{
+    el.addEventListener('click',ev=>{ev.stopPropagation();
+      const s=parseInt(el.dataset.sbslotpick,10);
+      if(sbPendingWi!=null){
+        grantWeapon(sbPendingWi,false,s);
+        toast('SLOT '+(s+1)+': '+WEAPONS[sbPendingWi].nm);
+      }
+      sbPendingWi=null;sbPick=null;
+      AUDIO.ui(820);buildWeaponHUD();sbRender();
+    });
+    if(sbPendingWi!=null){
+      const od=WEAPONS[player.owned[parseInt(el.dataset.sbslotpick,10)]];
+      if(od)bindTip(el,()=>weaponTipHTML(od));
+    }
+  });
+  body.querySelectorAll('[data-sbpreset]').forEach(el=>{
+    el.addEventListener('click',ev=>{ev.stopPropagation();
+      const r=applyBuildPreset(el.dataset.sbpreset,player);
+      toast(r?('PRESET '+r.name+' APLICADO ('+r.count+' MÓDULOS)'):'PRESET INDISPONÍVEL');
+      AUDIO.levelUp();sbRender();
+    });
+  });
+  body.querySelectorAll('[data-sbrmit]').forEach(el=>{
+    el.addEventListener('click',ev=>{ev.stopPropagation();
+      removeItemById(player,el.dataset.sbrmit,false);   // §80: sistema real
+      toast('MÓDULO REMOVIDO');AUDIO.ui(300);sbRender();
+    });
+  });
+  body.querySelectorAll('[data-sbitem]').forEach(el=>{
+    el.addEventListener('click',ev=>{ev.stopPropagation();
+      const it=itemById(el.dataset.sbitem);
+      if(it&&grantItemInternal(player,it,true)){
+        toast('MÓDULO ADICIONADO: '+it.nm);AUDIO.levelUp();
+      }
+      sbItemPick=false;sbRender();
+    });
+    const it=itemById(el.dataset.sbitem);
+    if(it)bindTip(el,()=>itemTipHTML(it));
+  });
+  body.querySelectorAll('[data-sbitip]').forEach(el=>{
+    const it=itemById(el.dataset.sbitip);
+    if(it)bindTip(el,()=>itemTipHTML(it));
+  });
+  body.querySelectorAll('[data-sbwave]').forEach(el=>{
+    el.addEventListener('click',ev=>{ev.stopPropagation();
+      sandboxJumpTo(parseInt(el.dataset.sbwave,10));sbRender();});
+  });
+  body.querySelectorAll('[data-sbspawn]').forEach(el=>{
+    el.addEventListener('click',ev=>{ev.stopPropagation();
+      const t=el.dataset.sbspawn,pos=sbSpawnPos();
+      spawnEnemy(t,pos.x,pos.y,wave);
+      AUDIO.ui(500);sbRender();});
+  });
+  body.querySelectorAll('[data-sbmini]').forEach(el=>{
+    el.addEventListener('click',ev=>{ev.stopPropagation();
+      const def=MINIBOSS.find(m=>m.id===el.dataset.sbmini);
+      if(def){
+        if(miniBoss)sandboxClearMini();
+        spawnMiniBoss(Math.max(5,wave),def);
+        toast('MINIBOSS: '+def.nm);AUDIO.ui(420);
+      }
+      sbRender();});
+  });
+}
+function sandboxClearMini(){
+  if(!miniBoss)return;
+  const i=enemies.indexOf(miniBoss);
+  if(i>=0){enemies[i].dead=true;enemies.splice(i,1);}
+  miniBoss=null;clearMiniBossHUD();
+}
+function sandboxRemoveSlot(slot){
+  if(!player||slot<0||slot>=player.owned.length)return;
+  const wi=player.owned[slot];
+  if(wi==null)return;
+  if(countWeapons(player)<=1){toast('SANDBOX: MANTENHA AO MENOS 1 ARMA');return;}
+  const d=WEAPONS[wi];
+  player.owned[slot]=null;                 // §8: vira SLOT VAZIO (não compacta)
+  if(player.wi===wi){
+    const i=player.owned.findIndex(x=>x!=null);
+    player.wi=i>=0?player.owned[i]:wi;
+  }
+  if(player.lastWi===wi)player.lastWi=player.wi;
+  buildWeaponHUD();
+  toast('SANDBOX: '+d.nm+' REMOVIDA (SLOT '+(slot+1)+' FICOU LIVRE)');
+  AUDIO.echoShatter();sbRender();
+}
+function sbAction(a){
+  const p=player;if(!p)return;
+  switch(a){
+    case 'fullhp':
+      p.hp=p.maxHp;spawnRing(p.x,p.y,'#7dffc4',8,90,.5);
+      toast('SANDBOX: HP CHEIO');AUDIO.levelUp();break;
+    case 'fullsh':
+      p.shield=p.shieldMax;p.shieldDelayT=0;
+      toast('SANDBOX: ESCUDO CHEIO');AUDIO.levelUp();break;
+    case 'breaksh':                            // §15: pipeline REAL de quebra
+      sandboxBreakShield();break;
+    case 'sh-10': p.shield=Math.max(0,p.shield-10);break;
+    case 'sh+10': p.shield=clamp(p.shield+10,0,p.shieldMax);break;
+    /* ---- §13/§14: dinheiro e HP (só na sessão sandbox) ---- */
+    case 'crd-100': p.coins=clamp((p.coins|0)-100,0,999999);break;
+    case 'crd-10':  p.coins=clamp((p.coins|0)-10,0,999999);break;
+    case 'crd+10':  p.coins=clamp((p.coins|0)+10,0,999999);break;
+    case 'crd+100': p.coins=clamp((p.coins|0)+100,0,999999);break;
+    case 'crdmax':  p.coins=9999;toast('SANDBOX: ◈9999 (TESTE DE ECONOMIA)');break;
+    case 'hp+25':   p.hp=clamp(p.hp+25,0,p.maxHp);break;
+    case 'hp-25':   p.hp=Math.max(1,p.hp-25);toast('SANDBOX: DANO AO JOGADOR (−25)');break;
+    case 'hp1':     p.hp=1;toast('SANDBOX: HP = 1 (TESTE DE CLUTCH)');break;
+    /* ---- §16: stats via Stat Modifier Pipeline (source sandbox:*) ---- */
+    case 'mod:damage:1': case 'mod:damage:-1':
+      sbApplyMod('damage',a.endsWith('1')?1:-1);break;
+    case 'mod:crit:1': case 'mod:crit:-1':
+      sbApplyMod('crit',a.endsWith('1')?1:-1);break;
+    case 'mod:speed:1': case 'mod:speed:-1':
+      sbApplyMod('speed',a.endsWith('1')?1:-1);break;
+    case 'mod:shieldMax:1': case 'mod:shieldMax:-1':
+      sbApplyMod('shieldMax',a.endsWith('1')?1:-1);break;
+    case 'mod:shieldRegen:1': case 'mod:shieldRegen:-1':
+      sbApplyMod('shieldRegen',a.endsWith('1')?1:-1);break;
+    case 'resetmods': sbResetMods();break;
+    case 'clearst':
+      for(const e of enemies)if(e.st)e.st=null;
+      p.anomalyT=0;p.curseT=0;smRemoveId(p,'status.oracle_curse.damage');
+      toast('SANDBOX: STATUS LIMPOS');AUDIO.ui(520);break;
+    case 'resetcd':
+      p.dashCd=0;p.spCd=0;p.fireTimer=0;
+      if(p.itemState)for(const id in p.itemState)p.itemState[id].cd=0;
+      toast('SANDBOX: COOLDOWNS ZERADOS');AUDIO.ui(760);break;
+    case 'swapmode':
+      sbSwapA=(sbSwapA===-1)?-2:-1;  // -2 armado aguardando origem
+      break;
+    case 'clearars':{
+      const C=curChar(),guns=charGunIdx(C.guns);
+      p.owned=guns.slice();p.wi=guns[0];p.lastWi=guns[0];
+      buildWeaponHUD();toast('SANDBOX: ARSENAL RESTAURADO AO INICIAL');break;
+    }
+    case 'clearbuild':{
+      resetBuildKeepRunBasics(p);
+      toast('SANDBOX: BUILD LIMPA');break;
+    }
+    case 'pickitem':
+      sbItemPick=!sbItemPick;break;
+    case 'cancelpick':
+      sbPick=null;sbItemPick=false;sbPendingWi=null;break;
+    case 'group':{
+      for(let i=0;i<6;i++){
+        const pos=sbSpawnPos();
+        spawnEnemy(SB_ETYPES[randi(0,4)],pos.x,pos.y,wave);
+      }
+      toast('SANDBOX: GRUPO GERADO');break;
+    }
+    case 'clear':
+      sandboxClearEnemies();toast('SANDBOX: ARENA LIMPA');break;
+    case 'boss':
+      if(!boss){spawnBoss();toast('O PARADOXO ENTROU NA ARENA (TESTE)');}
+      break;
+    case 'end':
+      sandboxEndToSetup();              // encerra e volta ao preparo
+      return;
+    case 'menu':
+      sbPanelClose();
+      sandboxExit(true);                // restaura save real → título
+      return;
+  }
+  buildWeaponHUD();
+  sbRender();
+}
+
 /* ---------------- persistência dos Ecos ----------------
    PR 7.5: cada SAVE SLOT possui sua própria fila de Ecos.
    saveEchoes grava a fila no slot ativo (echoSave.v3); loadEchoes lê
@@ -1854,6 +3349,11 @@ function abortRun(){
 function saveEchoes(){
   /* PROTEÇÃO DEV: uma run tocada pelo Modo Desenvolvedor jamais é gravada
      como Echo legítimo — o arquivo permanente fica exatamente como estava. */
+  /* PROTEÇÃO SANDBOX (PR 11.5 §73): o laboratório não cria Echo. */
+  if(sandboxRun){
+    console.warn('[ECHO/SANDBOX] saveEchoes() ignorado: run de laboratório');
+    return false;
+  }
   if(devTainted){
     console.warn('[ECHO/DEV] saveEchoes() ignorado: run marcada como debug');
     return false;
@@ -2086,12 +3586,16 @@ function loadProg(){
 }
 let _progDirty=false;
 function saveProg(){
+  if(sandboxRun)return false;      // PROTEÇÃO SANDBOX (§73): nada registra
   if(devTainted)return false;      // PROTEÇÃO DEV: progressão permanente intocada
   if(!smEnsureSlot())return false;
   try{smRoot.slots[curSlot].prog=JSON.parse(JSON.stringify(prog));smCommit();}catch(e){}
   return true;
 }
 function bumpProg(k,n){
+  /* PROTEÇÃO SANDBOX (§73): spawns/abates/vitórias do laboratório não
+     alimentam records nem condições de desbloqueio. */
+  if(sandboxRun)return;
   prog[k]=(prog[k]||0)+(n||1);_progDirty=true;
 }
 /* --------- CONDIÇÕES DE DESBLOQUEIO --------- */
@@ -2182,6 +3686,7 @@ function unlockKeyFor(t,id){
   return null;
 }
 function isWeaponUnlocked(id){
+  if(sandboxActive())return true;  // §76: Sandbox libera todo o conteúdo
   if(BASE_WEAPONS.indexOf(id)>=0)return true;
   const k=unlockKeyFor('w',id);
   if(!k)return true;
@@ -2193,18 +3698,21 @@ const BASE_ITEMS=['nucleo','placa','iman','coracao','lente','olho',
 const BASE_UPGRADES=['crit','critd','rate','hp','range','magnet',
   'dmg','dash','aoe','range2'];
 function isItemUnlocked(id){
+  if(sandboxActive())return true;  // §76: Sandbox libera todo o conteúdo
   if(BASE_ITEMS.indexOf(id)>=0)return true;
   const k=unlockKeyFor('i',id);
   if(!k)return true;
   return prog.seen.indexOf(k)>=0||UNLOCKS[k].need();
 }
 function isUpgUnlocked(id){
+  if(sandboxActive())return true;  // §76: Sandbox libera todo o conteúdo
   if(BASE_UPGRADES.indexOf(id)>=0)return true;
   const k=unlockKeyFor('u',id);
   if(!k)return true;
   return prog.seen.indexOf(k)>=0||UNLOCKS[k].need();
 }
 function isCharUnlocked(id){
+  if(sandboxActive())return true;  // §76: Sandbox libera todo o conteúdo
   if(BASE_CHARS.indexOf(id)>=0)return true;
   const k=unlockKeyFor('c',id);
   if(!k)return true;
@@ -2213,6 +3721,8 @@ function isCharUnlocked(id){
 /* verifica novos desbloqueios e notifica */
 let unlockQueue=[];
 function checkUnlocks(silent){
+  if(sandboxRun)return false;      // PROTEÇÃO SANDBOX (§73): nada desbloqueia
+  if(sandboxHoldUnlocks)return false; // §3: janela pós-laboratório também
   let any=false;
   for(const k in UNLOCKS){
     const u=UNLOCKS[k];
@@ -3062,8 +4572,49 @@ function ageGhosts(arr,dt){
    As falas dos Ecos usam um corpo maior (legibilidade em 1080p). */
 const FTEXT_SIZE=13;          // era 11px — PR 6.5: números/avisos legíveis
 const FTEXT_SPEAK=15;         // falas dos Ecos
+const FTEXT_CRIT=17;          // PR 11.5: crítico tem peso próprio
 function floatText(x,y,txt,color,size){
   ftexts.push({x,y,txt,color,t:0,life:1.1,sz:size||0});
+}
+/* ---------------------------------------------------------------------
+   PR 11.5 — FEEDBACK DE COMBATE PADRONIZADO
+   dmgNum ..... números de dano (settings FULL/REDUCED/OFF, §22)
+   procText ... texto de proc importante com anti-spam por chave (§21)
+   shieldFx ... hit/break do escudo do operador (§18)
+   --------------------------------------------------------------------- */
+const FTEXT_MAX=52;              // teto global de textos simultâneos
+function dmgNumShow(e,d,crit){
+  if(cfg.dmgnum===0)return;                    // OFF
+  if(crit){                                    // crítico: peso + símbolo (§17)
+    floatText(e.x,e.y-e.r-10,'✦ '+fmtStat(d),'#fff6b0',FTEXT_CRIT);
+    return;
+  }
+  const heavy=d>=e.maxHp*.18;                  // golpe pesado merece número
+  if(cfg.dmgnum===1&&!heavy)return;            // REDUCED: só crítico/pesado
+  if(ftexts.length>=FTEXT_MAX)return;          // orçamento visual por frame
+  floatText(e.x,e.y-e.r-6,fmtStat(d),'#dff3ff');
+}
+const _procCd=Object.create(null);
+function procText(x,y,txt,color,key,cd){
+  if(key){                                     // anti-spam: 1 por janela
+    const now=performance.now(),w=cd||1100;
+    if(_procCd[key]&&now-_procCd[key]<w)return;
+    _procCd[key]=now;
+  }
+  if(ftexts.length>=FTEXT_MAX)return;
+  floatText(x,y,txt,color);
+}
+/* classes temporárias na barra de escudo do HUD (#shbar) */
+let _shieldFxT=0;
+function shieldFx(kind){
+  const b=document.getElementById('shbar');
+  if(!b||!player||!(player.shieldMax>0))return;
+  b.classList.remove('hit','break');
+  void b.offsetWidth;                          // reinicia a animação CSS
+  b.classList.add(kind==='break'?'break':'hit');
+  if(_shieldFxT)clearTimeout(_shieldFxT);
+  _shieldFxT=setTimeout(()=>{b.classList.remove('hit','break');_shieldFxT=0;},
+    kind==='break'?620:320);
 }
 
 /* ---------------- HUD / DOM ---------------- */
@@ -3084,7 +4635,7 @@ function toast(txt){
   const d=document.createElement('div');d.className='toast';d.textContent=txt;
   toastsEl.appendChild(d);setTimeout(()=>d.remove(),2100);
 }
-const coinsEl=$('coinsp'),mbC=$('mb-c'),mbG=$('mb-g'),mbV=$('mb-v');
+const coinsEl=$('coinsp');
 const weapWrapEl=$('weapwrap');
 function setChip(el,slot,echo){
   el.className='chip';
@@ -3100,7 +4651,7 @@ function setChip(el,slot,echo){
     el.textContent='ECHO·0'+slot+' — ⚠ '+DIS_LABEL[_ds]+
       (_ds==='hostile'&&echo.dis.integMax>0
         ? ' · RUPTURA '+Math.round(clamp(echo.dis.integ/echo.dis.integMax,0,1)*100)+'%'
-        : ' '+Math.max(0,echo.dis.t).toFixed(1)+'s');
+        : ' '+fmtSec(Math.max(0,echo.dis.t)));
     return;
   }
   el.style.textDecoration='';
@@ -3124,21 +4675,22 @@ function updateHUD(force){
   if(!force&&hudAcc<.09)return;
   hudAcc=0;
   hpfill.style.width=clamp(player.hp/player.maxHp*100,0,100)+'%';
-  hpnum.textContent=Math.max(0,Math.ceil(player.hp))+' / '+player.maxHp;
+  hpnum.textContent=Math.max(0,Math.ceil(player.hp))+' / '+fmtNum(player.maxHp);
   // ---- ESCUDO DO OPERADOR ----
   const shR=clamp(player.shield/(player.shieldMax||1)*100,0,100);
   shfill.style.width=shR+'%';
-  shnum.textContent=Math.max(0,Math.ceil(player.shield))+' / '+player.shieldMax;
+  shnum.textContent=Math.max(0,Math.ceil(player.shield))+' / '+fmtNum(player.shieldMax);
   const _pf=itemStateGet(player,'_perfect','fired',false);
+  const _regen=player.shieldMax>0&&player.shieldDelayT<=0&&
+    player.shield<player.shieldMax&&player.shieldRegen>0;
   shbar.classList.toggle('full',player.shieldMax>0&&player.shield>=player.shieldMax);
   shbar.classList.toggle('partial',player.shield>0&&player.shield<player.shieldMax);
   shbar.classList.toggle('empty',player.shield<=0);
   shbar.classList.toggle('perfect',!!_pf&&player.shieldMax>0&&player.shield>=player.shieldMax);
+  shbar.classList.toggle('regen',_regen);   // PR 11.5: regeneração visível (§18)
   waveEl.textContent=boss?'PARADOXO':(miniBoss?'ARAUTO':
     ('ONDA '+String(Math.max(1,wave)).padStart(2,'0')+' / 20'));
-  const m=String(Math.floor(runTime/60)).padStart(2,'0'),
-        s=String(Math.floor(runTime%60)).padStart(2,'0');
-  timerEl.textContent=m+':'+s+' · ABATES '+kills;
+  timerEl.textContent=fmtTime(runTime)+' · ABATES '+kills;
   xpfill.style.width=clamp(player.xp/player.xpNext*100,0,100)+'%';
   lvlEl.textContent='NV '+player.level+' · '+Math.floor(player.xp)+'/'+player.xpNext;
   const dr=player.dashCd>0?1-player.dashCd/player.dashCdMax:1;
@@ -3153,8 +4705,8 @@ function updateHUD(force){
     const r=act?player.spT/(player.spMax||6)
       :(player.spCd>0?1-player.spCd/C.sp.cd:1);
     $('spfill').style.width=clamp(r*100,0,100)+'%';
-    $('splbl').textContent=act?(C.sp.nm+' '+player.spT.toFixed(1)+'s')
-      :(player.spCd>0?C.sp.nm+' '+player.spCd.toFixed(1)+'s':C.sp.nm+' [E]');
+    $('splbl').textContent=act?(C.sp.nm+' '+fmtSec(player.spT))
+      :(player.spCd>0?C.sp.nm+' '+fmtSec(player.spCd):C.sp.nm+' [E]');
     spw.classList.toggle('ready',player.spCd<=0&&!act);
     spw.classList.toggle('active',act);
   }
@@ -3168,15 +4720,21 @@ function updateHUD(force){
   setChip(chip1,1,echoes.find(e=>e&&e.slot===1)||null);
   setChip(chip2,2,echoes.find(e=>e&&e.slot===2)||null);
   coinsEl.textContent='◈ '+player.coins;
-  mbC.style.width=clamp(moral.comp/12*100,0,100)+'%';
-  mbG.style.width=clamp(moral.greed/12*100,0,100)+'%';
-  mbV.style.width=clamp(moral.viol/12*100,0,100)+'%';
-  // brilho crescente conforme o tier — feedback do peso da escolha
-  const gl=(el,t)=>el.style.boxShadow=t>=3?'0 0 10px currentColor':
-    (t>=2?'0 0 6px currentColor':'none');
-  gl(mbC,moralTier(moral.comp));
-  gl(mbG,moralTier(moral.greed));
-  gl(mbV,moralTier(moral.viol));
+  coinsEl.textContent='◈ '+fmtCompact(player.coins);
+  /* PR 11.5: HUD mostra só o PERFIL dominante — percentuais de moralidade
+     e tiers ficam no Registro de Combate (TAB) e na pausa (§15). */
+  const _dom=moralDom();
+  const domEl=$('moral-dom'),tiersEl=$('moral-tiers');
+  if(domEl){
+    domEl.textContent=DOM_NAME[_dom];
+    domEl.style.color=DOM_COLOR[_dom];
+  }
+  if(tiersEl){
+    const tC=moralTier(moral.comp),tG=moralTier(moral.greed),tV=moralTier(moral.viol);
+    const pip=(t,c)=>t?'<i style="display:inline-block;width:5px;height:5px;'+
+      'margin-left:4px;background:'+c+';box-shadow:0 0 6px '+c+'"></i>':'';
+    tiersEl.innerHTML=pip(tC,'#7dffc4')+pip(tG,'#ffd166')+pip(tV,'#ff5c7a');
+  }
 }
 
 /* =====================================================================
@@ -3246,7 +4804,7 @@ function moralGain(c,g,v){
   _lastTier=now;
   const shout=(nm,tier,col,txt)=>{
     banner(nm+' · '+TIER_NAME[tier],txt);
-    shake=Math.max(shake,10);aberr=Math.max(aberr,.6);
+    shake=Math.max(shake,10);aberrPeak(.6);
     spawnRing(player.x,player.y,col,14,260,.9);
     spawnShards(player.x,player.y,col,16,6);
     AUDIO.bossPhase();
@@ -3263,7 +4821,7 @@ function moralGain(c,g,v){
   if(mEff.conflict&&!_wasConflict){
     _wasConflict=1;
     banner('CONFLITO INTERNO','SEUS EXTREMOS SE DEVORAM — MERCADO E INIMIGOS REAGEM');
-    aberr=Math.max(aberr,.9);
+    aberrPeak(.9);
   }
 }
 let _lastTier={c:0,g:0,v:0},_wasConflict=0;
@@ -4231,7 +5789,7 @@ function echoSetDis(e,st){
     e.beamT=0;e.beamRamp=1;e.beamTarget=null;
     banner('FRATURA IMINENTE','ECHO·0'+e.slot+' ESTÁ SE DESLIGANDO DE VOCÊ');
     toast('ECHO·0'+e.slot+' — FRATURANDO');
-    shake=Math.max(shake,7);aberr=Math.max(aberr,.55);
+    shake=Math.max(shake,7);aberrPeak(.55);
     spawnRing(e.x,e.y,'#ff9d3c',10,150,.7);
     spawnShards(e.x,e.y,'#ff9d3c',12,5);
     AUDIO.tone(150,.8,'sawtooth',.06,-30);
@@ -4313,7 +5871,7 @@ function enterDissonance(e,opts){
   e.rel.streak=-1;e.rel.lastRejectAt=runTime;
   e.rel.last={t:'reject',r:'dissonance',v:-2,at:Math.round(runTime*10)/10};
   relRememberMoment(e,'dissonance',-2);
-  shake=Math.max(shake,12);aberr=Math.max(aberr,.9);
+  shake=Math.max(shake,12);aberrPeak(.9);
   spawnRing(e.x,e.y,'#ff2f5e',10,200,.8);
   spawnRing(e.x,e.y,'#ff4df0',6,150,1.0);
   spawnShards(e.x,e.y,'#ff2f5e',20,6);
@@ -4575,7 +6133,7 @@ function echoRoleTick(e,dt){
       if(ap)relFeedback(e,ap);
     }
     if(hit)echoSpeak(e,'DISTORÇÃO LIBERADA.','#ff9df7');
-    aberr=Math.max(aberr,.45);
+    aberrPeak(.45);
     AUDIO.tone(180,.4,'sawtooth',.04,-70);
   }
 }
@@ -4948,6 +6506,10 @@ function itemTick(p,dt){
     st.t+=dt;
     if(st.t>=PERFECT_SHIELD_SECONDS&&!st.fired){
       st.fired=true;
+      /* PR 11.5: Perfect Shield identificável mesmo sem item (§19) —
+         feedback neutro; os itens adicionam seus próprios procs em cima. */
+      spawnRing(p.x,p.y,'#8ff6ff',6,58,.5);
+      procText(p.x,p.y-44,'ESCUDO PERFEITO','#8ff6ff','perfect',1500);
       itemEmit('onShieldFull',{player:p,reason:'perfect',seconds:Math.round(st.t*10)/10});
     }
   }else if(p.shieldMax>0&&p.shield<p.shieldMax-1e-6){
@@ -5038,8 +6600,11 @@ function removeItemStatMods(p,itemId){
   return before-p.sm.length;
 }
 /* remove um item de uma build pelo caminho de DEV (stat pipeline + moral +
-   estado; efeitos diretos de HP/regen são best-effort). */
-function removeItemById(p,itemId){
+   estado; efeitos diretos de HP/regen são best-effort).
+   PR 11.5: `taint=false` permite ao Sandbox remover módulos sem marcar a
+   run como debug — o isolamento do laboratório é da responsabilidade dele. */
+function removeItemById(p,itemId,taint){
+  if(taint===undefined)taint=true;
   if(!p||!p.items)return false;
   if(p.items.indexOf(itemId)<0)return false;
   p.items=p.items.filter(id=>id!==itemId);
@@ -5048,7 +6613,7 @@ function removeItemById(p,itemId){
   applyMoralTuning(p);
   invalidateItemHooks();p.itemVer=(p.itemVer||0)+1;
   resetPerfectShield(p);
-  if(typeof devTaint==='function')try{devTaint();}catch(e){}
+  if(taint&&typeof devTaint==='function')try{devTaint();}catch(e){}
   return true;
 }
 function grantItemInternal(p,it,silent){
@@ -5673,6 +7238,25 @@ function mkCard(nm,ds,extra,disabled,onClick,icon,lockCfg){
   }
   return d;
 }
+/* PR 11.5 §12: diferencia item básico / sinérgico / transformador */
+function styleItemCard(card,it){
+  if(!card||!it||!card.classList)return card;
+  if(it.transformer){
+    card.classList.add('card-tr');
+    const r=document.createElement('div');r.className='trribbon';
+    r.textContent='◆ TRANSFORMADOR · MUDA A RUN';
+    card.appendChild(r);
+  }else{
+    const syn=itemSynergyContrib(it.id);
+    if(syn.length){
+      card.classList.add('card-syn');
+      const r=document.createElement('div');r.className='synribbon';
+      r.textContent='⟡ COMPOE: '+syn.join(' · ');
+      card.appendChild(r);
+    }
+  }
+  return card;
+}
 function lockIconSVG(on){
   return on
     ? '<svg viewBox="0 0 24 24" fill="none" stroke="#ffd166" stroke-width="2.2" '+
@@ -5701,11 +7285,11 @@ function moralStatusLine(){
   return 'PERFIL: <b style="color:'+DOM_COLOR[d]+'">'+DOM_NAME[d]+'</b>'+
     (tiers?' — '+tiers:'')+
     (mEff.conflict?' <b style="color:#ff4df0">[CONFLITO]</b>':'')+'<br>'+
-    'PREÇOS ×'+mEff.shopMul.toFixed(2)+' · MOEDAS ×'+mEff.coinMul.toFixed(2)+
-    ' · SEU DANO ×'+mEff.dmgMul.toFixed(2)+
-    ' · DANO RECEBIDO ×'+mEff.playerDmgTaken.toFixed(2)+
-    ' · INIMIGOS ×'+mEff.enemySpd.toFixed(2)+' VEL / ×'+mEff.enemyHp.toFixed(2)+' VIDA'+
-    (mEff.echoPower>1?' · ECOS ×'+mEff.echoPower.toFixed(2):'');
+    'PREÇOS '+fmtMult(mEff.shopMul)+' · MOEDAS '+fmtMult(mEff.coinMul)+
+    ' · SEU DANO '+fmtMult(mEff.dmgMul)+
+    ' · DANO RECEBIDO '+fmtMult(mEff.playerDmgTaken)+
+    ' · INIMIGOS '+fmtMult(mEff.enemySpd)+' VEL / '+fmtMult(mEff.enemyHp)+' VIDA'+
+    (mEff.echoPower>1?' · ECOS '+fmtMult(mEff.echoPower):'');
 }
 
 /* --------------- LOJA ENTRE ONDAS --------------- */
@@ -5894,9 +7478,9 @@ function renderShop(){
     {className:'cds',innerHTML:'TODOS OS MÓDULOS PASSIVOS JÁ FORAM INSTALADOS.'}));
   for(const it of shopItems){
     const pr=priceItem(it),poor=player.coins<pr;
-    mRow2.appendChild(mkCard(
+    const icard=mkCard(
       '<span style="color:'+it.color+'">'+it.nm+'</span>'+rarTag(it.rar),
-      it.desc+moralAffinityTagHTML(it.id,true),
+      itemDescParts(it).body+moralAffinityTagHTML(it.id,true),
       '<div class="cprice">◈ '+pr+'</div>',poor,()=>{
         player.coins-=pr;giveItem(it,false);
         if(isLocked('item',it.id))shopLock=null;
@@ -5904,8 +7488,10 @@ function renderShop(){
         checkpointShopPurchase();       // PR 7.5: compra concluída → checkpoint
       },
       shopIcon(it.id,it.color),
-      lockCfgFor('item',it.id,it.nm)));
-    bindTip(mRow2.lastChild,()=>itemTipHTML(it));
+      lockCfgFor('item',it.id,it.nm));
+    styleItemCard(icard,it);            // PR 11.5 §12: hierarquia visual
+    mRow2.appendChild(icard);
+    bindTip(icard,()=>itemTipHTML(it));
   }
   // ---- REPARO DE EMERGÊNCIA: opção fixa, custo escala +50% por uso ----
   const rp=repairCost();
@@ -6165,7 +7751,7 @@ function renderRift(){
       spawnRing(beacon.x,beacon.y,'#ffd166',10,170,.8);
       spawnShards(beacon.x,beacon.y,'#ffd166',16,6);
       spawnParticles(player.x,player.y,'#9d7bff',24,260,.7,3.5);
-      aberr=Math.max(aberr,.8);shake=Math.max(shake,8);
+      aberrPeak(.8);shake=Math.max(shake,8);
       AUDIO.tone(120,.8,'sawtooth',.07,-40);AUDIO.noise(.7,.05,500,.7,'lowpass');
       toast('ANOMALIA ATIVA · LENTIDÃO POR 30s');
       moralGain(0,3,1);closeEvent();
@@ -6384,7 +7970,7 @@ function renderScrap(){
       for(let i=0;i<4;i++)spawnRing(beacon.x,beacon.y,
         i%2?'#39d98a':'#ffd166',10+i*30,260+i*60,.7);
       spawnShards(beacon.x,beacon.y,'#39d98a',26,8);
-      shake=Math.max(shake,18);aberr=Math.max(aberr,.8);
+      shake=Math.max(shake,18);aberrPeak(.8);
       AUDIO.boom();AUDIO.bossRoar();
       player.invT=0;damagePlayer(18);
       toast('JARDIM DETONADO · ◈ +'+boomLoot);
@@ -6630,7 +8216,7 @@ reactor(){
       }
       curAttacker=prev;
       for(let i=0;i<5;i++)spawnRing(beacon.x,beacon.y,'#ff2f5e',20+i*40,420,.9);
-      shake=Math.max(shake,22);aberr=Math.max(aberr,1);
+      shake=Math.max(shake,22);aberrPeak(1);
       player.invT=0;damagePlayer(15);
       AUDIO.boom();AUDIO.bossRoar();
       banner('NÚCLEO DETONADO','A ARENA INTEIRA QUEIMA');
@@ -6771,7 +8357,7 @@ function spawnAmbushHorde(){
     spawnParticles(x,y,'#ff4d6d',16,300,.55,3);
   }
   banner('EMBOSCADA TEMPORAL','4 PERSEGUIDORES DE ELITE — RECOMPENSA TRIPLA');
-  shake=Math.max(shake,12);aberr=Math.max(aberr,.7);
+  shake=Math.max(shake,12);aberrPeak(.7);
   AUDIO.bossRoar();
 }
 function spawnGuards(x,y){
@@ -8609,7 +10195,7 @@ function fireDelayed(d){
           if(e)e.bounty=6;
         }
         banner('O GERADOR ATRAIU ATENÇÃO',n+' ENXAMES — CADA UM LEVA ◈6');
-        aberr=Math.max(aberr,.4);
+        aberrPeak(.4);
       })();
       break;
     case 'posto_ferido':
@@ -8640,7 +10226,7 @@ function fireDelayed(d){
       if(!player)break;
       waveBuff('dmgTaken','x.olho.juros','JUROS DO OLHO +10% DANO RECEBIDO',1.10,2);
       banner('JUROS DO OLHO','VISÃO EMPRESTADA SE PAGA · +10% DANO RECEBIDO');
-      aberr=Math.max(aberr,.6);
+      aberrPeak(.6);
       break;
     case 'anexo_noticia':
       if(!player)break;
@@ -8820,7 +10406,7 @@ function tryStartArenaEvent(){
   def.start(arenaEv);
   arenaEvWave=wave;
   banner('⚠ '+def.nm,def.desc);
-  aberr=Math.max(aberr,.5);
+  aberrPeak(.5);
   AUDIO.tone(220,.5,'sawtooth',.05,-60);
 }
 function tickArenaEvent(dt){
@@ -8855,7 +10441,7 @@ const MICRO_EVENTS=[
      }
    }},
   {id:'me_interferencia',nm:'INTERFERÊNCIA',
-   run(){aberr=Math.max(aberr,.5);_aeInterfT=Math.max(_aeInterfT,2.5);
+   run(){aberrPeak(.5);_aeInterfT=Math.max(_aeInterfT,2.5);
      toast('INTERFERÊNCIA NO CANAL VISUAL');}},
   {id:'me_assinatura',nm:'ASSINATURA DESCONHECIDA',
    run(){
@@ -9299,8 +10885,11 @@ function drawWorldExtras(){
 function setWeaponSlot(slot){
   if(!player||!player.owned.length)return;
   if(slot<0||slot>=player.owned.length)return;
+  if(player.owned[slot]==null)return;      // slot vazio não equipa
   const wi=player.owned[slot];
   if(player.wi===wi)return;
+  /* PR 11.5 §55: lembra a arma anterior para o quick switch (tecla X) */
+  player.lastWi=player.wi;
   player.wi=wi;player.fireTimer=Math.min(player.fireTimer,.12);
   player.beamRamp=1;player.beamTarget=null;player.beamT=0;
   const d=WEAPONS[wi];
@@ -9311,11 +10900,57 @@ function setWeaponSlot(slot){
   buildWeaponHUD();
 }
 function cycleWeapon(dir){
-  if(!player||player.owned.length<2)return;
+  if(!player||countWeapons(player)<2)return;
+  const n=player.owned.length;
   const cur=player.owned.indexOf(player.wi);
-  const next=((cur<0?0:cur)+(dir||1)+player.owned.length)%player.owned.length;
-  setWeaponSlot(next);
+  for(let i=1;i<=n;i++){                   // pula buracos (slots vazios)
+    const idx=(((cur<0?0:cur)+(dir||1)*i)%n+n)%n;
+    if(player.owned[idx]!=null){setWeaponSlot(idx);return;}
+  }
 }
+/* PR 11.5 §55 — QUICK SWITCH: alterna com a ÚLTIMA arma usada.
+   A tecla Q já tem função (ciclar) — o quick switch usa X (e o mesmo
+   estado lastWi é salvo no checkpoint para sobreviver ao Continue). */
+function quickSwitchWeapon(){
+  if(!player||!player.owned.length)return;
+  const slot=player.owned.indexOf(player.lastWi);
+  if(slot<0||player.owned[slot]===player.wi){   // sem "anterior" válida
+    cycleWeapon(1);return;
+  }
+  setWeaponSlot(slot);
+}
+/* =====================================================================
+   PR 11.5 §49–53 · §58–60 — SWAP CENTRAL DO ARSENAL
+   swapWeaponSlots(a,b): troca as armas ENTRE os slots a e b (0-based).
+   · É uma TROCA (swap): nenhuma arma é destruída, nenhum espaço muda.
+   · A identidade da arma ativa ACOMPANHA A ARMA (§53): se a arma do
+     slot b era a equipada, ela continua equipada depois da troca.
+   · NÃO toca em estado de combate (fireTimer, beam, spin), modificadores
+     do pipeline (sm), itemState, cooldowns ou timers — swap repetido
+     não pode resetar cooldown nem alterar DPS (§59).
+   · Operação leve: permuta o array owned e reambula o índice ativo.
+     O player/build nunca é recriado (§60).
+   ===================================================================== */
+function swapWeaponSlots(a,b){
+  if(!player||!Array.isArray(player.owned))return false;
+  const max=player.maxSlots||player.owned.length;
+  if(!Number.isInteger(a)||!Number.isInteger(b))return false;
+  if(a<0||b<0||a>=max||b>=max||a===b)return false;
+  const wa=player.owned[a]??null,wb=player.owned[b]??null;
+  if(wa==null&&wb==null)return false;      // nada para trocar
+  player.owned[a]=wb;player.owned[b]=wa;
+  /* normaliza apenas o trecho afetado: buracos viram null explícito
+     (undefined confunde o save). Trocar com slot vazio MOVE a arma — §8. */
+  const end=Math.max(player.owned.length,a+1,b+1);
+  for(let i=0;i<end;i++)if(player.owned[i]===undefined)player.owned[i]=null;
+  /* PR 11.5 §53: wi/lastWi guardam IDENTIDADE de arma (não slot).
+     Permutar slots não muda qual arma está ativa — nada para
+     "repontar" aqui: trocar essas linhas trocaria a arma ativa. */
+  buildWeaponHUD();
+  return true;
+}
+/* quantas armas reais o arsenal tem (buracos null não contam) */
+function countWeapons(p){return p?p.owned.filter(x=>x!=null).length:0;}
 /* ---- adiciona uma arma comprada permanentemente ao arsenal da run ---- */
 function grantWeapon(wi,silent,slot){
   if(!player)return false;
@@ -9326,9 +10961,15 @@ function grantWeapon(wi,silent,slot){
     replaced=player.owned[slot];       // substitui a arma daquele slot
     player.owned[slot]=wi;
     if(player.wi===replaced)player.wi=wi;
-  }else if(player.owned.length<player.maxSlots){
-    player.owned.push(wi);
-  }else return false;                  // sem espaço e sem slot escolhido
+    if(player.lastWi===replaced)player.lastWi=player.wi;  // PR 11.5
+  }else{
+    /* PR 11.5 §8: preenche o PRIMEIRO slot vazio (buraco) antes de
+       crescer o arsenal — remoções deixam vazios no meio. */
+    const free=player.owned.indexOf(null);
+    if(free>=0)player.owned[free]=wi;
+    else if(player.owned.length<player.maxSlots)player.owned.push(wi);
+    else return false;                  // sem espaço e sem slot escolhido
+  }
   if(!silent){
     const n=(slot!=null?slot:player.owned.length-1)+1;
     if(replaced!=null)
@@ -9382,12 +11023,22 @@ function buildWeaponHUD(){
   if(!wrap||!player)return;
   let html='';
   player.owned.forEach((wi,slot)=>{
+    if(wi==null){                        // buraco no meio do arsenal (§8)
+      html+='<div class="wslot empty"><span class="key">['+(slot+1)+']</span>'+
+        '<div class="nm">— VAZIO —</div>'+
+        '<div class="wrange">SLOT LIVRE</div></div>';
+      return;
+    }
     const d=WEAPONS[wi];
     const rg=Math.round(weaponRange(d,player));
-    html+='<div class="wslot'+(player.wi===wi?' act':'')+'" data-slot="'+slot+'">'+
+    const act=player.wi===wi;
+    /* PR 11.5 §61: arma ativa em destaque com alcance; as demais viram
+       resumo compacto (tag em vez de números) — detalhes no tooltip/TAB. */
+    html+='<div class="wslot'+(act?' act':'')+'" data-slot="'+slot+'">'+
       '<span class="key">['+(slot+1)+']</span>'+weaponIconSVG(wi)+
-      '<div class="nm">'+d.nm+'</div>'+
-      '<div class="wrange">◄ '+rg+'px · '+rangeLabel(rg)+'</div></div>';
+      '<div class="nm" style="color:'+(act?d.color:'')+'">'+d.nm+'</div>'+
+      (act?'<div class="wrange">◄ '+fmtStat(rg,0)+'px · '+rangeLabel(rg)+'</div>'
+          :'<div class="wrange" style="opacity:.55">'+d.tag+'</div>')+'</div>';
   });
   // slots vazios visíveis
   for(let s=player.owned.length;s<player.maxSlots;s++)
@@ -9594,7 +11245,7 @@ function fireWeaponFrom(src,def,team,mul){
     player.vx-=Math.cos(src.aim)*def.kick;player.vy-=Math.sin(src.aim)*def.kick;
     if(def.id==='shotgun')sShotg();else if(def.id==='orb')sOrb();else sShoot();
   }else{
-    if(src.slot===2)aberr=Math.max(aberr,.55);   // distorção quando o Echo 2 ataca
+    if(src.slot===2)aberrPeak(.55);   // distorção quando o Echo 2 ataca
     if(Math.random()<.5)sEShoot();
   }
 }
@@ -9626,7 +11277,7 @@ function trySpecial(){
       player.x=nx;player.y=ny;
       spawnRing(nx,ny,C.pal.glow,8,130,.6);
       player.invT=Math.max(player.invT||0,1.2);
-      aberr=Math.max(aberr,.85);
+      aberrPeak(.85);
       AUDIO.tone(1200,.2,'sine',.05,-700);AUDIO.dash();
       break;
     }
@@ -9651,7 +11302,7 @@ function trySpecial(){
       spawnRing(player.x,player.y,'#ff7a2f',16,R,.85);
       spawnRing(player.x,player.y,'#ffd166',10,R*.7,.7);
       spawnShards(player.x,player.y,'#ff7a2f',26,8);
-      shake=Math.max(shake,16);aberr=Math.max(aberr,.8);
+      shake=Math.max(shake,16);aberrPeak(.8);
       const prev=curAttacker;curAttacker=player;
       for(const e of enemies){
         if(e.dead||e.spawnT>0)continue;
@@ -9692,7 +11343,7 @@ function trySpecial(){
         floatText(player.x,player.y-34,'+'+heal+' HP · '+reaped+' COLHIDOS','#a8ff3d');
       }
       banner('COLHEITA MACABRA',reaped?reaped+' EXECUÇÕES':'NENHUM ALVO MADURO');
-      shake=Math.max(shake,14);aberr=Math.max(aberr,.7);
+      shake=Math.max(shake,14);aberrPeak(.7);
       AUDIO.boom();AUDIO.tone(160,.5,'sawtooth',.05,-70);
       break;
     }
@@ -9899,7 +11550,7 @@ function damageEnemy(e,d,srcx,srcy,crit,isDot){
   e.vx+=Math.cos(a)*kb;e.vy+=Math.sin(a)*kb;
   if(crit){
     if(curAttacker===player)bumpProg('crits');
-    if(cfg.dmgnum)floatText(e.x,e.y-e.r-8,'✦ '+Math.round(d),'#fff6b0');
+    dmgNumShow(e,d,true);                      // PR 11.5: crítico com peso (§17)
     spawnParticles(e.x,e.y,'#fff6b0',7,260,.32,3);
     // BISTURI SIMBIÓTICO: cura ao crítico
     if(curAttacker===player&&player&&player.critHeal){
@@ -9907,7 +11558,11 @@ function damageEnemy(e,d,srcx,srcy,crit,isDot){
     }
     /* PR 11: hooks de crítico dos itens (build Crit/Status). */
     if(curAttacker===player)itemEmit('onCrit',{target:e,dmg:d,crit:true});
-  }else spawnParticles(e.x,e.y,e.color,3,190,.25,2.5);
+  }else{
+    spawnParticles(e.x,e.y,e.color,3,190,.25,2.5);
+    /* PR 11.5: número de acerto direto do jogador (settings §22) */
+    if(curAttacker===player&&!isDot)dmgNumShow(e,d,false);
+  }
   /* PR 11: hook de acerto do jogador (nunca para DoT/repique de EA). */
   if(curAttacker===player)itemEmit('onHit',{target:e,dmg:d,crit});
   // PROTOCOLO DE EXECUÇÃO: execução de alvos abaixo do limiar
@@ -9933,7 +11588,7 @@ function triggerResonance(e,by,baseDmg){
   bumpProg('reso');
   const rp=(player&&player.resoPower)||1;   // RESSONADOR DUPLO
   const R=132*Math.sqrt(rp), dmg=Math.max(26,baseDmg*1.35)*rp;
-  resoFlash=1;shake=Math.max(shake,9);aberr=Math.max(aberr,.55);
+  resoFlash=1;shake=Math.max(shake,9);aberrPeak(.55);
   spawnRing(e.x,e.y,'#8ff6ff',10,R,.55);
   spawnRing(e.x,e.y,'#ffffff',6,R*.62,.42);
   spawnShards(e.x,e.y,'#8ff6ff',16,6);
@@ -10039,7 +11694,7 @@ function killEnemy(e){
   if(e.type==='miniboss'){
     // recompensa pesada + limpeza de tela
     clearMiniBossHUD();
-    shake=Math.max(shake,20);aberr=Math.max(aberr,.9);
+    shake=Math.max(shake,20);aberrPeak(.9);
     for(let i=0;i<5;i++)setTimeout(()=>{
       spawnRing(e.x+rand(-70,70),e.y+rand(-70,70),'#ff9d3c',8,rand(120,260),.7);
       spawnShards(e.x+rand(-60,60),e.y+rand(-60,60),'#ffd166',12,7);
@@ -10141,7 +11796,13 @@ function damagePlayer(d){
   const absorbed=Math.min(player.shield,real);
   player.shield=Math.max(0,player.shield-absorbed);
   player.shieldDelayT=player.shieldDelay;    // dano válido reinicia o delay
-  if(absorbed>0){resetPerfectShield(player);itemEmit('onShieldHit',{player,real,absorbed});}
+  if(absorbed>0){
+    resetPerfectShield(player);
+    shieldFx('hit');                     // PR 11.5: escudo brilha no impacto (§18)
+    if(absorbed>=6)procText(player.x,player.y-38,'ESCUDO −'+fmtStat(absorbed,0),
+      '#ffe9a8','shhit',700);
+    itemEmit('onShieldHit',{player,real,absorbed});
+  }
   const rest=real-absorbed;
   if(rest>0)player.hp-=rest;
   player.hurtT=clamp(.18+real/70,.18,.55);
@@ -10149,14 +11810,18 @@ function damagePlayer(d){
   const mag=clamp(2.5+real*0.62,2.5,26);
   shake=Math.max(shake,mag);
   if(real>=25){                          // impacto massivo: distorção temporal
-    aberr=Math.max(aberr,clamp(real/45,.3,1));
+    aberrPeak(clamp(real/45,.3,1));
     spawnRing(player.x,player.y,'#ff4d6d',8,60+real*1.4,.4);
   }
   spawnParticles(player.x,player.y,'#ff5c7a',clamp(5+Math.round(real/3),5,22),240,.3,3);
   if(shieldBroke){                       // feedback curto — sem dano/stun/mecânica extra
-    floatText(player.x,player.y-30,'ESCUDO ROMPIDO','#8ff6ff');
+    floatText(player.x,player.y-30,'ESCUDO ROMPIDO','#8ff6ff',FTEXT_SPEAK);
     spawnRing(player.x,player.y,'#8ff6ff',8,72,.42);
+    spawnRing(player.x,player.y,'#ffffff',4,96,.3);
+    shieldFx('break');                   // PR 11.5: quebra perceptível (§18)
+    aberrPeak(.35);
     AUDIO.tone(rand(300,360),.18,'sine',.04,-140);
+    AUDIO.tone(rand(180,220),.3,'sawtooth',.03,-90,.05);
     if(runSt)runSt.sb++;                 // PR 8: registro de quebra de escudo
     echoReact('shieldBreak');            // PR 8: fala reativa (cooldown global segura o spam)
     /* PR 11: BUILD DE QUEBRA — procs com cooldown interno (anti-loop §8/§14) */
@@ -10191,7 +11856,7 @@ function damagePlayer(d){
       player.revives--;
       player.hp=Math.round(player.maxHp*.45);
       player.invT=Math.max(player.invT||0,2.2);
-      shake=Math.max(shake,18);aberr=Math.max(aberr,.9);
+      shake=Math.max(shake,18);aberrPeak(.9);
       spawnRing(player.x,player.y,'#7dffc4',12,260,1);
       spawnShards(player.x,player.y,'#7dffc4',22,7);
       banner('TALISMÃ CONSUMIDO','O CICLO TE DEVOLVEU — 45% DE VIDA');
@@ -10332,6 +11997,8 @@ function chainShock(from,dmg,jumps,src,hitSet){
   damageEnemy(best,dmg,from.x,from.y,false);
   curAttacker=prev;
   AUDIO.tone(rand(1200,1500),.05,'square',.014,-500);
+  /* PR 11.5: proc de cadeia legível (§21) — anti-spam por chave */
+  procText(best.x,best.y-best.r-14,'CADEIA','#ffe74d','chain',900);
   if(jumps>1&&!best.dead)chainShock(best,dmg*.78,jumps-1,src,hitSet);
 }
 /* processa todos os status de um inimigo (chamado no update dele) */
@@ -10412,6 +12079,19 @@ function drawStatus(e){
     ctx.moveTo(e.x+Math.cos(a)*R,e.y+Math.sin(a)*R);
     ctx.lineTo(e.x+Math.cos(a+.6)*(R+9),e.y+Math.sin(a+.6)*(R+9));
     ctx.stroke();ctx.restore();
+  }
+  /* PR 11.5 §20: pips compactos de status — cor + forma mínima, sem ícones
+     gigantes sobre o inimigo. Ordem fixa: queimadura, corrosão, gelo,
+     sangramento, choque. */
+  {
+    let px=0;
+    const pip=col=>{ctx.save();ctx.globalAlpha=.9;ctx.fillStyle=col;
+      ctx.fillRect(e.x-11+px,e.y-R-15,5,3);ctx.restore();px+=7;};
+    if(s.burnT>0)pip(STATUS_COLOR.burn);
+    if(s.corrP>0)pip(STATUS_COLOR.corrode);
+    if(s.chillP>0)pip(STATUS_COLOR.chill);
+    if(s.bleedT>0)pip(STATUS_COLOR.bleed);
+    if(s.shockT>0)pip(STATUS_COLOR.shock);
   }
 }
 /* arcos elétricos temporários */
@@ -10619,7 +12299,7 @@ function updateMiniBoss(e,dt){
   if(e.phase===1&&e.hp<=e.maxHp*.5){
     e.phase=2;e.chargeCd=Math.min(e.chargeCd,1.4);
     banner('ARAUTO ENFURECIDO','BLINDAGEM COMPROMETIDA — ELE ACELERA');
-    shake=Math.max(shake,14);aberr=Math.max(aberr,.8);
+    shake=Math.max(shake,14);aberrPeak(.8);
     spawnRing(e.x,e.y,'#ff9d3c',16,340,.9);
     spawnShards(e.x,e.y,'#ff9d3c',20,7);
     AUDIO.bossPhase();
@@ -10712,7 +12392,7 @@ function updateMiniBoss(e,dt){
     e.x=clamp(p.x+Math.cos(a)*rr,e.r,ARENA.w-e.r);
     e.y=clamp(p.y+Math.sin(a)*rr,e.r,ARENA.h-e.r);
     spawnRing(e.x,e.y,e.color,6,110,.5);
-    aberr=Math.max(aberr,.5);
+    aberrPeak(.5);
     AUDIO.tone(1300,.14,'square',.035,-700);
     if(SK.slash){e.telegraphT=.28;}
   }
@@ -11539,7 +13219,7 @@ function updateEnemy(e,dt){
         e.strikeT=.34;e.vx=e.vy=0;
         spawnRing(e.x,e.y,'#c56bff',6,66,.45);
         spawnParticles(e.x,e.y,'#c56bff',18,300,.45,3);
-        aberr=Math.max(aberr,.5);
+        aberrPeak(.5);
         AUDIO.tone(1500,.13,'square',.035,-900);
       }
       return;                          // não colide nem se move fora de fase
@@ -11552,7 +13232,7 @@ function updateEnemy(e,dt){
       e.blinkCd=4;e.phaseT=.30;
       spawnParticles(e.x,e.y,'#c56bff',20,330,.5,3.2);
       spawnShards(e.x,e.y,'#c56bff',6,4);
-      aberr=Math.max(aberr,.62);
+      aberrPeak(.62);
       AUDIO.tone(1850,.14,'square',.042,-260);   // sinal agudo característico
       AUDIO.noise(.12,.02,5200,2.4,'highpass');
       return;
@@ -12291,6 +13971,7 @@ function loadMeta(){
   }catch(e){}
 }
 function saveMeta(){
+  if(sandboxRun)return false;      // PROTEÇÃO SANDBOX (§73): meta intocada
   if(devTainted)return false;      // PROTEÇÃO DEV: meta-progresso intocado
   if(!smEnsureSlot())return false;
   try{smRoot.slots[curSlot].meta=JSON.parse(JSON.stringify(meta));smCommit();}catch(e){}
@@ -12498,6 +14179,8 @@ function resolveEnding(){
 
 function onVictory(){
   if(state==='victory')return;
+  /* PR 11.5 §90: vitória no laboratório NÃO registra final/variante/memória. */
+  if(sandboxRun){sandboxVictory();return;}
   state='victory';firing=false;
   echoReact('bossDeath');
   boss=null;$('bosswrap').classList.remove('on');
@@ -12566,6 +14249,8 @@ function onVictory(){
   setTimeout(showVictory,1250);
 }
 function showVictory(){
+  ovExitMenu(false);                         // botão sandbox nunca vaza pro jogo real
+  ovMenuVisible(false);
   const v=victoryData,E=ENDINGS[v.key];
   $('e-title').textContent=E.t;
   $('e-title').style.color=E.c;
@@ -12692,7 +14377,13 @@ function smNewRoot(){
     slots:{1:smDefaultSlot(),2:smDefaultSlot(),3:smDefaultSlot()}};
 }
 function smCommit(){
+  /* PROTEÇÃO SANDBOX CENTRALIZADA (PR 11.5 §3–§5): o arquivo do save
+     NÃO é escrito com o laboratório ativo — mesmo se algum writer
+     futuro esquecer o guard próprio. Todos os caminhos de persistência
+     (prog, meta, echoes, checkpoint, slot) passam por aqui. */
+  if(sandboxRun||sandboxMode)return false;
   try{localStorage.setItem(SM_KEY,JSON.stringify(smRoot));}catch(e){}
+  return true;
 }
 /* ---- PR 10.5.2: GERÊNCIA DE DADOS DO SLOT (Configurações → Dados) ----
    Duas ações destrutivas com confirmação obrigatória:
@@ -12759,8 +14450,14 @@ function smSanitizeRun(r){
     if(!Number.isFinite(p.maxHp)||p.maxHp<28)return null;
     if(!Number.isInteger(r.charIdx)||r.charIdx<0||r.charIdx>=CHARS.length)return null;
     if(!Array.isArray(p.owned)||!p.owned.length)return null;
-    for(const wi of p.owned)
+    /* PR 11.5 §8: null é slot vazio — válido desde que haja >=1 arma */
+    let _cw=0;
+    for(const wi of p.owned){
+      if(wi==null)continue;
+      _cw++;
       if(!Number.isInteger(wi)||wi<0||wi>=WEAPONS.length)return null;
+    }
+    if(!_cw)return null;
     if(!Number.isInteger(p.wi)||p.wi<0||p.wi>=WEAPONS.length)return null;
     if(p.owned.indexOf(p.wi)<0)return null;
     if(!Array.isArray(p.sm)||!Array.isArray(p.items)||!Array.isArray(p.upgLog))return null;
@@ -13053,8 +14750,9 @@ function smBuildCheckpoint(reason,waveOverride){
       shieldRegen:player.shieldRegen,shieldDelay:player.shieldDelay,
       coins:player.coins,
       level:player.level,xp:player.xp,xpNext:player.xpNext,
-      /* arsenal */
+      /* arsenal — ordem dos slots, arma ativa e quick switch (PR 11.5 §65) */
       owned:player.owned.slice(),wi:player.wi,maxSlots:player.maxSlots,
+      lastWi:player.lastWi!=null?player.lastWi:player.wi,
       /* módulos e histórico (upgLog é só para exibição) */
       items:player.items.slice(),upgLog:player.upgLog.slice(),
       /* PR 11: estado compacto de BUILD (cooldowns/stacks/timers/charges).
@@ -13098,6 +14796,8 @@ function smBuildCheckpoint(reason,waveOverride){
   };
 }
 function captureCheckpoint(reason,waveOverride){
+  /* PROTEÇÃO SANDBOX (§91): laboratório não cria Continue Run. */
+  if(sandboxRun)return false;
   /* PROTEÇÃO DEV: run depurada nunca gera checkpoint legítimo */
   if(devTainted)return false;
   if(!player)return false;
@@ -13174,13 +14874,17 @@ function resumeRun(){
   player.level=Math.max(1,num(q.level,1)|0);
   player.xp=Math.max(0,num(q.xp,0));
   player.xpNext=Math.max(1,num(q.xpNext,player.xpNext));
-  /* arsenal */
+  /* arsenal — §8: null é SLOT VAZIO (buracos preservados no Continue) */
   player.owned=(Array.isArray(q.owned)?q.owned:player.owned)
-    .filter(wi=>Number.isInteger(wi)&&wi>=0&&wi<WEAPONS.length)
+    .filter(wi=>wi==null||(Number.isInteger(wi)&&wi>=0&&wi<WEAPONS.length))
     .slice(0,8);
-  if(!player.owned.length)player.owned=makePlayer().owned;
-  player.wi=player.owned.indexOf(q.wi)>=0?q.wi:player.owned[0];
+  if(countWeapons(player)===0)player.owned=makePlayer().owned;
+  player.wi=player.owned.indexOf(q.wi)>=0?q.wi:
+    (player.owned.find(x=>x!=null)||player.wi);
   player.maxSlots=clamp(num(q.maxSlots,player.maxSlots)|0,1,8);
+  /* PR 11.5 §66: quick switch restaura junto com o arsenal */
+  player.lastWi=(q.lastWi!=null&&player.owned.indexOf(q.lastWi)>=0)?
+    q.lastWi:player.wi;
   player.items=(Array.isArray(q.items)?q.items:[]).slice(0,64);
   player.upgLog=(Array.isArray(q.upgLog)?q.upgLog:[]).slice(0,400);
   /* PR 11: estado de build é restaurado; save antigo (sem itemState) vira {}. */
@@ -13291,6 +14995,8 @@ function resumeRun(){
 /* ---------------- ciclo de morte ---------------- */
 function onPlayerDeath(){
   if(state!=='play')return;
+  /* PR 11.5 §89: morte no laboratório NÃO cria Echo e NÃO grava nada. */
+  if(sandboxRun){sandboxDeath();return;}
   // ---- PROGRESSÃO: fecha a run ----
   bumpProg('runs');
   bumpProg('waves',Math.max(0,wave-1));
@@ -13328,6 +15034,7 @@ function onPlayerDeath(){
   showFracture(runData,had1,had2);
 }
 function showFracture(rd,had1,had2){
+  ovMenuVisible(false);
   ovTitle.textContent='CICLO FRATURADO';
   ovTitle.setAttribute('data-t','CICLO FRATURADO');
   ovTitle.style.fontSize='44px';ovTitle.classList.add('glitch');
@@ -13368,6 +15075,13 @@ function tickFracture(dt){
   fracT+=dt;
 }
 function beginNextRun(){
+  /* PR 11.5 §89/§90: no laboratório, "NOVA RUN" reinicia o SANDBOX —
+     nunca uma run real. */
+  if(sandboxRun){
+    if(state==='fracture'||state==='victory')sandboxRestart();
+    return;
+  }
+  if(sandboxMode)return;               // preparo aberto: nenhuma run real
   /* "NOVA RUN" da tela de morte: decisão explícita. Mantém o mesmo slot —
      meta, Ecos, unlocks e Codex continuam sendo os do save atual. */
   if(state!=='fracture')return;
@@ -13383,6 +15097,8 @@ function hideOverlay(){
    resetRunWorld: parte comum (limpeza total do mundo) usada por
    startRun (run nova) e resumeRun (continuar um checkpoint). */
 function resetRunWorld(){
+  if(sheetOpen)sheetHide();              // PR 11.5: ficha nunca atravessa runs
+  sheetBrk=Object.create(null);_sheetSig='';
   state='play';runTime=0;fracT=0;shake=0;
   wave=0;kills=0;wavePause=2.2;waveActive=false;waveCleared=false;
   document.getElementById('pause-menu').classList.remove('on');
@@ -13406,6 +15122,10 @@ function resetRunWorld(){
   runStReset();   // PR 8: run nova começa com métricas de personalidade zeradas
 }
 function startRun(){
+  /* §3: run REAL libera a janela de supressão de unlocks do sandbox.
+     (sandboxStart seta sandboxRun=true antes de chamar startRun —
+     então a janela NÃO é liberada pelo laboratório.) */
+  if(!sandboxRun)sandboxHoldUnlocks=false;
   /* Se o Modo Desenvolvedor já estiver ligado quando a run começa, ela
      nasce marcada como debug. Caso contrário, começa limpa. */
   devTainted=!!DEV_MODE;
@@ -14580,7 +16300,7 @@ function render(){
     cam.y=minCY>maxCY?ARENA.h/2:clamp(cam.y,minCY,maxCY);
   }
   if(shake>0)shake*=Math.pow(.001,1/60);
-  const shM=cfg.shake?1:0;
+  const shM=SHAKE_MUL();
   const shx=shake>0.3?rand(-shake,shake)*shM:0,shy=shake>0.3?rand(-shake,shake)*shM:0;
 
   ctx.save();
@@ -14843,7 +16563,7 @@ function loop(now){
 
   // aberração cromática decai; picos vêm do dash e dos ataques do Echo 2
   if(aberr>0)aberr=Math.max(0,aberr-dt*2.4);
-  if(player&&player.dashT>0)aberr=Math.max(aberr,.75);
+  if(player&&player.dashT>0)aberrPeak(.75);
   // trilha procedural adaptativa
   let inten=0;
   if(state==='play'||state==='event'){
@@ -14852,10 +16572,11 @@ function loop(now){
   }
   AUDIO.updateMusic(dt,clamp(inten,0,1));
 
-  // CONGELAMENTO ABSOLUTO: com qualquer modal aberto (evento/loja/vitória),
-  // nada no mundo avança — inimigos, tiros e timers ficam suspensos.
+  // CONGELAMENTO ABSOLUTO: com qualquer modal aberto (evento/loja/vitória/
+  // ficha TAB), nada no mundo avança — inimigos, tiros e timers suspendem.
   const frozen=(state==='event'||state==='shop'||state==='victory'||
-                state==='title'||state==='paused');
+                state==='title'||state==='paused'||state==='sheet'||
+                state==='sandbox');
   if(frozen)freezeT+=dt;                    // só alimenta o efeito visual de tempo parado
 
   if(state==='play'){
@@ -14882,12 +16603,14 @@ function loop(now){
         $('bossfill').style.width=clamp(boss.hp/boss.maxHp*100,0,100)+'%';
       }else if(miniBoss&&!miniBoss.dead)miniBossHUD();
       // agendamento e proximidade do evento de decisão (não durante o chefe)
-      if(!beacon&&wave>0&&wave<MAX_WAVE&&!boss&&enemies.length>0){
+      // PR 11.5 §88: sem beacon narrativo no laboratório
+      if(!beacon&&wave>0&&wave<MAX_WAVE&&!boss&&enemies.length>0&&!sandboxRun){
         evTimer-=dt;
         if(evTimer<=0)spawnBeacon();
       }
-      /* PR 10.5: acontecimentos de ARENA e MICROEVENTOS (sem parar a run) */
-      if(!boss&&state==='play'){
+      /* PR 10.5: acontecimentos de ARENA e MICROEVENTOS (sem parar a run)
+         PR 11.5 §88: desligados no Sandbox (laboratório de combate/build) */
+      if(!boss&&state==='play'&&!sandboxRun){
         if(_aeInterfT>0)_aeInterfT=Math.max(0,_aeInterfT-dt);
         tickArenaEvent(dt);
         tickMicroEvents(dt);
@@ -14960,6 +16683,12 @@ function loop(now){
   render();
   hudAcc+=dt;
   updateHUD();
+  /* PR 11.5 §108: o registro só re-renderiza quando aberta e sob demanda
+     (assinatura de estado) — custo fechado é zero, aberto é leve. */
+  if(sheetOpen){
+    _sheetAcc+=dt;
+    if(_sheetAcc>=.12){_sheetAcc=0;sheetRender(false);}
+  }
   devTick(raw);                 // HUD de debug (no-op fora do Modo DEV)
   }catch(err){
     if(errGuard++<8)console.error('[ECHO] erro capturado no ciclo (repetição suprimida):',err);
@@ -15107,6 +16836,8 @@ function openCodex(mode){
     renderCxTabs();
   }else if(mode==='organizer'){
     renderOrganizer();
+  }else if(mode==='sandbox'){
+    renderSandboxSetup();                 // PR 11.5: preparo do laboratório
   }else{
     cxTitle.textContent='C O N F I G U R A Ç Õ E S';
     cxSub.textContent='AJUSTES DE ÁUDIO, VÍDEO E DADOS PERSISTENTES';
@@ -15119,6 +16850,7 @@ function openCodex(mode){
   AUDIO.ui(680);
 }
 function closeCodex(){
+  if(codexMode==='sandbox'&&sandboxMode&&!sandboxRun)sandboxMode=false;
   codexEl.classList.remove('on');tipHide();AUDIO.ui(360);
   clearTimeout(_quitTimer);_quitArm=0;      // desarma a confirmação de saída
   // volta o rótulo do rodapé conforme a origem
@@ -15184,10 +16916,10 @@ function renderCodexBody(){
       const guns=C.guns.map(g=>{
         const w=WEAPONS.find(x=>x.id===g);return w?w.nm:g;}).join(' + ');
       const stats=['VIDA '+C.hp,'VEL '+C.speed,
-        'DANO ×'+C.dmg.toFixed(2),'CADÊNCIA ×'+C.rate.toFixed(2),
-        'CRÍTICO '+Math.round(C.crit*100)+'%','DASH '+C.dashCd.toFixed(2)+'s',
-        'ESCUDO '+C.shieldMax+' · +'+C.shieldRegen+'/s · '+C.shieldDelay+'s',
-        '⌗ '+C.slots+' SLOTS DE ARMA'];
+        'DANO '+fmtMult(C.dmg),'CADÊNCIA '+fmtMult(C.rate),
+        'CRÍTICO '+fmtPct(C.crit,0),'DASH '+fmtSec(C.dashCd),
+        'ESCUDO '+C.shieldMax+' · +'+fmtNum(C.shieldRegen)+'/s · '+fmtSec(C.shieldDelay),
+        '⌗ ARSENAL: '+C.slots+' SLOTS DE ARMA'];
       h+='<div class="cxitem'+(lk?' lock':'')+'" data-char="'+i+'" style="cursor:pointer'+
         (sel&&!lk?';border-color:'+C.color+';box-shadow:0 0 20px '+C.color+'44':'')+'">'+
         charPortrait(C)+'<div class="cxinfo">'+
@@ -15228,17 +16960,17 @@ function renderCodexBody(){
   if(codexTab==='weapons'){
     h='<div class="cxgrid">';
     WEAPONS.forEach((d,i)=>{
-      const dps=d.melee||d.beam?null:(d.dmg*d.count/d.interval).toFixed(0);
+      const dps=d.melee||d.beam?null:fmtStat(d.dmg*d.count/d.interval,0);
       const stats=[];
-      stats.push('DANO '+d.dmg);
+      stats.push('DANO '+fmtStat(d.dmg));
       if(d.count>1)stats.push('×'+d.count+' PROJÉTEIS');
-      stats.push('CADÊNCIA '+(1/d.interval).toFixed(1)+'/s');
+      stats.push('CADÊNCIA '+fmtRate(1/d.interval));
       if(dps)stats.push('DPS ~'+dps);
-      stats.push('ALCANCE '+(d.range||600)+'px');
+      stats.push('ALCANCE '+fmtStat(d.range||600,0)+'px');
       stats.push(rangeLabel(d.range||600));
       if(d.basePierce)stats.push(d.basePierce>50?'PERFURA TUDO':'PERFURA +'+d.basePierce);
-      if(d.aoe)stats.push('ÁREA '+d.aoe+'px');
-      if(d.lifesteal)stats.push('ROUBO '+Math.round(d.lifesteal*100)+'%');
+      if(d.aoe)stats.push('ÁREA '+fmtStat(d.aoe,0)+'px');
+      if(d.lifesteal)stats.push('ROUBO '+fmtPct(d.lifesteal,0));
       if(d.chain)stats.push('CADEIA ×'+d.chain);
       const tag=rarTag(d.rar)+
         '<span class="cxtag" style="color:'+d.color+
@@ -15481,11 +17213,12 @@ function renderCodexBody(){
    ===================================================================== */
 function renderOrganizer(){
   cxTitle.textContent='O R G A N I Z A R   A R M A S';
-  cxSub.textContent='ARSENAL '+player.owned.length+'/'+player.maxSlots+
+  cxSub.textContent='ARSENAL '+countWeapons(player)+'/'+player.maxSlots+
     ' · '+curChar().nm+' · A ORDEM DEFINE AS TECLAS 1–5';
   cxTabs.style.display='none';
   cxBody.innerHTML='';
   player.owned.forEach((wi,i)=>{
+    if(wi==null)return;                  // buraco: linha não é exibida (§8)
     const d=WEAPONS[wi];
     const rg=Math.round(weaponRange(d,player));
     const row=document.createElement('div');
@@ -15496,7 +17229,7 @@ function renderOrganizer(){
       '<div class="oinfo"><div class="onm" style="color:'+d.color+'">'+d.nm+
         (player.wi===wi?' <span style="color:#7dffc4;font-size:8px">◄ EQUIPADA</span>':'')+
         '</div>'+
-        '<div class="ods">'+d.tag+' · DANO '+d.dmg+' · '+rg+'px · '+rangeLabel(rg)+'</div>'+
+        '<div class="ods">'+d.tag+' · DANO '+fmtStat(d.dmg)+' · '+fmtStat(rg,0)+'px · '+rangeLabel(rg)+'</div>'+
       '</div>'+
       '<div class="obtns">'+
         '<div class="obtn'+(i===0?' dis':'')+'" data-a="up">▲</div>'+
@@ -15511,10 +17244,10 @@ function renderOrganizer(){
         if(b.classList.contains('dis'))return;
         const a=b.dataset.a;
         if(a==='up'&&i>0){
-          const t=player.owned[i-1];player.owned[i-1]=player.owned[i];player.owned[i]=t;
+          swapWeaponSlots(i,i-1);       // PR 11.5 §50: usa a função central
           AUDIO.ui(660);
         }else if(a==='dn'&&i<player.owned.length-1){
-          const t=player.owned[i+1];player.owned[i+1]=player.owned[i];player.owned[i]=t;
+          swapWeaponSlots(i,i+1);       // PR 11.5 §50: usa a função central
           AUDIO.ui(560);
         }else if(a==='eq'){
           player.wi=wi;player.fireTimer=0;
@@ -15524,6 +17257,7 @@ function renderOrganizer(){
           if(player.owned.length<=1)return;
           player.owned.splice(i,1);
           if(player.wi===wi)player.wi=player.owned[0];
+          if(player.lastWi===wi)player.lastWi=player.wi;
           AUDIO.echoShatter();toast('DESCARTADA: '+d.nm);
         }
         buildWeaponHUD();renderOrganizer();
@@ -15608,10 +17342,15 @@ function renderConfig(){
     'Resolução interna de renderização. Reduza se o jogo estiver travando.',
     QN[cfg.quality],'',
     ()=>{cfg.quality=(cfg.quality+1)%3;saveCfg();applyCfg();}));
+  /* PR 11.5 §23: tremor em níveis — 100/75/50/25/OFF */
+  const SHN=['OFF','25%','50%','75%','100%'];
+  const shIdx=[0,.25,.5,.75,1].indexOf(cfg.shake)>=0?
+    [0,.25,.5,.75,1].indexOf(cfg.shake):4;
   cxBody.appendChild(cfgRow('TREMOR DE TELA',
     'Screen shake proporcional a explosões e dano recebido.',
-    cfg.shake?'ATIVO':'DESLIGADO',cfg.shake?'':'off',
-    ()=>{cfg.shake=cfg.shake?0:1;saveCfg();}));
+    SHN[shIdx],cfg.shake?'':'off',
+    ()=>{const L=[0,.25,.5,.75,1];
+      cfg.shake=L[(shIdx+1)%L.length];saveCfg();}));
   cxBody.appendChild(cfgRow('ABERRAÇÃO CROMÁTICA',
     'Distorção temporal durante o dash e ataques do Echo 2.',
     cfg.aberr?'ATIVA':'DESLIGADA',cfg.aberr?'':'off',
@@ -15620,10 +17359,22 @@ function renderConfig(){
     'Volume de estilhaços e faíscas. Reduzir melhora o desempenho.',
     cfg.parts?'COMPLETA':'REDUZIDA',cfg.parts?'':'off',
     ()=>{cfg.parts=cfg.parts?0:1;saveCfg();}));
+  /* PR 11.5 §22: números de dano FULL/REDUCED/OFF */
+  const DN=['OFF','REDUCIDO','FULL'];
   cxBody.appendChild(cfgRow('NÚMEROS DE DANO',
-    'Exibe o valor dos acertos críticos sobre os inimigos.',
-    cfg.dmgnum?'VISÍVEIS':'OCULTOS',cfg.dmgnum?'':'off',
-    ()=>{cfg.dmgnum=cfg.dmgnum?0:1;saveCfg();}));
+    'FULL: todo acerto seu numera. REDUCIDO: só críticos e golpes pesados. OFF: nenhum número.',
+    DN[cfg.dmgnum||0],cfg.dmgnum?'':'off',
+    ()=>{cfg.dmgnum=((cfg.dmgnum||0)+1)%3;saveCfg();}));
+  /* PR 11.5 §24: flash NORMAL/REDUCED */
+  cxBody.appendChild(cfgRow('FLASH DE TELA',
+    'Picos de luz e distorção em impactos fortes. REDUCED suaviza flashes.',
+    cfg.flash>=1?'NORMAL':'REDUCED',cfg.flash>=1?'':'off',
+    ()=>{cfg.flash=cfg.flash>=1?.55:1;saveCfg();}));
+  /* PR 11.5 §26: TAB em HOLD ou TOGGLE */
+  cxBody.appendChild(cfgRow('MODO DO TAB (REGISTRO)',
+    'HOLD: o Registro de Combate fica aberta enquanto TAB é segurado. TOGGLE: aperte uma vez para abrir e outra para fechar.',
+    (cfg.tabMode==='toggle')?'TOGGLE':'HOLD','',
+    ()=>{cfg.tabMode=(cfg.tabMode==='toggle')?'hold':'toggle';saveCfg();}));
   cxBody.appendChild(cfgRow('DISPARO AUTOMÁTICO',
     'Atira continuamente sem precisar segurar o botão do mouse.',
     cfg.autofire?'LIGADO':'DESLIGADO',cfg.autofire?'':'off',
@@ -15809,38 +17560,109 @@ function lockLineFor(t,id){
   return '<div class="tlock">🔒 BLOQUEADO — '+u.txt+
     '<br>PROGRESSO: '+c+' / '+u.max+'</div>';
 }
-/* PR 11 — tooltip de item com condição/efeito/trade-off/tags/cooldown */
+/* =====================================================================
+   PR 11.5 §11 — TOOLTIP COM HIERARQUIA
+   NOME → descrição → EFEITO → CONDIÇÃO → TRADE-OFF → COOLDOWN →
+   SINERGIAS. Seções vazias NÃO são renderizadas.
+   A leitura de efeito/trade-off usa os modificadores REAIS do pipeline
+   (p.sm) quando o módulo está instalado — nunca texto inventado.
+   ===================================================================== */
+/* separa "CONDIÇÃO: efeito" do desc e extrai COOLDOWN fixo */
+function itemDescParts(it){
+  const d=(it&&it.desc)||'';
+  const cdM=d.match(/COOLDOWN\s+([\d.,]+)\s*s/i);
+  let body=d.replace(/,\s*COOLDOWN\s+[\d.,]+\s*s/i,'')
+            .replace(/\s*·\s*COOLDOWN\s+[\d.,]+\s*s/i,'')
+            .replace(/\s*COOLDOWN\s+[\d.,]+\s*s/i,'');
+  let cond=null;
+  const cM=body.match(/^((?:AO |APÓS |DENTRO |ESCUDO CHEIO|NO |NA |EM |COM |SE |AO FIM )[^^:]{2,40}):\s*/i);
+  if(cM){cond=cM[1];body=body.slice(cM[0].length);}
+  return {cond,body:body.trim(),cd:cdM?cdM[1].replace(',', '.')+'s':null};
+}
+/* modificadores vivos aplicados por um item (ids item.<id>[.<k>]) */
+function itemLiveMods(p,id){
+  if(!p||!p.sm)return [];
+  return p.sm.filter(m=>m&&m.id&&
+    (m.id==='item.'+id||m.id.indexOf('item.'+id+'.')===0));
+}
+/* a quais famílias de sinergia o item CONTRIBUI (tags compartilhadas) */
+const SYN_GROUPS=[
+  {nm:'ESCUDO · QUEBRA',tags:['shield_break','shield']},
+  {nm:'ESCUDO · PERFEITO',tags:['shield_full','shield']},
+  {nm:'ESCUDO · REGEN',tags:['shield_regen']},
+  {nm:'CRÍTICO',tags:['crit_build','crit']},
+  {nm:'STATUS · ELEMENTAL',tags:['status','burn','corrode','chill']},
+  {nm:'DASH · MOVIMENTO',tags:['dash','movement']},
+  {nm:'ECONOMIA · RISCO',tags:['economy','risk']}
+];
+function itemSynergyContrib(id){
+  const tags=itemTags(id);
+  const out=[];
+  for(const g of SYN_GROUPS)
+    if(g.tags.some(t=>tags.indexOf(t)>=0))out.push(g.nm);
+  return out;
+}
 function itemTipHTML(it){
   if(!it)return '';
-  const tags=itemTags(it).map(t=>{
-    const c=t.indexOf('risk')>=0?'#ff5c7a':t.indexOf('tradeoff')>=0?'#ffb347':
-      t.indexOf('shield')>=0?'#8ff6ff':t.indexOf('crit')>=0?'#ffd166':
-      t.indexOf('dash')>=0?'#7df9ff':t.indexOf('economy')>=0?'#c9a9ff':'#9db8c8';
-    return '<span class="cxtag" style="color:'+c+';border:1px solid '+c+
-      '55;background:'+c+'12">'+t.toUpperCase()+'</span>';
-  }).join(' ');
-  let h='<b style="color:'+it.color+'">'+it.nm+'</b><br>'+
-    '<span style="opacity:.8">'+it.desc+'</span>'+
-    (it.transformer?'<br><span style="color:#ff4df0">◆ TRANSFORMADOR — muda como a run é jogada</span>':'');
-  const hooks=it.hooks?Object.keys(it.hooks):[];
-  if(hooks.length)h+='<br><span style="color:#8ff6ff">GATILHOS: '+hooks.map(x=>x.replace('on','')).join(' · ')+'</span>';
-  if(tags)h+='<div style="margin-top:6px">'+tags+'</div>';
+  const parts=itemDescParts(it);
+  const RC=RARITY[it.rar||0];
+  let h='<div class="tnm" style="color:'+it.color+'">'+it.nm+'</div>'+
+    '<div class="trole" style="color:'+RC.c+'">'+RC.nm+
+    (it.transformer?' · <span style="color:#ff9df7">◆ TRANSFORMADOR</span>':'')+
+    '</div>';
+  /* EFEITO — mods reais quando instalado; texto do catálogo como base */
+  const owned=player&&player.items&&player.items.indexOf(it.id)>=0;
+  if(owned){
+    const mods=itemLiveMods(player,it.id);
+    if(mods.length){
+      h+='<span class="tsec">EFEITO ATIVO</span>';
+      for(const m of mods){
+        const neg=(m.type==='mult'&&m.value<1)||(m.type!=='mult'&&m.value<0);
+        const val=m.type==='mult'?fmtMult(m.value):fmtSigned(m.value);
+        h+='<span class="tline '+(neg?'tcost':'')+'">· '+(m.label||m.id)+
+          ' <b style="color:'+(neg?'#ffb386':'#7dffc4')+'">'+val+'</b></span>';
+      }
+    }
+  }
+  if(parts.body){
+    h+='<span class="tsec">'+(owned?'DETALHE':'EFEITO')+'</span>'+
+      '<span class="tline">'+parts.body+'</span>';
+  }
+  if(parts.cond)h+='<span class="tsec">CONDIÇÃO</span>'+
+    '<span class="tline"><span class="tcond">'+parts.cond+'</span></span>';
+  /* TRADE-OFF — só custos reais do pipeline (§11) */
+  if(owned){
+    const costs=itemLiveMods(player,it.id)
+      .filter(m=>(m.type==='mult'&&m.value<1)||(m.type!=='mult'&&m.value<0));
+    if(costs.length){
+      h+='<span class="tsec">TRADE-OFF</span>';
+      for(const m of costs)
+        h+='<span class="tline tcost">· '+(m.label||m.id)+'</span>';
+    }
+  }
+  if(parts.cd)h+='<span class="tsec">COOLDOWN</span>'+
+    '<span class="tline">'+parts.cd+'</span>';
+  const syn=itemSynergyContrib(it.id);
+  if(syn.length){
+    h+='<span class="tsec">SINERGIAS</span><span class="tsyn">'+
+      syn.map(s=>'<span>'+s+'</span>').join('')+'</span>';
+  }
+  if(it.transformer)h+='<div class="tcard-tr">◆ TRANSFORMADOR — muda como a run é jogada</div>';
   h+=moralAffinityTagHTML(it.id,false);
+  h+=lockLineFor('i',it.id);
   return h;
 }
 function weaponTipHTML(d){
   const rg=d.range||600;
-  const stats=['DANO '+d.dmg];
+  const stats=['DANO '+fmtStat(d.dmg)];
   if(d.count>1)stats.push('×'+d.count);
-  stats.push('CADÊNCIA '+(1/d.interval).toFixed(1)+'/s');
-  if(!d.melee&&!d.beam)stats.push('DPS ~'+(d.dmg*d.count/d.interval).toFixed(0));
-  stats.push('ALCANCE '+rg+'px');
+  stats.push('CADÊNCIA '+fmtRate(1/d.interval));
+  if(!d.melee&&!d.beam)stats.push('DPS ~'+fmtStat(d.dmg*d.count/d.interval,0));
+  stats.push('ALCANCE '+fmtStat(rg,0)+'px');
   stats.push(rangeLabel(rg));
   if(d.basePierce)stats.push(d.basePierce>50?'PERFURA TUDO':'PERFURA +'+d.basePierce);
-  if(d.aoe)stats.push('ÁREA '+d.aoe);
-  if(d.lifesteal)stats.push('ROUBO '+Math.round(d.lifesteal*100)+'%');
-  if(d.chain)stats.push('CADEIA ×'+d.chain);
-  if(d.crit)stats.push('+'+Math.round(d.crit*100)+'% CRÍT');
+  if(d.aoe)stats.push('ÁREA '+fmtStat(d.aoe,0));
+  if(d.crit)stats.push('+'+fmtPct(d.crit,0)+' CRÍT');
   let h='<div class="tnm" style="color:'+d.color+'">'+d.nm+'</div>'+
     '<div class="trole" style="color:'+d.color+'">'+d.tag+
       (d.melee?' · ARMA BRANCA':'')+'</div>'+
@@ -15848,19 +17670,33 @@ function weaponTipHTML(d){
     '<div class="tst">';
   for(const s of stats)h+='<span>'+s+'</span>';
   h+='</div>';
-  if(d.fx)h+='<div class="tperk" style="color:'+(STATUS_COLOR[d.fx.k]||'#fff')+
-    '">◆ APLICA '+d.fx.k.toUpperCase()+' POR '+d.fx.dur+'s</div>';
+  /* PR 11.5 §11: EFEITO / CONDIÇÃO rotulados e separados dos números */
+  if(d.fx)h+='<span class="tsec">EFEITO</span>'+
+    '<span class="tline" style="color:'+(STATUS_COLOR[d.fx.k]||'#fff')+'">◆ APLICA '+
+    d.fx.k.toUpperCase()+' POR '+fmtSec(d.fx.dur)+'</span>';
+  if(d.lifesteal)h+='<span class="tline" style="color:#7dffc4">◆ ROUBO DE VIDA '+
+    fmtPct(d.lifesteal,0)+' do dano</span>';
+  if(d.chain)h+='<span class="tline" style="color:#ffe74d">◆ ENCADEIA ×'+d.chain+
+    ' com '+fmtPct(.78,0)+' do dano</span>';
+  if(d.farBonus)h+='<span class="tsec">CONDIÇÃO</span>'+
+    '<span class="tline"><span class="tcond">ALVO ALÉM DE 450px</span> → '+
+    fmtSigned(d.farBonus)+' de dano</span>';
+  if(d.spinUp)h+='<span class="tline" style="color:#ffb347">◆ SEGURAR O GATILHO '+
+    'acelera a cadência até 2.2×</span>';
+  if(d.boomerang)h+='<span class="tline" style="color:#7dffc4">◆ O disco VOLTA e fere na ida e na volta</span>';
+  if(d.bounce)h+='<span class="tline" style="color:#ff9df7">◆ QUICA nas paredes ×'+d.bounce+
+    ' (+15% de dano por ricochete)</span>';
   h+=lockLineFor('w',d.id);
   return h;
 }
 function charTipHTML(C){
   const guns=C.guns.map(g=>{
     const w=WEAPONS.find(x=>x.id===g);return w?w.nm:g;}).join(' + ');
-  const stats=['VIDA '+C.hp,'VEL '+C.speed,'DANO ×'+C.dmg.toFixed(2),
-    'CADÊNCIA ×'+C.rate.toFixed(2),'CRÍT '+Math.round(C.crit*100)+'%',
-    'DASH '+C.dashCd.toFixed(2)+'s',
-    'ESCUDO '+C.shieldMax+' · +'+C.shieldRegen+'/s · '+C.shieldDelay+'s',
-    '⌗ '+C.slots+' SLOTS'];
+  const stats=['VIDA '+C.hp,'VEL '+C.speed,'DANO '+fmtMult(C.dmg),
+    'CADÊNCIA '+fmtMult(C.rate),'CRÍT '+fmtPct(C.crit,0),
+    'DASH '+fmtSec(C.dashCd),
+    'ESCUDO '+C.shieldMax+' · +'+fmtNum(C.shieldRegen)+'/s · '+fmtSec(C.shieldDelay),
+    '⌗ ARSENAL: '+C.slots+' SLOTS'];
   let h='<div class="tnm" style="color:'+C.color+'">'+C.nm+'</div>'+
     '<div class="trole" style="color:'+C.color+'">'+C.role+'</div>'+
     '<div class="tds">'+C.desc+'</div>'+
@@ -15890,7 +17726,10 @@ function refreshTitleChar(){
       charPortrait(C,38).replace('class="cicon" ','')+
       '<div class="cn" style="'+(on&&!lk?'color:'+C.color:'')+'">'+
         (lk?'🔒 '+C.nm:C.nm)+'</div>'+
-      '<div class="cr">'+C.role+'</div></div>';
+      '<div class="cr">'+C.role+'</div>'+
+      '<div class="cr" style="font-family:Consolas,monospace;letter-spacing:.14em;'+
+        'color:'+(on&&!lk?'rgba(159,243,255,.9)':'rgba(150,180,200,.55)')+'">⌗ '+
+        C.slots+' SLOTS</div></div>';
   });
   wrap.innerHTML=h;
   wrap.querySelectorAll('[data-ch]').forEach(el=>{
@@ -15913,6 +17752,8 @@ function refreshTitleChar(){
 
 /* ---------------- boot ---------------- */
 function showTitle(){
+  ovExitMenu(false);
+  ovMenuVisible(true);                 // R4 §3: SANDBOX só no menu global
   loadCfg();                    // configurações globais (APP SETTINGS)
   checkUnlocks(true);           // sincroniza unlocks silenciosamente
   ovTitle.textContent='E C H O';ovTitle.setAttribute('data-t','E C H O');
@@ -15923,8 +17764,9 @@ function showTitle(){
     'MOUSE MIRAR · <span class="k">BOTÃO ESQ.</span> ATIRAR<br>'+
     '<span class="k">ESPAÇO</span> / <span class="k">BOTÃO DIR.</span> DASH · '+
     '<span class="k">ESC</span> PAUSA · <span class="k">M</span> ÁUDIO<br>'+
-    '<span class="k">Q</span> ALTERNAR ARMA · <span class="k">E</span> ESPECIAL · '+
-    '<span class="k">1</span><span class="k">2</span><span class="k">3</span> SLOTS<br>'+
+    '<span class="k">Q</span> CICLAR ARMA · <span class="k">X</span> ARMA ANTERIOR · '+
+    '<span class="k">1</span>–<span class="k">5</span> SLOTS · <span class="k">E</span> ESPECIAL<br>'+
+    '<span class="k">TAB</span> REGISTRO DE COMBATE (SEGURE) — STATS, BUILD E ARSENAL DA RUN<br>'+
     'COMEÇA COM <b>RIFLE DE PLASMA</b> + <b>LÂMINA DE ARCO</b> — '+
     'ESCOPETA, ORBE E SINGULARIDADE SÃO <b>COMPRADOS NA LOJA</b><br>'+
     'ACERTAR O MESMO ALVO QUE UM ECHO EM &lt;0.5s DETONA <b>RESSONÂNCIA</b><br>'+
@@ -15978,6 +17820,7 @@ function slotSummaryLines(i){
   return {cls:'',info,runTxt,runCls};
 }
 function showSlotSelect(){
+  ovMenuVisible(false);                // R4 §3: sem SANDBOX dentro do save
   state='slots';
   slotNav=clamp(curSlot||1,1,3);
   ovTitle.textContent='SELECIONE UMA MEMÓRIA';
@@ -16022,6 +17865,7 @@ function pickSlot(i){
   showSlotMenu();
 }
 function showSlotMenu(){
+  ovMenuVisible(false);                // R4 §3: sem SANDBOX dentro do save
   state='slotMenu';
   slotMenuIdx=0;
   const b=smRoot.slots[curSlot];
@@ -16088,6 +17932,7 @@ function slotMenuAction(idx){
   }
 }
 function showSlotConfirm(){
+  ovMenuVisible(false);
   state='slotConfirm';
   const r=activeRun;
   ovTitle.textContent='ENCERRAR A RUN ATUAL?';
@@ -16134,12 +17979,56 @@ $('ov-arsenal').addEventListener('click',e=>{
 $('ov-config').addEventListener('click',e=>{
   e.stopPropagation();initAudio();openCodex('config');
 });
+/* PR 11.5 §71: SANDBOX no menu principal */
+$('ov-sandbox').addEventListener('click',e=>{
+  e.stopPropagation();initAudio();sandboxOpenSetup();
+});
+/* chip do HUD (em run): abre o painel do laboratório */
+const _sbChip=$('sb-chip');
+if(_sbChip)_sbChip.addEventListener('click',e=>{
+  e.stopPropagation();initAudio();sbPanelToggle();
+});
 /* ---- PR 7.5: botão "VOLTAR AO MENU" da tela de morte ---- */
 $('ov-back').addEventListener('click',e=>{
   e.stopPropagation();initAudio();AUDIO.ui(440);exitToSlotMenuFromDeath();
 });
-$('cx-close').addEventListener('click',e=>{e.stopPropagation();closeCodex();});
-codexEl.addEventListener('click',e=>{if(e.target===codexEl)closeCodex();});
+/* R4 §3: o botão SANDBOX só existe no MENU INICIAL GLOBAL — nas demais
+   telas do overlay (save slots, menu do save, morte/vitória) ele some. */
+function ovMenuVisible(v){
+  const m=document.getElementById('ov-menu');
+  if(m)m.style.display=v?'flex':'none';
+}
+/* PR 11.5 §11: 3ª opção da morte/vitória do SANDBOX — sai do laboratório,
+   limpa o estado, NÃO salva active run, NÃO cria Echo, NÃO altera
+   progressão e cai no menu principal. Fora do sandbox o botão não existe. */
+function ovExitMenu(v){
+  const b=$('ov-exitmenu');
+  if(b)b.style.display=v?'':'none';
+}
+$('ov-exitmenu').addEventListener('click',e=>{
+  e.stopPropagation();initAudio();AUDIO.ui(440);
+  if(sandboxActive())sandboxExit(true);       // restaura save real → título
+});
+/* §11: as opções da morte/vitória também são CLICÁVEIS — antes, ov-go
+   só respondia a Enter/Space e um clique real não fazia nada. */
+$('ov-go').addEventListener('click',e=>{
+  e.stopPropagation();initAudio();
+  if(state==='fracture'||state==='victory'){AUDIO.ui(660);beginNextRun();}
+});
+/* §1: no preparo do Sandbox, VOLTAR AO MENU é a ÚNICA saída clicável —
+   e volta de verdade ao menu (codex + overlay de título coerentes). */
+$('cx-close').addEventListener('click',e=>{
+  e.stopPropagation();
+  if(codexMode==='sandbox'&&!sandboxRun){sandboxCloseSetup();return;}
+  closeCodex();
+});
+/* §1/§18: clique no BACKDROP (fora do painel) não sai do Sandbox —
+   fica literalmente sem efeito. Nos demais painéis mantém o fechar. */
+codexEl.addEventListener('click',e=>{
+  if(e.target!==codexEl)return;
+  if(codexMode==='sandbox')return;      // backdrop inerte no Sandbox
+  closeCodex();
+});
 
 /* ---- ligação dos botões do menu de pausa ---- */
 document.getElementById('p-resume').addEventListener('click',resumeGame);
@@ -16231,6 +18120,8 @@ document.getElementById('p-mainmenu').addEventListener('click',backToMainMenu);
 /* ---- morte → "VOLTAR AO MENU": retorna ao menu do save atual ---- */
 function exitToSlotMenuFromDeath(){
   if(state!=='fracture')return;
+  /* sandbox (§89): "ALTERAR BUILD" volta ao preparo do laboratório */
+  if(sandboxRun){sandboxEndToSetup();return;}
   clearRunEntities();
   state='slotMenu';
   showSlotMenu();
@@ -17872,7 +19763,8 @@ function devTick(dt){
   const p=player,e1=DEV.echo(1),e2=DEV.echo(2);
   const ln=[];
   ln.push('FPS        '+_devFps.toFixed(0));
-  ln.push('ESTADO     '+state+(devTainted?' · DEBUG':''));
+  ln.push('ESTADO     '+state+(devTainted?' · DEBUG':'')+
+    (sandboxRun?' · SANDBOX':''));
   ln.push('ONDA       '+wave+'/'+MAX_WAVE);
   ln.push('INIMIGOS   '+enemies.length);
   if(p){
