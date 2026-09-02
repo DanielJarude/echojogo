@@ -779,6 +779,74 @@ function angTo(cur,tgt,step){
   return cur+clamp(d,-step,step);
 }
 
+/* =====================================================================
+   FORMATAÇÃO CENTRAL DE NÚMEROS (PR 11.5)
+   ---------------------------------------------------------------------
+   ÚNICA fonte de formatação para HUD, TAB (Ficha de Combate), Loja,
+   Pausa, Codex e tooltips. Nada de .toFixed()/Math.round espalhados
+   pela UI de jogador — importe daqui.
+
+   Regras de precisão contextual (documentadas em UI_UX_SYSTEM.md):
+   · inteiros permanecem inteiros ............ 17      → "17"
+   · quebrados recebem no máx. 1 casa ........ 32.325  → "32.3"
+   · percentual sempre com 1 casa quando útil. 0.3253  → "32.5%"
+   · compacto apenas em contexto de escala ... 15400   → "15.4K"
+   · tempo de cooldown/ação .................. 1.275s  → "1.3s"
+   ===================================================================== */
+const MINUS='−';                        // sinal tipográfico (igual ao resto da UI)
+function fmtNum(v,maxDec){
+  if(v==null||!isFinite(v))return '—';
+  if(maxDec==null)maxDec=1;
+  let r=Math.round(v*Math.pow(10,maxDec))/Math.pow(10,maxDec);
+  if(Object.is(r,-0))r=0;
+  if(Number.isInteger(r))return String(r);
+  return r.toFixed(maxDec).replace(/\.?0+$/,'');
+}
+/* stat genérico de combate (dano, alcance em px, áreas) */
+function fmtStat(v,maxDec){return fmtNum(v,maxDec==null?1:maxDec);}
+/* fração 0..n → percentual: fmtPct(.3253) → "32.5%" · fmtPct(1) → "100%" */
+function fmtPct(v,maxDec){
+  if(v==null||!isFinite(v))return '—';
+  return fmtNum(v*100,maxDec==null?1:maxDec)+'%';
+}
+/* escala compacta — só onde o valor exato não importa: 1200→"1.2K" */
+function fmtCompact(v){
+  if(v==null||!isFinite(v))return '—';
+  const s=v<0?MINUS:'',a=Math.abs(v);
+  if(a>=1e9)return s+fmtNum(a/1e9,2)+'B';
+  if(a>=1e6)return s+fmtNum(a/1e6,2)+'M';
+  if(a>=1e4)return s+fmtNum(a/1e3,1)+'K';
+  return s+fmtNum(a,a<100?1:0);
+}
+/* tempo de relógio de run: fmtTime(83.2) → "01:23" */
+function fmtTime(s){
+  if(s==null||!isFinite(s))return '—:—';
+  s=Math.max(0,s);
+  const m=Math.floor(s/60),sec=Math.floor(s%60);
+  return String(m).padStart(2,'0')+':'+String(sec).padStart(2,'0');
+}
+/* duração/cooldown curto: fmtSec(1.275) → "1.3s" · fmtSec(30) → "30s" */
+function fmtSec(s,maxDec){
+  if(s==null||!isFinite(s))return '—';
+  return fmtNum(s,maxDec==null?1:maxDec)+'s';
+}
+/* taxa por segundo: fmtRate(3.2) → "3.2/s" */
+function fmtRate(v,maxDec){
+  if(v==null||!isFinite(v))return '—';
+  return fmtNum(v,maxDec==null?1:maxDec)+'/s';
+}
+/* multiplicador: fmtMult(1.275) → "×1.28" (2 casas: precisão importa aqui) */
+function fmtMult(v,maxDec){
+  if(v==null||!isFinite(v))return '—';
+  return '×'+fmtNum(v,maxDec==null?2:maxDec);
+}
+/* delta percentual: fmtSigned(.3) → "+30%" · fmtSigned(-.15) → "−15%" */
+function fmtSigned(v,maxDec){
+  if(v==null||!isFinite(v)||Math.abs(v)<5e-7)return '±0%';
+  const s=v>0?'+':MINUS;
+  return s+fmtNum(Math.abs(v)*100,maxDec==null?1:maxDec)+'%';
+}
+
 /* ---------------- canvas ---------------- */
 const cv=document.getElementById('game'), ctx=cv.getContext('2d',{
   alpha:false,
@@ -1779,8 +1847,8 @@ function pauseGame(){
     'INTEGRIDADE <b>'+Math.max(0,Math.ceil(player.hp))+' / '+player.maxHp+'</b> · '+
     'ESCUDO <b>'+Math.max(0,Math.ceil(player.shield))+' / '+player.shieldMax+'</b> · '+
     'CRÉDITOS <b>◈'+player.coins+'</b><br>'+
-    'ARMA <b>'+w.nm+'</b> · ARSENAL <b>'+player.owned.length+'/'+WEAPONS.length+'</b> · '+
-    'MÓDULOS <b>'+player.items.length+'</b><br>'+
+    'ARMA <b>'+w.nm+'</b> · ARSENAL <b>'+player.owned.length+'/'+player.maxSlots+
+    ' SLOTS</b> · MÓDULOS <b>'+player.items.length+'</b><br>'+
     'ECHO·01 <b>'+(echoes[0]?(echoes[0].alive?'ATIVO':'OFFLINE'):'INATIVO')+'</b> · '+
     'ECHO·02 <b>'+(echoes[1]?(echoes[1].alive?'ATIVO':'OFFLINE'):'INATIVO')+'</b><br>'+
     (function(){   // PR 9: perfil moral resumido + sintonia da build
@@ -3100,7 +3168,7 @@ function setChip(el,slot,echo){
     el.textContent='ECHO·0'+slot+' — ⚠ '+DIS_LABEL[_ds]+
       (_ds==='hostile'&&echo.dis.integMax>0
         ? ' · RUPTURA '+Math.round(clamp(echo.dis.integ/echo.dis.integMax,0,1)*100)+'%'
-        : ' '+Math.max(0,echo.dis.t).toFixed(1)+'s');
+        : ' '+fmtSec(Math.max(0,echo.dis.t)));
     return;
   }
   el.style.textDecoration='';
@@ -3153,8 +3221,8 @@ function updateHUD(force){
     const r=act?player.spT/(player.spMax||6)
       :(player.spCd>0?1-player.spCd/C.sp.cd:1);
     $('spfill').style.width=clamp(r*100,0,100)+'%';
-    $('splbl').textContent=act?(C.sp.nm+' '+player.spT.toFixed(1)+'s')
-      :(player.spCd>0?C.sp.nm+' '+player.spCd.toFixed(1)+'s':C.sp.nm+' [E]');
+    $('splbl').textContent=act?(C.sp.nm+' '+fmtSec(player.spT))
+      :(player.spCd>0?C.sp.nm+' '+fmtSec(player.spCd):C.sp.nm+' [E]');
     spw.classList.toggle('ready',player.spCd<=0&&!act);
     spw.classList.toggle('active',act);
   }
@@ -5701,11 +5769,11 @@ function moralStatusLine(){
   return 'PERFIL: <b style="color:'+DOM_COLOR[d]+'">'+DOM_NAME[d]+'</b>'+
     (tiers?' — '+tiers:'')+
     (mEff.conflict?' <b style="color:#ff4df0">[CONFLITO]</b>':'')+'<br>'+
-    'PREÇOS ×'+mEff.shopMul.toFixed(2)+' · MOEDAS ×'+mEff.coinMul.toFixed(2)+
-    ' · SEU DANO ×'+mEff.dmgMul.toFixed(2)+
-    ' · DANO RECEBIDO ×'+mEff.playerDmgTaken.toFixed(2)+
-    ' · INIMIGOS ×'+mEff.enemySpd.toFixed(2)+' VEL / ×'+mEff.enemyHp.toFixed(2)+' VIDA'+
-    (mEff.echoPower>1?' · ECOS ×'+mEff.echoPower.toFixed(2):'');
+    'PREÇOS '+fmtMult(mEff.shopMul)+' · MOEDAS '+fmtMult(mEff.coinMul)+
+    ' · SEU DANO '+fmtMult(mEff.dmgMul)+
+    ' · DANO RECEBIDO '+fmtMult(mEff.playerDmgTaken)+
+    ' · INIMIGOS '+fmtMult(mEff.enemySpd)+' VEL / '+fmtMult(mEff.enemyHp)+' VIDA'+
+    (mEff.echoPower>1?' · ECOS '+fmtMult(mEff.echoPower):'');
 }
 
 /* --------------- LOJA ENTRE ONDAS --------------- */
@@ -15184,10 +15252,10 @@ function renderCodexBody(){
       const guns=C.guns.map(g=>{
         const w=WEAPONS.find(x=>x.id===g);return w?w.nm:g;}).join(' + ');
       const stats=['VIDA '+C.hp,'VEL '+C.speed,
-        'DANO ×'+C.dmg.toFixed(2),'CADÊNCIA ×'+C.rate.toFixed(2),
-        'CRÍTICO '+Math.round(C.crit*100)+'%','DASH '+C.dashCd.toFixed(2)+'s',
-        'ESCUDO '+C.shieldMax+' · +'+C.shieldRegen+'/s · '+C.shieldDelay+'s',
-        '⌗ '+C.slots+' SLOTS DE ARMA'];
+        'DANO '+fmtMult(C.dmg),'CADÊNCIA '+fmtMult(C.rate),
+        'CRÍTICO '+fmtPct(C.crit,0),'DASH '+fmtSec(C.dashCd),
+        'ESCUDO '+C.shieldMax+' · +'+fmtNum(C.shieldRegen)+'/s · '+fmtSec(C.shieldDelay),
+        '⌗ ARSENAL: '+C.slots+' SLOTS DE ARMA'];
       h+='<div class="cxitem'+(lk?' lock':'')+'" data-char="'+i+'" style="cursor:pointer'+
         (sel&&!lk?';border-color:'+C.color+';box-shadow:0 0 20px '+C.color+'44':'')+'">'+
         charPortrait(C)+'<div class="cxinfo">'+
@@ -15228,17 +15296,17 @@ function renderCodexBody(){
   if(codexTab==='weapons'){
     h='<div class="cxgrid">';
     WEAPONS.forEach((d,i)=>{
-      const dps=d.melee||d.beam?null:(d.dmg*d.count/d.interval).toFixed(0);
+      const dps=d.melee||d.beam?null:fmtStat(d.dmg*d.count/d.interval,0);
       const stats=[];
-      stats.push('DANO '+d.dmg);
+      stats.push('DANO '+fmtStat(d.dmg));
       if(d.count>1)stats.push('×'+d.count+' PROJÉTEIS');
-      stats.push('CADÊNCIA '+(1/d.interval).toFixed(1)+'/s');
+      stats.push('CADÊNCIA '+fmtRate(1/d.interval));
       if(dps)stats.push('DPS ~'+dps);
-      stats.push('ALCANCE '+(d.range||600)+'px');
+      stats.push('ALCANCE '+fmtStat(d.range||600,0)+'px');
       stats.push(rangeLabel(d.range||600));
       if(d.basePierce)stats.push(d.basePierce>50?'PERFURA TUDO':'PERFURA +'+d.basePierce);
-      if(d.aoe)stats.push('ÁREA '+d.aoe+'px');
-      if(d.lifesteal)stats.push('ROUBO '+Math.round(d.lifesteal*100)+'%');
+      if(d.aoe)stats.push('ÁREA '+fmtStat(d.aoe,0)+'px');
+      if(d.lifesteal)stats.push('ROUBO '+fmtPct(d.lifesteal,0));
       if(d.chain)stats.push('CADEIA ×'+d.chain);
       const tag=rarTag(d.rar)+
         '<span class="cxtag" style="color:'+d.color+
@@ -15496,7 +15564,7 @@ function renderOrganizer(){
       '<div class="oinfo"><div class="onm" style="color:'+d.color+'">'+d.nm+
         (player.wi===wi?' <span style="color:#7dffc4;font-size:8px">◄ EQUIPADA</span>':'')+
         '</div>'+
-        '<div class="ods">'+d.tag+' · DANO '+d.dmg+' · '+rg+'px · '+rangeLabel(rg)+'</div>'+
+        '<div class="ods">'+d.tag+' · DANO '+fmtStat(d.dmg)+' · '+fmtStat(rg,0)+'px · '+rangeLabel(rg)+'</div>'+
       '</div>'+
       '<div class="obtns">'+
         '<div class="obtn'+(i===0?' dis':'')+'" data-a="up">▲</div>'+
@@ -15830,17 +15898,17 @@ function itemTipHTML(it){
 }
 function weaponTipHTML(d){
   const rg=d.range||600;
-  const stats=['DANO '+d.dmg];
+  const stats=['DANO '+fmtStat(d.dmg)];
   if(d.count>1)stats.push('×'+d.count);
-  stats.push('CADÊNCIA '+(1/d.interval).toFixed(1)+'/s');
-  if(!d.melee&&!d.beam)stats.push('DPS ~'+(d.dmg*d.count/d.interval).toFixed(0));
-  stats.push('ALCANCE '+rg+'px');
+  stats.push('CADÊNCIA '+fmtRate(1/d.interval));
+  if(!d.melee&&!d.beam)stats.push('DPS ~'+fmtStat(d.dmg*d.count/d.interval,0));
+  stats.push('ALCANCE '+fmtStat(rg,0)+'px');
   stats.push(rangeLabel(rg));
   if(d.basePierce)stats.push(d.basePierce>50?'PERFURA TUDO':'PERFURA +'+d.basePierce);
-  if(d.aoe)stats.push('ÁREA '+d.aoe);
-  if(d.lifesteal)stats.push('ROUBO '+Math.round(d.lifesteal*100)+'%');
+  if(d.aoe)stats.push('ÁREA '+fmtStat(d.aoe,0));
+  if(d.lifesteal)stats.push('ROUBO '+fmtPct(d.lifesteal,0));
   if(d.chain)stats.push('CADEIA ×'+d.chain);
-  if(d.crit)stats.push('+'+Math.round(d.crit*100)+'% CRÍT');
+  if(d.crit)stats.push('+'+fmtPct(d.crit,0)+' CRÍT');
   let h='<div class="tnm" style="color:'+d.color+'">'+d.nm+'</div>'+
     '<div class="trole" style="color:'+d.color+'">'+d.tag+
       (d.melee?' · ARMA BRANCA':'')+'</div>'+
@@ -15856,11 +15924,11 @@ function weaponTipHTML(d){
 function charTipHTML(C){
   const guns=C.guns.map(g=>{
     const w=WEAPONS.find(x=>x.id===g);return w?w.nm:g;}).join(' + ');
-  const stats=['VIDA '+C.hp,'VEL '+C.speed,'DANO ×'+C.dmg.toFixed(2),
-    'CADÊNCIA ×'+C.rate.toFixed(2),'CRÍT '+Math.round(C.crit*100)+'%',
-    'DASH '+C.dashCd.toFixed(2)+'s',
-    'ESCUDO '+C.shieldMax+' · +'+C.shieldRegen+'/s · '+C.shieldDelay+'s',
-    '⌗ '+C.slots+' SLOTS'];
+  const stats=['VIDA '+C.hp,'VEL '+C.speed,'DANO '+fmtMult(C.dmg),
+    'CADÊNCIA '+fmtMult(C.rate),'CRÍT '+fmtPct(C.crit,0),
+    'DASH '+fmtSec(C.dashCd),
+    'ESCUDO '+C.shieldMax+' · +'+fmtNum(C.shieldRegen)+'/s · '+fmtSec(C.shieldDelay),
+    '⌗ ARSENAL: '+C.slots+' SLOTS'];
   let h='<div class="tnm" style="color:'+C.color+'">'+C.nm+'</div>'+
     '<div class="trole" style="color:'+C.color+'">'+C.role+'</div>'+
     '<div class="tds">'+C.desc+'</div>'+
@@ -15890,7 +15958,10 @@ function refreshTitleChar(){
       charPortrait(C,38).replace('class="cicon" ','')+
       '<div class="cn" style="'+(on&&!lk?'color:'+C.color:'')+'">'+
         (lk?'🔒 '+C.nm:C.nm)+'</div>'+
-      '<div class="cr">'+C.role+'</div></div>';
+      '<div class="cr">'+C.role+'</div>'+
+      '<div class="cr" style="font-family:Consolas,monospace;letter-spacing:.14em;'+
+        'color:'+(on&&!lk?'rgba(159,243,255,.9)':'rgba(150,180,200,.55)')+'">⌗ '+
+        C.slots+' SLOTS</div></div>';
   });
   wrap.innerHTML=h;
   wrap.querySelectorAll('[data-ch]').forEach(el=>{
