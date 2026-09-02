@@ -5092,13 +5092,13 @@ function lockIconSVG(on){
       '<path d="M8 11V7a4 4 0 0 1 7.5-2"/></svg>';
 }
 function ownedLine(){
-  let s='FICHA DA RUN → ARSENAL ('+player.owned.length+'/'+player.maxSlots+'): '+
+  let s='REGISTRO DA RUN → ARSENAL ('+player.owned.length+'/'+player.maxSlots+'): '+
     player.owned.map((wi,n)=>'['+(n+1)+'] '+WEAPONS[wi].nm).join(' · ')+'<br>';
   if(!player.items.length&&!player.upgLog.length)
     return s+'NENHUM MÓDULO INSTALADO AINDA.';
-  if(player.items.length)s+='MÓDULOS: '+player.items.map(i=>itemById(i).nm).join(' | ');
+  if(player.items.length)s+='MÓDULOS: '+player.items.map(i=>itemById(i).nm).join(' · ');
   if(player.upgLog.length)s+=(player.items.length?'<br>':'')+'UPGRADES: '+player.upgLog.join(' · ');
-  s+='<br>ESTA FICHA SERÁ HERDADA PELO ECHO GERADO NA SUA MORTE.';
+  s+='<br>ESTA RUN FARÁ PARTE DA MEMÓRIA DO ECHO GERADO APÓS A SUA MORTE.';
   return s;
 }
 function moralStatusLine(){
@@ -12588,7 +12588,7 @@ function onPlayerDeath(){
   spawnRing(player.x,player.y,'#ff4df0',4,180,1.1);
   sDie();
   recorder.push([Math.round(runTime*100)/100,Math.round(player.x),Math.round(player.y),0,0,player.wi]);
-  // ficha completa da run → herdada pelo Echo (build + postura moral +
+  // registro completo da run → memória herdada pelo Echo (build + postura moral +
   // PR 8: contadores de comportamento para a PERSONALIDADE)
   const runData={dur:runTime,trail:recorder,dmgMul:player.dmgMul,
     frMul:player.fireRateMul,wave,level:player.level,
@@ -12627,7 +12627,7 @@ function showFracture(rd,had1,had2){
     'PERFIL PSICOMÉTRICO: <b style="color:'+DOM_COLOR[rd.dom]+'">'+DOM_NAME[rd.dom]+'</b> — '+
     'COMPAIXÃO <b>'+rd.moral.comp+'</b> · GANÂNCIA <b>'+rd.moral.greed+'</b> · VIOLÊNCIA <b>'+rd.moral.viol+'</b><br>'+
     (rd.ps?'REGISTRO COMPORTAMENTAL: '+persRecordLine(rd.ps)+'<br>':'')+
-    'FICHA HERDADA: <b>'+(rd.items.length?rd.items.map(i=>itemById(i).nm).join(' | '):'NENHUM MÓDULO')+'</b>'+
+    'MEMÓRIA HERDADA PELO ECHO: <b>'+(rd.items.length?rd.items.map(i=>itemById(i).nm).join(' · '):'NENHUM MÓDULO')+'</b>'+
     (rd.upg.length?' · <b>'+rd.upg.length+'</b> UPGRADES':'');
   let lines='';
   for(const e of echoes)
@@ -14563,7 +14563,7 @@ function renderCodexBody(){
         unlockBarHTML('i',it.id),lk);
     }
     h+='</div>';
-    cxFoot.textContent='MÓDULOS TÊM TRADE-OFFS REAIS · SÃO HERDADOS PELOS SEUS ECOS';
+    cxFoot.textContent='MÓDULOS TÊM TRADE-OFFS REAIS · FAZEM PARTE DA MEMÓRIA DOS SEUS ECOS';
   }else if(codexTab==='upgrades'){
     h='<div class="cxgrid">';
     for(const u of UPGRADES){
@@ -14830,7 +14830,7 @@ function renderOrganizer(){
     'permanentemente<br>Descartar libera espaço para novas compras, '+
     'mas a arma <b>não volta</b> nesta run.';
   cxBody.appendChild(hint);
-  cxFoot.textContent='A ORDEM DOS SLOTS É SALVA NA FICHA DA RUN E HERDADA PELOS ECOS';
+  cxFoot.textContent='A ORDEM DOS SLOTS É SALVA NO REGISTRO DA RUN E PRESERVADA NA MEMÓRIA DOS ECOS';
 }
 /* ---------------- painel de configurações ---------------- */
 function cfgRow(nm,ds,valTxt,cls,onClick){

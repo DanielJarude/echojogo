@@ -40,6 +40,7 @@ src+=';globalThis.__t={'+
   'smBuildCheckpoint,smSanitizeRun,activateSlot,'+
   'makeEcho,changeEchoTrust,relAddPressure,echoRelState,echoAllied,'+
   'killEnemy,spawnWave,spawnBeacon,getBeacon:()=>beacon,'+
+  'ownedLine,showFracture,'+
   'getMicroT:()=>microT,setMicroT:v=>{microT=v;},'+
   'DEV_get:()=>DEV,DEV_on:()=>{DEV_MODE=true;},DEV_off:()=>{DEV_MODE=false;},'+
   'getMoral:()=>moral,setMoral:(c,g,v)=>{moral.comp=c;moral.greed=g;moral.viol=v;applyMoral();},'+
@@ -890,6 +891,53 @@ ok('CONTEÚDO PRESERVADO: 25 novos, 20 legados, 6 chains, 5 arenas, 4 micro',()=
   assert.strictEqual(t.MICRO_EVENTS.length,4);
   assert(t.EV_DECISION_GAP>=3,'janela global enfraquecida');
   assert(t.EV_CD_WAVES>=4,'cooldown por ID enfraquecido');
+});
+
+/* ==================== L. NOMENCLATURA — MEMÓRIA DO ECHO ==================== */
+console.log('\n[L] NOMENCLATURA — MEMÓRIA HERDADA PELO ECHO (PR 10.5.1 UX)');
+ok('tela de morte usa MEMÓRIA HERDADA PELO ECHO (nada de FICHA HERDADA)',()=>{
+  freshRun();t.setRunTime(63);t.setEchoes([]);
+  const rd={dur:63,trail:[[0,0,1,0,0,0]],dmgMul:1,frMul:1,wave:7,level:4,
+    crit:0,critMul:1.8,pierce:0,aoeMul:1,rangeMul:1,projSpdMul:1,
+    longRangeBonus:0,coins:42,items:[],upg:['a','b','c','d'],owned:[0],
+    moral:{comp:1,greed:2,viol:0},dom:'comp',kills:11,mh:100,st:{}};
+  t.showFracture(rd,false,false);
+  const body=document.getElementById('ov-body').innerHTML;
+  assert(body.indexOf('MEMÓRIA HERDADA PELO ECHO')>=0,
+    'novo rótulo ausente na tela de morte');
+  assert(body.indexOf('FICHA HERDADA')<0,'texto antigo ainda na tela de morte');
+  assert(body.indexOf('<b>4</b> UPGRADES')>=0,'contagem de upgrades sumiu');
+});
+ok('modal de eventos/loja: REGISTRO DA RUN + explicação de MEMÓRIA (não herança de itens)',()=>{
+  freshRun();
+  t.setPlayer({owned:[0],maxSlots:4,items:[],upgLog:['DANO +10%'],
+    hp:50,maxHp:100,coins:30});
+  const s=t.ownedLine();
+  assert(s.indexOf('REGISTRO DA RUN → ARSENAL (1/4)')>=0,
+    'cabeçalho novo ausente: '+s.slice(0,60));
+  assert(s.indexOf('ESTA RUN FARÁ PARTE DA MEMÓRIA DO ECHO GERADO APÓS A SUA MORTE.')>=0,
+    'explicação nova ausente');
+  assert(s.indexOf('ESTA FICHA')<0&&s.indexOf('FICHA DA RUN')<0,
+    'texto antigo sobreviveu');
+  assert(s.indexOf('UPGRADES: DANO +10%')>=0,'conteúdo do registro mudou');
+});
+ok('consistência: NENHUM "FICHA" sobrevive no jogo; memória/registro nos footers',()=>{
+  assert(RAWSRC.indexOf('FICHA')<0,'"FICHA" ainda existe em index.html');
+  assert(RAWSRC.indexOf('A ORDEM DOS SLOTS É SALVA NO REGISTRO DA RUN E '+
+    'PRESERVADA NA MEMÓRIA DOS ECOS')>=0,'footer de slots sem o novo texto');
+  assert(RAWSRC.indexOf('FAZEM PARTE DA MEMÓRIA DOS SEUS ECOS')>=0,
+    'footer de itens sem o novo texto');
+  /* nenhum texto promete devolução de build na próxima run */
+  for(const bad of ['ITENS SERÃO','VOCÊ RECUPERARÁ','COMEÇARÁ COM ESSA BUILD',
+    'RECUPERAR OS MÓDULOS'])
+    assert(RAWSRC.toUpperCase().indexOf(bad)<0,'promessa indevida: '+bad);
+});
+ok('mecânica intacta: runData/echoQueue preservados (só texto mudou)',()=>{
+  /* runData continua carregando build+comportamento para o Echo */
+  for(const k of ['items:player.items.slice()','upg:player.upgLog.slice()',
+    'owned:player.owned.slice()','moral:{comp:moral.comp','dom:moralDom()',
+    'echoQueue=[runData,echoQueue[0]]','runData.ps=deriveEchoPersonality(runData)'])
+    assert(RAWSRC.indexOf(k)>=0,'mecânica de herança alterada: '+k);
 });
 
 console.log('\n---------------------------------------------');
