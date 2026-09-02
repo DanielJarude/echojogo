@@ -82,6 +82,10 @@
   /* estados: cheio / parcial / vazio — leitura imediata */
   #shbar.full{box-shadow:0 0 12px rgba(255,209,102,.35),
     inset 0 0 8px rgba(255,209,102,.10);}
+  #shbar.perfect{box-shadow:0 0 14px rgba(143,246,255,.7),
+    0 0 34px rgba(143,246,255,.32);animation:pulse 1s infinite;}
+  #shbar.perfect:after{content:'PERFEITO';position:absolute;right:2px;top:-13px;
+    font-size:9px;letter-spacing:.14em;color:rgba(143,246,255,.95);}
   #shbar.empty #shfill{opacity:.16;box-shadow:none;}
   #shbar.empty #shnum{color:rgba(255,180,130,.45);}
   #midtop{text-align:center;}
@@ -1785,6 +1789,10 @@ function pauseGame(){
         MORAL_STATE_LABEL[pr.state]+') · C <b>'+moral.comp+'</b> / G <b>'+moral.greed+
         '</b> / V <b>'+moral.viol+'</b> · MÓDULOS AFINS <b>'+countAttunedItems(player)+
         '/'+player.items.length+'</b>';
+    })()+
+    (function(){   // PR 11: sinergias ativas da build (linguagem humana)
+      const s=activeSynergies(player);
+      return s.length?'<br>SINERGIAS ATIVAS <b>'+s.join(' · ')+'</b>':'';
     })();
   const _pr=document.getElementById('p-rel');
   if(_pr)_pr.innerHTML=relationPanelHTML();
@@ -2300,9 +2308,15 @@ function makePlayer(){
   p._smBase={
     dmg:C.dmg, rate:C.rate, crit:C.crit, critMul:1.8,
     speed:C.speed*(1+.05*meta.spd), pickupR:170, coinMul:1, dmgTaken:1,
-    range:1, projSpd:1, aoe:1, pierce:0
+    range:1, projSpd:1, aoe:1, pierce:0,
+    /* PR 11: base imutável do Shield entra no mesmo pipeline */
+    shieldMax:C.shieldMax||0, shieldRegen:C.shieldRegen||0,
+    shieldDelay:C.shieldDelay||0
   };
   p.sm=[];
+  /* PR 11: estado compacto de BUILD (stacks/cooldowns/timers/charges). */
+  p.itemState={};
+  p.itemVer=0;
   if(C.apply)C.apply(p);
   smRefresh(p);
   return p;
@@ -2779,9 +2793,15 @@ const SM_STATS={
   aoe    :{set:(p,v)=>p.aoeMul=v,      base:o=>o.aoe,       cl:[null,null], lab:'ÁREA'},
   speed  :{set:(p,v)=>p.speed=v,       base:o=>o.speed,     cl:[null,null], lab:'VELOCIDADE'},
   pickupR:{set:(p,v)=>p.pickupR=v,     base:o=>o.pickupR,   cl:[1,null],    lab:'RAIO COLETA'},
-  coinMul:{set:(p,v)=>p.coinMul=v,     base:o=>o.coinMul,   cl:[0,null],    lab:'MOEDAS'},
+  coinMul:{set:(p,v)=>p.coinMul=v,     base:o=>o.coinMul,  cl:[0,null],    lab:'MOEDAS'},
   dmgTaken:{set:(p,v)=>p.dmgTakenMul=v,base:o=>o.dmgTaken,  cl:[0,null],    lab:'DANO RECEBIDO'},
-  pierce :{set:(p,v)=>p.pierce=v,      base:o=>o.pierce,    cl:[0,null],    lab:'PERFURAÇÃO'}
+  pierce :{set:(p,v)=>p.pierce=v,      base:o=>o.pierce,    cl:[0,null],    lab:'PERFURAÇÃO'},
+  /* PR 11: Shield do operador passa a ser stat DERIVADO do pipeline.
+     shield é ESTADO; shieldMax/shieldRegen/shieldDelay são derivados.
+     Alterar shieldMax apenas rearranja o teto — NUNCA enche o escudo. */
+  shieldMax  :{set:(p,v)=>p.shieldMax=v,   base:o=>o.shieldMax,   cl:[0,500],  lab:'ESCUDO MÁX'},
+  shieldRegen:{set:(p,v)=>p.shieldRegen=v, base:o=>o.shieldRegen, cl:[0,null], lab:'REGEN ESCUDO'},
+  shieldDelay:{set:(p,v)=>p.shieldDelay=v, base:o=>o.shieldDelay, cl:[0,null], lab:'DELAY ESCUDO'}
 };
 
 /* ---- API central ---- */
@@ -3109,9 +3129,11 @@ function updateHUD(force){
   const shR=clamp(player.shield/(player.shieldMax||1)*100,0,100);
   shfill.style.width=shR+'%';
   shnum.textContent=Math.max(0,Math.ceil(player.shield))+' / '+player.shieldMax;
+  const _pf=itemStateGet(player,'_perfect','fired',false);
   shbar.classList.toggle('full',player.shieldMax>0&&player.shield>=player.shieldMax);
   shbar.classList.toggle('partial',player.shield>0&&player.shield<player.shieldMax);
   shbar.classList.toggle('empty',player.shield<=0);
+  shbar.classList.toggle('perfect',!!_pf&&player.shieldMax>0&&player.shield>=player.shieldMax);
   waveEl.textContent=boss?'PARADOXO':(miniBoss?'ARAUTO':
     ('ONDA '+String(Math.max(1,wave)).padStart(2,'0')+' / 20'));
   const m=String(Math.floor(runTime/60)).padStart(2,'0'),
@@ -3915,7 +3937,30 @@ const MORAL_AFFINITY={
   su_sorte   :{comp:.5,greed:0 ,viol:.5},  // cura ao abater
   su_critcura:{comp:.5,greed:0 ,viol:.5},  // crítico que cura
   su_exec    :{comp:0 ,greed:0 ,viol:1 },  // execução
-  su_dotcrit :{comp:0 ,greed:0 ,viol:1 }   // status crítico
+  su_dotcrit :{comp:0 ,greed:0 ,viol:1 },  // status crítico
+  /* PR 11 — afinidade TEMÁTICA dos itens novos (não é classe/DPS/tank) */
+  sb_pulso   :{comp:0 ,greed:0 ,viol:1 },  // violência reativa pós-ruptura
+  sb_janela  :{comp:0 ,greed:0 ,viol:1 },  // janela ofensiva
+  sb_grilhao :{comp:.5,greed:0 ,viol:.5},  // controle protetor + punitivo
+  fs_prisma  :{comp:.4,greed:0 ,viol:.6},  // defesa perfeita vira golpe
+  fs_casulo  :{comp:1 ,greed:0 ,viol:0 },  // preservação/estabilização
+  fs_cinetica:{comp:.3,greed:0 ,viol:.7},  // mobilidade agressiva
+  rg_condensador:{comp:.4,greed:.2,viol:.4}, // regen que recompõe e arrisca
+  rg_peso    :{comp:1 ,greed:0 ,viol:0 },  // resistência pura
+  rg_lagrima :{comp:0 ,greed:0 ,viol:1 },  // ciclo rápido ofensivo
+  crit_cadeia:{comp:0 ,greed:0 ,viol:1 },  // crítico em série
+  crit_garra :{comp:0 ,greed:0 ,viol:1 },  // caça a alvos marcados
+  st_inverno :{comp:.6,greed:0 ,viol:.4},  // controle que protege a arena
+  st_corrosivo:{comp:0 ,greed:0 ,viol:1 }, // corrosão em cascata
+  dash_eco   :{comp:0 ,greed:0 ,viol:1 },  // impulso de dano pós-dash
+  dash_fase  :{comp:0 ,greed:0 ,viol:1 },  // dashes letais
+  eco_risco  :{comp:0 ,greed:1 ,viol:0 },  // economia apostando em risco
+  eco_divida :{comp:0 ,greed:1 ,viol:0 },  // créditos pagos em blindagem
+  trans_fratura:{comp:0 ,greed:0 ,viol:1 },// quebra vira perfuração
+  trans_ressonante:{comp:1 ,greed:0 ,viol:0 }, // cooperação com Ecos
+  trans_conclusao:{comp:0 ,greed:0 ,viol:1 },  // diagnóstico mortal
+  trans_temporal:{comp:0 ,greed:1 ,viol:0 },   // mercado de futuros
+  trans_espectral:{comp:0 ,greed:0 ,viol:1 }   // espectro assassino
 };
 function getItemMoralAffinity(itemId){
   const a=MORAL_AFFINITY[itemId];
@@ -3935,7 +3980,10 @@ function calcMoralAffinityMatch(aff,prof){
 function moralTuneFactor(match){
   if(match==null)return 0;
   const b=MORAL_BALANCE.affinity.baseline;
-  return clamp((match-b)/(1-b),0,1);
+  const v=(match-b)/(1-b);
+  /* epsilon: perfil equilibrado (match≈1/3) permanece neutro mesmo com a
+     aritmética de ponto flutuante de afinidades fracionárias. */
+  return v<1e-9?0:clamp(v,0,1);
 }
 const MORAL_AFF_LEVELS=[
   {id:'divergent',lab:'DIVERGENTE',c:'#9db8c8'},
@@ -4733,9 +4781,12 @@ function buffEchoes(){
 }
 function giveItem(it,free){
   bumpProg('items');
-  player.items.push(it.id);it.apply(player);
+  player.items.push(it.id);itemStateInit(player,it.id);
+  it.apply(player);
   player.hp=clamp(player.hp,1,player.maxHp);
   applyMoralTuning(player);   // PR 9: recalcula a sintonia com o novo módulo
+  player.itemVer=(player.itemVer||0)+1;invalidateItemHooks();resetItemProcBudget(player);
+  {const ps=itemStateInit(player,'_perfect');ps.fired=false;}
   toast((free?'SAQUEADO: ':'INSTALADO: ')+it.nm);
   const _aff=getItemMoralAffinity(it.id);
   if(_aff){
@@ -4800,6 +4851,544 @@ const UPGRADES=[
  {id:'singul',nm:'SINGULARIDADE PESSOAL',desc:'+45% DE DANO · DASH RECARREGA 50% MAIS RÁPIDO',price:92,rar:4,
   apply:p=>{smMul(p,'damage','upgrade.singul.damage','SINGULARIDADE +45% DANO',1.45);p.dashCdMax*=.50;}}
 ];
+/* =====================================================================
+   PR 11 — ITEM & BUILD REWORK + SHIELD EXPANSION
+   ---------------------------------------------------------------------
+   Camada leve e centralizada de HOOKS de item:
+     itemEmit(type, ctx)
+   · handlers ativos cacheados por versão do inventário;
+   · estado compacto em player.itemState (cooldowns/stacks/timers/charges);
+   · tags internas por item para DEV/organização/sinergia;
+   · proteção de recursão (profundidade + orçamento por frame + chave de proc);
+   · TODOS os efeitos numéricos passam pelo Stat Modifier Pipeline (sm*);
+   · Shield base vira stat derivado: shieldMax/regen/delay via sm, e o
+     estado (player.shield) nunca é enchido pela alteração de teto.
+   ===================================================================== */
+/* ---- TAGS INTERNAS (consumidas por DEV/organização/sinergia) ---- */
+const ITEM_TAG_MAP={
+  nucleo:['damage','risk'],rebob:['dash','projectile','risk'],lente:['projectile','ranged','pierce'],
+  coracao:['ranged','fire_rate','risk'],iman:['economy','pickup'],placa:['hp','shield','movement','tradeoff'],
+  olho:['crit','crit_build'],paradoxo:['echo','hp','risk'],luneta:['ranged','pierce','distance'],
+  estilhaco:['ranged','fire_rate','damage','tradeoff'],pirostase:['status','burn','risk'],
+  criostase:['status','chill','control'],condutor:['status','shock','crit_build'],
+  catalis:['status','corrode','risk'],ferrao:['status','any','damage'],sifao:['status','life','control'],
+  reator:['damage','ranged','risk'],espectro:['dash','movement','risk'],vinganca:['low_hp','damage'],
+  colmeia:['ranged','projectile'],usura:['economy','risk'],ressonador:['echo','resonance'],
+  carapaca:['shield','control','risk'],entropia:['kill','damage'],ampulheta:['dash','kill'],
+  talisma:['hp','revive','sustain'],espinho:['shield','thorns','risk'],
+  su_vampiro:['life','status'],su_imante:['economy','pickup'],su_regen:['hp','sustain'],
+  su_sorte:['economy','heal'],su_critcura:['crit','heal'],su_exec:['execute','crit_build','kill'],
+  su_dotcrit:['status','dot','crit_build'],
+  /* novos itens PR 11 */
+  sb_pulso:['shield','shield_break','aoe','risk'],sb_janela:['shield','shield_break','crit_build','window'],
+  sb_grilhao:['shield','shield_break','control','aoe'],fs_prisma:['shield','shield_full','crit_build'],
+  fs_casulo:['shield','shield_full','control','sustain'],fs_cinetica:['shield','shield_full','dash','movement'],
+  rg_condensador:['shield','shield_regen','tradeoff'],rg_peso:['shield','shield_max','tradeoff'],
+  rg_lagrima:['shield','shield_regen','dash','tradeoff'],crit_cadeia:['crit','crit_build','damage','tradeoff'],
+  crit_garra:['crit','crit_build','status'],st_inverno:['status','chill','control','aoe'],
+  st_corrosivo:['status','corrode','aoe','control'],dash_eco:['dash','movement','damage'],
+  dash_fase:['dash','projectile','pierce','movement'],eco_risco:['economy','risk','tradeoff'],
+  eco_divida:['economy','risk','tradeoff','shield'],trans_fratura:['transformer','shield_break','projectile','pierce'],
+  trans_ressonante:['transformer','resonance','echo','aoe'],trans_conclusao:['transformer','crit_build','status'],
+  trans_temporal:['transformer','economy','risk'],trans_espectral:['transformer','dash','crit_build','movement']
+};
+function itemTags(itemOrId){
+  const it=typeof itemOrId==='string'?itemById(itemOrId):itemOrId;
+  if(!it)return [];
+  if(Array.isArray(it.tags))return it.tags.slice();
+  return (ITEM_TAG_MAP[it.id]||[]).slice();
+}
+function itemHasTag(itemOrId,tag){return itemTags(itemOrId).indexOf(tag)>=0;}
+
+/* ---- ESTADO COMPACTO DE BUILD ---- */
+function itemStateInit(p,id){
+  if(!p)return {};
+  if(!p.itemState||typeof p.itemState!=='object')p.itemState={};
+  if(!p.itemState[id])p.itemState[id]={};
+  return p.itemState[id];
+}
+function itemStateGet(p,id,key,def){const st=itemStateInit(p,id);return st[key]==null?def:st[key];}
+function itemStateSet(p,id,key,val){itemStateInit(p,id)[key]=val;return val;}
+function itemStateInc(p,id,key,delta,minMax){
+  const st=itemStateInit(p,id);
+  const v=(st[key]||0)+(delta==null?1:delta);
+  const capped=minMax?Math.min(minMax[1],Math.max(minMax[0],v)):v;
+  st[key]=capped;return capped;
+}
+function itemStateClear(p,id,keys){
+  if(!p||!p.itemState||!p.itemState[id])return;
+  if(!keys){delete p.itemState[id];return;}
+  for(const k of keys)delete p.itemState[id][k];
+}
+function itemCdReady(p,id,sec){
+  const st=itemStateInit(p,id);
+  if((st.cd||0)>0)return false;
+  st.cd=sec||0;return true;
+}
+function itemStateFlags(p){
+  return (p&&p.itemState)||{};
+}
+/* avança timers/stacks/cooldowns e o estado Perfect Shield */
+function itemTick(p,dt){
+  if(!p||!dt)return;
+  for(const id in (p.itemState||{})){
+    const st=p.itemState[id];
+    if(st.cd>0)st.cd=Math.max(0,st.cd-dt);
+     for(const k of ['timer','lockT','windowT','pierceT','speedT','slowT','immT','burstT','dashT','healT']){
+       if(st[k]>0)st[k]=Math.max(0,st[k]-dt);
+     }
+  }
+  /* estado Perfect Shield: só nasce de shield CHEIO contínuo */
+  const full=p.shieldMax>0&&p.shield>=p.shieldMax-1e-6;
+  const st=itemStateInit(p,'_perfect');
+  if(full){
+    if(st.t==null)st.t=0;
+    st.t+=dt;
+    if(st.t>=PERFECT_SHIELD_SECONDS&&!st.fired){
+      st.fired=true;
+      itemEmit('onShieldFull',{player:p,reason:'perfect',seconds:Math.round(st.t*10)/10});
+    }
+  }else if(p.shieldMax>0&&p.shield<p.shieldMax-1e-6){
+    st.t=0;st.fired=false;
+  }
+  resetItemProcBudget(p);
+}
+const PERFECT_SHIELD_SECONDS=2.4;
+function resetPerfectShield(p){
+  const st=itemStateInit(p,'_perfect');st.t=0;st.fired=false;
+}
+/* ---- CACHE DE HANDLERS ---- */
+const _hookHandlerCache={v:null,byType:{}};
+function invalidateItemHooks(){_hookHandlerCache.v=null;_hookHandlerCache.byType={};}
+function activeItemHandlers(type,p){
+  p=p||player;
+  if(!p||!p.items)return [];
+  const v=p.itemVer||0;
+  if(_hookHandlerCache.v===v&&_hookHandlerCache.byType[type])return _hookHandlerCache.byType[type];
+  const all={};
+  for(const id of p.items){
+    const it=itemById(id);
+    if(it&&it.hooks)for(const k in it.hooks)all[k]=(all[k]||[]).concat([{id,hook:it.hooks[k]}]);
+  }
+  _hookHandlerCache.v=v;_hookHandlerCache.byType=all;
+  return all[type]||[];
+}
+/* ---- PROC GUARDS: profundidade + orçamento por frame + chave ---- */
+let _itemEmitDepth=0;
+let _itemProcStack=[];
+function resetItemProcBudget(p){
+  if(!p)return;
+  p._itemProcBudget=Math.max(80,(p.items.length||0)*12);
+}
+function _itemProcKey(type,id,ctx){
+  const t=ctx&&ctx.target;
+  return type+':'+id+':'+(t&&t.__id?t.__id:((t&&t.x)+','+(t&&t.y)));
+}
+function itemEmit(type,ctx){
+  const p=(ctx&&ctx.player)||player;
+  if(!p||!p.items||!p.items.length)return false;
+  if(p._itemProcBudget==null)resetItemProcBudget(p);
+  if(p._itemProcBudget<=0)return false;
+  if(_itemEmitDepth>4)return false;
+  const handlers=activeItemHandlers(type,p);
+  if(!handlers.length)return false;
+  _itemEmitDepth++;
+  let fired=false;
+  try{
+    for(const h of handlers){
+      if(p._itemProcBudget<=0)break;
+      const key=_itemProcKey(type,h.id,ctx);
+      if(_itemProcStack.indexOf(key)>=0)continue;
+      _itemProcStack.push(key);
+      p._itemProcBudget--;
+      const base={player:p,source:curAttacker,type,itemId:h.id,target:ctx&&ctx.target||null,
+        crit:!!(ctx&&ctx.crit),dmg:ctx&&ctx.dmg||0,kill:ctx&&ctx.kill||null,
+        kind:ctx&&ctx.kind||null,value:ctx&&ctx.value||0,real:ctx&&ctx.real||0,
+        absorbed:ctx&&ctx.absorbed||0,rest:ctx&&ctx.rest||0,
+        micro:!!(ctx&&ctx.micro),reason:ctx&&ctx.reason||null};
+      try{const res=h.hook.call(itemById(h.id),base,itemById(h.id),p);
+        if(res)itemEmitResult(type,h.id,p,res,base);}
+      catch(err){if(typeof console!=='undefined'&&console.warn)console.warn('[ITEM]',type,h.id,err);}
+      finally{_itemProcStack.pop();}
+      fired=true;
+    }
+  }finally{_itemEmitDepth--;}
+  return fired;
+}
+function itemEmitResult(type,id,p,res,ctx){
+  /* handlers podem DEVOLVER {emit,emitCtx} para disparar outro hook
+     sem chamar itemEmit manualmente — mantém o custo centralizado. */
+  if(res&&res.emit)itemEmit(res.emit,Object.assign({},ctx,res.emitCtx||{}));
+}
+
+/* ---- REMOÇÃO / REBUILD ---- */
+function _modBelongsToItem(modId,itemId){
+  return (typeof modId==='string')&&(
+    modId==='module.'+itemId||modId.indexOf('module.'+itemId+'.')===0||
+    modId==='item.'+itemId||modId.indexOf('item.'+itemId+'.')===0||
+    modId==='moral:item:'+itemId+':'||modId.indexOf('moral:item:'+itemId+':')===0);
+}
+function removeItemStatMods(p,itemId){
+  if(!p||!p.sm)return 0;
+  const before=p.sm.length;
+  p.sm=p.sm.filter(m=>!(_modBelongsToItem(m&&m.id,itemId)));
+  if(p.sm.length!==before)smRefresh(p);
+  return before-p.sm.length;
+}
+/* remove um item de uma build pelo caminho de DEV (stat pipeline + moral +
+   estado; efeitos diretos de HP/regen são best-effort). */
+function removeItemById(p,itemId){
+  if(!p||!p.items)return false;
+  if(p.items.indexOf(itemId)<0)return false;
+  p.items=p.items.filter(id=>id!==itemId);
+  itemStateClear(p,itemId);
+  removeItemStatMods(p,itemId);
+  applyMoralTuning(p);
+  invalidateItemHooks();p.itemVer=(p.itemVer||0)+1;
+  resetPerfectShield(p);
+  if(typeof devTaint==='function')try{devTaint();}catch(e){}
+  return true;
+}
+function grantItemInternal(p,it,silent){
+  if(!p||!it)return false;
+  if(p.items.indexOf(it.id)>=0)return false;
+  p.items.push(it.id);
+  itemStateInit(p,it.id);
+  it.apply(p);
+  applyMoralTuning(p);
+  invalidateItemHooks();p.itemVer=(p.itemVer||0)+1;
+  resetPerfectShield(p);
+  return true;
+}
+/* reseta a build preservando o essencial do RUN (DEV presets). */
+function resetBuildKeepRunBasics(p){
+  if(!p||!p._smBase)return false;
+  const keep={x:p.x,y:p.y,vx:p.vx,vy:p.vy,aim:p.aim,charId:p.charId,
+    coins:p.coins,level:p.level,xp:p.xp,xpNext:p.xpNext,
+    owned:p.owned,wi:p.wi,maxSlots:p.maxSlots};
+  for(const k in p)try{delete p[k];}catch(e){}
+  const n=makePlayer();
+  for(const k in n)p[k]=n[k];
+  for(const k in keep)p[k]=keep[k];
+  return true;
+}
+
+/* ---- SINERGIAS ATIVAS (DEV/pause, linguagem humana) ---- */
+function activeSynergies(p){
+  p=p||player;
+  const ids=p&&p.items?p.items.slice():[];
+  const has=id=>ids.indexOf(id)>=0;
+  const itemTagged=(id,t)=>itemHasTag(id,t);
+  const hasTag=t=>ids.some(id=>itemTagged(id,t));
+  const out=[];
+  if(hasTag('shield_break')&&hasTag('shield'))out.push('ESCUDO · QUEBRA');
+  if(hasTag('shield_full')&&hasTag('shield'))out.push('ESCUDO · PERFEITO');
+  if(hasTag('shield_regen'))out.push('ESCUDO · REGEN');
+  if(has('crit_cadeia')||has('olho')||has('crit_garra'))out.push('CRÍTICO');
+  if(hasTag('burn')||hasTag('corrode')||hasTag('chill'))out.push('STATUS · ELEM.');
+  if(hasTag('dash')&&hasTag('movement'))out.push('DASH · MOVIMENTO');
+  if(hasTag('economy')&&hasTag('risk'))out.push('ECONOMIA · RISCO');
+  if(has('trans_fratura')||has('trans_ressonante')||has('trans_conclusao')||
+     has('trans_temporal')||has('trans_espectral'))out.push('TRANSFORMADOR');
+  return out;
+}
+
+/* ---- CATÁLOGO NOVO (PR 11) — reworks + transformadores ---- */
+const NEW_ITEMS=[
+  /* SHIELD BREAK */
+  {id:'sb_pulso',nm:'PULSO DE FRATURA',price:46,rar:3,color:'#8ff6ff',
+   desc:'AO ROMPER ESCUDO: pulso de 170px (32+ondas) · COOLDOWN 10s',
+   tags:['shield','shield_break','aoe','risk'],
+   apply:p=>{smMul(p,'shieldDelay','item.sb_pulso.delay','PULSO · ESCUDO RECARREGA +30% MAIS LENTO',1.30);},
+   hooks:{onShieldBreak(ctx){
+     const p=ctx.player;if(!itemCdReady(p,'sb_pulso',10))return;
+     const R=170;const prev=curAttacker;curAttacker=null;
+     spawnRing(p.x,p.y,'#8ff6ff',12,R,.5);spawnShards(p.x,p.y,'#8ff6ff',12,5);
+     for(const e of enemies){if(e.dead||e.spawnT>0||e.phaseT>0)continue;
+       if(dist2(e.x,e.y,p.x,p.y)>R*R)continue;
+       damageEnemy(e,32+(wave||1)*3,p.x,p.y,false);}
+     curAttacker=prev;if(typeof floatText==='function')floatText(p.x,p.y-34,'PULSO DE FRATURA','#8ff6ff');
+   }}},
+  {id:'sb_janela',nm:'RESSONÂNCIA DE RUPTURA',price:50,rar:3,color:'#c56bff',
+   desc:'AO ROMPER ESCUDO: +45% DANO e +40% CRIT por 4s · COOLDOWN 9s',
+   tags:['shield','shield_break','crit_build','window'],
+   apply:p=>{smMul(p,'shieldMax','item.sb_janela.max','RUPTURA · −15% ESCUDO MÁX',.85);},
+   hooks:{onShieldBreak(ctx){
+     const p=ctx.player;if(!itemCdReady(p,'sb_janela',9))return;
+     smAdd(p,{id:'item.sb_janela.dmg',stat:'damage',type:'mult',value:1.45,dur:4,stacks:'replace',label:'JANELA +45% DANO'});
+     smAdd(p,{id:'item.sb_janela.crit',stat:'crit',type:'add',value:.40,dur:4,stacks:'replace',label:'JANELA +40% CRIT'});
+     floatText(p.x,p.y-44,'JANELA OFENSIVA · 4s','#c56bff');
+   }}},
+  {id:'sb_grilhao',nm:'GRILHÃO DE FRATURA',price:48,rar:3,color:'#39d98a',
+   desc:'AO ROMPER ESCUDO: aplica GELO + 0,8s de CONTROLE em 190px · CD 15s',
+   tags:['shield','shield_break','control','aoe'],
+   apply:p=>{smMul(p,'shieldRegen','item.sb_grilhao.regen','GRILHÃO · −20% REGEN ESCUDO',.80);},
+   hooks:{onShieldBreak(ctx){
+     const p=ctx.player;if(!itemCdReady(p,'sb_grilhao',15))return;
+     const R=190;const prev=curAttacker;curAttacker=p;
+     for(const e of enemies){if(e.dead||e.spawnT>0||e.phaseT>0)continue;
+       if(dist2(e.x,e.y,p.x,p.y)>R*R)continue;
+       applyStatus(e,'chill',4.5,.55,p);applyStatus(e,'stun',.8,1,p);}
+     curAttacker=prev;spawnRing(p.x,p.y,'#39d98a',10,R,.45);
+   }}},
+  /* FULL / PERFECT SHIELD */
+  {id:'fs_prisma',nm:'PRISMA PERFEITO',price:52,rar:4,color:'#ffd166',
+   desc:'ESCUDO CHEIO 2,4s → PRÓXIMO TIRO CRÍTICO · COOLDOWN 8s',
+   tags:['shield','shield_full','crit_build'],
+   apply:p=>{smMul(p,'shieldRegen','item.fs_prisma.regen','PRISMA −25% REGEN ESCUDO',.75);},
+   hooks:{onShieldFull(ctx){
+     const p=ctx.player;if(!itemCdReady(p,'fs_prisma',8))return;
+     itemStateSet(p,'fs_prisma','critLock',1);
+     floatText(p.x,p.y-46,'PRISMA PERFEITO · CRIT','#ffd166');
+   }}},
+  {id:'fs_casulo',nm:'CASULO ESTÁVEL',price:50,rar:4,color:'#7dffc4',
+   desc:'ESCUDO CHEIO 2,4s → PULSO DE GELO e +12 HP · CD 12s',
+   tags:['shield','shield_full','control','sustain'],
+   apply:p=>{smMul(p,'shieldMax','item.fs_casulo.max','CASULO −10% ESCUDO MÁX',.90);},
+   hooks:{onShieldFull(ctx){
+     const p=ctx.player;if(!itemCdReady(p,'fs_casulo',12))return;
+     const R=150;const prev=curAttacker;curAttacker=p;
+     for(const e of enemies){if(e.dead||e.spawnT>0||e.phaseT>0)continue;
+       if(dist2(e.x,e.y,p.x,p.y)>R*R)continue;applyStatus(e,'chill',4,.45,p);}
+     curAttacker=prev;p.hp=Math.min(p.maxHp,p.hp+12);spawnRing(p.x,p.y,'#7dffc4',10,R,.5);
+     floatText(p.x,p.y-44,'CASULO · +12 HP','#7dffc4');
+   }}},
+  {id:'fs_cinetica',nm:'CINÉTICA PERFEITA',price:44,rar:3,color:'#7df9ff',
+   desc:'ESCUDO CHEIO 2,4s → +20% VEL e −35% CD DASH por 3s · CD 10s',
+   tags:['shield','shield_full','dash','movement'],
+   apply:p=>{},
+   hooks:{onShieldFull(ctx){
+     const p=ctx.player;if(!itemCdReady(p,'fs_cinetica',10))return;
+     smAdd(p,{id:'item.fs_cinetica.speed',stat:'speed',type:'mult',value:1.20,dur:3,stacks:'replace',label:'CINÉTICA +20% VEL'});
+     itemStateSet(p,'fs_cinetica','dashCdMul',.65);itemStateSet(p,'fs_cinetica','dashT',3);
+     floatText(p.x,p.y-44,'CINÉTICA PERFEITA','#7df9ff');
+   }}},
+  /* SHIELD PIPELINE / REGEN */
+  {id:'rg_condensador',nm:'CONDENSADOR DE CAMPO',price:34,rar:2,color:'#8ff6ff',
+   desc:'+70% REGEN ESCUDO · +35% DELAY · −10% ESCUDO MÁX',
+   tags:['shield','shield_regen','tradeoff'],
+   apply:p=>{smMul(p,'shieldRegen','item.rg_condensador.regen','CONDENSADOR +70% REGEN',1.70);
+     smMul(p,'shieldDelay','item.rg_condensador.delay','CONDENSADOR +35% DELAY',1.35);
+     smMul(p,'shieldMax','item.rg_condensador.max','CONDENSADOR −10% MÁX',.90);}},
+  {id:'rg_peso',nm:'PLACA DE PRESSÃO',price:36,rar:2,color:'#8ff6ff',
+   desc:'+45% ESCUDO MÁX · −30% REGEN · −10% DELAY',
+   tags:['shield','shield_max','tradeoff'],
+   apply:p=>{smMul(p,'shieldMax','item.rg_peso.max','PLACA +45% MÁX',1.45);
+     smMul(p,'shieldRegen','item.rg_peso.regen','PLACA −30% REGEN',.70);
+     smMul(p,'shieldDelay','item.rg_peso.delay','PLACA −10% DELAY',.90);}},
+  {id:'rg_lagrima',nm:'LÁGRIMA CINÉTICA',price:32,rar:2,color:'#7df9ff',
+   desc:'−30% DELAY ESCUDO · −25% REGEN · +15% MÁX',
+   tags:['shield','shield_regen','dash','tradeoff'],
+   apply:p=>{smMul(p,'shieldDelay','item.rg_lagrima.delay','LÁGRIMA −30% DELAY',.70);
+     smMul(p,'shieldRegen','item.rg_lagrima.regen','LÁGRIMA −25% REGEN',.75);
+     smMul(p,'shieldMax','item.rg_lagrima.max','LÁGRIMA +15% MÁX',1.15);}},
+  /* CRIT BUILD */
+  {id:'crit_cadeia',nm:'CADEIA DE CRÍTICOS',price:48,rar:3,color:'#ffd166',
+   desc:'CRÍTICOS SEGUIDOS EMPILHAM ATÉ 5× (+8% DANO cada) · −15% DANO BASE',
+   tags:['crit','crit_build','damage','tradeoff'],
+   apply:p=>{smMul(p,'damage','item.crit_cadeia.damage','CADEIA −15% DANO',.85);smFlat(p,'crit','item.crit_cadeia.crit','CADEIA +4% CRIT',.04);},
+   hooks:{onCrit(ctx){
+     const p=ctx.player;const st=itemStateInit(p,'crit_cadeia');
+     st.stacks=Math.min(5,(st.stacks||0)+1);
+     smAdd(p,{id:'item.crit_cadeia.stack',stat:'damage',type:'add',value:.08*st.stacks,dur:6,stacks:'replace',label:'CADEIA +'+Math.round(st.stacks*8)+'% DANO'});
+     devProcLog(ctx,'CADEIA '+st.stacks+'/5');
+   }}},
+  {id:'crit_garra',nm:'GARRA DO PREDADOR',price:46,rar:3,color:'#ff5c7a',
+   desc:'CRÍTICO EM ALVO COM STATUS SOLTA CORRENTE · +8% CRIT · COOLDOWN 2,5s',
+   tags:['crit','crit_build','status'],
+   apply:p=>{smFlat(p,'crit','item.crit_garra.crit','GARRA +8% CRIT',.08);smMul(p,'critMul','item.crit_garra.critd','GARRA +15% DANO CRIT',1.15);},
+   hooks:{onCrit(ctx){
+     const p=ctx.player,e=ctx.target;if(!e||!e.st)return;
+     if(!(e.st.burnT>0||e.st.bleedT>0||e.st.corrT>0||e.st.chillP>0||e.st.shockT>0||e.st.stunT>0))return;
+     if(!itemCdReady(p,'crit_garra',2.5))return;
+     chainShock(e,(ctx.dmg||0)*.55,1,p);
+   }}},
+  /* STATUS BUILD */
+  {id:'st_inverno',nm:'INVERNO SINTÉTICO',price:46,rar:3,color:'#7fd8ff',
+   desc:'CONGELAMENTO → PULSO DE GELO em 170px · CD 8s · +8% STATUS',
+   tags:['status','chill','control','aoe'],
+   apply:p=>{p.stBoost=(p.stBoost||1)*1.08;},
+   hooks:{onStatusApply(ctx){
+     const p=ctx.player,e=ctx.target;if(!e||ctx.kind!=='chill')return;
+     if(!(e.st&&e.st.stunT>0))return;
+     if(!itemCdReady(p,'st_inverno',8))return;
+     const R=170;const prev=curAttacker;curAttacker=p;
+     for(const o of enemies){if(o.dead||o.spawnT>0||o===e)continue;
+       if(dist2(o.x,o.y,e.x,e.y)>R*R)continue;applyStatus(o,'chill',3,.45,p);}
+     curAttacker=prev;spawnRing(e.x,e.y,'#7fd8ff',10,R,.5);devProcLog(ctx,'INVERNO · GELO');
+   }}},
+  {id:'st_corrosivo',nm:'CASCATA CORROSIVA',price:50,rar:3,color:'#a8ff3d',
+   desc:'3× CORROSÃO NO ALVO → propaga para 2 vizinhos · CD 9s',
+   tags:['status','corrode','aoe','control'],
+   apply:p=>{p.virulent=(p.virulent||1)*1.25;},
+   hooks:{onStatusApply(ctx){
+     const p=ctx.player,e=ctx.target;if(!e||ctx.kind!=='corrode')return;
+     const st=itemStateInit(p,'st_corrosivo');
+     st.tmp=(st.tmp||0)+1;if(st.tmp<3)return;
+     if(!itemCdReady(p,'st_corrosivo',9))return;
+     st.tmp=0;const R=180;let made=0;
+     const prev=curAttacker;curAttacker=p;
+     for(const o of enemies){if(o.dead||o.spawnT>0||o===e||made>=2)continue;
+       if(dist2(o.x,o.y,e.x,e.y)>R*R)continue;applyStatus(o,'corrode',5,.14,p);made++;}
+     curAttacker=prev;if(made)spawnRing(e.x,e.y,'#a8ff3d',8,R,.5);devProcLog(ctx,'CASCATA · '+made);
+   }}},
+  /* DASH BUILD */
+  {id:'dash_eco',nm:'MOTOR DE VÁCUO',price:42,rar:2,color:'#7df9ff',
+   desc:'PÓS-DASH: +12% DANO por até 3s (empilha até 3×) · −8% VEL',
+   tags:['dash','movement','damage'],
+   apply:p=>{smMul(p,'speed','item.dash_eco.speed','MOTOR −8% VEL',.92);},
+   hooks:{onDashEnd(ctx){
+     const p=ctx.player;const st=itemStateInit(p,'dash_eco');
+     st.stacks=Math.min(3,(st.stacks||0)+1);
+     smAdd(p,{id:'item.dash_eco.stack',stat:'damage',type:'add',value:.12*st.stacks,dur:3,stacks:'replace',label:'DASH +'+Math.round(st.stacks*12)+'% DANO'});
+   }}},
+  {id:'dash_fase',nm:'FRAGMENTO DE FASE',price:46,rar:3,color:'#c56bff',
+   desc:'DASH: próximo disparo PERFURA +2 e é CRÍTICO · CD 7s',
+   tags:['dash','projectile','pierce','movement'],
+   apply:p=>{p.dashCdMax*=1.10;},
+   hooks:{onDash(ctx){
+     const p=ctx.player;if(!itemCdReady(p,'dash_fase',7))return;
+     itemStateSet(p,'dash_fase','pierceT',3);itemStateSet(p,'dash_fase','critLock',1);
+     floatText(p.x,p.y-36,'FRAGMENTO DE FASE','#c56bff');
+   }}},
+  /* ECONOMY BUILD */
+  {id:'eco_risco',nm:'APOSTA DE MERCADO',price:38,rar:2,color:'#ffd166',
+   desc:'+65% CRÉDITOS · −12% DANO · +10% DANO RECEBIDO',
+   tags:['economy','risk','tradeoff'],
+   apply:p=>{smMul(p,'coinMul','item.eco_risco.coin','APOSTA +65% CRÉDITOS',1.65);
+     smMul(p,'damage','item.eco_risco.dmg','APOSTA −12% DANO',.88);
+     smMul(p,'dmgTaken','item.eco_risco.taken','APOSTA +10% DANO RECEBIDO',1.10);}},
+  {id:'eco_divida',nm:'DÍVIDA TEMPORAL',price:42,rar:2,color:'#ffb347',
+   desc:'+100% CRÉDITOS · −30% ESCUDO MÁX · +14% DANO RECEBIDO',
+   tags:['economy','risk','tradeoff','shield'],
+   apply:p=>{smMul(p,'coinMul','item.eco_divida.coin','DÍVIDA +100% CRÉDITOS',2.0);
+     smMul(p,'shieldMax','item.eco_divida.max','DÍVIDA −30% ESCUDO MÁX',.70);
+     smMul(p,'dmgTaken','item.eco_divida.taken','DÍVIDA +14% DANO RECEBIDO',1.14);}},
+  /* TRANSFORMADORES */
+  {id:'trans_fratura',nm:'LÂMINA DE RUPTURA',price:64,rar:4,color:'#8ff6ff',transformer:true,
+   desc:'TRANSFORMADOR · ROMPER ESCUDO → PRÓXIMA RAJADA PERFURA ALVOS por 3s',
+   tags:['transformer','shield_break','projectile','pierce'],
+   apply:p=>{smMul(p,'shieldMax','item.trans_fratura.max','LÂMINA −20% ESCUDO MÁX',.80);},
+   hooks:{onShieldBreak(ctx){
+     const p=ctx.player;if(!itemCdReady(p,'trans_fratura',9))return;
+     itemStateSet(p,'trans_fratura','pierceT',3);
+     floatText(p.x,p.y-42,'LÂMINA DE RUPTURA · PERFURAÇÃO','#8ff6ff');devProcLog(ctx,'TRANSFORMADOR · LÂMINA');
+   }}},
+  {id:'trans_ressonante',nm:'CORAÇÃO TRANSPOSTO',price:68,rar:4,color:'#ff4df0',transformer:true,
+   desc:'TRANSFORMADOR · RESSONÂNCIA/MICRO → PULSO + RECARGA DASH 3s',
+   tags:['transformer','resonance','echo','aoe'],
+   apply:p=>{p.resoPower=(p.resoPower||1)*1.25;},
+   hooks:{onResonance(ctx){
+     const p=ctx.player;if(!itemCdReady(p,'trans_ressonante',6))return;
+     const R=ctx.micro?110:180;const dmg=(ctx.dmg||40)*1.15;
+     const prev=curAttacker;curAttacker=null;spawnRing(p.x,p.y,'#ff4df0',10,R,.5);
+     for(const e of enemies){if(e.dead||e.spawnT>0||e.phaseT>0)continue;
+       if(dist2(e.x,e.y,p.x,p.y)>R*R)continue;damageEnemy(e,dmg,p.x,p.y,false);}
+     curAttacker=prev;p.dashCd=Math.min(p.dashCd,Math.max(0,p.dashCd-.35*(p.dashCdMax||1)));
+     devProcLog(ctx,'RESSONÂNCIA · PULSO');
+   }}},
+  {id:'trans_conclusao',nm:'CONCLUSÃO',price:70,rar:4,color:'#ffd166',transformer:true,
+   desc:'TRANSFORMADOR · 3 STATUS NO MESMO ALVO → PRÓXIMO TIRO CRÍTICO',
+   tags:['transformer','crit_build','status'],
+   apply:p=>{smMul(p,'damage','item.trans_conclusao.dmg','CONCLUSÃO −15% DANO',.85);},
+   hooks:{onStatusApply(ctx){
+     const p=ctx.player,e=ctx.target;if(!e||!e.st)return;
+     let n=0;for(const k of ['burnT','bleedT','corrT','chillP','shockT','stunT'])
+       if(e.st[k]>0)n++;
+     if(n>=3&&itemCdReady(p,'trans_conclusao',8)){itemStateSet(p,'trans_conclusao','critLock',1);devProcLog(ctx,'CONCLUSÃO · CRIT');}
+   }}},
+  {id:'trans_temporal',nm:'MERCADO DE FUTUROS',price:66,rar:4,color:'#ffb347',transformer:true,
+   desc:'TRANSFORMADOR · +90% CRÉDITOS · −25% ESCUDO MÁX · ABATE CONVERTE 5 POÇÕES',
+   tags:['transformer','economy','risk'],
+   apply:p=>{smMul(p,'coinMul','item.trans_temporal.coin','FUTUROS +90% CRÉDITOS',1.90);
+     smMul(p,'shieldMax','item.trans_temporal.max','FUTUROS −25% ESCUDO MÁX',.75);},
+   hooks:{onKill(ctx){
+     const p=ctx.player;if(!itemCdReady(p,'trans_temporal',3.5))return;
+     p.coins+=5;floatText(p.x,p.y-24,'+5 ◈','#ffb347');
+   }}},
+  {id:'trans_espectral',nm:'ESPECTRO DE DASH',price:72,rar:4,color:'#c56bff',transformer:true,
+   desc:'TRANSFORMADOR · DASH → CRIT + PERFURAÇÃO 4s · +25% CD DASH',
+   tags:['transformer','dash','crit_build','movement'],
+   apply:p=>{p.dashCdMax*=1.25;},
+   hooks:{onDashEnd(ctx){
+     const p=ctx.player;if(!itemCdReady(p,'trans_espectral',8))return;
+     itemStateSet(p,'trans_espectral','critLock',1);itemStateSet(p,'trans_espectral','pierceT',4);
+     floatText(p.x,p.y-38,'ESPECTRO DE DASH','#c56bff');devProcLog(ctx,'ESPECTRO · CRIT+P'
+     );
+   }}}
+];
+(function(){for(const it of NEW_ITEMS){if(it.rar==null)it.rar=it.price>=60?4:it.price>=44?3:1;ITEMS.push(it);}})();
+
+/* ---- DEV PROC LOG (compacto) ---- */
+function devProcLog(ctx,msg){
+  try{if(DEV_MODE&&typeof devLog==='function')devLog(ctx.type.toUpperCase()+' → '+(msg||''));}catch(e){}
+}
+/* ---- ACESSORES DE ESTADO USADOS PELO CÓDIGO DE COMBATE ---- */
+function consumeCritLock(p){
+  if(!p||!p.itemState)return false;
+  for(const id in p.itemState){
+    const st=p.itemState[id];
+    if(st&&st.critLock&&st.critLock>0){st.critLock=0;return true;}
+  }
+  return false;
+}
+function effectivePierceItem(p){
+  if(!p||!p.items)return 0;
+  let extra=0;
+  for(const id of p.items){
+    const st=p.itemState&&p.itemState[id];
+    if(st&&st.pierceT&&st.pierceT>0)extra=Math.max(extra,st.pierceT|0);
+  }
+  return extra;
+}
+/* ---- DEV INSPECTOR DE BUILD ---- */
+function devBuildInspector(p){
+  p=p||player;
+  if(!p)return null;
+  const ids=p.items.slice();
+  const items=ids.map(id=>{
+    const it=itemById(id);
+    const st=p.itemState&&p.itemState[id]||{};
+    return {id,nm:it?it.nm:id,tags:itemTags(id),
+      hooks:it&&it.hooks?Object.keys(it.hooks):[],
+      stacks:st.stacks||0,cooldown:st.cd||0,state:st,
+      aff:getItemMoralAffinity(id)};
+  });
+  return {
+    count:ids.length,
+    tags:[...new Set(ids.reduce((a,id)=>a.concat(itemTags(id)),[]))],
+    hooks:[...new Set(items.reduce((a,it)=>a.concat(it.hooks),[]))],
+    items,
+    itemState:p.itemState||{},
+    sm:(p.sm||[]).map(m=>({id:m.id,stat:m.stat,type:m.type,value:m.value,
+      dur:m.dur||0,label:m.label||m.id})),
+    synergies:activeSynergies(p),
+    affinity:getMoralProfile()
+  };
+}
+/* ---- BUILD PRESETS (DEV/teste) ---- */
+const BUILD_PRESETS={
+  shieldbreak:{name:'SHIELD BREAK',ids:['sb_pulso','sb_janela','sb_grilhao','rg_peso','trans_fratura']},
+  fullshield:{name:'FULL SHIELD',ids:['fs_prisma','fs_casulo','fs_cinetica','rg_condensador','rg_peso']},
+  crit:{name:'CRIT',ids:['crit_cadeia','crit_garra','olho','fs_prisma','trans_conclusao']},
+  status:{name:'STATUS',ids:['st_inverno','st_corrosivo','criostase','catalis','trans_conclusao']},
+  dash:{name:'DASH',ids:['dash_eco','dash_fase','trans_espectral','espectro','ampulheta']},
+  economy:{name:'ECONOMY',ids:['eco_risco','eco_divida','iman','usura','trans_temporal']},
+  shieldmax:{name:'MAX SHIELD',ids:['rg_peso','rg_lagrima','placa','fs_cinetica','sb_grilhao']},
+  shieldregen:{name:'MAX SHIELD REGEN',ids:['rg_condensador','rg_lagrima','fs_cinetica','fs_prisma','placa']},
+  damage:{name:'MAX DAMAGE',ids:['nucleo','estilhaco','olho','crit_cadeia','trans_fratura']},
+  maxcrit:{name:'MAX CRIT',ids:['olho','crit_cadeia','crit_garra','fs_prisma','critx']},
+  controle:{name:'MAX CONTROL',ids:['criostase','st_inverno','sb_grilhao','fs_casulo','condutor']}
+};
+function applyBuildPreset(key,p,opts){
+  p=p||player;
+  const P=BUILD_PRESETS[key];if(!P||!p)return null;
+  resetBuildKeepRunBasics(p);
+  const installed=[];
+  for(const id of P.ids){const it=itemById(id);if(it&&grantItemInternal(p,it,true))installed.push(it);}
+  applyMoralTuning(p);p.itemVer=(p.itemVer||0)+1;resetItemProcBudget(p);
+  return {key,name:P.name,installed:installed.map(i=>i.id),count:installed.length};
+}
 /* =====================================================================
    SISTEMA DE RARIDADE
    0 COMUM · 1 INCOMUM · 2 RARO · 3 ÉPICO · 4 LENDÁRIO
@@ -5314,6 +5903,7 @@ function renderShop(){
       },
       shopIcon(it.id,it.color),
       lockCfgFor('item',it.id,it.nm)));
+    bindTip(mRow2.lastChild,()=>itemTipHTML(it));
   }
   // ---- REPARO DE EMERGÊNCIA: opção fixa, custo escala +50% por uso ----
   const rp=repairCost();
@@ -6491,7 +7081,8 @@ const RUN_EVENTS=[
       '<b>+10 de escudo máximo</b> e um kit médico.',
       [2,0,0],'',false,()=>{
         player.coins+=Math.round(30*mEff.coinMul);
-        player.shieldMax+=10;player.shield=Math.min(player.shieldMax,player.shield+10);
+        smFlat(player,'shieldMax','event.camara.shieldMax','CÂMARA +10 ESCUDO MÁX',10);
+        player.shield=Math.min(player.shieldMax,player.shield+10);
         pickups.push({type:'med',x:beacon.x+rand(-50,50),y:beacon.y+rand(-50,50),
           vx:0,vy:0,v:18,t:0});
         evSetFlag('camara_protocolo');
@@ -6672,7 +7263,8 @@ const RUN_EVENTS=[
       'O zumbido atrai companhia: <b>enxames extras nas próximas 2 ondas</b> — '+
       'cada um deles carrega créditos.',
       [0,1,0],'',false,()=>{
-        player.shieldMax+=12;player.shield=Math.min(player.shieldMax,player.shield+12);
+        smFlat(player,'shieldMax','event.gerador.shieldMax','GERADOR +12 ESCUDO MÁX',12);
+        player.shield=Math.min(player.shieldMax,player.shield+12);
         evVar('shieldRegenMul',1.4);
         evVar('shieldRegenUntil',wave+3);
         evSetFlag('gerador_ruidoso');
@@ -6751,7 +7343,8 @@ const RUN_EVENTS=[
       'e <b>+8 de escudo máximo</b>. O nó continua lá.',
       [2,0,0],'',false,()=>{
         player.visionUntil=wave+2;
-        player.shieldMax+=8;player.shield=Math.min(player.shieldMax,player.shield+8);
+        smFlat(player,'shieldMax','event.no.shieldMax','NÓ +8 ESCUDO MÁX',8);
+        player.shield=Math.min(player.shieldMax,player.shield+8);
         spawnRing(beacon.x,beacon.y,'#c9a9ff',10,150,.7);
         toast('NÓ ESTUDADO · ELITES REVELADOS POR 2 ONDAS');
       });
@@ -7064,7 +7657,8 @@ const RUN_EVENTS=[
       'O corredor respira, a sua run corre — <b>escudo +15 de capacidade</b> e regen '+
       'por 2 ondas. No radinho, a estática onde a voz da criança estava.',
       [0,1,1],'',false,()=>{
-        player.shieldMax+=15;player.shield=Math.min(player.shieldMax,player.shield+15);
+        smFlat(player,'shieldMax','event.nucleo.shieldMax','NÚCLEO +15 ESCUDO MÁX',15);
+        player.shield=Math.min(player.shieldMax,player.shield+15);
         evVar('shieldRegenMul',1.4);
         evVar('shieldRegenUntil',wave+2);
         evSetFlag('nucleo_salvo');
@@ -7476,7 +8070,8 @@ const RUN_EVENTS=[
       'Nada acontece por um longo minuto — depois ele <i>inclina a cabeça</i> e se vai. '+
       '<b>+10 de escudo máximo</b> que você jura não ter ganhado de ninguém.',
       [2,0,0],'',false,()=>{
-        player.shieldMax+=10;player.shield=Math.min(player.shieldMax,player.shield+10);
+        smFlat(player,'shieldMax','event.observador.shieldMax','OBSERVADOR +10 ESCUDO MÁX',10);
+        player.shield=Math.min(player.shieldMax,player.shield+10);
         evSetFlag('observado_de_volta');
         evEpilogue('ep_observado');
         spawnRing(beacon.x,beacon.y,'#eaffff',12,220,.8);
@@ -7793,7 +8388,8 @@ function applyOperatorLoad(opId,accept){
   const c=CHARS[charSel];if(!c)return;
   switch(opId){
     case 'vector':
-      if(accept){player.shieldMax+=12;player.shield=Math.min(player.shieldMax,player.shield+12);
+      if(accept){smFlat(player,'shieldMax','event.op.vector.shieldMax','ÂNCORA +12 ESCUDO MÁX',12);
+        player.shield=Math.min(player.shieldMax,player.shield+12);
         evVar('shieldRegenMul',1.4);evVar('shieldRegenUntil',wave+2);
         waveBuff('dmgTaken','x.op.vector','ÂNCORA CEDE +6% DANO RECEBIDO',1.06,2);}
       break;
@@ -7803,7 +8399,7 @@ function applyOperatorLoad(opId,accept){
       break;
     case 'bulwark':
       if(accept){player.maxHp+=30;player.hp=Math.min(player.maxHp,player.hp+30);
-        player.shieldMax=Math.max(0,player.shieldMax-15);
+        smFlat(player,'shieldMax','event.op.bulwark.shieldMax','RACHADURA −15 ESCUDO MÁX',-15);
         player.shield=Math.min(player.shield,player.shieldMax);}
       else waveBuff('dmgTaken','x.op.bulwark','RACHADURA ENSINA −20% DANO RECEBIDO',.80,2);
       break;
@@ -8352,11 +8948,13 @@ function updatePickups(dt){
       pickups.splice(i,1);
       if(o.type==='coin'){
         player.coins+=o.v;sXp();spawnParticles(o.x,o.y,'#ffd166',3,130,.2,2);
+        itemEmit('onPickup',{player,type:'coin',value:o.v});
       }else{
         const heal=o.v*(player.medBoost||1);   // HARDEN: kits curam o dobro
         player.hp=Math.min(player.maxHp,player.hp+heal);
         floatText(o.x,o.y-12,'+'+Math.round(heal)+' HP','#7dffc4');
         spawnRing(o.x,o.y,'#7dffc4',5,42,.35);sLvl();
+        itemEmit('onPickup',{player,type:'heal',value:heal});
       }
     }
   }
@@ -8809,7 +9407,9 @@ function buildWeaponHUD(){
 /* ---- [4] LÂMINA DE ARCO CINÉTICO: corte frontal com penetração infinita ---- */
 function fireMelee(src,def,team,mul){
   curAttacker=src;
-  const crit=Math.random()<(src.crit||0);
+  let _crit=Math.random()<(src.crit||0);
+  if(src===player&&consumeCritLock(src))_crit=true;
+  const crit=_crit;
   const cm=crit?(src.critMul||1.8):1;
   const reach=def.reach*(src.rangeMul||1);
   const half=def.arc/2;
@@ -8959,9 +9559,13 @@ function fireWeaponFrom(src,def,team,mul){
   // a personalidade; contagem O(1), sem alocação.
   if(src===player&&runSt)runSt.sh+=def.count||1;
   // MASSACRE: crítico garantido enquanto ativo
-  const crit=(src===player&&src.spKind==='massacre')||Math.random()<(src.crit||0);
+  let _crit=(src===player&&src.spKind==='massacre')||Math.random()<(src.crit||0);
+  /* PR 11: itens podem consumir um bloqueio de crítico (Prisma/Conclusion). */
+  if(src===player&&consumeCritLock(src))_crit=true;
+  const crit=_crit;
   const cm=crit?(src.critMul||1.8):1;
-  const rng=src.rangeMul||1,aoeM=src.aoeMul||1,pier=src.pierce||0;
+  const rng=src.rangeMul||1,aoeM=src.aoeMul||1,
+        pier=src.pierce+effectivePierceItem(src);
   for(let i=0;i<def.count;i++){
     const off=def.count>1?(i-(def.count-1)/2)*def.spread:0;
     const jt=def.spinUp?def.jitter*(1-.7*(src.spin||0)):def.jitter;
@@ -9149,7 +9753,12 @@ function tryDash(){
   if(dx===0&&dy===0){dx=Math.cos(player.aim);dy=Math.sin(player.aim);}
   const l=Math.hypot(dx,dy);player.dashDx=dx/l;player.dashDy=dy/l;
   player.dashT=.17*(player.dashLong||1);   // MANTO ESPECTRAL
-  player.dashCd=player.dashCdMax;
+  /* PR 11: itens podem alterar o custo do próximo dash (janelas de build) */
+  let _dashMul=1;
+  if(player&&itemStateGet(player,'fs_cinetica','dashT',0)>0)
+    _dashMul=itemStateGet(player,'fs_cinetica','dashCdMul',1)||1;
+  player.dashCd=player.dashCdMax*_dashMul;
+  itemEmit('onDash',{player});
   bumpProg('dashes');
   if(runSt)runSt.dsh++;                    // PR 8: dash — sinal de impulso/reposição
   if(player.wraithRush)player.rushT=2;      // WRAITH: +11% de dano por 2s
@@ -9254,6 +9863,8 @@ function damageEnemy(e,d,srcx,srcy,crit,isDot){
       // próprio (13s). Nunca farmável e sempre menor que a plena.
       if(!isP&&curAttacker&&curAttacker.trust!=null)echoRelResonance(curAttacker,true);
     }
+    /* PR 11: Micro-Ressonância reage como gatilho de itens (mais barato). */
+    itemEmit('onResonance',{target:e,by:curAttacker,baseDmg:d,dmg:d,micro:true});
     e.microTag=tag;e.microT=runTime;
   }
   // ESCUDO DE ELITE absorve antes da vida
@@ -9292,7 +9903,11 @@ function damageEnemy(e,d,srcx,srcy,crit,isDot){
     if(curAttacker===player&&player&&player.critHeal){
       player.hp=Math.min(player.maxHp,player.hp+player.critHeal);
     }
+    /* PR 11: hooks de crítico dos itens (build Crit/Status). */
+    if(curAttacker===player)itemEmit('onCrit',{target:e,dmg:d,crit:true});
   }else spawnParticles(e.x,e.y,e.color,3,190,.25,2.5);
+  /* PR 11: hook de acerto do jogador (nunca para DoT/repique de EA). */
+  if(curAttacker===player)itemEmit('onHit',{target:e,dmg:d,crit});
   // PROTOCOLO DE EXECUÇÃO: execução de alvos abaixo do limiar
   if(player&&player.execThreshold&&e.hp>0&&e.hp<=d&&
      e.hp<e.maxHp*player.execThreshold&&curAttacker===player){
@@ -9337,6 +9952,8 @@ function triggerResonance(e,by,baseDmg){
     }
   }
   curAttacker=prev;
+  /* PR 11: itens de Ressonância/Micro reagem aqui (pulse, cooldowns). */
+  itemEmit('onResonance',{target:e,by,baseDmg,dmg,micro:false});
   // recompensa a sintonia: confiança sobe no Echo participante (PR 10:
   // ponto único de mutação, com motivo e retornos decrescentes)
   if(by&&by!==player&&by.trust!=null&&!by.hostile)echoRelResonance(by,false);
@@ -9347,6 +9964,9 @@ function updateResonance(dt){
 }
 function killEnemy(e){
   e.dead=true;kills++;
+  /* PR 11: hooks de abate — apenas abate DIRETO do jogador dispara proc,
+     então explosões/cascatas não re-entram no mesmo gatilho (§8). */
+  if(curAttacker===player&&player)itemEmit('onKill',{target:e,kill:e});
   // ---- PROGRESSÃO ----
   bumpProg('kills');
   if(e.elite)bumpProg('elites');
@@ -9519,6 +10139,7 @@ function damagePlayer(d){
   const absorbed=Math.min(player.shield,real);
   player.shield=Math.max(0,player.shield-absorbed);
   player.shieldDelayT=player.shieldDelay;    // dano válido reinicia o delay
+  if(absorbed>0){resetPerfectShield(player);itemEmit('onShieldHit',{player,real,absorbed});}
   const rest=real-absorbed;
   if(rest>0)player.hp-=rest;
   player.hurtT=clamp(.18+real/70,.18,.55);
@@ -9536,6 +10157,8 @@ function damagePlayer(d){
     AUDIO.tone(rand(300,360),.18,'sine',.04,-140);
     if(runSt)runSt.sb++;                 // PR 8: registro de quebra de escudo
     echoReact('shieldBreak');            // PR 8: fala reativa (cooldown global segura o spam)
+    /* PR 11: BUILD DE QUEBRA — procs com cooldown interno (anti-loop §8/§14) */
+    itemEmit('onShieldBreak',{player,real,absorbed});
   }
   rumble(clamp(.25+real/60,.25,1),clamp(real/90,.15,.7),clamp(90+real*4,90,320));
   sHurt();
@@ -9558,6 +10181,8 @@ function damagePlayer(d){
     }
     curAttacker=prev;
   }
+  /* PR 11: dano recebido — hook unificado (depois de aplicar Shield/HP) */
+  itemEmit('onDamageTaken',{player,real,absorbed,rest});
   if(player.hp<=0){
     // TALISMÃ DO CICLO: revive uma vez
     if(player.revives>0){
@@ -9674,6 +10299,8 @@ function applyStatus(e,kind,dur,power,src){
     case 'stun':
       s.stunT=Math.max(s.stunT||0,dr);break;
   }
+  /* PR 11: itens de status reagem à aplicação de um efeito existente. */
+  if(src===player)itemEmit('onStatusApply',{target:e,kind,dur,power});
 }
 /* fator de dano recebido pelo alvo (corrosão) */
 function statusDmgMul(e){
@@ -11183,10 +11810,12 @@ function updatePlayer(dt){
   // CONTROLE: analógico esquerdo tem prioridade e é analógico de verdade
   if(PAD.on&&(PAD.mx||PAD.my)){ix=PAD.mx;iy=PAD.my;}
   if(p.dashT>0){
+    const _wasDash=p.dashT;
     p.dashT-=dt;
     p.vx=p.dashDx*950;p.vy=p.dashDy*950;
     pushGhost(p.ghosts,p.x,p.y,10);
     spawnParticles(p.x,p.y,'#7df9ff',2,90,.2,2);
+    if(_wasDash>0&&p.dashT<=0)itemEmit('onDashEnd',{player:p});
   }else{
     if(ix||iy){const l=Math.hypot(ix,iy);p.vx+=ix/l*p.accel*dt;p.vy+=iy/l*p.accel*dt;}
     const fr=Math.pow(.0018,dt);p.vx*=fr;p.vy*=fr;
@@ -11272,6 +11901,7 @@ function updatePlayer(dt){
     if(p.curseT<=0){p.curseT=0;smRemoveId(p,'status.oracle_curse.damage');}
   }
   smTick(p,dt);                 // expira outros modificadores temporários (PR 7)
+  itemTick(p,dt);               // PR 11: timers/cooldowns/Perfect Shield
   if(p.tempT>0){
     p.tempT-=dt;
     if(p.tempT<=0&&p.tempPen>0){
@@ -12425,6 +13055,9 @@ function smBuildCheckpoint(reason,waveOverride){
       owned:player.owned.slice(),wi:player.wi,maxSlots:player.maxSlots,
       /* módulos e histórico (upgLog é só para exibição) */
       items:player.items.slice(),upgLog:player.upgLog.slice(),
+      /* PR 11: estado compacto de BUILD (cooldowns/stacks/timers/charges).
+         NUNCA guardamos stats finais — só IDs + estado necessário. */
+      itemState:player.itemState?JSON.parse(JSON.stringify(player.itemState)):{},
       /* modificadores PERMANENTES do pipeline (temporários ficam de fora;
          PR 9: sintonia moral é DERIVADA — recalculada no resume, nunca salva) */
       sm:(player.sm||[]).filter(m=>m&&m.dur==null&&!m.cond&&!isMoralTuneModId(m.id))
@@ -12548,6 +13181,10 @@ function resumeRun(){
   player.maxSlots=clamp(num(q.maxSlots,player.maxSlots)|0,1,8);
   player.items=(Array.isArray(q.items)?q.items:[]).slice(0,64);
   player.upgLog=(Array.isArray(q.upgLog)?q.upgLog:[]).slice(0,400);
+  /* PR 11: estado de build é restaurado; save antigo (sem itemState) vira {}. */
+  player.itemState=(q.itemState&&typeof q.itemState==='object')?
+    JSON.parse(JSON.stringify(q.itemState)):{};
+  player.itemVer=0;invalidateItemHooks();resetItemProcBudget(player);
   /* modificadores permanentes capturados substituem os recém-nascidos:
      o pipeline recalcula os derivados a partir da base imutável — os
      multiplicadores NÃO são reaplicados em cima dos valores finais */
@@ -12605,6 +13242,22 @@ function resumeRun(){
   player.virulent=num(q.virulent,player.virulent||1);
   player.wraithRush=!!q.wraithRush||!!player.wraithRush;
   player.slowAura=num(q.slowAura,player.slowAura||1);
+  /* PR 11 · LEGACY: save de antes do PR 11 pode ter alterado shield
+     max/regen/delay DIRETAMENTE (eventos/operadores). Se o save NÃO tem
+     nenhum modificador de Shield no pipeline, essas mutações viram base
+     (override único) e continuam valendo; saves novos usam o pipeline. */
+  {
+    const hasShieldMod=(player.sm||[]).some(m=>
+      m.stat==='shieldMax'||m.stat==='shieldRegen'||m.stat==='shieldDelay');
+    if(!hasShieldMod){
+      const qMax=Math.max(0,num(q.shieldMax,player._smBase.shieldMax));
+      const qRegen=Math.max(0,num(q.shieldRegen,player._smBase.shieldRegen));
+      const qDelay=Math.max(0,num(q.shieldDelay,player._smBase.shieldDelay));
+      if(qMax!==player._smBase.shieldMax)player._smBase.shieldMax=qMax;
+      if(qRegen!==player._smBase.shieldRegen)player._smBase.shieldRegen=qRegen;
+      if(qDelay!==player._smBase.shieldDelay)player._smBase.shieldDelay=qDelay;
+    }
+  }
   smRefresh(player);
   applyMoralTuning(player);   // PR 9: sintonia derivada — recalculada, nunca duplicada
   /* Ecos do slot com a confiança do checkpoint */
@@ -15154,6 +15807,25 @@ function lockLineFor(t,id){
   return '<div class="tlock">🔒 BLOQUEADO — '+u.txt+
     '<br>PROGRESSO: '+c+' / '+u.max+'</div>';
 }
+/* PR 11 — tooltip de item com condição/efeito/trade-off/tags/cooldown */
+function itemTipHTML(it){
+  if(!it)return '';
+  const tags=itemTags(it).map(t=>{
+    const c=t.indexOf('risk')>=0?'#ff5c7a':t.indexOf('tradeoff')>=0?'#ffb347':
+      t.indexOf('shield')>=0?'#8ff6ff':t.indexOf('crit')>=0?'#ffd166':
+      t.indexOf('dash')>=0?'#7df9ff':t.indexOf('economy')>=0?'#c9a9ff':'#9db8c8';
+    return '<span class="cxtag" style="color:'+c+';border:1px solid '+c+
+      '55;background:'+c+'12">'+t.toUpperCase()+'</span>';
+  }).join(' ');
+  let h='<b style="color:'+it.color+'">'+it.nm+'</b><br>'+
+    '<span style="opacity:.8">'+it.desc+'</span>'+
+    (it.transformer?'<br><span style="color:#ff4df0">◆ TRANSFORMADOR — muda como a run é jogada</span>':'');
+  const hooks=it.hooks?Object.keys(it.hooks):[];
+  if(hooks.length)h+='<br><span style="color:#8ff6ff">GATILHOS: '+hooks.map(x=>x.replace('on','')).join(' · ')+'</span>';
+  if(tags)h+='<div style="margin-top:6px">'+tags+'</div>';
+  h+=moralAffinityTagHTML(it.id,false);
+  return h;
+}
 function weaponTipHTML(d){
   const rg=d.range||600;
   const stats=['DANO '+d.dmg];
@@ -15533,7 +16205,7 @@ function clearRunEntities(){
   // 4. repõe o HUD em repouso antes de qualquer frame novo
   hpfill.style.width='100%';hpnum.textContent='100 / 100';
   shfill.style.width='0%';shnum.textContent='0 / 0';
-  shbar.classList.remove('full','partial');shbar.classList.add('empty');
+  shbar.classList.remove('full','partial','perfect');shbar.classList.add('empty');
   waveEl.textContent='ONDA 01 / 20';timerEl.textContent='00:00 · ABATES 0';
   xpfill.style.width='0%';lvlEl.textContent='NV 1 · 0/20';
   dashfill.style.width='100%';dashwrap.classList.remove('ready');
@@ -15882,10 +16554,12 @@ const DEV={
     if(!devReady())return false;
     const m=clamp(Math.round(Number(v)),0,500);
     if(!isFinite(m))return false;
-    player.shieldMax=m;
-    player.shield=clamp(player.shield,0,m);
-    devTaint();devLog('ESCUDO MÁX = '+m+' (temporário)');
-    return m;
+    smRemoveId(player,'dev.shieldMax');
+    smAdd(player,{id:'dev.shieldMax',stat:'shieldMax',type:'override',value:m,
+      label:'DEV ESCUDO MÁX '+m,col:''});
+    player.shield=clamp(player.shield,0,player.shieldMax);
+    devTaint();devLog('ESCUDO MÁX = '+player.shieldMax+' (DEV via pipeline)');
+    return player.shieldMax;
   },
 
 /* ------------------------------- ECHOS ------------------------------ */
@@ -16212,6 +16886,50 @@ const DEV={
   listModules(){
     if(!player)return [];
     return player.items.slice();
+  },
+  /* PR 11: DEV add/remove de item específico (recalcula o build). */
+  addItem(id){
+    if(!devReady())return false;
+    const it=itemById(id);if(!it)return false;
+    if(ownsItem(id))return false;
+    grantItemInternal(player,it,true);
+    devTaint();devLog('ITEM + '+it.nm);
+    devRender();return it.id;
+  },
+  removeItem(id){
+    if(!devReady())return false;
+    if(!ownsItem(id))return false;
+    const it=itemById(id);const nm=it?it.nm:id;
+    removeItemById(player,id);
+    devTaint();devLog('ITEM − '+nm);
+    devRender();return true;
+  },
+  clearBuild(){
+    if(!devReady())return false;
+    const n=player.items.length;
+    resetBuildKeepRunBasics(player);
+    devTaint();devLog('BUILD LIMPA ('+n+' removidos)');
+    devRender();return true;
+  },
+  buildPreset(key){
+    if(!devReady())return false;
+    const r=applyBuildPreset(key,player);
+    if(!r)return false;
+    devTaint();
+    devLog('PRESET '+r.name+' → '+r.installed.join(', '));
+    devRender();return r;
+  },
+  buildInspector(){
+    return devBuildInspector(player);
+  },
+  buildDebug(){
+    const i=devBuildInspector(player);
+    if(!i)return null;
+    return {
+      count:i.count,ids:i.items.map(x=>x.id),
+      tags:i.tags,hooks:i.hooks,stacks:i.items.map(x=>({id:x.id,stx:x.stacks,cd:x.cooldown})),
+      itemState:i.itemState,sm:i.sm.length,synergies:i.synergies
+    };
   },
   openShop(){
     if(!devReady())return false;
@@ -16900,6 +17618,47 @@ function devRender(){
   for(const it of ITEMS)h+=devBtn('mod:'+it.id,it.id);
   h+='</div>';
 
+  /* ---- BUILD INSPECTOR + PRESETS (PR 11) ---- */
+  {
+    const bi=DEV.buildInspector();
+    h+='<h4>ITEM &amp; BUILD INSPECTOR'+(bi?(' · '+bi.count+' ITENS · '+bi.synergies.length+' SINERGIAS'):'')+'</h4>'+
+      '<div class="dvrow">'+
+      '<input class="dvin wide" id="dev-item-add" placeholder="adicionar item (id)">'+
+      devBtn('additem','ADD ITEM')+'</div>'+
+      '<div class="dvrow" style="margin-top:5px">'+
+      '<input class="dvin wide" id="dev-item-rem" placeholder="remover item (id)">'+
+      devBtn('remitem','REMOVER ITEM','warn')+devBtn('clearbuild','LIMPAR BUILD','warn')+
+      devBtn('buildinsp','INSPECTOR → LOG')+'</div>'+
+      '<div class="dvrow" style="margin-top:5px">'+
+      '<select class="dvin stat" id="dev-preset">';
+    for(const k in BUILD_PRESETS)h+='<option value="'+k+'">'+BUILD_PRESETS[k].name+'</option>';
+    h+='</select>'+devBtn('preset','APLICAR PRESET','gold')+'</div>';
+    if(bi){
+      h+='<div class="insp">'+
+        '<div class="row final"><span>ITENS ATIVOS</span><b>'+bi.count+'</b></div>'+
+        '<div class="row"><span>TAGS</span><b>'+bi.tags.join(' · ')+'</b></div>'+
+        '<div class="row"><span>HOOKS</span><b>'+bi.hooks.join(' · ')+'</b></div>'+
+        '<div class="row"><span>SINERGIAS</span><b>'+bi.synergies.join(' · ')+'</b></div>'+
+        '<div class="row"><span>STAT MODIFIERS</span><b>'+bi.sm.length+'</b></div>'+
+        '<div class="row final"><span>MORAL</span><b>'+bi.affinity.state+
+        (bi.affinity.dominant?' · '+MORAL_AXIS_LABEL[bi.affinity.dominant]:'')+'</b></div>';
+      for(const it of bi.items)
+        h+='<div class="row mod"><span>'+it.nm+(it.aff?' ✓':'')+'</span><span class="val">'+
+          it.tags.join('/')+(it.hooks.length?' · '+it.hooks.join(','):'')+
+          (it.stacks?' · S'+it.stacks:'')+(it.cooldown?' · CD '+it.cooldown.toFixed(1)+'s':'')+
+          '</span></div>';
+      const itemStateStr=[];
+      for(const id in bi.itemState){
+        const s=bi.itemState[id];const keys=Object.keys(s).filter(k=>s[k]);
+        if(keys.length)itemStateStr.push(id+'('+keys.map(k=>k+':'+s[k]).join(',')+')');
+      }
+      if(itemStateStr.length)
+        h+='<div class="row mod"><span>ITEM STATE</span><span class="val">'+
+          itemStateStr.join(' · ')+'</span></div>';
+      h+='</div>';
+    }
+  }
+
   h+='<h4>OPERADOR (PRÓXIMA RUN)</h4><div class="dvrow">';
   for(const c of CHARS)h+=devBtn('op:'+c.id,c.nm);
   h+='</div>';
@@ -17018,6 +17777,13 @@ function devCommand(c){
     case 'listmod':    return devLog('MÓDULOS: '+(DEV.listModules().join(', ')||'nenhum'));
     case 'shop':       return DEV.openShop();
     case 'reroll':     return DEV.reroll();
+    /* PR 11: build inspector / add-remove / presets */
+    case 'additem':    return DEV.addItem((document.getElementById('dev-item-add')||{}).value);
+    case 'remitem':    return DEV.removeItem((document.getElementById('dev-item-rem')||{}).value);
+    case 'clearbuild': return DEV.clearBuild();
+    case 'buildinsp':  return devLog('BUILD '+JSON.stringify(DEV.buildDebug()));
+    case 'binsp':      return DEV.buildInspector();
+    case 'preset':     return DEV.buildPreset((document.getElementById('dev-preset')||{}).value);
     case 'reso':       return devLog('RESO '+JSON.stringify(DEV.resonanceDebug()));
     case 'bossdbg':    return devLog('BOSS '+JSON.stringify(DEV.bossDebug()));
     case 'msetall':    return DEV.setMoral(devNum('dev-mc',0),devNum('dev-mg',0),devNum('dev-mv',0));
