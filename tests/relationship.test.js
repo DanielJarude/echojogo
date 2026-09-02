@@ -1145,8 +1145,17 @@ ok('a relação NÃO é buff tree: nenhum stat bruto novo',()=>{
     'critMul=','ECHO_DMG_CAP'])
     assert.ok(block.indexOf(bad)<0,'a relação mexe em stat: '+bad);
 });
-ok('finais (pickEnding) permanecem intocados — PR 10.5 é futuro',()=>{
-  assert.ok(/function pickEnding\(\)\{\s*const dark=moral\.greed\+moral\.viol/.test(RAWSRC));
+ok('finais: PR 10.5 reformou o bloco — relação/Dissonância PARTICIPAM do avaliador',()=>{
+  /* O guarda antigo travava o pickEnding legado (PR 10.5 era futuro).
+     O futuro chegou: agora buildEndingContext captura relação, confiança
+     e histórico de ruptura/reconciliação, e os finais novos (silencio,
+     exilio, dueto, refugio) derivam do ESTADO da run — nunca de RNG. */
+  assert.ok(/function pickEnding\(/.test(RAWSRC));
+  for(const k of ['liber','tirano','eterno'])
+    assert(RAWSRC.indexOf(k+':{')>=0,'final original preservado: '+k);
+  for(const k of ['silencio','exilio','dueto','refugio'])
+    assert(RAWSRC.indexOf(k+':{')>=0,'final PR 10.5 presente: '+k);
+  assert.ok(/buildEndingContext/.test(RAWSRC)&&/evaluateEndingCandidates/.test(RAWSRC));
 });
 ok('nada de facções / diretor / boss adaptativo / Echo↔Echo neste PR',()=>{
   for(const w of ['faction','FACTION','fractureDirector','FRACTURE_DIRECTOR',
