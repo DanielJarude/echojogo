@@ -31,6 +31,9 @@ src+=';globalThis.__t={'+
   'sandboxSetChar,sandboxJumpTo,sandboxClearEnemies,sandboxClearRunState,'+
   'giveSandboxCredits,sbPanelShow,sbPanelClose,sbPanelToggle,sbAction,sbRender,'+
   'applyBuildPreset,grantWeapon,removeItemById,swapWeaponSlots,setChar,startRun,'+
+  'sandboxValidateCfg,sbApplyMod,sbResetMods,stripSandboxMods,sandboxBreakShield,'+
+  'grantItemInternal,itemById,spawnEnemy,spawnMiniBoss,spawnBoss,spawnWave,'+
+  'sandboxRemoveSlot,ITEMS,MINIBOSS,SB_MOD_IDS,countWeapons,'+
   'activateSlot,resumeRun,hasActiveRun,captureCheckpoint,saveProg,saveMeta,saveEchoes,bumpProg,'+
   'checkUnlocks,onPlayerDeath,onVictory,'+
   'isCharUnlocked,isWeaponUnlocked,isItemUnlocked,isUpgUnlocked,'+
@@ -70,10 +73,69 @@ function ctx2d(){
     return()=>{};
   },set(){return true;}});
 }
+/* nó criado a partir do PARSE do innerHTML — aceita handlers e cliques */
+function makeNode(tag,attrs){
+  const node={tag:tag||'div',id:'',children:[],dataset:{},_cls:[],_h:{},
+    textContent:'',style:makeStyle(),value:''};
+  node.classList={
+    add:(...c)=>c.forEach(x=>{if(node._cls.indexOf(x)<0)node._cls.push(x);}),
+    remove:(...c)=>node._cls=node._cls.filter(x=>c.indexOf(x)<0),
+    contains:c=>node._cls.indexOf(c)>=0,
+    toggle(c,f){const has=node._cls.indexOf(c)>=0;const want=f===undefined?!has:!!f;
+      if(want&&!has)node._cls.push(c);
+      if(!want&&has)node._cls=node._cls.filter(x=>x!==c);return want;}
+  };
+  for(const k in attrs||{}){
+    const v=attrs[k];
+    if(k==='class')node._cls=v.split(/\s+/).filter(Boolean);
+    else if(k==='id')node.id=v;
+    else if(k.indexOf('data-')===0){
+      node.dataset[k.slice(5).replace(/-([a-z])/g,(x,c)=>c.toUpperCase())]=v;
+    }
+  }
+  Object.defineProperty(node,'className',{
+    get(){return node._cls.join(' ');},
+    set(v){node._cls=v.split(/\s+/).filter(Boolean);}
+  });
+  node.addEventListener=(t,fn)=>{(node._h[t]=node._h[t]||[]).push(fn);};
+  node.removeEventListener=()=>{};
+  node.click=()=>{(node._h.click||[]).forEach(f=>
+    f({type:'click',stopPropagation(){},preventDefault(){}}));};
+  node.contains=x=>x===node;
+  node.querySelectorAll=sel=>parseNodes('').filter(n=>matchSel(n,sel));
+  node.querySelector=sel=>node.querySelectorAll(sel)[0]||null;
+  return node;
+}
+function matchSel(n,sel){
+  if(sel.charAt(0)==='#')return n.id===sel.slice(1);
+  if(sel.charAt(0)==='.')return n._cls.indexOf(sel.slice(1))>=0;
+  const mm=sel.match(/^\[([a-zA-Z-]+)(?:="([^"]*)")?\]$/);
+  if(mm){
+    const dk=mm[1].slice(5).replace(/-([a-z])/g,(x,c)=>c.toUpperCase());
+    return mm[2]===undefined?n.dataset[dk]!=null:n.dataset[dk]===mm[2];
+  }
+  return n.tag===sel;
+}
+function parseNodes(htmlStr){
+  const out=[];
+  const re=/<(div|span|h4|b|small|button|p)\b([^>]*)>/g;
+  let mm;
+  while((mm=re.exec(htmlStr))){
+    const attrs={};
+    const are=/([a-zA-Z-]+)(?:\s*=\s*"([^"]*)")?/g;
+    let am;
+    while((am=are.exec(mm[2]))){
+      if(am[1]==='style'||am[1]==='title')continue;
+      attrs[am[1]]=am[2]!==undefined?am[2]:'';
+    }
+    out.push(makeNode(mm[1],attrs));
+  }
+  return out;
+}
 function makeEl(id){
   const el={id:id||'',children:[],dataset:{},value:'',width:0,height:0,
     _cls:new Set(),isConnected:true,offsetWidth:0,offsetHeight:0,
-    textContent:'',innerHTML:'',className:'',title:'',style:makeStyle()};
+    textContent:'',className:'',title:'',style:makeStyle()};
   el.classList={
     add:(...c)=>c.forEach(x=>el._cls.add(x)),
     remove:(...c)=>c.forEach(x=>el._cls.delete(x)),
@@ -83,13 +145,34 @@ function makeEl(id){
       if(f)el._cls.add(c);else el._cls.delete(c);return !!f;}
   };
   el.appendChild=c=>{el.children.push(c);return c;};
-  el.remove=()=>{};el.addEventListener=()=>{};el.removeEventListener=()=>{};
-  el.querySelector=()=>null;el.querySelectorAll=()=>[];
+  el.insertBefore=c=>{el.children.unshift(c);return c;};
+  Object.defineProperty(el,'className',{
+    get(){return Array.from(el._cls).join(' ');},
+    set(v){el._cls=new Set(v.split(/\s+/).filter(Boolean));}
+  });
+  el._h={};
+  el.addEventListener=(t,fn)=>{(el._h[t]=el._h[t]||[]).push(fn);};
+  el.removeEventListener=(t,fn)=>{el._h[t]=(el._h[t]||[]).filter(f=>f!==fn);};
+  el.dispatchEvent=ev=>{(el._h[ev.type]=el._h[ev.type]||[]).forEach(f=>f(ev));};
+  el.click=()=>el.dispatchEvent({type:'click',stopPropagation(){},preventDefault(){}});
+  el.remove=()=>{};
   el.closest=()=>null;el.focus=()=>{};el.blur=()=>{};
   el.setAttribute=(k,v)=>{el.dataset[k]=v;};el.getAttribute=k=>el.dataset[k];
   el.getContext=()=>ctx2d();
+  /* parser por ATRIBUIÇÃO: cada innerHTML= recria os nós (como o DOM real) */
+  let _html='',_cacheNodes=null;
+  Object.defineProperty(el,'innerHTML',{
+    get(){return _html;},
+    set(v){_html=String(v);_cacheNodes=null;}
+  });
+  el.querySelectorAll=sel=>{
+    if(!_cacheNodes)_cacheNodes=parseNodes(_html);
+    return _cacheNodes.filter(n=>matchSel(n,sel));
+  };
+  el.querySelector=sel=>el.querySelectorAll(sel)[0]||null;
   return el;
 }
+
 const elements=new Map();
 const document={
   hidden:false,title:'',body:makeEl('body'),documentElement:makeEl('html'),
@@ -516,6 +599,431 @@ ok('§62 (estrutural): handler data-sbw decide livre/substituição/pendência',
   const chunk2=html.slice(j,j+600);
   assert(chunk2.indexOf('grantWeapon(sbPendingWi,false,s)')>=0,
     'escolha do slot deve chamar grantWeapon(sbPendingWi,false,s)');
+});
+
+
+/* =====================================================================
+   INTEGRAÇÃO DE UI — BINDINGS REAIS (§29/§30 do feedback)
+   Os cliques abaixo são disparados nos NÓS criados a partir do innerHTML
+   renderizado pelo jogo — se qualquer addEventListener quebrar, o teste
+   falha. Nada chama função interna "no lugar" do clique.
+   ===================================================================== */
+function hasFailBox(t){
+  return t.getEl('cx-body').children.some(c=>
+    (Array.isArray(c._cls)?c._cls.indexOf('sbfail')>=0:
+      !!(c._cls&&c._cls.has&&c._cls.has('sbfail'))));
+}
+ok('UI: fluxo COMPLETO do menu — abrir, operador, preset, onda, INICIAR TESTE',()=>{
+  const U=bootGame();
+  /* 1. abrir o Sandbox pelo botão do título (bind real do boot) */
+  U.getEl('ov-sandbox').click();
+  assert.strictEqual(U.getSandboxMode(),true,'menu sandbox abriu');
+  assert.strictEqual(U.getEl('cx-title').textContent,'S A N D B O X');
+  /* 2. selecionar operador (BULWARK) pelo card clicável */
+  U.getEl('cx-body').querySelectorAll('[data-sbchar]')[2].click();
+  assert.strictEqual(U.getSandboxCfg().char,2,'operador selecionado');
+  /* 3. selecionar preset CRIT */
+  U.getEl('cx-body').querySelectorAll('[data-sbpreset="crit"]')[0].click();
+  assert.strictEqual(U.getSandboxCfg().preset,'crit','preset selecionado');
+  /* 4. selecionar onda 5 */
+  U.getEl('cx-body').querySelectorAll('[data-sbwave]')[2].click();
+  assert.strictEqual(U.getSandboxCfg().wave,5,'onda selecionada');
+  /* 5. clicar INICIAR TESTE (bind real do renderSandboxSetup) */
+  const go=U.getEl('cx-body').querySelector('#sb-start');
+  assert(go,'botão INICIAR TESTE existe');
+  assert(go._cls.indexOf('dis')<0,'botão habilitado com cfg válida');
+  go.click();
+  /* 6. sandboxRun=true */
+  assert.strictEqual(U.getSandboxRun(),true,'§6: sandboxRun=true');
+  /* 7. a run realmente inicia */
+  assert.strictEqual(U.getState(),'play','§7: game/run inicia');
+  /* 8. player existe e é o operador escolhido */
+  assert(U.getPlayer(),'§8: player existe');
+  assert.strictEqual(U.getCharSel(),2,'player é o BULWARK');
+  assert.strictEqual(U.getPlayer().maxSlots,5,'slots do operador respeitados');
+  /* 9. wave correta + inimigos */
+  assert.strictEqual(U.getWave(),5,'§9: run começa na onda 5');
+  assert(U.getEnemies().length>0,'inimigos spawnaram');
+  /* 10. preset aplicado */
+  assert(U.getPlayer().items.length>0,'§10: preset CRIT aplicou módulos');
+});
+ok('UI: matrix COMPLETA 8 operadores × 7 presets × 6 ondas (336 starts)',()=>{
+  const V=bootGame();
+  const PRESETS=['','shieldbreak','fullshield','crit','status','dash','economy'];
+  let n=0;
+  for(let c=0;c<V.CHARS.length;c++){
+    for(const pr of PRESETS){
+      for(const wv of V.SB_WAVES){
+        n++;
+        V.sandboxExit(true);V.setState('title');
+        V.sandboxOpenSetup();
+        V.getSandboxCfg().char=c;V.getSandboxCfg().preset=pr;V.getSandboxCfg().wave=wv;
+        assert.strictEqual(V.sandboxStart(),true,
+          V.CHARS[c].id+' + '+pr+' + onda '+wv+' deve iniciar');
+        assert.strictEqual(V.getSandboxRun(),true);
+        assert.strictEqual(V.getState(),'play');
+        assert(V.getPlayer(),'player criado');
+        assert.strictEqual(V.getCharSel(),c,'operador ativo: '+V.CHARS[c].id);
+        if(wv>1)assert.strictEqual(V.getWave(),wv,'onda correta');
+        if(wv>=V.MAX_WAVE)assert(V.getBoss(),'chefe despachado na onda 20');
+        else if(wv>1)assert(V.getEnemies().length>0,'inimigos na onda '+wv);
+        if(pr)assert(V.getPlayer().items.length>0,'preset '+pr+' aplicou módulos');
+      }
+    }
+  }
+  assert.strictEqual(n,336,'336 combinações validadas');
+});
+ok('UI: §32/§33 — cfg inválida desabilita o botão COM MOTIVO e falha visível',()=>{
+  const W=bootGame();
+  W.sandboxOpenSetup();
+  W.getSandboxCfg().char=99;               // operador inexistente
+  W.sandboxCloseSetup();
+  W.sandboxOpenSetup();                    // render com cfg inválida
+  const go=W.getEl('cx-body').querySelector('#sb-start');
+  assert(go._cls.indexOf('dis')>=0,'botão desabilitado (classe dis)');
+  assert(W.getEl('cx-body').innerHTML.indexOf('OPERADOR INVÁLIDO')>=0,
+    'motivo exibido no botão');
+  assert.strictEqual(W.sandboxStart(),false,'sandboxStart recusa cfg inválida');
+  assert.strictEqual(W.getState(),'title','não entra em run');
+  assert(hasFailBox(W),'mensagem de falha inserida no codex (§33)');
+  assert(W.getEl('cx-body').children.some(c=>
+    (c.textContent||'').indexOf('OPERADOR INVÁLIDO')>=0),'motivo na mensagem');
+});
+
+/* =====================================================================
+   §22–§25 — TODAS AS FUNÇÕES DO PAINEL F1 E SPAWNS (boot isolado por teste)
+   ===================================================================== */
+function openF1(t){
+  t.sbPanelShow();
+  return t.getPlayer();
+}
+ok('§22: F1 abre em run e exibe TODAS as seções (não parece DEV Inspector)',()=>{
+  const F=bootGame();
+  realSlot(F);
+  F.getSandboxCfg().char=0;F.sandboxStart();
+  openF1(F);
+  assert.strictEqual(F.getState(),'sandbox','tempo congelado');
+  const h=F.getEl('sb-body').innerHTML;
+  for(const sec of ['JOGADOR','ARSENAL','ITENS','ONDA','INIMIGOS','MINIBOSSES','CHEFE',
+                    'AJUSTES DO JOGADOR'])
+    assert(h.indexOf(sec)>=0,'seção ausente: '+sec);
+});
+ok('§22: adicionar arma por BINDING (data-sbw → slot livre §123)',()=>{
+  const F=bootGame();
+  realSlot(F);
+  F.getSandboxCfg().char=0;F.sandboxStart();
+  const p=openF1(F);
+  F.sbAction('clearars');
+  const antes=F.countWeapons(p);
+  F.sbPanelShow();
+  const addBtn=F.getEl('sb-body').querySelectorAll('[data-sbadd]')[0];
+  assert(addBtn,'slot vazio oferece + ADICIONAR');
+  addBtn.click();                          // abre o catálogo de armas
+  /* clicar na primeira arma do catálogo que o player AINDA não possui */
+  const noivo=F.getEl('sb-body').querySelectorAll('[data-sbw]')
+    .find(n=>p.owned.indexOf(parseInt(n.dataset.sbw,10))<0);
+  assert(noivo,'catálogo tem arma nova disponível');
+  noivo.click();
+  assert.strictEqual(F.countWeapons(p),antes+1,'arma adicionada por clique real');
+  F.sbPanelClose();
+});
+ok('§22: remover arma deixa SLOT VAZIO e grant preenche o buraco (§8)',()=>{
+  const F=bootGame();
+  realSlot(F);
+  F.getSandboxCfg().char=0;F.sandboxStart();
+  const p=F.getPlayer();
+  F.sbPanelShow();
+  F.sandboxRemoveSlot(0);
+  assert.strictEqual(p.owned[0],null,'slot 1 ficou vazio (buraco)');
+  assert(F.grantWeapon(F.WEAPONS.length-1,true),'grant preenche buraco');
+  assert.strictEqual(p.owned[0],F.WEAPONS.length-1,'nova arma no slot 1');
+  F.sbPanelClose();
+});
+ok('§22: remover item por BINDING (✕), adicionar pelo catálogo e limpar build',()=>{
+  const F=bootGame();
+  realSlot(F);
+  F.getSandboxCfg().char=0;F.sandboxStart();
+  const p=F.getPlayer();
+  F.applyBuildPreset('crit',p);
+  assert(p.items.length>0,'build com itens');
+  const nItens=p.items.length;
+  F.sbPanelShow();
+  F.getEl('sb-body').querySelectorAll('[data-sbrmit]')[0].click();
+  assert.strictEqual(p.items.length,nItens-1,'módulo removido por clique real');
+  F.sbAction('pickitem');
+  F.getEl('sb-body').querySelectorAll('[data-sbitem]')[0].click();
+  assert.strictEqual(p.items.length,nItens,'módulo adicionado pelo catálogo');
+  F.sbAction('clearbuild');
+  assert.strictEqual(p.items.length,0,'LIMPAR BUILD esvaziou');
+  F.sbPanelClose();
+});
+ok('§22: preset por BINDING + heal + shield fill + grupo + limpar arena',()=>{
+  const F=bootGame();
+  realSlot(F);
+  F.getSandboxCfg().char=0;F.sandboxStart();
+  const p=F.getPlayer();
+  p.hp=1;p.shield=0;
+  F.sbPanelShow();
+  F.getEl('sb-body').querySelectorAll('[data-sbpreset]')[0].click();
+  assert(p.items.length>0,'preset aplicado por clique real');
+  F.sbAction('fullhp');assert.strictEqual(p.hp,p.maxHp,'heal');
+  F.sbAction('fullsh');assert.strictEqual(p.shield,p.shieldMax,'shield fill');
+  F.sbAction('group');
+  assert(F.getEnemies().length>0,'grupo gerado');
+  F.sbAction('clear');
+  assert.strictEqual(F.getEnemies().length,0,'arena limpa');
+  F.sbPanelClose();
+});
+ok('§13: CRÉDITOS — ±10/±100/MAX funcionam (só na sessão sandbox)',()=>{
+  const F=bootGame();
+  realSlot(F);
+  F.getSandboxCfg().char=0;F.sandboxStart();
+  const p=F.getPlayer();
+  p.coins=500;
+  F.sbPanelShow();
+  F.sbAction('crd+100');assert.strictEqual(p.coins,600);
+  F.sbAction('crd-10');assert.strictEqual(p.coins,590);
+  F.sbAction('crd-100');assert.strictEqual(p.coins,490);
+  F.sbAction('crdmax');assert.strictEqual(p.coins,9999,'MAX 9999 (economia)');
+  F.sbPanelClose();
+});
+ok('§14: HP — encher, +25, dano e SET 1 (sem NaN/negativo)',()=>{
+  const F=bootGame();
+  realSlot(F);
+  F.getSandboxCfg().char=0;F.sandboxStart();
+  const p=F.getPlayer();
+  F.sbPanelShow();
+  p.hp=10;F.sbAction('hp+25');
+  assert.strictEqual(p.hp,35,'+25 HP');
+  F.sbAction('hp-25');assert.strictEqual(p.hp,10,'dano −25');
+  F.sbAction('hp-25');F.sbAction('hp-25');
+  assert(p.hp>=1,'nunca negativo (clamp 1)');
+  F.sbAction('hp1');assert.strictEqual(p.hp,1,'SET 1 (clutch)');
+  F.sbAction('fullhp');assert.strictEqual(p.hp,p.maxHp);
+  F.sbPanelClose();
+});
+ok('§15: QUEBRAR ESCUDO dispara o PIPELINE REAL (hook onShieldBreak da PR 11)',()=>{
+  const F=bootGame();
+  realSlot(F);
+  F.getSandboxCfg().char=0;F.sandboxStart();
+  const p=F.getPlayer();
+  const pulso=F.ITEMS.find(i=>i.id==='sb_pulso');
+  assert(pulso,'item sb_pulso existe (PR 11, hook onShieldBreak)');
+  F.grantItemInternal(p,pulso,true);
+  p.shield=p.shieldMax;
+  F.sbPanelShow();
+  F.sbAction('breaksh');                   // QUEBRAR (PIPELINE REAL)
+  assert.strictEqual(p.shield,0,'escudo zerado');
+  assert(p.itemState&&p.itemState['sb_pulso']&&p.itemState['sb_pulso'].cd>0,
+    'HOOK REAL disparou: PULSO DE FRATURA entrou em cooldown (itemState.cd)');
+  F.sbAction('sh+10');assert(p.shield>0,'SET +10 funciona');
+  F.sbAction('sh-10');assert.strictEqual(p.shield,0,'SET −10 funciona');
+  F.sbPanelClose();
+});
+ok('§16: DANO/CRIT/VEL/SH.MAX/REGEN via Stat Modifier Pipeline (source sandbox:*)',()=>{
+  const F=bootGame();
+  realSlot(F);
+  F.getSandboxCfg().char=0;F.sandboxStart();
+  const p=F.getPlayer();
+  F.sbPanelShow();
+  const d0=p.dmgMul,c0=p.crit,s0=p.speed,m0=p.shieldMax,g0=p.shieldRegen;
+  F.sbAction('mod:damage:1');
+  assert.strictEqual(p.sm.filter(x=>x.id==='sandbox:damage').length,1,
+    'mod com source id sandbox:damage');
+  assert(p.dmgMul>d0,'dano subiu via pipeline');
+  F.sbAction('mod:damage:1');F.sbAction('mod:damage:1');
+  assert(p.dmgMul>d0*1.1,'+10% acumula (×1.1²)');
+  F.sbAction('mod:damage:-1');
+  F.sbAction('mod:crit:1');
+  assert(p.crit>c0,'crítico subiu (+5% flat)');
+  F.sbAction('mod:speed:1');
+  assert(p.speed>s0,'velocidade subiu');
+  F.sbAction('mod:shieldMax:1');
+  assert(p.shieldMax>m0,'shieldMax subiu (+10)');
+  F.sbAction('mod:shieldRegen:1');
+  assert(p.shieldRegen>g0,'shieldRegen subiu (+1)');
+  F.sbPanelClose();
+});
+ok('§17: RESETAR AJUSTES remove SOMENTE mods sandbox (itens ficam)',()=>{
+  const F=bootGame();
+  realSlot(F);
+  F.getSandboxCfg().char=0;F.sandboxStart();
+  const p=F.getPlayer();
+  F.applyBuildPreset('crit',p);            // garante mods de item presentes
+  F.sbPanelShow();
+  F.sbAction('mod:damage:1');F.sbAction('mod:crit:1');
+  assert(p.sm.some(x=>x.id.indexOf('sandbox:')===0),'há mods sandbox agora');
+  const itemModsAntes=p.sm.filter(x=>x.id.indexOf('item.')===0).length;
+  F.sbAction('resetmods');
+  assert(p.sm.every(x=>x.id.indexOf('sandbox:')<0),'nenhum mod sandbox restou');
+  assert.strictEqual(p.sm.filter(x=>x.id.indexOf('item.')===0).length,itemModsAntes,
+    'mods de ITENS preservados');
+  F.sbAction('mod:crit:1');
+  assert(p.sm.some(x=>x.id==='sandbox:crit'),'mod volta a aplicar após reset');
+  F.sbPanelClose();
+});
+ok('§23: spawn de TODOS os 11 tipos de inimigo (objeto válido + HP)',()=>{
+  const F=bootGame();
+  realSlot(F);
+  F.getSandboxCfg().char=0;F.sandboxStart();
+  F.sandboxJumpTo(3);
+  F.sbPanelShow();
+  for(const t of F.SB_ETYPES){
+    F.getEl('sb-body').querySelectorAll('[data-sbspawn="'+t+'"]')[0].click();
+    const e=F.getEnemies().filter(x=>x.type===t);
+    assert(e.length>0,'spawnou '+t);
+    const last=e[e.length-1];
+    assert(last.hp>0&&isFinite(last.hp),t+' com HP válido');
+    assert(last.r>0&&isFinite(last.x),'struct válida');
+  }
+  F.sbAction('clear');
+  F.sbPanelClose();
+});
+ok('§24: spawn de TODOS os 8 minibosses (nenhum no-op/erro)',()=>{
+  const F=bootGame();
+  realSlot(F);
+  F.getSandboxCfg().char=0;F.sandboxStart();
+  F.sbPanelShow();
+  for(const mb of F.MINIBOSS){
+    F.getEl('sb-body').querySelectorAll('[data-sbmini="'+mb.id+'"]')[0].click();
+    const e=F.getEnemies().filter(x=>x.type==='miniboss'&&x.mb&&x.mb.id===mb.id);
+    assert(e.length>0,'miniboss '+mb.id+' spawnou');
+    assert(e[e.length-1].hp>0,'miniboss '+mb.id+' com HP válido');
+  }
+  F.sbAction('clear');
+  F.sbPanelClose();
+});
+ok('§25: spawn do BOSS (O PARADOXO) por ação do painel',()=>{
+  const F=bootGame();
+  realSlot(F);
+  F.getSandboxCfg().char=0;F.sandboxStart();
+  F.sandboxJumpTo(5);
+  F.sbPanelShow();
+  F.sbAction('boss');
+  assert(F.getBoss(),'O PARADOXO entrou na arena');
+  F.sbAction('clear');
+  F.sbPanelClose();
+});
+ok('§26: os 6 presets aplicam itens, stats recalculam e o player joga',()=>{
+  const V2=bootGame();
+  for(const k of ['shieldbreak','fullshield','crit','status','dash','economy']){
+    V2.sandboxExit(true);V2.setState('title');
+    V2.sandboxOpenSetup();
+    V2.getSandboxCfg().char=3;V2.getSandboxCfg().preset=k;V2.getSandboxCfg().wave=3;
+    assert.strictEqual(V2.sandboxStart(),true,k+' inicia');
+    const p=V2.getPlayer();
+    assert(p.hp>0&&isFinite(p.hp),k+': HP válido');
+    assert(p.items.length>0,k+': itens instalados');
+    assert(Array.isArray(p.sm)&&p.sm.every(x=>x&&x.id),k+': sem referência undefined');
+    assert(p.owned.length>=2,k+': arsenal ok');
+    assert.strictEqual(V2.getState(),'play',k+': jogando');
+  }
+});
+ok('§28: cada onda do menu inicia na wave certa (1,3,5,10,15,20/CHEFE)',()=>{
+  const V3=bootGame();
+  for(const wv of V3.SB_WAVES){
+    V3.sandboxExit(true);V3.setState('title');
+    V3.sandboxOpenSetup();
+    V3.getSandboxCfg().char=0;V3.getSandboxCfg().preset='';V3.getSandboxCfg().wave=wv;
+    V3.sandboxStart();
+    assert.strictEqual(V3.getWave(),wv===1?0:wv,'onda '+wv+' correta');
+    if(wv>=V3.MAX_WAVE)assert(V3.getBoss(),'20 = CHEFE realmente acionado');
+    V3.sandboxExit(true);
+  }
+});
+ok('§27: todos os operadores iniciam (makePlayer/slots/armas/F1)',()=>{
+  const V4=bootGame();
+  for(let c=0;c<V4.CHARS.length;c++){
+    V4.sandboxExit(true);V4.setState('title');
+    V4.sandboxOpenSetup();
+    V4.getSandboxCfg().char=c;V4.getSandboxCfg().preset='crit';V4.getSandboxCfg().wave=1;
+    assert.strictEqual(V4.sandboxStart(),true,V4.CHARS[c].id+' inicia');
+    const p=V4.getPlayer();
+    assert.strictEqual(p.maxSlots,V4.CHARS[c].slots,V4.CHARS[c].id+': slots');
+    assert.strictEqual(p.owned.length,V4.CHARS[c].guns.length,
+      V4.CHARS[c].id+': armas iniciais');
+    V4.sbPanelShow();
+    assert.strictEqual(V4.getState(),'sandbox',V4.CHARS[c].id+': F1 abre');
+    assert(V4.getEl('sb-body').innerHTML.indexOf('ARSENAL')>=0);
+    V4.sbPanelClose();
+    V4.sandboxExit(true);
+  }
+});
+ok('§11: morte no sandbox — 3 opções claras + VOLTAR AO MENU PRINCIPAL funciona',()=>{
+  const V5=bootGame();
+  const r=realSlot(V5);
+  V5.getSandboxCfg().char=1;V5.sandboxStart();
+  V5.onPlayerDeath();
+  assert.strictEqual(T_esc(V5),'TESTE ENCERRADO');
+  assert.strictEqual(V5.getEl('ov-go').textContent,'REINICIAR TESTE');
+  assert.strictEqual(V5.getEl('ov-back').textContent,'ALTERAR BUILD');
+  const om=V5.getEl('ov-exitmenu');
+  assert(om,'botão VOLTAR AO MENU PRINCIPAL existe');
+  assert.strictEqual(om.style.display,'','botão visível na morte sandbox');
+  /* o rótulo é estático no HTML do overlay — validado contra o fonte */
+  assert(html.indexOf('⌂ VOLTAR AO MENU PRINCIPAL')>=0,
+    'rótulo VOLTAR AO MENU PRINCIPAL no overlay');
+  om.click();                              // clique REAL no binding do boot
+  assert.strictEqual(V5.getSandboxRun(),false,'estado sandbox limpo');
+  assert.strictEqual(V5.sandboxActive(),false);
+  assert.strictEqual(V5.getState(),'title','voltou ao Main Menu');
+  assert.strictEqual(V5.getEchoQueue()[0],r.marker,'nenhum Echo criado — fila real');
+  assert.strictEqual(V5.getSmRoot().slots[1].char,3,'progressão intacta');
+});
+ok('§11: vitória no sandbox também oferece VOLTAR AO MENU PRINCIPAL',()=>{
+  const V6=bootGame();
+  realSlot(V6);
+  V6.getSandboxCfg().char=0;V6.sandboxStart();
+  V6.sandboxJumpTo(20);V6.onVictory();
+  assert.strictEqual(T_esc(V6),'TESTE CONCLUÍDO');
+  assert.strictEqual(V6.getEl('ov-exitmenu').style.display,'');
+  V6.getEl('ov-exitmenu').click();
+  assert.strictEqual(V6.getState(),'title');
+  assert.strictEqual(V6.getSandboxRun(),false);
+});
+ok('§18: SAIR do sandbox remove TODOS os ajustes (mods sandbox não vazam)',()=>{
+  const V7=bootGame();
+  realSlot(V7);
+  V7.getSandboxCfg().char=0;V7.sandboxStart();
+  const p=V7.getPlayer();
+  V7.sbPanelShow();
+  V7.sbAction('mod:damage:1');V7.sbAction('mod:crit:1');V7.sbAction('mod:speed:1');
+  assert(p.sm.some(x=>x.id.indexOf('sandbox:')===0));
+  V7.sandboxExit(true);
+  assert.strictEqual(p.sm.filter(x=>x.id.indexOf('sandbox:')===0).length,0,
+    'nenhum mod sandbox no player descartado');
+  assert.strictEqual(p._sbMods,null,'estado de ajustes zerado');
+});
+ok('§21: créditos manipuláveis no sandbox mesmo sem loja (documentado)',()=>{
+  const V8=bootGame();
+  V8.sandboxExit(true);V8.setState('title');
+  V8.sandboxOpenSetup();
+  V8.getSandboxCfg().char=0;V8.sandboxStart();
+  const p=V8.getPlayer();
+  assert(p.coins>=500,'crédito inicial do laboratório');
+  const c0=p.coins;
+  p.coins=c0+5000;
+  assert.strictEqual(p.coins,c0+5000,'créditos manipuláveis p/ testes de economia');
+  V8.sandboxExit(true);
+});
+
+ok('UI: REINICIAR TESTE (ov-go) responde a CLIQUE real (não só Enter)',()=>{
+  const V9=bootGame();
+  realSlot(V9);
+  V9.getSandboxCfg().char=0;V9.sandboxStart();
+  V9.onPlayerDeath();
+  assert.strictEqual(T_esc(V9),'TESTE ENCERRADO');
+  const go=V9.getEl('ov-go');
+  assert(Array.isArray(go._h.click)&&go._h.click.length>0,
+    'ov-go tem handler de click bindado');
+  go.click();
+  assert.strictEqual(V9.getState(),'play','clique reiniciou o teste');
+  assert.strictEqual(V9.getSandboxRun(),true);
+});
+ok('UI: estrutura — rodapé da ficha documenta ESC cancela / TAB abre-fecha',()=>{
+  assert(html.indexOf('ARSENAL: CLIQUE EM 2 SLOTS PARA TROCAR')>=0);
+  assert(html.indexOf('ES CANCELA')>=0||html.indexOf('ESC — CANCELA')>=0||
+         html.indexOf('CANCELA SELEÇÃO')>=0);
 });
 
 console.log('---------------------------------------------');

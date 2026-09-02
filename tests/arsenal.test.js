@@ -435,6 +435,68 @@ ok('§47: o Registro (TAB) renderiza TODOS os slots do operador',()=>{
     'seção ARSENAL presente no registro');
 });
 
+/* ============ §8 — SLOTS VAZIOS (buracos no meio) ============ */
+const N=bootGame();
+ok('§8: swapWeaponSlots move arma para slot vazio (exato do enunciado)',()=>{
+  unlock(N,[CHKEY.bulwark]);
+  const p=freshRun(N,2);                 // BULWARK 5 slots
+  const laser=wIdx(N)('beam');
+  p.owned=[null,null,laser];             // slot 3 = Laser · 1 e 2 vazios
+  p.wi=laser;
+  assert.strictEqual(N.swapWeaponSlots(2,0),true,'clicou 3, clicou 1');
+  assert.strictEqual(p.owned[0],laser,'Slot 1 = Laser');
+  assert.strictEqual(p.owned[2],null,'Slot 3 = vazio');
+});
+ok('§8: grantWeapon preenche o PRIMEIRO buraco antes de crescer',()=>{
+  const p=freshRun(N,0);                 // VECTOR 4 slots
+  p.owned=[0,null,1];                    // buraco no slot 2
+  assert.strictEqual(N.grantWeapon(wIdx(N)('orb'),true),true);
+  assert.strictEqual(p.owned[1],wIdx(N)('orb'),'entrou no buraco do slot 2');
+  assert.strictEqual(p.owned.length,3,'não cresceu o array');
+});
+ok('§8: cycleWeapon e setWeaponSlot ignoram buracos',()=>{
+  const p=freshRun(N,0);
+  p.owned=[0,null,1];
+  p.wi=0;
+  N.cycleWeapon(1);
+  assert.strictEqual(p.wi,1,'ciclar pulou o vazio');
+  const wiAntes=p.wi;
+  N.setWeaponSlot(1);                    // slot vazio: ignora
+  assert.strictEqual(p.wi,wiAntes,'setWeaponSlot em buraco é no-op');
+});
+ok('§8: buildWeaponHUD não quebra com buracos (placeholder VAZIO)',()=>{
+  const p=freshRun(N,0);
+  p.owned=[0,null,1];
+  assert.doesNotThrow(()=>N.buildWeaponHUD());
+});
+ok('§8: checkpoint aceita null (sanitize) e Continue restaura os buracos',()=>{
+  const p=freshRun(N,0);
+  p.owned=[0,null,1];p.wi=0;
+  assert.strictEqual(N.captureCheckpoint('buraco',2),true,'checkpoint criado');
+  const seed=Object.assign({},N._ls._d);
+  const R=bootGame(seed);
+  R.activateSlot(1);
+  R.resumeRun();
+  const q=R.getPlayer();
+  assert.strictEqual(q.owned[1],null,'buraco sobreviveu ao save');
+  assert.strictEqual(q.owned[0],0&&q.owned[2],1,'armas nas posições certas');
+});
+ok('§8: sanitize REJEITA owned só de buracos (mínimo 1 arma)',()=>{
+  /* via resume: forja checkpoint com owned [null,null] e valida que o
+     Continue não retoma (run sanitizada fora) */
+  const p=freshRun(N,0);
+  p.owned=[null,null];
+  const cp=JSON.parse(JSON.stringify(N.getActiveRun()));
+  cp.p.owned=[null,null];cp.p.wi=0;
+  const seed=Object.assign({},N._ls._d);
+  const root=JSON.parse(seed['echoSave.v3']);
+  root.slots[1].run=cp;
+  seed['echoSave.v3']=JSON.stringify(root);
+  const R=bootGame(seed);
+  R.activateSlot(1);
+  assert.strictEqual(R.hasActiveRun(),false,'run sem armas é inválida');
+});
+
 console.log('---------------------------------------------');
 console.log('Resultado: '+passed+' passaram · '+failed+' falharam');
 if(failed){console.log('\nFALHAS DETECTADAS');process.exit(1);}

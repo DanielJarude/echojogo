@@ -70,8 +70,12 @@ CONFIGURAÇÕES:
 > proibida no fonte de `index.html` — `tests/events.test.js` falha se
 > existir qualquer ocorrência.
 
-- **hold/toggle** (`cfg.tabMode`): no hold, soltar a tecla fecha; no toggle,
-  TAB alterna. ESC fecha com prioridade 1.5.
+- **TOGGLE é o padrão (PR 11.5)**: TAB abre, TAB de novo fecha; soltar a
+  tecla NÃO fecha. **HOLD continua disponível** em CONFIGURAÇÕES
+  (`tabMode: 'toggle' | 'hold'`) — no hold, soltar fecha.
+- **ESC fecha o Registro** com prioridade 1.5 (antes de abrir pausa) —
+  nada empilha. **Se houver seleção de swap armada, ESC CANCELA a seleção
+  primeiro** e um segundo ESC fecha.
 - **Congela o jogo**: `state='sheet'` entra na lista `frozen` do loop —
   inimigos, timers e spawns param; input e cliques são bloqueados.
 - Gamepad: D-PAD UP abre; B/START fecham.
@@ -91,13 +95,27 @@ Cada operador tem **sua** quantidade real de slots (`CHARS[].slots`,
 2–5; a arquitetura aceita qualquer N): VECTOR 4 · WRAITH 2 · BULWARK 5 ·
 PYRE 3 · HARDEN 4 · NÔMADE 5 · ECHO-0 3 · REVENANT 3.
 
+### Troca de slots no REGISTRO (TAB) — DOIS CLIQUES (§5–§8)
+1. Clique num slot com arma → fica **SELECIONADO** (destaque + rótulo
+   `SELECIONADO`; hint "ESCOLHA O SLOT DE DESTINO"; slots vazios viram
+   "RECEBER AQUI").
+2. Clique no slot de destino (com arma **ou vazio**) → **swap imediato** e
+   seleção limpa. Destino vazio **MOVE** a arma (ex.: laser do slot 3 para
+   o slot 1 vazio).
+- Clicar de novo no slot selecionado **CANCELA** (§7).
+- **ESC cancela a seleção antes de fechar** o TAB (§7).
+- Sem botões "MOVER"/confirmar — dois cliques bastam.
+- Slots vazios são `null` no `owned` (sobrevivem a checkpoint/Continue);
+  `countWeapons` conta só armas reais; HUD/pipeline/quick switch ignoram
+  buracos.
+
 ### Operações
 | Operação | Função | Contrato |
 |---|---|---|
-| Equipar slot | `setWeaponSlot(s)` | slot inválido é ignorado; lembra `lastWi` |
-| Ciclar | `cycleWeapon(dir)` | tecla **Q** (mantida) |
+| Equipar slot | `setWeaponSlot(s)` | slot inválido/vazio é ignorado; lembra `lastWi` |
+| Ciclar | `cycleWeapon(dir)` | tecla **Q** (mantida; pula buracos) |
 | Quick switch | `quickSwitchWeapon()` | tecla **X**; alterna com a última arma usada; sem anterior válida → cicla |
-| **Swap de slots** | `swapWeaponSlots(a,b)` | permuta `owned[a]↔owned[b]`; recusa fora da faixa/iguais; operação leve (nunca recria o player) |
+| **Swap de slots** | `swapWeaponSlots(a,b)` | permuta/move dentro de `maxSlots` (aceita destino vazio); recusa fora da faixa/iguais; operação leve (nunca recria o player) |
 
 ### Contratos do swap (§53/§57–§60/§120–§122 — todos testados)
 1. **A identidade da arma ativa ACOMPANHA a arma**: `wi`/`lastWi` guardam

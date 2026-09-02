@@ -50,6 +50,13 @@ MENU → SANDOX (botão do título) → sandboxOpenSetup()
   INICIAR TESTE → sandboxStart()        → run de laboratório
 ```
 
+**Robustez do INICIAR TESTE (§32/§33):** `sandboxStart` valida a cfg
+(`sandboxValidateCfg` → operador/preset/onda); config inválida deixa o
+botão **desabilitado com o motivo** no próprio botão e qualquer exceção é
+tratada: o preparo volta a abrir com uma caixa vermelha `✕ FALHA AO
+INICIAR O TESTE — <motivo>` + toast + `console.error`. Nenhuma falha fica
+silenciosa — o botão nunca "não faz nada".
+
 - **Preparo (§77):** `renderSandboxSetup` lista os 8 operadores (com
   `⌗ N SLOTS` reais), 6 presets de build (`shieldbreak`, `fullshield`,
   `crit`, `status`, `dash`, `economy`) e ondas iniciais `SB_WAVES =
@@ -72,6 +79,25 @@ MENU → SANDOX (botão do título) → sandboxOpenSetup()
 
 - **JOGADOR (§82):** encher HP, encher/quebrar escudo, limpar status,
   resetar cooldowns.
+- **AJUSTES DO JOGADOR (§12–§18/§20):** ajustes temporários de teste que
+  passam SEMPRE pelo Stat Modifier Pipeline com source IDs exclusivos —
+  `sandbox:damage`, `sandbox:crit`, `sandbox:speed`, `sandbox:shield_max`,
+  `sandbox:shield_regen` — portanto `BASE + SANDBOX MODIFIER = FINAL`:
+  - **CRÉDITOS:** −100/−10/+10/+100 e `MAX ◈9999` (para testar economia).
+    A loja normal não abre no sandbox (eventos desligados), mas os
+    créditos permanecem funcionais para qualquer sistema dependente
+    (coinMul, condições de unlock, etc).
+  - **HP:** ENCHER · DANO −25 · +25 · SET 1 (clamp: nunca NaN/negativo).
+  - **ESCUDO:** ENCHER · **QUEBRAR (PIPELINE REAL)** · ±10. Quebrar dispara
+    o MESMO caminho do combate: `shieldFx('break')`, `runSt.sb++`,
+    `echoReact('shieldBreak')` e `itemEmit('onShieldBreak', …)` — itens da
+    PR 11 (ex.: PULSO DE FRATURA) procam de verdade e entram em cooldown.
+  - **DANO ±10% · CRÍTICO ±5% · VELOCIDADE ±10% · SHIELD MÁX ±10 ·
+    REGEN ±1** (multiplicativo/flat conforme o stat).
+  - **RESETAR AJUSTES:** remove SOMENTE os mods `sandbox:*` — itens,
+    operador, moral e status normais permanecem.
+  - **NADA disto persiste:** o laboratório não grava nada e `sandboxExit`
+    chama `stripSandboxMods(player)` (§18).
 - **ARSENAL (§78/§79):** grade de slots do operador com contador
   `N/max SLOTS (IDENTIDADE DE <OP>)`; por slot: EQUIPAR · SUBSTITUIR ·
   REMOVER; slots vazios: + ADICIONAR; ações globais: TROCAR ARMAS DE SLOT
@@ -112,13 +138,16 @@ slot escolhido via `grantWeapon(wi,false,s)` — sem reordenar os demais.
 |---|---|---|
 | Morte (§89) | `onPlayerDeath → sandboxDeath` | overlay **"TESTE ENCERRADO"** — "NENHUM ECO FOI CRIADO · NADA FOI REGISTRADO"; `state='fracture'`; nenhum Echo, nenhum save |
 | Vitória (§90) | `onVictory → sandboxVictory` | overlay **"TESTE CONCLUÍDO"** — nenhum final/variante/epílogo/Ponto de Memória; meta intocada |
-| REINICIAR SANDBOX (§88) | `sandboxRestart` | limpa entidades, restaura o real, reinicia o MESMO setup (`sandboxCfg`) |
-| ALTERAR BUILD (§87) | `sandboxEndToSetup` | encerra e volta à tela de preparo (onda redefinida para 1) |
-| MENU | `sandboxExit(true)` | restaura o save real → título |
+| REINICIAR TESTE (§88) | `ov-go` (clique/Enter/Space) → `sandboxRestart` | limpa entidades, restaura o real, reinicia o MESMO setup (`sandboxCfg`) |
+| ALTERAR BUILD (§87) | `ov-back` → `sandboxEndToSetup` | encerra e volta à tela de preparo (onda redefinida para 1) |
+| **VOLTAR AO MENU PRINCIPAL** (§11) | `ov-exitmenu` (clique) → `sandboxExit(true)` | limpa o estado sandbox, sai da run, **não salva active run, não cria Echo, não altera progressão** → Main Menu |
 | SELECT DE SLOT | `sandboxExit(false)` | restaura o save real → select de slots |
 
-Em morte/vitória os botões são `REINICIAR SANDBOX` (Enter/Space) e
-`ALTERAR BUILD`; `devInfo` exibe sufixo `· SANDBOX` enquanto ativo.
+Morte e vitória exibem as **3 opções claras**: `REINICIAR TESTE` ·
+`ALTERAR BUILD` · `⌂ VOLTAR AO MENU PRINCIPAL` — todas com binding de
+CLIQUE real (e Enter/Space reinicia). `sandboxExit` seta `state='title'`
+explicitamente (sem overlays fantasma). `devInfo` exibe sufixo
+`· SANDBOX` enquanto ativo.
 
 ---
 
