@@ -6,12 +6,18 @@
    · isolamento (§73): saveProg/saveMeta/saveEchoes/bumpProg/checkUnlocks/
      captureCheckpoint são no-op com o laboratório ativo — o arquivo do
      save no localStorage fica BYTE A BYTE idêntico;
-   · unlock-all (§76): is*Unlocked → true dentro do sandbox;
+   · R5: ZERO participação na progressão — prog/meta/fila/charSel/curSlot/
+     activeRun idênticos (deep) antes/durante/depois, em memória e arquivo;
+     sessão completa roda com a progressão real deep-frozen;
+   · R5: is*Unlocked PUROS (nenhum override); catálogos próprios
+     (sandboxGetOperators/Weapons/Items/Upgrades); seleção por
+     sandboxContext.operatorId; setChar nunca é chamado no laboratório;
    · morte (§89) roteia para TESTE ENCERRADO sem criar Echo;
    · vitória (§90) roteia para TESTE CONCLUÍDO sem registrar final;
-   · restart (§88) reinicia o MESMO setup; exit (§87) restaura a fila de
-     Ecos real (mesma referência) e o operador do slot;
-   · sandboxSetChar NÃO persiste no slot (diferente de setChar real);
+   · restart (§88) reinicia o MESMO setup do contexto; exit (§87) não
+     restaura nada (o real nunca saiu do lugar);
+   · R5: INICIAR do título funciona indefinidamente (20 ciclos com
+     clique real + interleave com o Sandbox);
    · painel F1 (§79–§86): swap de slots, §62 (arsenal cheio → escolher
      qual slot substituir), removeItemById com taint=false.
    Executa o script REAL de index.html em um sandbox Node (DOM mínimo).
@@ -27,8 +33,10 @@ let src=m[1];
 
 src+=';globalThis.__t={'+
   'sandboxActive,sandboxOpenSetup,sandboxCloseSetup,sandboxStart,sandboxExit,'+
+  'sandboxGetOperators,sandboxGetWeapons,sandboxGetItems,sandboxGetUpgrades,'+
+  'sandboxOperator,getEchoes:()=>echoes,'+
   'sandboxRestart,sandboxDeath,sandboxVictory,sandboxEndToSetup,sandboxRestoreReal,'+
-  'sandboxSetChar,sandboxJumpTo,sandboxClearEnemies,sandboxClearRunState,'+
+  'sandboxJumpTo,sandboxClearEnemies,sandboxClearRunState,'+
   'giveSandboxCredits,sbPanelShow,sbPanelClose,sbPanelToggle,sbAction,sbRender,'+
   'applyBuildPreset,grantWeapon,removeItemById,swapWeaponSlots,setChar,startRun,'+
   'sandboxValidateCfg,sbApplyMod,sbResetMods,stripSandboxMods,sandboxBreakShield,'+
@@ -40,7 +48,7 @@ src+=';globalThis.__t={'+
   'CHARS,WEAPONS,MAX_WAVE,SB_WAVES,SB_ETYPES,BUILD_PRESETS,'+
   'getState:()=>state,setState:s=>{state=s;},'+
   'getSandboxRun:()=>sandboxRun,getSandboxMode:()=>sandboxMode,'+
-  'getSandboxCfg:()=>sandboxCfg,getSbSlotBak:()=>_sbSlotBak,'+
+  'getSandboxCfg:()=>sandboxCfg,getSandboxContext:()=>sandboxContext,'+
   'getSbPendingWi:()=>sbPendingWi,sandboxSessionInfo,'+
   'pickSlot,showSlotMenu,renderSlotSelect,showSlotSelect,ovMenuVisible,'+
   'refreshTitleChar,activateSlot,smBoot,'+
@@ -56,7 +64,7 @@ src+=';globalThis.__t={'+
   'isDevTainted:()=>devTainted,forceDevMode:v=>{DEV_MODE=v;},'+
   'getEl:id=>document.getElementById(id),'+
   'getLS:()=>localStorage,'+
-  'getSbHold:()=>sandboxHoldUnlocks,onGameEsc,'+
+  'onGameEsc,'+
   'sbPanelCanOpen,'+
   'getSmCommit:()=>smCommit,'+
   'showTitle,'+
@@ -320,15 +328,30 @@ ok('§74: preparo lista TODOS os operadores com seus slots reais (⌗)',()=>{
     assert(body.indexOf(C.nm)>=0,'operador ausente no preparo: '+C.nm);
   assert(body.indexOf('⌗')>=0,'contagem de slots (⌗) ausente');
 });
-ok('§76: unlock-all DENTRO do preparo (is*Unlocked → true)',()=>{
-  assert.strictEqual(T.isCharUnlocked('revenant'),true);
-  assert.strictEqual(T.isCharUnlocked('nomad'),true);
-  assert.strictEqual(T.isCharUnlocked('bulwark'),true);
-  assert.strictEqual(T.isWeaponUnlocked('beam'),true);
-  assert.strictEqual(T.isWeaponUnlocked('rail'),true);
-  assert.strictEqual(T.isWeaponUnlocked('void'),true);
-  assert.strictEqual(T.isItemUnlocked('rebob'),true);   // i_rebob gated
-  assert.strictEqual(T.isUpgUnlocked('pierce'),true);   // u_pierce gated
+ok('R5§4: is*Unlocked continuam PUROS dentro do preparo (sem override)',()=>{
+  /* R5: o sandbox NÃO engana o sistema real — a disponibilidade no preparo
+     vem do CATÁLOGO PRÓPRIO (sandboxGetOperators), nunca de is*Unlocked. */
+  assert.strictEqual(T.isCharUnlocked('revenant'),false);
+  assert.strictEqual(T.isCharUnlocked('nomad'),false);
+  assert.strictEqual(T.isCharUnlocked('bulwark'),false);
+  assert.strictEqual(T.isWeaponUnlocked('beam'),false);
+  assert.strictEqual(T.isWeaponUnlocked('rail'),false);
+  assert.strictEqual(T.isWeaponUnlocked('void'),false);
+  assert.strictEqual(T.isItemUnlocked('rebob'),false);   // i_rebob gated
+  assert.strictEqual(T.isUpgUnlocked('pierce'),false);   // u_pierce gated
+});
+ok('R5§2: catálogo PRÓPRIO do sandbox devolve TODO o conteúdo sem unlock',()=>{
+  assert.strictEqual(T.sandboxGetOperators().length,T.CHARS.length,
+    'todos os operadores existentes');
+  assert.strictEqual(T.sandboxGetWeapons().length,T.WEAPONS.length,
+    'todas as armas existentes');
+  assert(T.sandboxGetItems().length>0,'itens do catálogo');
+  assert(T.sandboxGetUpgrades().length>0,'upgrades do catálogo');
+  /* catálogo NÃO consulta unlock: contém conteúdo locked (T está limpo) */
+  assert(T.sandboxGetWeapons().some(wi=>T.WEAPONS[wi].id==='void'),
+    'arma locked presente no catálogo');
+  assert(T.sandboxGetOperators().some(c=>c.id==='revenant'),
+    'operador locked presente no catálogo');
 });
 ok('§76: FORA do sandbox o gate volta ao normal',()=>{
   T.sandboxCloseSetup();
@@ -343,41 +366,50 @@ ok('§76: FORA do sandbox o gate volta ao normal',()=>{
 const S=bootGame();
 const {marker,marker2}=realSlot(S);
 const SAVE_BEFORE=S._ls.getItem('echoSave.v3');
-ok('R4§5: openSetup entra no modo independente — NADA do slot é herdado',()=>{
+const QUEUE_BEFORE=JSON.stringify(S.getEchoQueue());
+ok('R5§12/§22: openSetup NÃO TOCA em NENHUM global real (nem em memória)',()=>{
+  const before=JSON.stringify({p:S.getProg(),m:S.getMeta(),q:S.getEchoQueue(),
+    cs:S.getCharSel(),sl:S.getCurSlot(),ar:S.hasActiveRun()});
   S.sandboxOpenSetup();
-  assert.strictEqual(S.getCurSlot(),0,'R4§4: nenhum slot ativo');
-  assert.strictEqual(S.getCharSel(),S.getSandboxCfg().char,
-    'charSel vem do setup, não do save');
-  assert.strictEqual(JSON.stringify(S.getEchoQueue()),'[]','nenhum Eco herdado');
-  assert.strictEqual(S.getProg().kills,0,'prog do save NÃO carregado');
-  assert.strictEqual(S.getMeta().mem,0,'meta do save NÃO carregada');
-  assert.strictEqual(S.hasActiveRun(),false,'nenhum checkpoint herdado');
-  assert.strictEqual(S.getSbSlotBak(),1,'contexto real anotado para a saída');
-});
-ok('R4§4: menu Sandbox não altera slot persistente (lastSlot intacto)',()=>{
+  const after=JSON.stringify({p:S.getProg(),m:S.getMeta(),q:S.getEchoQueue(),
+    cs:S.getCharSel(),sl:S.getCurSlot(),ar:S.hasActiveRun()});
+  assert.strictEqual(after,before,
+    'prog/meta/echoQueue/charSel/curSlot/activeRun intocados ao abrir');
+  assert.strictEqual(S.getSandboxMode(),true,'modo laboratório ligado');
+  assert.strictEqual(S.getCurSlot(),1,'R5§22: curSlot NUNCA sai do save real');
   assert.strictEqual(S.getSmRoot().lastSlot,1,'lastSlot do arquivo intacto');
+  assert.strictEqual(S.getSandboxCfg().char,0,'setup começa no VECTOR (contexto)');
 });
-ok('§75: sandboxStart zera a fila de Ecos NA RUN (modo independente)',()=>{
-  S.getSandboxCfg().char=2;                        // BULWARK no laboratório
+ok('R5§13: sandboxContext é próprio — operatorId separado de charSel/slot',()=>{
+  S.getSandboxCfg().char=7;                        // REVENANT no contexto
+  assert.strictEqual(S.getSandboxContext().operatorId,'revenant');
+  assert.strictEqual(S.getCharSel(),3,'charSel do save NÃO acompanhou');
+  S.getSandboxCfg().char=2;                        // BULWARK para a run
+});
+ok('§75/R5: sandboxStart cria a run do CONTEXTO sem tocar slot/fila/charSel',()=>{
   S.sandboxStart();
   assert.strictEqual(S.getSandboxRun(),true);
   assert.strictEqual(S.getSandboxMode(),false);
   assert.strictEqual(S.getState(),'play');
-  assert.strictEqual(S.getCurSlot(),0,'run do laboratório sem slot ativo');
-  assert.strictEqual(JSON.stringify(S.getEchoQueue()),'[]','fila vazia na run');
-  assert.strictEqual(S.getEchoQueue().indexOf(marker),-1,'nada do save na run');
+  assert.strictEqual(S.getCurSlot(),1,'R5§22: curSlot continua o save real');
+  assert.strictEqual(JSON.stringify(S.getEchoQueue()),QUEUE_BEFORE,
+    'fila real de Ecos INTACTA (não zerada, não usada)');
+  assert.strictEqual(JSON.stringify(S.getEchoes()),'[]',
+    'a RUN do laboratório não nasce com Ecos reais');
+  assert.strictEqual(S.getPlayer().charId,'bulwark','player nasce do contexto');
 });
-ok('§75: operador do laboratório ativo; o save NÃO é lido como base',()=>{
-  assert.strictEqual(S.getCharSel(),2,'cfg.char=2 → BULWARK ativo');
+ok('§75/R5: operador do laboratório vem do contexto — charSel intocado',()=>{
+  assert.strictEqual(S.getCharSel(),3,'charSel continua o do Save 1 (PYRE)');
   assert(S.getPlayer(),'player criado');
   assert.strictEqual(S.getPlayer().maxSlots,5,'slots do BULWARK (conteúdo total)');
 });
-ok('§73: iniciar sandbox NÃO grava nada no save (byte a byte)',()=>{
+ok('§73/R5: iniciar sandbox NÃO grava nada no save (byte a byte)',()=>{
   assert.strictEqual(S._ls.getItem('echoSave.v3'),SAVE_BEFORE);
   assert.strictEqual(S.getSmRoot().slots[1].char,3,'slot real continua PYRE');
 });
 ok('§77: crédito de teste +500 coins concedido (só no sandbox)',()=>{
   assert(S.getPlayer().coins>=500,'coins iniciais do laboratório ausentes');
+  assert.strictEqual(S.getEchoQueue().length,2,'fila REAL segue intacta');
 });
 ok('§78: preset de build aplica módulos sem tocar em progressão',()=>{
   const r=S.applyBuildPreset('crit',S.getPlayer());
@@ -424,6 +456,7 @@ ok('§73: checkUnlocks é no-op mesmo com condições verdadeiras',()=>{
   assert.strictEqual(S.checkUnlocks(),false);
   assert.strictEqual(JSON.stringify(S.getProg().seen),before,
     'nenhuma chave de unlock pode nascer no sandbox');
+  S.getProg().kills=0;   // restaura o fixture (a mutação era só p/ need())
 });
 ok('§91: captureCheckpoint é no-op — laboratório não cria Continue Run',()=>{
   assert.strictEqual(S.captureCheckpoint('teste',9),false);
@@ -432,9 +465,10 @@ ok('§91: captureCheckpoint é no-op — laboratório não cria Continue Run',()
 ok('§73: o ARQUIVO do save permanece idêntico após toda a run',()=>{
   assert.strictEqual(S._ls.getItem('echoSave.v3'),SAVE_BEFORE);
 });
-ok('§76: unlock-all vale também DURANTE a run (sandboxActive)',()=>{
-  assert.strictEqual(S.isWeaponUnlocked('beam'),true);
-  assert.strictEqual(S.isCharUnlocked('revenant'),true);
+ok('R5§4: durante a run is*Unlocked seguem PUROS (nada é "enganado")',()=>{
+  assert.strictEqual(S.isWeaponUnlocked('beam'),false);
+  assert.strictEqual(S.isCharUnlocked('warden'),false,
+    'c_warden nunca foi desbloqueado — puro até dentro do laboratório');
 });
 
 /* ============ §89 — MORTE: TESTE ENCERRADO ============ */
@@ -446,8 +480,9 @@ ok('§89: onPlayerDeath roteia para TESTE ENCERRADO (sem Echo, sem save)',()=>{
   assert.strictEqual(T_esc(S),'TESTE ENCERRADO');
   assert(S.getEl('ov-sub').textContent.indexOf('NENHUM ECO')>=0,
     'overlay deve afirmar que nenhum Eco foi criado');
-  assert.strictEqual(S.getEchoQueue().length,0,'nenhum Echo criado');
-  assert.strictEqual(S.getCurSlot(),0,'morte no laboratório não toca slot');
+  assert.strictEqual(S.getEchoQueue().length,2,
+    'nenhum Echo CRIADO — a fila REAL segue intacta');
+  assert.strictEqual(S.getCurSlot(),1,'morte no laboratório não toca slot');
   assert.strictEqual(JSON.stringify(S.getProg()),PROG_DEATH,
     'prog não mudou na morte');
   assert.strictEqual(S._ls.getItem('echoSave.v3'),SAVE_BEFORE,
@@ -456,13 +491,17 @@ ok('§89: onPlayerDeath roteia para TESTE ENCERRADO (sem Echo, sem save)',()=>{
 function T_esc(t){return t.getEl('ov-title').textContent;}
 
 /* ============ §88 — REINICIAR O MESMO SETUP ============ */
-ok('§88/R4: sandboxRestart reinicia o MESMO setup sem sair do modo',()=>{
+ok('§88/R5: sandboxRestart reinicia o MESMO setup sem sair do modo',()=>{
   S.sandboxRestart();
   assert.strictEqual(S.getSandboxRun(),true,'continua em modo laboratório');
   assert.strictEqual(S.getState(),'play');
-  assert.strictEqual(S.getCharSel(),2,'mesmo operador de teste (BULWARK)');
-  assert.strictEqual(S.getCurSlot(),0,'§24: sem slot ativo');
-  assert.strictEqual(JSON.stringify(S.getEchoQueue()),'[]','fila vazia de novo');
+  assert.strictEqual(S.getPlayer().charId,'bulwark','mesmo operador do CONTEXTO');
+  assert.strictEqual(S.getCharSel(),3,'charSel do save continua intocado');
+  assert.strictEqual(S.getCurSlot(),1,'R5§22: curSlot nunca saiu do save real');
+  assert.strictEqual(JSON.stringify(S.getEchoQueue()),QUEUE_BEFORE,
+    'fila real intacta de novo (e nunca usada)');
+  assert.strictEqual(JSON.stringify(S.getEchoes()),'[]',
+    'a run reiniciada continua sem Ecos reais');
   assert.strictEqual(S.getWave(),0,'run recomeça do zero (resetRunWorld)');
   assert(S.getPlayer(),'player novo criado');
   assert(S.getPlayer().coins>=500,'crédito de teste de novo');
@@ -477,49 +516,62 @@ ok('§90: onVictory roteia para TESTE CONCLUÍDO (sem final, sem memória)',()=>
   assert.strictEqual(T_esc(S),'TESTE CONCLUÍDO');
   assert(S.getEl('ov-sub').textContent.indexOf('NENHUM FINAL')>=0,
     'overlay deve afirmar que nenhum final foi registrado');
-  assert.strictEqual(S.getEchoQueue().length,0,'nenhum Echo na vitória');
+  assert.strictEqual(S.getEchoQueue().length,2,
+    'nenhum Echo CRIADO — fila real intacta na vitória');
   assert.strictEqual(JSON.stringify(S.getMeta()),META_BEFORE,
     'meta-progresso (memória) intocado');
   assert.strictEqual(S._ls.getItem('echoSave.v3'),SAVE_BEFORE);
 });
 
 /* ============ §87 — SAIR RESTAURA O SAVE REAL ============ */
-ok('§87/R4: sandboxExit devolve o modo normal RECARREGADO DO ARQUIVO',()=>{
+ok('§87/R5: sandboxExit NÃO restaura nada — o real nunca saiu do lugar',()=>{
+  const PRE=JSON.stringify({p:S.getProg(),m:S.getMeta(),q:S.getEchoQueue(),
+    cs:S.getCharSel(),sl:S.getCurSlot(),ar:S.hasActiveRun()});
+  const FILE=S._ls.getItem('echoSave.v3');
   S.sandboxExit(false);
   assert.strictEqual(S.getSandboxRun(),false);
   assert.strictEqual(S.sandboxActive(),false);
-  assert.strictEqual(S.getState(),'title','R4§21: menu inicial GLOBAL');
-  assert.strictEqual(S.getCurSlot(),1,'contexto real reativado (slot 1)');
-  assert(S.getEchoQueue()[0]&&S.getEchoQueue()[0].k===111,
-    'Eco 1 do Save 1 recarregado do arquivo');
-  assert(S.getEchoQueue()[1]&&S.getEchoQueue()[1].k===222,
-    'Eco 2 do Save 1 recarregado do arquivo');
+  assert.strictEqual(S.getState(),'title','menu inicial GLOBAL');
+  assert.strictEqual(JSON.stringify({p:S.getProg(),m:S.getMeta(),
+    q:S.getEchoQueue(),cs:S.getCharSel(),sl:S.getCurSlot(),
+    ar:S.hasActiveRun()}),PRE,'memória IDÊNTICA antes/depois da saída');
+  assert(S.getEchoQueue()[0]&&S.getEchoQueue()[0].kills===111,
+    'Eco 1 do Save 1 é o MESMO objeto-valor de antes');
+  assert(S.getEchoQueue()[1]&&S.getEchoQueue()[1].kills===222,
+    'Eco 2 do Save 1 é o MESMO objeto-valor de antes');
   assert.strictEqual(S.getEchoQueue().length,2,'fila real do Save 1 completa');
-  assert.strictEqual(S.getCharSel(),3,'charSel do Save 1 (PYRE)');
+  assert.strictEqual(S.getCharSel(),3,'charSel do Save 1 (PYRE) — nunca saiu');
   assert.strictEqual(S.getEl('sb-chip').classList.contains('on'),false,
     'chip SANDBOX desligado');
   assert.strictEqual(S.getSmRoot().slots[1].char,3,'slot real: PYRE');
-  assert.strictEqual(S._ls.getItem('echoSave.v3'),SAVE_BEFORE,
-    'save permanece intocado após sair');
+  assert.strictEqual(S._ls.getItem('echoSave.v3'),FILE,
+    'nenhuma gravação acontece na saída');
+  assert.strictEqual(S.getSandboxContext().operatorId,'bulwark',
+    'contexto do laboratório permanece próprio (não vira save)');
 });
 
 /* ============ §73 — setChar REAL persiste, sandboxSetChar NÃO ============ */
 const C2=bootGame();
-ok('§73: setChar real persiste no slot; sandboxSetChar não persiste',()=>{
+ok('§73/R5: seleção do laboratório vive em sandboxContext — setChar nunca é chamado',()=>{
   const r=realSlot(C2);                 // PYRE no slot 1
   assert.strictEqual(C2.getSmRoot().slots[1].char,3);
-  C2.getSandboxCfg().char=1;            // WRAITH no laboratório
+  let setCalls=0;const _set=C2.setChar;C2.setChar=i=>{setCalls++;return _set(i);};
+  C2.getSandboxCfg().char=1;            // WRAITH no laboratório (contexto)
   C2.sandboxOpenSetup();
   C2.sandboxStart();
-  assert.strictEqual(C2.getCharSel(),1);
+  assert.strictEqual(C2.getPlayer().charId,'wraith','player do contexto');
+  assert.strictEqual(C2.getCharSel(),3,'charSel do save NÃO foi tocado');
+  assert.strictEqual(C2.getSandboxContext().operatorId,'wraith','contexto próprio');
   assert.strictEqual(C2.getSmRoot().slots[1].char,3,
-    'início do laboratório não pode reescrever o slot');
-  C2.sandboxSetChar(5);                 // NÔMADE dentro do sandbox
-  assert.strictEqual(C2.getCharSel(),5);
-  assert.strictEqual(C2.getSmRoot().slots[1].char,3,
-    'sandboxSetChar NÃO persiste no slot real');
+    'início do laboratório não reescreve o slot');
+  C2.getSandboxCfg().char=5;            // troca de operador DENTRO do sandbox
+  C2.sandboxRestart();                  // reinicia com o novo contexto
+  assert.strictEqual(C2.getPlayer().charId,'nomad','novo operador do contexto');
+  assert.strictEqual(C2.getCharSel(),3,'charSel segue intocado');
+  assert.strictEqual(C2.getSmRoot().slots[1].char,3,'slot real segue intacto');
+  assert.strictEqual(setCalls,0,'setChar do jogo normal NUNCA foi chamado');
   C2.sandboxExit(false);
-  assert.strictEqual(C2.getCharSel(),3,'volta ao operador real do slot');
+  assert.strictEqual(C2.getCharSel(),3,'operador real do slot preservado');
 });
 ok('§92: sandbox com DEV desligado não gera taint ao remover item',()=>{
   /* DEV_MODE=false (produção): devTaint() é cedo-return; nenhuma ação do
@@ -534,7 +586,7 @@ ok('§92: sandbox com DEV desligado não gera taint ao remover item',()=>{
   assert.strictEqual(C2.isDevTainted(),false,
     'sandbox marcou devTaint com DEV desligado');
   C2.swapWeaponSlots(0,Math.min(1,p.owned.length-1));
-  C2.sandboxSetChar(0);
+  C2.getSandboxCfg().char=0;             // R5: troca de operador pelo contexto
   assert.strictEqual(C2.isDevTainted(),false,'operação do sandbox manchou');
 });
 ok('§92 (estrutural): removeItemById só mancha quando taint=true',()=>{
@@ -681,7 +733,8 @@ ok('UI: fluxo COMPLETO do menu — abrir, operador, preset, onda, INICIAR TESTE'
   assert.strictEqual(U.getState(),'play','§7: game/run inicia');
   /* 8. player existe e é o operador escolhido */
   assert(U.getPlayer(),'§8: player existe');
-  assert.strictEqual(U.getCharSel(),2,'player é o BULWARK');
+  assert.strictEqual(U.getPlayer().charId,'bulwark','player é o BULWARK (contexto)');
+  assert.strictEqual(U.getSandboxContext().operatorId,'bulwark');
   assert.strictEqual(U.getPlayer().maxSlots,5,'slots do operador respeitados');
   /* 9. wave correta + inimigos */
   assert.strictEqual(U.getWave(),5,'§9: run começa na onda 5');
@@ -705,7 +758,8 @@ ok('UI: matrix COMPLETA 8 operadores × 7 presets × 6 ondas (336 starts)',()=>{
         assert.strictEqual(V.getSandboxRun(),true);
         assert.strictEqual(V.getState(),'play');
         assert(V.getPlayer(),'player criado');
-        assert.strictEqual(V.getCharSel(),c,'operador ativo: '+V.CHARS[c].id);
+        assert(V.getPlayer().charId===V.CHARS[c].id,
+          'operador ativo: '+V.CHARS[c].id+' (via contexto)');
         if(wv>1)assert.strictEqual(V.getWave(),wv,'onda correta');
         if(wv>=V.MAX_WAVE)assert(V.getBoss(),'chefe despachado na onda 20');
         else if(wv>1)assert(V.getEnemies().length>0,'inimigos na onda '+wv);
@@ -718,7 +772,9 @@ ok('UI: matrix COMPLETA 8 operadores × 7 presets × 6 ondas (336 starts)',()=>{
 ok('UI: §32/§33 — cfg inválida desabilita o botão COM MOTIVO e falha visível',()=>{
   const W=bootGame();
   W.sandboxOpenSetup();
-  W.getSandboxCfg().char=99;               // operador inexistente
+  /* R5: o setter de índice satura (0..7); corrupção direta do contexto
+     continua sendo recusada pela validação (§32) */
+  W.getSandboxContext().operatorId='operador-fantasma';
   W.sandboxCloseSetup();
   W.sandboxOpenSetup();                    // render com cfg inválida
   const go=W.getEl('cx-body').querySelector('#sb-start');
@@ -1009,9 +1065,9 @@ ok('§11: morte no sandbox — 3 opções claras + VOLTAR AO MENU PRINCIPAL func
   assert.strictEqual(V5.getSandboxRun(),false,'estado sandbox limpo');
   assert.strictEqual(V5.sandboxActive(),false);
   assert.strictEqual(V5.getState(),'title','voltou ao Main Menu');
-  assert(V5.getEchoQueue()[0]&&V5.getEchoQueue()[0].k===111&&
+  assert(V5.getEchoQueue()[0]&&V5.getEchoQueue()[0].kills===111&&
     V5.getEchoQueue().length===2,
-    'nenhum Echo criado — fila real do Save 1 recarregada');
+    'nenhum Echo criado — fila real do Save 1 intacta');
   assert.strictEqual(V5.getSmRoot().slots[1].char,3,'progressão intacta');
 });
 ok('§11: vitória no sandbox também oferece VOLTAR AO MENU PRINCIPAL',()=>{
@@ -1145,21 +1201,26 @@ function forge3Slots(b){
 }
 const Z=bootGame();
 forge3Slots(Z);
+Z.activateSlot(1);
+Z.showTitle();   // R5: pendências LEGÍTIMAS do save sincronizam ANTES do
+                 // snapshot (comportamento normal de menu — kills 400 do
+                 // próprio save). O sandbox em si nunca escreve.
 const SNAPSHOT=Z.getLS().getItem('echoSave.v3');
-ok('R3§6: unlock é SOBREPOSIÇÃO — locked vira disponível sem gravar',()=>{
-  /* antes: locked de verdade (condições de unlock ainda não cumpridas) */
-  Z.activateSlot(1);
-  assert.strictEqual(Z.isCharUnlocked('revenant'),false,'fora do sandbox é locked');
+ok('R5§4: is*Unlocked não mudam DENTRO do sandbox (puros; catálogo é da UI)',()=>{
+  assert.strictEqual(Z.isCharUnlocked('revenant'),false,
+    'REVENANT locked (kills 400 < 2000) — dentro E fora');
   assert.strictEqual(Z.isWeaponUnlocked('void'),false);
   assert.strictEqual(Z.isItemUnlocked('luneta'),false);
-  assert.strictEqual(Z.getProg().seen.indexOf('w_beam'),-1,
-    'pendentes ainda não foram gravados fora');
   Z.sandboxOpenSetup();                          // ENTRAR no sandbox
-  assert.strictEqual(Z.isCharUnlocked('revenant'),true,'§76 dentro: disponível');
-  assert.strictEqual(Z.isWeaponUnlocked('void'),true);
-  assert.strictEqual(Z.isItemUnlocked('luneta'),true);
-  assert.strictEqual(Z.getProg().seen.indexOf('w_beam'),-1,
-    'NADA foi gravado em prog.seen (§5)');
+  assert.strictEqual(Z.isCharUnlocked('revenant'),false,
+    'R5: sem override — continua locked dentro');
+  assert.strictEqual(Z.isWeaponUnlocked('void'),false);
+  assert.strictEqual(Z.isItemUnlocked('luneta'),false);
+  /* mesmo assim o PREPARO lista tudo (catálogo próprio da UI, §5) */
+  const body=Z.getEl('cx-body').innerHTML;
+  assert(body.indexOf('TODOS LIBERADOS')>=0,'catálogo completo anunciado');
+  assert.strictEqual(Z.getProg().seen.indexOf('c_revenant'),-1,
+    'NADA foi gravado em prog.seen');
 });
 ok('R3§7/§8: sessão COMPLETA deixa os 3 slots BYTE A BYTE idênticos',()=>{
   Z.getSandboxCfg().char=7;                      // REVENANT (locked!)
@@ -1186,7 +1247,7 @@ ok('R3§7/§8: sessão COMPLETA deixa os 3 slots BYTE A BYTE idênticos',()=>{
   Z.sandboxRestart();
   Z.onPlayerDeath();
   assert.strictEqual(Z.getState(),'fracture');
-  /* sai para o menu — showTitle roda checkUnlocks(true): SUPRIMIDO */
+  /* sai para o menu — R5: nada a suprimir, o sandbox não mudou nada */
   Z.sandboxExit(true);
   /* ===== comparação byte a byte ===== */
   assert.strictEqual(Z.getLS().getItem('echoSave.v3'),SNAPSHOT,
@@ -1204,31 +1265,35 @@ ok('R3§7/§8: sessão COMPLETA deixa os 3 slots BYTE A BYTE idênticos',()=>{
   assert.strictEqual(s[2].meta.mem,111,'slot2: meta intocada');
   assert.strictEqual(s[3].meta.mem,222,'slot3: meta intocada');
 });
-ok('R3§3: nem morte, nem vitória, nem saída desbloqueiam (janela pós-sandbox)',()=>{
-  assert.strictEqual(Z.checkUnlocks(),false,'checkUnlocks suprimido');
-  assert.strictEqual(Z.getProg().seen.length,0,
-    'prog.seen vazio — w_beam/u_pierce pendentes NÃO gravados');
-  assert.strictEqual(Z.getSmRoot().slots[1].prog.seen.length,0,
+ok('R5: pós-sandbox o jogo normal se comporta EXATAMENTE como sem sandbox',()=>{
+  /* as pendências LEGÍTIMAS (kills 400 do próprio save) já sincronizaram
+     no showTitle da SAÍDA — igual a qualquer ida ao menu sem sandbox */
+  assert(Z.getProg().seen.indexOf('w_beam')>=0,
+    'w_beam já estava legítimamente sincronizado antes do sandbox');
+  assert(Z.getProg().seen.indexOf('u_pierce')>=0);
+  /* REVENANT foi USADO no laboratório e CONTINUA locked (o bug do usuário) */
+  assert.strictEqual(Z.isCharUnlocked('revenant'),false,
+    'usar operador locked no sandbox NÃO desbloqueia');
+  assert.strictEqual(Z.isWeaponUnlocked('void'),false,
+    'usar arma locked no sandbox NÃO desbloqueia');
+  assert.strictEqual(Z.isItemUnlocked('luneta'),false);
+  assert.strictEqual(Z.getProg().seen.indexOf('c_revenant'),-1,
+    'c_revenant NUNCA entrou em seen');
+  assert.strictEqual(Z.getSmRoot().slots[1].prog.seen.indexOf('c_revenant'),-1,
     'nada no slot persistido');
-  /* showTitle de novo (como o jogador veria): ainda suprimido */
+  /* showTitle de novo (como o jogador veria): nenhuma gravação nova */
   Z.showTitle();
   assert.strictEqual(Z.getLS().getItem('echoSave.v3'),SNAPSHOT,
-    'showTitle pós-sandbox NÃO grava desbloqueio pendente');
-  assert.strictEqual(Z.isCharUnlocked('revenant'),false,'fora do sandbox volta a locked');
-  assert.strictEqual(Z.isWeaponUnlocked('void'),false);
-  assert.strictEqual(Z.isItemUnlocked('luneta'),false);
-  assert.strictEqual(Z.getSbHold(),true,'janela ativa até run real');
+    'showTitle pós-sandbox NÃO grava NADA (snapshot pós-sync intacto)');
 });
-ok('R3§3: a janela só é liberada por uma run REAL (sem quebrar o jogo normal)',()=>{
+ok('R5: checkUnlocks segue funcionando normalmente para o JOGO NORMAL',()=>{
   Z.setState('title');
   Z.startRun();                                  // run real
-  assert.strictEqual(Z.getSbHold(),false,'janela liberada por run real');
-  /* morte real: fluxo normal do jogo pode registrar (comportamento padrão) */
+  assert.strictEqual(Z.getSandboxRun(),false);
+  /* morte real: fluxo normal do jogo registra (comportamento padrão) */
   Z.onPlayerDeath();
-  assert(Z.getProg().seen.indexOf('w_beam')>=0,
-    'run real death → unlock pendente legítimo (w_beam, 250 kills)');
-  assert(Z.getProg().seen.indexOf('u_pierce')>=0,
-    'u_pierce (400 kills) também merecido pela run real');
+  assert(Z.getProg().runs>=1,
+    'run real registra runs (o sandbox nunca registrou)');
   assert.strictEqual(Z.getProg().seen.indexOf('i_luneta'),-1,
     'luneta (500 kills) NÃO merecida: continua locked');
   assert.notStrictEqual(Z.getLS().getItem('echoSave.v3'),SNAPSHOT,
@@ -1329,11 +1394,15 @@ ok('R4§52: botão SANDBOX existe no menu inicial e some dentro do save',()=>{
   M.showSlotSelect();
   assert.strictEqual(M.getEl('ov-menu').style.display,'none');
 });
-ok('R4§13/§14: UI de operadores — locked no Save, disponível no Sandbox, locked de volta',()=>{
+ok('R5§28: REPRODUÇÃO DO BUG — locked no Save → usado no Sandbox → LOCKED de volta',()=>{
   const U=bootGame();
   forge3(U);
+  U.activateSlot(1);
+  U.showTitle();                    // R5: pendências legítimas sincronizam ANTES
   const snap=U.getLS().getItem('echoSave.v3');
-  /* abre o menu do SAVE 1 e renderiza os cards de operador */
+  const MEM=JSON.stringify({p:U.getProg(),m:U.getMeta(),q:U.getEchoQueue(),
+    cs:U.getCharSel(),sl:U.getCurSlot()});
+  /* A. Save 1: REVENANT bloqueado no DOM real */
   U.pickSlot(1);
   U.refreshTitleChar();
   const cards=U.getEl('ov-char').querySelectorAll('[data-ch]');
@@ -1344,26 +1413,38 @@ ok('R4§13/§14: UI de operadores — locked no Save, disponível no Sandbox, lo
   assert(raw.indexOf('🔒 REVENANT')>=0,'cadeado visual no Save 1');
   const lun=cards.find(n=>n.dataset.ch==='5');
   assert(lun._cls.indexOf('lock')>=0,'NÔMADE bloqueado no Save 1');
-  /* SANDBOX: todos disponíveis (classe/visual no PRÓPRIO setup) */
+  /* B. SANDBOX: o preparo lista TODOS (catálogo próprio da UI, §5) —
+     mas is*Unlocked segue PURO (nada é "desbloqueado" nem em vista) */
+  U.showTitle();
   U.sandboxOpenSetup();
   const sb=U.getEl('cx-body').innerHTML;
-  assert(sb.indexOf('TODOS LIBERADOS')>=0,'setup anuncia unlock de teste');
+  assert(sb.indexOf('TODOS LIBERADOS')>=0,'catálogo completo anunciado');
   for(const C of U.CHARS)
     assert(sb.indexOf(C.nm)>=0,'operador no preparo: '+C.nm);
-  assert.strictEqual(U.isCharUnlocked('revenant'),true,'disponível no sandbox');
-  /* usa o REVENANT no laboratório */
+  const sbCards=U.getEl('cx-body').querySelectorAll('[data-sbchar]');
+  assert.strictEqual(sbCards.length,8,'8 cartões no catálogo do sandbox');
+  assert(sbCards.every(n=>(Array.isArray(n._cls)?n._cls.join(' '):n._cls)
+    .indexOf('lock')<0),'nenhum cartão do sandbox usa classe de lock');
+  assert.strictEqual(U.isCharUnlocked('revenant'),false,
+    'R5§4: isCharUnlocked segue PURO dentro do sandbox');
+  /* C. usa o REVENANT no laboratório */
   U.getSandboxCfg().char=7;U.getSandboxCfg().preset='';U.getSandboxCfg().wave=1;
   assert.strictEqual(U.sandboxStart(),true);
-  assert.strictEqual(U.getCharSel(),7,'REVENANT jogável no laboratório');
+  assert.strictEqual(U.getPlayer().charId,'revenant','REVENANT jogável (contexto)');
+  assert.strictEqual(U.getCharSel(),3,'charSel do save NÃO acompanhou');
+  U.onPlayerDeath();
   U.sandboxExit(true);
-  /* de volta ao Save 1: os originais voltam a aparecer bloqueados */
+  /* D. de volta ao Save 1 (MESMA SESSÃO, sem reload — §29): tudo igual */
+  assert.strictEqual(JSON.stringify({p:U.getProg(),m:U.getMeta(),
+    q:U.getEchoQueue(),cs:U.getCharSel(),sl:U.getCurSlot()}),MEM,
+    'R5§11: progressão REAL em memória IDÊNTICA (deep)');
   assert.strictEqual(U.getLS().getItem('echoSave.v3'),snap,
     'save byte a byte após a sessão');
   U.pickSlot(1);
   U.refreshTitleChar();
   const cards2=U.getEl('ov-char').querySelectorAll('[data-ch]');
   const rev2=cards2.find(n=>n.dataset.ch==='7');
-  assert(rev2._cls.indexOf('lock')>=0,'REVENANT volta a LOCKED no Save 1');
+  assert(rev2._cls.indexOf('lock')>=0,'REVENANT segue LOCKED no Save 1');
   assert(U.getEl('ov-char').innerHTML.indexOf('🔒 REVENANT')>=0,
     'cadeado de volta');
   assert.strictEqual(U.isCharUnlocked('revenant'),false,'isCharUnlocked real');
@@ -1390,25 +1471,32 @@ ok('R4§45/§46/§47: Sandbox → Save 1/2/3 — progressão de TODOS intacta',(
   P.activateSlot(1);
   assert.strictEqual(P.getProg().kills,400,'Save 1 intacto');
 });
-ok('R4§48/§49: Save→Menu→Sandbox NÃO herda; Sandbox→Save→Sandbox recomeça limpo',()=>{
+ok('R5: Save→Menu→Sandbox NÃO LÊ o save; Sandbox→Save→Sandbox recomeça limpo',()=>{
   const Q=bootGame();
   forge3(Q);
+  Q.activateSlot(1);Q.showTitle();         // sync legítimo pré-snapshot
   Q.pickSlot(1);                           // Save 1 carregado de verdade
   assert.strictEqual(Q.getProg().kills,400,'Save 1 na memória');
   Q.showSlotSelect();Q.showTitle();        // volta completamente ao menu
   Q.sandboxOpenSetup();                    // Sandbox DEPOIS do save
-  assert.strictEqual(Q.getProg().kills,0,'não herda prog do Save 1');
-  assert.strictEqual(JSON.stringify(Q.getEchoQueue()),'[]','não herda Ecos');
-  assert.strictEqual(Q.getMeta().mem,0,'não herda meta');
-  assert.strictEqual(Q.getCurSlot(),0,'sem slot ativo');
+  /* R5§11: o global real nem é substituído — segue lá, intocado */
+  assert.strictEqual(Q.getProg().kills,400,'prog real intacta (não zerada)');
+  assert.strictEqual(Q.getCurSlot(),1,'R5§22: curSlot nunca é alterado');
+  /* a RUN é que nasce limpa: meta de leitura zerada, zero Ecos */
   Q.getSandboxCfg().char=7;Q.sandboxStart();
+  assert.strictEqual(Q.getPlayer().coins,500,'sem bônus de meta.vault do save');
+  assert.strictEqual(JSON.stringify(Q.getEchoes()),'[]','run sem Ecos reais');
+  assert.strictEqual(Q.getPlayer().charId,'revenant','operador do contexto');
   Q.sandboxExit(true);                     // sair
   Q.activateSlot(1);                       // Save 1 de novo (fluxo normal)
   assert.strictEqual(Q.getProg().kills,400,'Save 1 intacto após sandbox');
   Q.showSlotSelect();Q.showTitle();
   Q.sandboxOpenSetup();                    // segundo Sandbox na mesma sessão
-  assert.strictEqual(Q.getProg().kills,0,'segundo Sandbox nasce limpo');
-  assert.strictEqual(Q.getCurSlot(),0,'sem slot de novo');
+  Q.getSandboxCfg().char=0;                // contexto volta ao VECTOR
+  Q.sandboxStart();
+  assert.strictEqual(Q.getPlayer().coins,500,'segunda run também nasce limpa');
+  assert.strictEqual(JSON.stringify(Q.getEchoes()),'[]','segunda run sem Ecos');
+  assert.strictEqual(Q.getCurSlot(),1,'curSlot segue o save real');
 });
 ok('R4§16/§53: 10 reentradas completas — INICIAR TESTE sempre funciona',()=>{
   const E=bootGame();
@@ -1492,6 +1580,170 @@ ok('R4§8: sandboxSessionInfo documenta a sessão temporária (slot sempre 0)',(
   H.sandboxStart();
   assert.strictEqual(H.sandboxSessionInfo().active,true);
   H.sandboxExit(true);
+});
+
+/* =====================================================================
+   R5 — ZERO PARTICIPAÇÃO NO SISTEMA DE PROGRESSÃO (refatoração profunda)
+   ===================================================================== */
+ok('R5§46: is*Unlocked PUROS no FONTE (nenhum sandboxActive no gate)',()=>{
+  /* §4: remover o override é contrato de FONTE — testado estruturalmente */
+  for(const fn of ['isCharUnlocked','isWeaponUnlocked','isItemUnlocked',
+    'isUpgUnlocked']){
+    const i=html.indexOf('function '+fn+'(');
+    assert(i>=0,'função ausente: '+fn);
+    const body=html.slice(i,html.indexOf('\nfunction ',i+10));
+    assert(body.indexOf('sandboxActive')<0,
+      fn+' ainda consulta o sandbox (override proibido na R5)');
+  }
+  assert(html.indexOf('sandboxSetChar')<0,'sandboxSetChar foi removido (§8)');
+  assert(html.indexOf('sandboxHoldUnlocks')<0,
+    'janela de hold foi removida (o jogo normal se sincroniza sozinho)');
+  assert(html.indexOf('if(sandboxActive())return true')<0,
+    'nenhum return true por override');
+});
+ok('R5§37: DEEP FREEZE — sessão completa com prog/meta/smRoot/fila congelados',()=>{
+  const FR=bootGame();
+  realSlot(FR);
+  FR.activateSlot(1);FR.showTitle();          // sync antes de congelar
+  const MEM=JSON.stringify({p:FR.getProg(),m:FR.getMeta(),q:FR.getEchoQueue(),
+    cs:FR.getCharSel(),sl:FR.getCurSlot()});
+  const FILE=FR._ls.getItem('echoSave.v3');
+  const df=o=>{if(o&&typeof o==='object'&&!Object.isFrozen(o)){Object.freeze(o);
+    for(const k in o)df(o[k]);}};
+  df(FR.getProg());df(FR.getMeta());df(FR.getSmRoot());df(FR.getEchoQueue());
+  assert(Object.isFrozen(FR.getProg())&&Object.isFrozen(FR.getMeta())&&
+    Object.isFrozen(FR.getSmRoot()),'objetos reais congelados');
+  FR.sandboxOpenSetup();
+  FR.getSandboxCfg().char=7;FR.getSandboxCfg().preset='';FR.getSandboxCfg().wave=5;
+  assert.strictEqual(FR.sandboxStart(),true,
+    'run de laboratório funciona COM a progressão real congelada');
+  assert.strictEqual(FR.getPlayer().charId,'revenant');
+  FR.sbPanelShow();FR.sbAction('group');FR.sbAction('mod:crit:1');FR.sbPanelClose();
+  FR.onPlayerDeath();
+  FR.sandboxExit(true);
+  assert.strictEqual(FR.getState(),'title');
+  assert.strictEqual(JSON.stringify({p:FR.getProg(),m:FR.getMeta(),
+    q:FR.getEchoQueue(),cs:FR.getCharSel(),sl:FR.getCurSlot()}),MEM,
+    'nem com freeze houve tentativa de escrita (memória idêntica)');
+  assert.strictEqual(FR._ls.getItem('echoSave.v3'),FILE,'arquivo intacto');
+});
+ok('R5§28: clique em operador LOCKED no menu do save NÃO seleciona',()=>{
+  const LK=bootGame();
+  realSlot(LK);
+  LK.pickSlot(1);
+  LK.refreshTitleChar();
+  const card=LK.getEl('ov-char').querySelectorAll('[data-ch]')
+    .find(n=>n.dataset.ch==='1');            // BULWARK sem unlock aqui? slot tem PYRE
+  /* escolhe um card LOCKED garantido (condição nunca cumprida) */
+  const locked=[...LK.getEl('ov-char').querySelectorAll('[data-ch]')]
+    .find(n=>n._cls.indexOf('lock')>=0);
+  assert(locked,'existe card locked no Save 1 forjado');
+  const before=JSON.stringify({cs:LK.getCharSel(),sc:LK.getSmRoot().slots[1].char});
+  locked.click();                             // clique REAL no card bloqueado
+  assert.strictEqual(JSON.stringify({cs:LK.getCharSel(),
+    sc:LK.getSmRoot().slots[1].char}),before,
+    'clique em locked NÃO seleciona e NÃO grava');
+});
+ok('R5§32/§33/§34: arma/item/upgrade locked continuam locked após o sandbox',()=>{
+  const WL=bootGame();
+  realSlot(WL);
+  WL.activateSlot(1);WL.showTitle();          // sync legítimo antes
+  const FILE=WL._ls.getItem('echoSave.v3');
+  assert.strictEqual(WL.isWeaponUnlocked('void'),false);
+  assert.strictEqual(WL.isItemUnlocked('luneta'),false);
+  assert.strictEqual(WL.isUpgUnlocked('pierce'),false);
+  WL.sandboxOpenSetup();
+  WL.getSandboxCfg().char=0;WL.getSandboxCfg().preset='';WL.getSandboxCfg().wave=1;
+  WL.sandboxStart();
+  /* usa conteúdo locked no laboratório */
+  WL.grantWeapon(WL.WEAPONS.findIndex(w=>w.id==='void'),true);
+  WL.grantItemInternal(WL.getPlayer(),WL.itemById('luneta'),true);
+  WL.getPlayer().upgLog.push('pierce');
+  WL.onPlayerDeath();
+  WL.sandboxExit(true);
+  assert.strictEqual(WL.isWeaponUnlocked('void'),false,'arma continua locked');
+  assert.strictEqual(WL.isItemUnlocked('luneta'),false,'item continua locked');
+  assert.strictEqual(WL.isUpgUnlocked('pierce'),false,'upgrade continua locked');
+  assert.strictEqual(WL.getProg().seen.indexOf('w_void'),-1);
+  assert.strictEqual(WL.getProg().seen.indexOf('i_luneta'),-1);
+  assert.strictEqual(WL.getProg().seen.indexOf('u_pierce'),-1);
+  assert.strictEqual(WL._ls.getItem('echoSave.v3'),FILE,'arquivo byte a byte');
+});
+ok('R5§18/§19: INICIAR 20 ciclos com CLIQUE REAL no botão (vm DOM)',()=>{
+  const IN=bootGame();
+  for(let i=0;i<20;i++){
+    const go=IN.getEl('ov-go');
+    assert(Array.isArray(go._h.click)&&go._h.click.length>0,
+      'ciclo '+(i+1)+': ov-go com binding de clique do boot');
+    go.click();                              // clique REAL (binding do boot)
+    assert.strictEqual(IN.getState(),'slots','ciclo '+(i+1)+': INICIAR → saves');
+    IN.pressKey('Escape');
+    assert.strictEqual(IN.getState(),'title','ciclo '+(i+1)+': ESC → título');
+    assert.strictEqual(IN.getEl('ov-go').textContent,'INICIAR',
+      'ciclo '+(i+1)+': botão INICIAR presente de novo');
+  }
+});
+ok('R5§17: ov-go tem EXATAMENTE UM binding de clique no boot (fonte)',()=>{
+  assert(html.split("$('ov-go').addEventListener").length===2,
+    'exatamente 1 addEventListener de clique em ov-go');
+});
+ok('R5§20: interleave INICIAR ↔ SANDBOX na mesma sessão (3 voltas)',()=>{
+  const IT=bootGame();
+  realSlot(IT);
+  for(let i=0;i<3;i++){
+    IT.getEl('ov-go').click();
+    assert.strictEqual(IT.getState(),'slots','volta '+(i+1)+': INICIAR ok');
+    IT.pressKey('Escape');
+    IT.sandboxOpenSetup();
+    IT.getSandboxCfg().char=(i+2)%8;
+    IT.getSandboxCfg().wave=1;
+    assert.strictEqual(IT.sandboxStart(),true,'volta '+(i+1)+': sandbox abriu');
+    IT.onPlayerDeath();
+    IT.sandboxExit(true);
+    assert.strictEqual(IT.getState(),'title','volta '+(i+1)+': título de novo');
+    assert.strictEqual(IT.getEl('ov-go').textContent,'INICIAR');
+  }
+  /* após os cruzamentos, o fluxo normal continua 100% */
+  IT.activateSlot(1);
+  IT.startRun();
+  assert.strictEqual(IT.getState(),'play','run NORMAL funciona após interleave');
+  IT.clearRunEntities&&IT.clearRunEntities();
+});
+ok('R5§13: player do laboratório NÃO herda bônus de meta do save',()=>{
+  const MG=bootGame();
+  MG.activateSlot(1);
+  MG.getMeta().vault=2;MG.getMeta().spd=2;MG.getMeta().reroll=1;
+  MG.getSmRoot().slots[1].meta.vault=2;
+  MG.getSmRoot().slots[1].meta.spd=2;
+  MG.getSmRoot().slots[1].meta.reroll=1;
+  MG.sandboxOpenSetup();
+  MG.getSandboxCfg().char=7;MG.getSandboxCfg().preset='';MG.getSandboxCfg().wave=1;
+  MG.sandboxStart();
+  const p=MG.getPlayer(),C=MG.CHARS[7];      // REVENANT (sem perk de reroll)
+  assert.strictEqual(p.coins,500,'25×vault=0 (meta de leitura zerada) + 500');
+  assert.strictEqual(p.freeRerolls,0,
+    'sem rerolls herdados (meta.reroll=1 somaria aqui)');
+  assert.strictEqual(p.speed,C.speed,'sem bônus de velocidade do save');
+  /* meta REAL continua lá */
+  assert.strictEqual(MG.getMeta().vault,2,'meta real intocada');
+  MG.sandboxExit(true);
+  assert.strictEqual(MG.getMeta().vault,2);
+});
+ok('R5§8: sandboxSessionInfo documenta o contexto (operatorId, slot 0)',()=>{
+  const SI=bootGame();
+  SI.sandboxOpenSetup();
+  SI.getSandboxCfg().char=4;SI.getSandboxCfg().preset='crit';SI.getSandboxCfg().wave=10;
+  const si=SI.sandboxSessionInfo();
+  assert.strictEqual(si.operatorId,SI.CHARS[4].id,
+    'contexto por ID (não índice de save)');
+  assert.strictEqual(si.operator,4,'espelho de índice para a UI');
+  assert.strictEqual(si.preset,'crit');
+  assert.strictEqual(si.wave,10);
+  assert.strictEqual(si.active,false);
+  assert.strictEqual(si.slot,0,'o laboratório não pertence a slot nenhum');
+  SI.sandboxStart();
+  assert.strictEqual(SI.sandboxSessionInfo().active,true);
+  SI.sandboxExit(true);
 });
 
 console.log('---------------------------------------------');

@@ -1495,9 +1495,11 @@ function rangeLabel(px){
   return 'EXTREMO';
 }
 const STARTER_WEAPONS=WEAPONS.map((w,i)=>w.starter?i:-1).filter(i=>i>=0);
-/* apenas armas DESBLOQUEADAS entram no estoque da loja */
+/* estoque da loja: no jogo normal, só armas desbloqueadas (is*Unlocked
+   PURO — R5); no laboratório, o catálogo PRÓPRIO completo (§2) */
 function shopWeaponPool(){
   const out=[];
+  if(sandboxRun)return sandboxGetWeapons().filter(i=>WEAPONS[i].price);
   WEAPONS.forEach((w,i)=>{if(w.price&&isWeaponUnlocked(w.id))out.push(i);});
   return out;
 }
@@ -1591,13 +1593,50 @@ let sandboxRun=false;
    TEMPORÁRIO próprio (prog/meta/eco zerados, curSlot=0) e o contexto do
    modo normal é guardado aqui para ser RECARREGADO DO ARQUIVO na saída.
    O save nunca é backing store do sandbox (§4/§5/§8/§9). */
-let _sbSlotBak=0;
-/* §3: janela iniciada ao ENTRAR no sandbox e só liberada por uma run
-   REAL — mostra título/select logo após sair NÃO pode desbloquear nada
-   (checkUnlocks do showTitle ficaria a dever gravações pendentes). */
-let sandboxHoldUnlocks=false;
-const sandboxCfg={char:0,preset:'',wave:1};   // setup da sessão (não persiste)
+/* =====================================================================
+   R5 — SANDBOX: GRAFO DE ESTADO PRÓPRIO, ZERO PARTICIPAÇÃO NA PROGRESSÃO
+   ---------------------------------------------------------------------
+   O laboratório NÃO é "o jogo normal com unlock temporário". Ele possui:
+   · catálogo PRÓPRIO (sandboxGetOperators/Weapons/Items/Upgrades) que
+     devolve TODO o conteúdo existente SEM consultar is*Unlocked;
+   · contexto PRÓPRIO (sandboxContext) para operador/build/onda/créditos;
+   · NENHUMA referência compartilhada com prog/meta/slots/charSel/
+     curSlot/activeRun/echoQueue — nada é zerado, nothing to restore.
+   isCharUnlocked/isWeaponUnlocked/isItemUnlocked/isUpgUnlocked voltaram a
+   representar APENAS o jogo normal (nenhum override de sandbox).
+   ===================================================================== */
+const sandboxContext={
+  operatorId:null,      // id do CHARS escolhido no preparo (§6: separado de charSel)
+  weapons:[],items:[],upgrades:[],   // catálogo de teste (referências próprias)
+  credits:0,hp:null,shield:null,
+  wave:1,preset:'',modifiers:{},runtime:null
+};
+/* setup da sessão — VISTA de leitura/escrita sobre sandboxContext
+   (sandboxCfg.char NUNCA toca charSel nem grava em slot algum) */
+const sandboxCfg={
+  get char(){return CHARS.findIndex(c=>c.id===sandboxContext.operatorId);}, // -1=inválido
+  set char(v){const c=CHARS[clamp(v|0,0,CHARS.length-1)];sandboxContext.operatorId=c.id;},
+  get preset(){return sandboxContext.preset;},
+  set preset(v){sandboxContext.preset=String(v||'');},
+  get wave(){return sandboxContext.wave;},
+  set wave(v){sandboxContext.wave=clamp(v|0,1,MAX_WAVE);}
+};
 function sandboxActive(){return sandboxMode||sandboxRun;}
+/* operador de teste do contexto (nunca curChar/charSel) */
+function sandboxOperator(){
+  return CHARS.find(c=>c.id===sandboxContext.operatorId)||CHARS[0];
+}
+/* ---- §2: CATÁLOGO PRÓPRIO DO SANDBOX (sem consultar unlock) ---- */
+function sandboxGetOperators(){return CHARS.slice();}
+function sandboxGetWeapons(){return WEAPONS.map((w,i)=>i);}   // índices (wi)
+function sandboxGetItems(){return ITEMS.slice();}
+function sandboxGetUpgrades(){return UPGRADES.slice();}
+/* opções de startRun para o laboratório: player nasce do operador do
+   contexto, com meta zerada APENAS como leitura (a meta real não é
+   substituída) e sem Ecos reais (§7/§23) */
+function sandboxRunOpts(){
+  return {operatorId:sandboxOperator().id,freshMeta:true,noEchoes:true};
+}
 /* Marca a run como "suja": nada dela pode atravessar para os sistemas
    permanentes (Ecos salvos, progressão, meta-progresso, recordes). */
 function devTaint(){
@@ -2560,25 +2599,18 @@ const SB_WAVES=[1,3,5,10,15,20];
 /* estado TEMPORÁRIO do laboratório — equivalente a sandboxSession
    (operator/arsenal/itens/stats/enemies morrem ao sair — §8) */
 function sandboxSessionInfo(){
-  return {operator:sandboxCfg.char,preset:sandboxCfg.preset,
-    wave:sandboxCfg.wave,active:sandboxRun,slot:0};   // slot 0 = nenhum
+  return {operatorId:sandboxContext.operatorId,operator:sandboxCfg.char,
+    preset:sandboxCfg.preset,wave:sandboxCfg.wave,active:sandboxRun,
+    slot:0};   // R5: o laboratório não pertence a slot nenhum
 }
 function sandboxOpenSetup(){
   initAudio();
-  /* R4: NENHUM save slot é carregado como base (§5/§9). O contexto do
-     modo normal é apenas ANOTADO; prog/meta/Ecos do laboratório nascem
-     zerados e tudo morre na saída. */
-  _sbSlotBak=curSlot;
-  curSlot=0;                           // §4: nenhum slot ativo
-  activeRun=null;
-  meta={mem:0,spd:0,reroll:0,vault:0,wins:0,endings:[],evars:[]};
-  prog={kills:0,runs:0,waves:0,best:0,wins:0,bosses:0,minis:0,
-    elites:0,crits:0,dashes:0,coins:0,items:0,events:0,echoKills:0,
-    reso:0,melee:0,status:0,seen:[]};
-  echoQueue=[];                        // nenhum Echo é herdado
-  charSel=clamp(sandboxCfg.char,0,CHARS.length-1);
+  /* R5 (§12/§14/§22): o laboratório NÃO TOCA na progressão — nem em
+     memória. Nenhum slot é desativado (curSlot fica intacto), nenhum
+     global real (prog/meta/echoQueue/charSel/activeRun) é substituído,
+     zerado ou restaurado. Toda a sessão vive em sandboxContext. */
   sandboxMode=true;
-  sandboxHoldUnlocks=true;             // §3: a partir daqui nada desbloqueia
+  if(!sandboxContext.operatorId)sandboxContext.operatorId=CHARS[0].id;
   ovMenuVisible(false);
   hideOverlay();
   state='title';                       // fora de run enquanto no preparo
@@ -2660,12 +2692,6 @@ function renderSandboxSetup(){
   });
   cxFoot.textContent='ESC — VOLTAR AO MENU · O SETUP DO SANDBOX NÃO É SALVO';
 }
-/* ---- início da run de laboratório ---- */
-/* setChar persiste no slot real — o laboratório troca de operador SEM
-   tocar no registro do save (§73) */
-function sandboxSetChar(i){
-  charSel=clamp(i,0,CHARS.length-1);
-}
 /* §32: valida a configuração do preparo — {ok,reason} para o botão */
 function sandboxValidateCfg(){
   if(!Number.isInteger(sandboxCfg.char)||sandboxCfg.char<0||
@@ -2702,12 +2728,10 @@ function sandboxStart(){
     sandboxMode=false;
     sandboxRun=true;
     closeCodex();
-    /* §75/R4: nenhum Eco entra no laboratório — a fila já nasce vazia
-       no modo independente (nada é lido do save). */
-    echoQueue=[];
-    sandboxSetChar(sandboxCfg.char);
     hideOverlay();
-    startRun();                            // devTainted=!!DEV_MODE (§92 ok)
+    /* R5 §7/§8/§23: player nasce do sandboxContext.operatorId, meta de
+       leitura zerada, SEM tocar charSel/echoQueue/activeRun. */
+    startRun(sandboxRunOpts());            // devTainted=!!DEV_MODE (§92 ok)
     giveSandboxCredits(500);               // crédito de teste (só sandbox)
     if(sandboxCfg.preset&&BUILD_PRESETS[sandboxCfg.preset])
       applyBuildPreset(sandboxCfg.preset,player);
@@ -2798,15 +2822,13 @@ function giveSandboxCredits(n){
   if(!sandboxRun||!player)return;
   player.coins=clamp((player.coins||0)+n,0,999999);
 }
-/* R4: devolve o MODO NORMAL — o contexto (slot anterior, prog, meta,
-   Ecos, operador) é RECARREGADO DO ARQUIVO, nunca dos espelhos que o
-   laboratório usou como rascunho (§9/§44). */
+/* R5: NADA a restaurar — o laboratório nunca tocou nos globais reais
+   (prog/meta/curSlot/charSel/echoQueue/activeRun). A função permanece
+   apenas para desligar os adornos visuais do modo laboratório. */
 function sandboxRestoreReal(){
   const chip=$('sb-chip');if(chip)chip.classList.remove('on');
   const _ob=$('ov-back');
   if(_ob)_ob.textContent='VOLTAR AO MENU';
-  if(_sbSlotBak>=1&&smRoot){activateSlot(_sbSlotBak);}
-  _sbSlotBak=0;
 }
 /* ---- fim do laboratório: restaura o estado real do save ---- */
 function sandboxExit(toMenu){
@@ -2872,7 +2894,7 @@ function sandboxDeath(){
   ovSub.textContent='SANDBOX — NENHUM ECO FOI CRIADO · NADA FOI REGISTRADO';
   ovBody.innerHTML=
     'ONDA TESTADA <b>'+String(Math.max(1,wave)).padStart(2,'0')+'</b> · '+
-    'OPERADOR <b>'+curChar().nm+'</b> · TEMPO <b>'+fmtTime(runTime)+'</b><br>'+
+    'OPERADOR <b>'+sandboxOperator().nm+'</b> · TEMPO <b>'+fmtTime(runTime)+'</b><br>'+
     'ABATES NESTE TESTE: <b>'+kills+'</b> — O LABORATÓRIO NÃO ALIMENTA '+
     'RECORDES, UNLOCKS OU A MEMÓRIA DOS ECOS.';
   ovFrac.innerHTML='<span class="good">PROGRESSÃO REAL INTACTA</span>';
@@ -2892,9 +2914,9 @@ function sandboxRestart(){
   _sbResetPicks();
   sandboxClearRunState();
   hideOverlay();
-  /* R4: continua no MODO independente (sandboxRun segue true, curSlot 0)
-     — reinicia a sessão com o mesmo operador/build/onda, sem persistir */
-  startRun();
+  /* R5: continua no modo laboratório — reinicia com o MESMO operador/
+     build/onda do contexto, sem persistir nada. */
+  startRun(sandboxRunOpts());
   giveSandboxCredits(500);
   if(sandboxCfg.preset&&BUILD_PRESETS[sandboxCfg.preset])
     applyBuildPreset(sandboxCfg.preset,player);
@@ -3350,8 +3372,8 @@ function saveEchoes(){
   /* PROTEÇÃO DEV: uma run tocada pelo Modo Desenvolvedor jamais é gravada
      como Echo legítimo — o arquivo permanente fica exatamente como estava. */
   /* PROTEÇÃO SANDBOX (PR 11.5 §73): o laboratório não cria Echo. */
-  if(sandboxRun){
-    console.warn('[ECHO/SANDBOX] saveEchoes() ignorado: run de laboratório');
+  if(sandboxRun||sandboxMode){
+    console.warn('[ECHO/SANDBOX] saveEchoes() ignorado: laboratório ativo');
     return false;
   }
   if(devTainted){
@@ -3586,16 +3608,16 @@ function loadProg(){
 }
 let _progDirty=false;
 function saveProg(){
-  if(sandboxRun)return false;      // PROTEÇÃO SANDBOX (§73): nada registra
+  if(sandboxRun||sandboxMode)return false; // PROTEÇÃO SANDBOX (R5 §11): nada registra
   if(devTainted)return false;      // PROTEÇÃO DEV: progressão permanente intocada
   if(!smEnsureSlot())return false;
   try{smRoot.slots[curSlot].prog=JSON.parse(JSON.stringify(prog));smCommit();}catch(e){}
   return true;
 }
 function bumpProg(k,n){
-  /* PROTEÇÃO SANDBOX (§73): spawns/abates/vitórias do laboratório não
-     alimentam records nem condições de desbloqueio. */
-  if(sandboxRun)return;
+  /* PROTEÇÃO SANDBOX (R5 §11): spawns/abates/vitórias do laboratório não
+     alimentam records nem condições de desbloqueio — nem em memória. */
+  if(sandboxRun||sandboxMode)return;
   prog[k]=(prog[k]||0)+(n||1);_progDirty=true;
 }
 /* --------- CONDIÇÕES DE DESBLOQUEIO --------- */
@@ -3686,7 +3708,6 @@ function unlockKeyFor(t,id){
   return null;
 }
 function isWeaponUnlocked(id){
-  if(sandboxActive())return true;  // §76: Sandbox libera todo o conteúdo
   if(BASE_WEAPONS.indexOf(id)>=0)return true;
   const k=unlockKeyFor('w',id);
   if(!k)return true;
@@ -3698,21 +3719,18 @@ const BASE_ITEMS=['nucleo','placa','iman','coracao','lente','olho',
 const BASE_UPGRADES=['crit','critd','rate','hp','range','magnet',
   'dmg','dash','aoe','range2'];
 function isItemUnlocked(id){
-  if(sandboxActive())return true;  // §76: Sandbox libera todo o conteúdo
   if(BASE_ITEMS.indexOf(id)>=0)return true;
   const k=unlockKeyFor('i',id);
   if(!k)return true;
   return prog.seen.indexOf(k)>=0||UNLOCKS[k].need();
 }
 function isUpgUnlocked(id){
-  if(sandboxActive())return true;  // §76: Sandbox libera todo o conteúdo
   if(BASE_UPGRADES.indexOf(id)>=0)return true;
   const k=unlockKeyFor('u',id);
   if(!k)return true;
   return prog.seen.indexOf(k)>=0||UNLOCKS[k].need();
 }
 function isCharUnlocked(id){
-  if(sandboxActive())return true;  // §76: Sandbox libera todo o conteúdo
   if(BASE_CHARS.indexOf(id)>=0)return true;
   const k=unlockKeyFor('c',id);
   if(!k)return true;
@@ -3721,8 +3739,9 @@ function isCharUnlocked(id){
 /* verifica novos desbloqueios e notifica */
 let unlockQueue=[];
 function checkUnlocks(silent){
-  if(sandboxRun)return false;      // PROTEÇÃO SANDBOX (§73): nada desbloqueia
-  if(sandboxHoldUnlocks)return false; // §3: janela pós-laboratório também
+  /* R5: função do JOGO NORMAL — o sandbox nunca a chama; o guard abaixo é
+     apenas defesa em profundidade (nenhum unlock nasce no laboratório). */
+  if(sandboxRun||sandboxMode)return false;
   let any=false;
   for(const k in UNLOCKS){
     const u=UNLOCKS[k];
@@ -3783,8 +3802,12 @@ function charGunIdx(ids){
   }
   return out.length?out:STARTER_WEAPONS.slice();
 }
-function makePlayer(){
-  const C=curChar();
+function makePlayer(operatorId,freshMeta){
+  /* R5 §7: operatorId explícito → player do laboratório (sem tocar charSel).
+     freshMeta → meta zerada SÓ COMO LEITURA dos bônus de criação; a meta
+     real do save não é lida nem substituída. */
+  const C=operatorId?(CHARS.find(c=>c.id===operatorId)||CHARS[0]):curChar();
+  const M=freshMeta?{mem:0,spd:0,reroll:0,vault:0}:meta;
   const guns=charGunIdx(C.guns);
   const p={x:ARENA.w/2,y:ARENA.h/2,vx:0,vy:0,r:C.r,aim:0,
     charId:C.id,pal:C.pal,maxSlots:C.slots||3,
@@ -3798,14 +3821,14 @@ function makePlayer(){
     shieldRegen:C.shieldRegen||0,
     shieldDelay:C.shieldDelay||0,
     shieldDelayT:0,
-    speed:C.speed*(1+.05*meta.spd),accel:2600,
+    speed:C.speed*(1+.05*M.spd),accel:2600,
     owned:guns.slice(),
     wi:guns[0],fireTimer:0,dmgMul:C.dmg,fireRateMul:C.rate,
     dashT:0,dashCd:0,dashCdMax:C.dashCd,dashDx:1,dashDy:0,
     level:1,xp:0,xpNext:20,ghosts:[],hurtT:0,auraSlow:1,invT:0,
-    coins:25*meta.vault,crit:C.crit,critMul:1.8,pierce:0,aoeMul:1,rangeMul:1,
+    coins:25*M.vault,crit:C.crit,critMul:1.8,pierce:0,aoeMul:1,rangeMul:1,
     projSpdMul:1,longRangeBonus:0,
-    freeRerolls:meta.reroll,
+    freeRerolls:M.reroll,
     pickupR:170,dmgTakenMul:1,coinMul:1,dashReflect:false,echoBoost:0,
     items:[],upgLog:[],tempPen:0,tempT:0,repairs:0,
     anomalyT:0,visionUntil:-1,regen:0,rushT:0,
@@ -3817,7 +3840,7 @@ function makePlayer(){
      partir dela + os modificadores por smRefresh(). */
   p._smBase={
     dmg:C.dmg, rate:C.rate, crit:C.crit, critMul:1.8,
-    speed:C.speed*(1+.05*meta.spd), pickupR:170, coinMul:1, dmgTaken:1,
+    speed:C.speed*(1+.05*M.spd), pickupR:170, coinMul:1, dmgTaken:1,
     range:1, projSpd:1, aoe:1, pierce:0,
     /* PR 11: base imutável do Shield entra no mesmo pipeline */
     shieldMax:C.shieldMax||0, shieldRegen:C.shieldRegen||0,
@@ -7319,7 +7342,9 @@ function rollShop(){
   // ---- UPGRADES ----
   const lockU=(shopLock&&shopLock.kind==='upg')
     ? UPGRADES.find(u=>u.id===shopLock.id) : null;
-  const pool=UPGRADES.filter(u=>(!lockU||u.id!==lockU.id)&&isUpgUnlocked(u.id));
+  /* R5 §2: no laboratório o pool vem do catálogo próprio do sandbox */
+  const pool=UPGRADES.filter(u=>(!lockU||u.id!==lockU.id)&&
+    (sandboxRun||isUpgUnlocked(u.id)));
   const nOff=player.bigShop?6:3;      // ARQUIVO PROIBIDO expande a loja
   shopOffers=lockU?[lockU]:[];
   while(shopOffers.length<nOff&&pool.length){
@@ -7329,8 +7354,9 @@ function rollShop(){
   // ---- MÓDULOS PASSIVOS ----
   const lockI=(shopLock&&shopLock.kind==='item'&&!ownsItem(shopLock.id))
     ? itemById(shopLock.id) : null;
+  /* R5 §2: catálogo próprio do sandbox para itens da loja */
   const ip=ITEMS.filter(i=>!ownsItem(i.id)&&(!lockI||i.id!==lockI.id)&&
-    isItemUnlocked(i.id));
+    (sandboxRun||isItemUnlocked(i.id)));
   shopItems=lockI?[lockI]:[];
   while(shopItems.length<2&&ip.length){
     const pick=pickWeightedMoral(ip,wave);   // PR 9: viés pequeno p/ sintonia
@@ -8035,7 +8061,7 @@ oracle(){
     'Ele sussurra o que vem: <b>+2 upgrades aleatórios instalados</b>. '+
     'Mas saber o futuro pesa: <b>−15 de vida máxima permanente</b>.',
     [2,0,0],'',false,()=>{
-      const pool=UPGRADES.filter(u=>isUpgUnlocked(u.id));
+      const pool=UPGRADES.filter(u=>sandboxRun||isUpgUnlocked(u.id));
       for(let i=0;i<2&&pool.length;i++){
         const u=pool.splice(randi(0,pool.length-1),1)[0];
         u.apply(player);player.upgLog.push(u.nm);
@@ -8654,7 +8680,7 @@ const RUN_EVENTS=[
       ' de dano</b>, mas a câmara abre: <b>1 upgrade aleatório</b> instalado na hora.',
       [0,1,2],'',false,()=>{
         player.invT=0;damagePlayer(hpCost);
-        const pool=UPGRADES.filter(u=>isUpgUnlocked(u.id));
+        const pool=UPGRADES.filter(u=>sandboxRun||isUpgUnlocked(u.id));
         if(pool.length){
           const u=pool[randi(0,pool.length-1)];
           u.apply(player);player.upgLog.push(u.nm);
@@ -9032,7 +9058,7 @@ const RUN_EVENTS=[
       [4,0,0],'',false,()=>{
         const c=Math.max(1,Math.round(player.hp*.25));
         player.invT=0;damagePlayer(c);
-        const pool=UPGRADES.filter(u=>isUpgUnlocked(u.id));
+        const pool=UPGRADES.filter(u=>sandboxRun||isUpgUnlocked(u.id));
         if(pool.length){
           const u=pool[randi(0,pool.length-1)];
           u.apply(player);player.upgLog.push(u.nm);
@@ -9445,7 +9471,7 @@ const RUN_EVENTS=[
       'ensina enquanto trabalha, e a aula fica.',
       [0,2,0],'',false,()=>{
         player.hp=Math.max(1,player.hp-hpCost);
-        const pool=UPGRADES.filter(u=>isUpgUnlocked(u.id));
+        const pool=UPGRADES.filter(u=>sandboxRun||isUpgUnlocked(u.id));
         for(let i=0;i<2&&pool.length;i++){
           const u=pool.splice(randi(0,pool.length-1),1)[0];
           u.apply(player);player.upgLog.push(u.nm);
@@ -11362,7 +11388,7 @@ function trySpecial(){
       const c2=Math.round(120*mEff.coinMul*player.coinMul);
       player.coins+=c2;
       player.hp=Math.min(player.maxHp,player.hp+35);
-      const pool=UPGRADES.filter(u=>isUpgUnlocked(u.id));
+      const pool=UPGRADES.filter(u=>sandboxRun||isUpgUnlocked(u.id));
       if(pool.length){
         const u=pool[randi(0,pool.length-1)];
         u.apply(player);player.upgLog.push(u.nm);
@@ -13971,7 +13997,7 @@ function loadMeta(){
   }catch(e){}
 }
 function saveMeta(){
-  if(sandboxRun)return false;      // PROTEÇÃO SANDBOX (§73): meta intocada
+  if(sandboxRun||sandboxMode)return false; // PROTEÇÃO SANDBOX (R5 §11): meta intocada
   if(devTainted)return false;      // PROTEÇÃO DEV: meta-progresso intocado
   if(!smEnsureSlot())return false;
   try{smRoot.slots[curSlot].meta=JSON.parse(JSON.stringify(meta));smCommit();}catch(e){}
@@ -14796,8 +14822,8 @@ function smBuildCheckpoint(reason,waveOverride){
   };
 }
 function captureCheckpoint(reason,waveOverride){
-  /* PROTEÇÃO SANDBOX (§91): laboratório não cria Continue Run. */
-  if(sandboxRun)return false;
+  /* PROTEÇÃO SANDBOX (R5 §23): laboratório não cria Continue Run. */
+  if(sandboxRun||sandboxMode)return false;
   /* PROTEÇÃO DEV: run depurada nunca gera checkpoint legítimo */
   if(devTainted)return false;
   if(!player)return false;
@@ -14811,6 +14837,8 @@ function captureCheckpoint(reason,waveOverride){
   return true;
 }
 function clearActiveRun(doCommit){
+  /* R5 §23: o laboratório não apaga a activeRun real do slot. */
+  if(sandboxRun||sandboxMode)return;
   activeRun=null;
   if(curSlot>=1&&smRoot){
     smRoot.slots[curSlot].run=null;
@@ -15121,18 +15149,18 @@ function resetRunWorld(){
   recorder=[];recAcc=0;
   runStReset();   // PR 8: run nova começa com métricas de personalidade zeradas
 }
-function startRun(){
-  /* §3: run REAL libera a janela de supressão de unlocks do sandbox.
-     (sandboxStart seta sandboxRun=true antes de chamar startRun —
-     então a janela NÃO é liberada pelo laboratório.) */
-  if(!sandboxRun)sandboxHoldUnlocks=false;
+function startRun(opts){
+  opts=opts||{};
   /* Se o Modo Desenvolvedor já estiver ligado quando a run começa, ela
      nasce marcada como debug. Caso contrário, começa limpa. */
   devTainted=!!DEV_MODE;
   _lastHurtAt=-999;                 // PR 10: janela de contenção começa limpa
   resetRunWorld();
-  player=makePlayer();
-  echoes=echoQueue.map((d,i)=>makeEcho(d,i+1));
+  /* R5 §7: o laboratório cria o player direto do operador do contexto
+     (sandboxContext.operatorId) — NUNCA via charSel/curChar. */
+  player=makePlayer(opts.operatorId||null,!!opts.freshMeta);
+  /* R5 §23: run de laboratório não usa a fila real de Ecos. */
+  echoes=opts.noEchoes?[]:echoQueue.map((d,i)=>makeEcho(d,i+1));
   buildWeaponHUD();
   cam.x=player.x;cam.y=player.y;
   banner('CICLO INICIADO',echoes.length?
@@ -17752,6 +17780,9 @@ function refreshTitleChar(){
 
 /* ---------------- boot ---------------- */
 function showTitle(){
+  state='title';                       // R5 §17: título É state 'title' —
+                                       // qualquer tela que renderize o menu
+                                       // global volta roteável (INICIAR etc.)
   ovExitMenu(false);
   ovMenuVisible(true);                 // R4 §3: SANDBOX só no menu global
   loadCfg();                    // configurações globais (APP SETTINGS)
@@ -18013,7 +18044,10 @@ $('ov-exitmenu').addEventListener('click',e=>{
    só respondia a Enter/Space e um clique real não fazia nada. */
 $('ov-go').addEventListener('click',e=>{
   e.stopPropagation();initAudio();
-  if(state==='fracture'||state==='victory'){AUDIO.ui(660);beginNextRun();}
+  if(state==='fracture'||state==='victory'){AUDIO.ui(660);beginNextRun();return;}
+  /* R5 §19: clique REAL no INICIAR do título — não depende só do
+     roteamento de mousedown. */
+  if(state==='title'){AUDIO.ui(760);showSlotSelect();}
 });
 /* §1: no preparo do Sandbox, VOLTAR AO MENU é a ÚNICA saída clicável —
    e volta de verdade ao menu (codex + overlay de título coerentes). */
