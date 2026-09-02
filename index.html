@@ -1586,6 +1586,10 @@ let devTainted=false;      // a run atual foi tocada por ferramentas DEV?
    ===================================================================== */
 let sandboxMode=false;
 let sandboxRun=false;
+/* §3: janela iniciada ao ENTRAR no sandbox e só liberada por uma run
+   REAL — mostra título/select logo após sair NÃO pode desbloquear nada
+   (checkUnlocks do showTitle ficaria a dever gravações pendentes). */
+let sandboxHoldUnlocks=false;
 const sandboxCfg={char:0,preset:'',wave:1};   // setup da sessão (não persiste)
 let _sbEchoQueueBak=null;                     // echoQueue real preservada
 function sandboxActive(){return sandboxMode||sandboxRun;}
@@ -1667,10 +1671,13 @@ window.addEventListener('keydown',e=>{
     if(!e.repeat)onGameEsc();
     return;
   }
-  /* PR 11.5 §79: F1 abre o painel do laboratório (só no Sandbox) */
+  /* PR 11.5 §79/§13: F1 só faz algo DENTRO de uma run de Sandbox.
+     Em run normal (ou em qualquer outro estado): return — não abre
+     overlay, não muda state, não intercepta nada além do default. */
   if(e.code==='F1'){
     e.preventDefault();
-    if(!e.repeat)sbPanelToggle();
+    if(!e.repeat&&sandboxRun&&(state==='play'||state==='sandbox'))
+      sbPanelToggle();                     // abrir (play) e fechar (painel)
     return;
   }
   /* PR 11.5 §26 — TAB abre o Registro de Combate
@@ -2136,9 +2143,12 @@ function onGameEsc(){
     }
     sbPanelClose();return;
   }
-  // 2. painel de Arsenal / Configurações
+  // 2. painel de Arsenal / Configurações (no Sandbox: volta ao menu)
   const cx=document.getElementById('codex');
-  if(cx&&cx.classList.contains('on')){closeCodex();return;}
+  if(cx&&cx.classList.contains('on')){
+    if(codexMode==='sandbox'&&!sandboxRun){sandboxCloseSetup();return;}
+    closeCodex();return;
+  }
   // 3. menu de pausa
   if(state==='play'){pauseGame();return;}
   if(state==='paused'){resumeGame();return;}
@@ -2544,6 +2554,7 @@ const SB_WAVES=[1,3,5,10,15,20];
 function sandboxOpenSetup(){
   initAudio();
   sandboxMode=true;
+  sandboxHoldUnlocks=true;             // §3: a partir daqui nada desbloqueia
   hideOverlay();
   state='title';                       // fora de run enquanto no preparo
   openCodex('sandbox');
@@ -2777,9 +2788,10 @@ function sandboxExit(toMenu){
   if(!sandboxRun&&!sandboxMode)return;
   sandboxRun=false;sandboxMode=false;
   sbPanelClose();
+  _sbResetPicks();
+  sandboxClearRunState();               // §14: spawn state da arena some
   /* §18: nenhum ajuste do laboratório atravessa para o jogo real */
   if(player){stripSandboxMods(player);}
-  _sbResetPicks();
   sandboxRestoreReal();
   ovExitMenu(false);
   $('endwrap').classList.remove('on');
@@ -3677,6 +3689,7 @@ function isCharUnlocked(id){
 let unlockQueue=[];
 function checkUnlocks(silent){
   if(sandboxRun)return false;      // PROTEÇÃO SANDBOX (§73): nada desbloqueia
+  if(sandboxHoldUnlocks)return false; // §3: janela pós-laboratório também
   let any=false;
   for(const k in UNLOCKS){
     const u=UNLOCKS[k];
@@ -14330,7 +14343,13 @@ function smNewRoot(){
     slots:{1:smDefaultSlot(),2:smDefaultSlot(),3:smDefaultSlot()}};
 }
 function smCommit(){
+  /* PROTEÇÃO SANDBOX CENTRALIZADA (PR 11.5 §3–§5): o arquivo do save
+     NÃO é escrito com o laboratório ativo — mesmo se algum writer
+     futuro esquecer o guard próprio. Todos os caminhos de persistência
+     (prog, meta, echoes, checkpoint, slot) passam por aqui. */
+  if(sandboxRun||sandboxMode)return false;
   try{localStorage.setItem(SM_KEY,JSON.stringify(smRoot));}catch(e){}
+  return true;
 }
 /* ---- PR 10.5.2: GERÊNCIA DE DADOS DO SLOT (Configurações → Dados) ----
    Duas ações destrutivas com confirmação obrigatória:
@@ -15068,6 +15087,10 @@ function resetRunWorld(){
   runStReset();   // PR 8: run nova começa com métricas de personalidade zeradas
 }
 function startRun(){
+  /* §3: run REAL libera a janela de supressão de unlocks do sandbox.
+     (sandboxStart seta sandboxRun=true antes de chamar startRun —
+     então a janela NÃO é liberada pelo laboratório.) */
+  if(!sandboxRun)sandboxHoldUnlocks=false;
   /* Se o Modo Desenvolvedor já estiver ligado quando a run começa, ela
      nasce marcada como debug. Caso contrário, começa limpa. */
   devTainted=!!DEV_MODE;
@@ -17947,8 +17970,20 @@ $('ov-go').addEventListener('click',e=>{
   e.stopPropagation();initAudio();
   if(state==='fracture'||state==='victory'){AUDIO.ui(660);beginNextRun();}
 });
-$('cx-close').addEventListener('click',e=>{e.stopPropagation();closeCodex();});
-codexEl.addEventListener('click',e=>{if(e.target===codexEl)closeCodex();});
+/* §1: no preparo do Sandbox, VOLTAR AO MENU é a ÚNICA saída clicável —
+   e volta de verdade ao menu (codex + overlay de título coerentes). */
+$('cx-close').addEventListener('click',e=>{
+  e.stopPropagation();
+  if(codexMode==='sandbox'&&!sandboxRun){sandboxCloseSetup();return;}
+  closeCodex();
+});
+/* §1/§18: clique no BACKDROP (fora do painel) não sai do Sandbox —
+   fica literalmente sem efeito. Nos demais painéis mantém o fechar. */
+codexEl.addEventListener('click',e=>{
+  if(e.target!==codexEl)return;
+  if(codexMode==='sandbox')return;      // backdrop inerte no Sandbox
+  closeCodex();
+});
 
 /* ---- ligação dos botões do menu de pausa ---- */
 document.getElementById('p-resume').addEventListener('click',resumeGame);

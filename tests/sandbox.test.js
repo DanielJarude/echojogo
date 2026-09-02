@@ -53,7 +53,13 @@ src+=';globalThis.__t={'+
   'getBeacon:()=>beacon,getKills:()=>kills,'+
   'isDevTainted:()=>devTainted,forceDevMode:v=>{DEV_MODE=v;},'+
   'getEl:id=>document.getElementById(id),'+
-  'getLS:()=>localStorage};';
+  'getLS:()=>localStorage,'+
+  'getSbHold:()=>sandboxHoldUnlocks,onGameEsc,'+
+  'sbPanelCanOpen,'+
+  'getSmCommit:()=>smCommit,'+
+  'showTitle,'+
+  'pressKey:(code,type)=>{const ev={code,repeat:false,preventDefault(){}};'+
+  '  (window._wl[type||"keydown"]||[]).forEach(f=>f(ev));}};';
 
 /* ---------------- DOM mínimo (mesmo harness das outras suítes) ---------------- */
 function makeStyle(){
@@ -186,7 +192,9 @@ const document={
 const window={
   innerWidth:1280,innerHeight:720,devicePixelRatio:1,
   screen:{availWidth:1280,availHeight:720},
-  addEventListener:()=>{},removeEventListener:()=>{},
+  _wl:{},
+  addEventListener(t,fn){(this._wl[t]=this._wl[t]||[]).push(fn);},
+  removeEventListener(){},
   matchMedia:()=>({addEventListener:()=>{},addListener:()=>{}}),
   AudioContext:undefined,webkitAudioContext:undefined,
   open:()=>({close(){}}),getGamepads:()=>[],echoDesktop:undefined
@@ -1024,6 +1032,227 @@ ok('UI: estrutura — rodapé da ficha documenta ESC cancela / TAB abre-fecha',(
   assert(html.indexOf('ARSENAL: CLIQUE EM 2 SLOTS PARA TROCAR')>=0);
   assert(html.indexOf('ES CANCELA')>=0||html.indexOf('ESC — CANCELA')>=0||
          html.indexOf('CANCELA SELEÇÃO')>=0);
+});
+
+/* =====================================================================
+   R3 — BACKDROP, ISOLAMENTO ABSOLUTO E F1 (feedback rodada 3)
+   ===================================================================== */
+ok('R3§1/§2: clique FORA do painel (backdrop) NÃO fecha o Sandbox',()=>{
+  const B=bootGame();
+  B.getEl('ov-sandbox').click();               // abre o preparo
+  B.getEl('cx-body').querySelectorAll('[data-sbchar="2"]')[0].click();
+  B.getEl('cx-body').querySelectorAll('[data-sbpreset="crit"]')[0].click();
+  B.getEl('cx-body').querySelectorAll('[data-sbwave="10"]')[0].click();
+  assert.strictEqual(B.getSandboxMode(),true);
+  assert.strictEqual(B.getState(),'title');
+  /* clique real no BACKDROP (target === codexEl) */
+  B.getEl('codex').dispatchEvent({type:'click',target:B.getEl('codex'),
+    stopPropagation(){},preventDefault(){}});
+  assert.strictEqual(B.getSandboxMode(),true,'continua no Sandbox');
+  assert.strictEqual(B.getState(),'title','state não mudou');
+  assert.strictEqual(B.getSandboxCfg().char,2,'config preservada');
+  assert.strictEqual(B.getSandboxCfg().preset,'crit','preset preservado');
+  assert.strictEqual(B.getSandboxCfg().wave,10,'onda preservada');
+  const go=B.getEl('cx-body').querySelector('#sb-start');
+  assert(go&&go._cls.indexOf('dis')<0,'INICIAR continua disponível');
+  /* múltiplos cliques no backdrop continuam inertes */
+  B.getEl('codex').dispatchEvent({type:'click',target:B.getEl('codex'),
+    stopPropagation(){},preventDefault(){}});
+  assert.strictEqual(B.getSandboxMode(),true,'seguir no Sandbox');
+});
+ok('R3§1: VOLTAR AO MENU (cx-close) é a única saída clicável e funciona',()=>{
+  const B=bootGame();
+  B.getEl('ov-sandbox').click();
+  assert.strictEqual(B.getSandboxMode(),true);
+  B.getEl('cx-close').click();
+  assert.strictEqual(B.getSandboxMode(),false,'preparo encerrado');
+  assert.strictEqual(B.getState(),'title');
+  assert.strictEqual(B.getEl('ov-title').textContent,'E C H O',
+    'menu inicial de volta (overlay coerente)');
+});
+ok('R3§20: ESC no preparo sai para o menu (regra intencional e consistente)',()=>{
+  const B=bootGame();
+  B.getEl('ov-sandbox').click();
+  assert.strictEqual(B.getSandboxMode(),true);
+  B.onGameEsc();
+  assert.strictEqual(B.getSandboxMode(),false);
+  assert.strictEqual(B.getState(),'title');
+});
+
+/* ---- §7/§8: BYTE-FOR-BYTE nos 3 SAVE SLOTS ---- */
+/* forja um save com 3 slots distintos; slot 1 com prog.kills=99999 para
+   PROVAR que o showTitle pós-sandbox NÃO desbloqueia nada pendente */
+function forge3Slots(b){
+  /* forja DEPOIS do activateSlot, direto no smRoot EM MEMÓRIA — assim
+     memória e localStorage nascem consistentes e nenhum commit fora do
+     sandbox desfaz a forja (activateSlot não é mais chamado). */
+  b.activateSlot(1);                            // slot 1 real (PYRE)
+  b.setChar(3);
+  const root=b.getSmRoot();
+  root.slots[1].prog.kills=400;    // w_beam(250)/u_pierce(400) PENDENTES;
+                                   // revenant(2000)/luneta(500) ainda locked
+  root.slots[2]={touched:true,char:6,           // slot 2: HARDEN
+    meta:{mem:111,spd:1,reroll:0,vault:0,wins:2,endings:[],evars:[]},
+    prog:{kills:500,runs:3,waves:20,best:9,wins:1,bosses:1,minis:1,
+      elites:3,crits:9,dashes:9,coins:9,items:9,events:9,echoKills:9,
+      reso:9,melee:9,status:9,seen:[]},
+    echoes:[{marker:'slot2-echo'}],run:null};
+  root.slots[3]={touched:true,char:7,           // slot 3: REVENANT
+    meta:{mem:222,spd:2,reroll:1,vault:1,wins:5,endings:[],evars:[]},
+    prog:{kills:2000,runs:9,waves:80,best:15,wins:3,bosses:2,minis:2,
+      elites:9,crits:9,dashes:9,coins:9,items:9,events:9,echoKills:9,
+      reso:9,melee:9,status:9,seen:['c_revenant']},
+    echoes:[{marker:'slot3-echo'}],run:null};
+  root.lastSlot=1;
+  b.getLS().setItem('echoSave.v3',JSON.stringify(root)); // commit manual
+  if(b.getProg()&&b.getProg().kills===0)b.getProg().kills=400; // espelho vivo
+}
+const Z=bootGame();
+forge3Slots(Z);
+const SNAPSHOT=Z.getLS().getItem('echoSave.v3');
+ok('R3§6: unlock é SOBREPOSIÇÃO — locked vira disponível sem gravar',()=>{
+  /* antes: locked de verdade (condições de unlock ainda não cumpridas) */
+  Z.activateSlot(1);
+  assert.strictEqual(Z.isCharUnlocked('revenant'),false,'fora do sandbox é locked');
+  assert.strictEqual(Z.isWeaponUnlocked('void'),false);
+  assert.strictEqual(Z.isItemUnlocked('luneta'),false);
+  assert.strictEqual(Z.getProg().seen.indexOf('w_beam'),-1,
+    'pendentes ainda não foram gravados fora');
+  Z.sandboxOpenSetup();                          // ENTRAR no sandbox
+  assert.strictEqual(Z.isCharUnlocked('revenant'),true,'§76 dentro: disponível');
+  assert.strictEqual(Z.isWeaponUnlocked('void'),true);
+  assert.strictEqual(Z.isItemUnlocked('luneta'),true);
+  assert.strictEqual(Z.getProg().seen.indexOf('w_beam'),-1,
+    'NADA foi gravado em prog.seen (§5)');
+});
+ok('R3§7/§8: sessão COMPLETA deixa os 3 slots BYTE A BYTE idênticos',()=>{
+  Z.getSandboxCfg().char=7;                      // REVENANT (locked!)
+  Z.getSandboxCfg().preset='crit';
+  Z.getSandboxCfg().wave=1;
+  assert.strictEqual(Z.sandboxStart(),true);
+  const p=Z.getPlayer();
+  /* usa conteúdo BLOQUEADO */
+  const voidWi=Z.WEAPONS.findIndex(w=>w.id==='void');
+  assert.strictEqual(Z.grantWeapon(voidWi,true),true,'arma locked usada no teste');
+  const luneta=Z.itemById('luneta');
+  assert(Z.grantItemInternal(p,luneta,true),'item locked adicionado');
+  /* spawn de boss + ajustes de stats */
+  Z.sbPanelShow();
+  Z.sandboxJumpTo(20);
+  Z.sbAction('boss');
+  Z.sbAction('mod:damage:1');Z.sbAction('mod:crit:1');
+  Z.sbAction('breaksh');
+  Z.sbPanelClose();
+  /* vitória no laboratório */
+  Z.onVictory();
+  assert.strictEqual(Z.getState(),'victory');
+  /* reinicia e MORRE no laboratório */
+  Z.sandboxRestart();
+  Z.onPlayerDeath();
+  assert.strictEqual(Z.getState(),'fracture');
+  /* sai para o menu — showTitle roda checkUnlocks(true): SUPRIMIDO */
+  Z.sandboxExit(true);
+  /* ===== comparação byte a byte ===== */
+  assert.strictEqual(Z.getLS().getItem('echoSave.v3'),SNAPSHOT,
+    'echoSave.v3 (os 3 slots) BYTE A BYTE idêntico');
+  /* memória interna dos 3 slots também */
+  const s=Z.getSmRoot().slots;
+  assert.strictEqual(s[1].prog.kills,400,'slot1: prog intocado');
+  assert.strictEqual(s[2].char,6,'slot2: operador intocado');
+  assert.strictEqual(s[2].prog.kills,500,'slot2: prog intocado');
+  assert.strictEqual(s[3].char,7,'slot3: operador intocado');
+  assert.strictEqual(JSON.stringify(s[2].echoes),'[{"marker":"slot2-echo"}]',
+    'slot2: Ecos intactos');
+  assert.strictEqual(JSON.stringify(s[3].echoes),'[{"marker":"slot3-echo"}]',
+    'slot3: Ecos intactos');
+  assert.strictEqual(s[2].meta.mem,111,'slot2: meta intocada');
+  assert.strictEqual(s[3].meta.mem,222,'slot3: meta intocada');
+});
+ok('R3§3: nem morte, nem vitória, nem saída desbloqueiam (janela pós-sandbox)',()=>{
+  assert.strictEqual(Z.checkUnlocks(),false,'checkUnlocks suprimido');
+  assert.strictEqual(Z.getProg().seen.length,0,
+    'prog.seen vazio — w_beam/u_pierce pendentes NÃO gravados');
+  assert.strictEqual(Z.getSmRoot().slots[1].prog.seen.length,0,
+    'nada no slot persistido');
+  /* showTitle de novo (como o jogador veria): ainda suprimido */
+  Z.showTitle();
+  assert.strictEqual(Z.getLS().getItem('echoSave.v3'),SNAPSHOT,
+    'showTitle pós-sandbox NÃO grava desbloqueio pendente');
+  assert.strictEqual(Z.isCharUnlocked('revenant'),false,'fora do sandbox volta a locked');
+  assert.strictEqual(Z.isWeaponUnlocked('void'),false);
+  assert.strictEqual(Z.isItemUnlocked('luneta'),false);
+  assert.strictEqual(Z.getSbHold(),true,'janela ativa até run real');
+});
+ok('R3§3: a janela só é liberada por uma run REAL (sem quebrar o jogo normal)',()=>{
+  Z.setState('title');
+  Z.startRun();                                  // run real
+  assert.strictEqual(Z.getSbHold(),false,'janela liberada por run real');
+  /* morte real: fluxo normal do jogo pode registrar (comportamento padrão) */
+  Z.onPlayerDeath();
+  assert(Z.getProg().seen.indexOf('w_beam')>=0,
+    'run real death → unlock pendente legítimo (w_beam, 250 kills)');
+  assert(Z.getProg().seen.indexOf('u_pierce')>=0,
+    'u_pierce (400 kills) também merecido pela run real');
+  assert.strictEqual(Z.getProg().seen.indexOf('i_luneta'),-1,
+    'luneta (500 kills) NÃO merecida: continua locked');
+  assert.notStrictEqual(Z.getLS().getItem('echoSave.v3'),SNAPSHOT,
+    'a partir da run REAL o save evolui normalmente');
+});
+
+/* ---- §10–§17: F1 E HUD SÓ NO SANDBOX ---- */
+ok('R3§17: run normal — F1 NÃO faz nada e chip SANDBOX não aparece',()=>{
+  const R=bootGame();
+  R.setState('title');R.startRun();              // run NORMAL (sem sandbox)
+  assert.strictEqual(R.getState(),'play');
+  assert.strictEqual(R.getEl('sb-chip').classList.contains('on'),false,
+    'chip invisível (classe on ausente)');
+  R.pressKey('F1');
+  assert.strictEqual(R.getState(),'play','state não mudou');
+  assert.strictEqual(R.getSbPanelOpen(),false,'painel NÃO abriu');
+  R.sbPanelShow();                               // API direta também é barrada
+  assert.strictEqual(R.getSbPanelOpen(),false,'sbPanelCanOpen=false fora do sandbox');
+});
+ok('R3§10/§13: no Sandbox o F1 aparece e funciona',()=>{
+  const R2=bootGame();
+  R2.sandboxExit(true);R2.setState('title');
+  R2.sandboxOpenSetup();
+  R2.getSandboxCfg().char=0;R2.sandboxStart();
+  assert.strictEqual(R2.getEl('sb-chip').classList.contains('on'),true,
+    'chip SANDBOX · [F1] LABORATÓRIO visível só com sandboxRun');
+  R2.pressKey('F1');
+  assert.strictEqual(R2.getSbPanelOpen(),true,'F1 abre o painel');
+  assert.strictEqual(R2.getState(),'sandbox');
+  R2.pressKey('F1');
+  assert.strictEqual(R2.getSbPanelOpen(),false,'F1 fecha');
+});
+ok('R3§15/§16: Sandbox → sair → run NORMAL fica 100% limpa',()=>{
+  const R3=bootGame();
+  R3.sandboxExit(true);R3.setState('title');
+  R3.sandboxOpenSetup();
+  R3.getSandboxCfg().char=0;R3.sandboxStart();
+  const sb=R3.getPlayer();
+  R3.sbPanelShow();
+  R3.sbAction('mod:damage:1');R3.sbAction('mod:speed:1');
+  assert(sb.sm.some(x=>x.id.indexOf('sandbox:')===0),'mods sandbox ativos');
+  R3.sandboxExit(true);                          // sai para o menu
+  assert.strictEqual(R3.getSandboxRun(),false,'§14: sandboxRun=false');
+  assert.strictEqual(R3.getEl('sb-chip').classList.contains('on'),false,
+    'chip some');
+  /* run NORMAL nova */
+  R3.setState('title');R3.startRun();
+  const p=R3.getPlayer();
+  assert.strictEqual(R3.getSandboxRun(),false);
+  assert.strictEqual(R3.getSmCommit()(),true,'smCommit grava de novo (fora do sandbox)');
+  R3.pressKey('F1');
+  assert.strictEqual(R3.getSbPanelOpen(),false,'F1 inativo na run normal');
+  assert.strictEqual(R3.getEl('sb-chip').classList.contains('on'),false);
+  assert(p.sm.every(x=>x.id.indexOf('sandbox:')<0),'stats normais (sem mods)');
+  assert(p._sbMods==null,'estado de ajustes zerado (player novo)');
+  assert(p.dmgMul===1||p.dmgMul===p._smBase.dmg,'dano base do operador');
+  /* unlocks reais intactos e conteúdo continua locked */
+  assert.strictEqual(R3.isCharUnlocked('revenant'),false);
+  assert.strictEqual(R3.isWeaponUnlocked('beam'),false);
+  assert.strictEqual(R3.getSmRoot().slots[1].prog.seen.indexOf('w_beam'),-1);
 });
 
 console.log('---------------------------------------------');

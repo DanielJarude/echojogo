@@ -11,7 +11,25 @@
 
 Com o laboratório ativo (`sandboxRun`), **nenhuma função de persistência
 age**. O arquivo do save em localStorage fica byte a byte idêntico antes,
-durante e depois de uma sessão (testado).
+durante e depois de uma sessão (testado para os 3 slots).
+
+**Defesa em profundidade:** o próprio `smCommit()` — o único escritor de
+`echoSave.v3` — recusa gravar com `sandboxRun||sandboxMode`. Mesmo que um
+writer futuro esqueça o guard próprio, nada é persistido.
+
+**Unlock é SOBREPOSIÇÃO, nunca gravação (§5/§6):** o sandbox não usa
+"unlock-all" escrevendo no save. `is*Unlocked` sobrepõe disponibilidade
+quando `sandboxActive()` — exatamente o padrão
+`isContentAvailable(id){ if (sandboxRun||sandboxSetupOpen) return true;
+return realUnlockState(id); }`. Nenhuma chave é acrescentada a
+`prog.seen`, nem temporariamente.
+
+**Janela pós-laboratório (§3):** sair do sandbox NÃO pode desbloquear as
+condições já merecidas pelo save real. `sandboxHoldUnlocks` é ligada ao
+ABRIR o preparo e suprime `checkUnlocks` (inclusive o do `showTitle` pós-
+saída); ela só é liberada por uma **run real** (`startRun` com
+`sandboxRun=false`) — o jogo normal continua sincronizando unlocks
+pendentes como sempre.
 
 | Função | Comportamento no sandbox |
 |---|---|
@@ -50,6 +68,12 @@ MENU → SANDOX (botão do título) → sandboxOpenSetup()
   INICIAR TESTE → sandboxStart()        → run de laboratório
 ```
 
+**Backdrop inerte (§1/§18):** clicar fora do painel do preparo NÃO faz
+nada — não fecha, não volta ao menu, não muda state, não limpa a config.
+As únicas saídas clicáveis são **VOLTAR AO MENU** (rodapé do codex, que
+executa `sandboxCloseSetup` e cai no menu principal com overlay coerente)
+e o **ESC** (mesma regra, intencional e consistente).
+
 **Robustez do INICIAR TESTE (§32/§33):** `sandboxStart` valida a cfg
 (`sandboxValidateCfg` → operador/preset/onda); config inválida deixa o
 botão **desabilitado com o motivo** no próprio botão e qualquer exceção é
@@ -75,7 +99,13 @@ silenciosa — o botão nunca "não faz nada".
 ## 4. DURANTE A RUN (§79–§86)
 
 **Painel de laboratório (F1 ou chip):** `state='sandbox'` (entra em
-`frozen` — o tempo do jogo para). Seções renderizadas em `#sb-body`:
+`frozen` — o tempo do jogo para). O **chip `⌖ SANDBOX · [F1] LABORATÓRIO`
+existe somente com `sandboxRun===true`** (`display:none` por padrão, classe
+`on` ligada em `sandboxStart` e desligada em `sandboxRestoreReal`) — em run
+normal, no menu principal ou após sair, nada dele aparece. O handler da
+tecla **F1** só age com `sandboxRun && (state==='play'||state==='sandbox')`;
+fora disso a tecla é consumida sem qualquer efeito (§13). Seções
+renderizadas em `#sb-body`:
 
 - **JOGADOR (§82):** encher HP, encher/quebrar escudo, limpar status,
   resetar cooldowns.
