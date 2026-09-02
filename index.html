@@ -88,6 +88,19 @@
     font-size:9px;letter-spacing:.14em;color:rgba(143,246,255,.95);}
   #shbar.empty #shfill{opacity:.16;box-shadow:none;}
   #shbar.empty #shnum{color:rgba(255,180,130,.45);}
+  /* PR 11.5 — feedback do escudo (§18): hit, quebra e regeneração */
+  @keyframes shHit{0%{box-shadow:0 0 20px rgba(255,233,168,.95),
+    inset 0 0 12px rgba(255,233,168,.55);}100%{box-shadow:0 0 10px rgba(255,209,102,.35);}}
+  #shbar.hit{animation:shHit .32s ease-out;}
+  @keyframes shBreak{0%{box-shadow:0 0 30px rgba(143,246,255,1),
+    inset 0 0 16px rgba(143,246,255,.8);transform:scaleY(2.1);}
+    100%{box-shadow:0 0 0 rgba(143,246,255,0);transform:scaleY(1);}}
+  #shbar.break{animation:shBreak .6s ease-out;}
+  @keyframes shRegen{0%,100%{border-color:rgba(255,209,102,.28);}
+    50%{border-color:rgba(255,233,168,.9);}}
+  #shbar.regen{animation:shRegen 1.2s ease-in-out infinite;}
+  #shbar.regen:after{content:'REGEN';position:absolute;right:2px;top:-13px;
+    font-size:9px;letter-spacing:.14em;color:rgba(255,233,168,.8);}
   #midtop{text-align:center;}
   #wave{font-family:Consolas,monospace;font-size:var(--fs-wave);letter-spacing:.35em;
     color:#eaffff;text-shadow:0 0 14px var(--cy);}
@@ -110,19 +123,22 @@
     box-shadow:0 0 10px rgba(150,110,255,.5);transition:width .12s;}
   #lvl{font-family:Consolas,monospace;font-size:var(--fs-md);color:#cdb9ff;letter-spacing:.18em;margin-top:3px;}
   #weapwrap{position:absolute;right:16px;bottom:16px;display:flex;gap:8px;align-items:flex-end;}
-  .wslot{width:136px;padding:7px 9px;border:1px solid rgba(120,140,160,.22);
-    background:rgba(4,12,20,.55);border-radius:2px;transition:all .15s;}
+  /* PR 11.5 §61: cards compactos — o card ATIVO fica maior/claro; os outros
+     viram resumo. Cinco slots ainda cabem sem comer a arena. */
+  .wslot{width:122px;padding:6px 8px;border:1px solid rgba(120,140,160,.22);
+    background:rgba(4,12,20,.55);border-radius:2px;transition:all .15s;opacity:.78;}
   .wslot .key{font-family:Consolas,monospace;font-size:var(--fs-xs);color:rgba(160,190,210,.5);
     letter-spacing:.2em;}
-  .wslot .nm{font-size:var(--fs-sm);letter-spacing:.14em;color:#9db8c8;margin-top:2px;}
+  .wslot .nm{font-size:var(--fs-sm);letter-spacing:.1em;color:#9db8c8;margin-top:2px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .wslot .wrange{font-family:Consolas,monospace;font-size:var(--fs-3xs);letter-spacing:.12em;
     color:rgba(150,200,225,.55);margin-top:3px;}
-  .wslot.empty{opacity:.32;border-style:dashed;}
+  .wslot.empty{opacity:.32;border-style:dashed;width:92px;}
   .wslot.empty .nm{color:rgba(140,170,190,.55);}
   .wslot.act .wrange{color:rgba(190,240,255,.85);}
   .wslot svg{display:block;margin:4px 0 2px;opacity:.75;}
-  .wslot.act{border-color:var(--cy);box-shadow:0 0 14px rgba(70,224,255,.3),
-    inset 0 0 12px rgba(70,224,255,.07);}
+  .wslot.act{opacity:1;border-color:var(--cy);width:138px;
+    box-shadow:0 0 14px rgba(70,224,255,.3),inset 0 0 12px rgba(70,224,255,.07);}
   .wslot.act .nm{color:#d8f7ff;}
   #dashwrap{position:absolute;right:16px;bottom:104px;width:136px;}
   #dashbar{height:6px;margin-top:4px;background:rgba(70,224,255,.08);
@@ -282,6 +298,18 @@
   .cmoral{font-family:Consolas,monospace;font-size:var(--fs-xs);letter-spacing:.2em;margin-top:10px;}
   .cprice{font-family:Consolas,monospace;font-size:var(--fs-md);letter-spacing:.14em;
     color:var(--gold);margin-top:10px;}
+  /* ---------- PR 11.5 §12 — hierarquia leve de item cards ----------
+     básico → sinérgico (acento ciano) → transformador (selo magenta).
+     Cor + símbolo + texto juntos (§13 — nunca só cor). */
+  .card.card-syn{border-left:3px solid rgba(70,224,255,.55);}
+  .synribbon{font-family:Consolas,monospace;font-size:var(--fs-3xs);letter-spacing:.2em;
+    color:rgba(143,246,255,.85);margin-top:8px;}
+  .card.card-tr{border-color:rgba(255,77,240,.55);
+    background:linear-gradient(180deg,rgba(28,10,32,.78),rgba(8,18,28,.7));}
+  .card.card-tr:hover{border-color:#ff9df7;
+    box-shadow:0 6px 26px rgba(255,77,240,.22);}
+  .trribbon{font-family:Consolas,monospace;font-size:var(--fs-3xs);letter-spacing:.24em;
+    color:#ff9df7;margin-top:9px;}
   .mfoot{display:flex;justify-content:space-between;align-items:center;margin-top:20px;
     border-top:1px solid rgba(70,224,255,.14);padding-top:15px;gap:12px;flex-wrap:wrap;}
   .btn{font-family:Consolas,monospace;font-size:var(--fs-md);letter-spacing:.26em;color:#bffbff;
@@ -297,16 +325,16 @@
   #m-owned{font-family:Consolas,monospace;font-size:var(--fs-xs);letter-spacing:.14em;
     color:rgba(150,180,200,.6);margin-top:14px;line-height:1.8;}
 
-  /* ---------- créditos + perfil moral oculto ---------- */
+  /* ---------- créditos + perfil moral compacto (PR 11.5) ---------- */
   #coinp{text-align:right;padding:6px 12px;}
   #coinsp{font-family:Consolas,monospace;font-size:var(--fs-2xl);letter-spacing:.16em;color:var(--gold);
     text-shadow:0 0 12px rgba(255,209,102,.45);}
-  #moralp{display:flex;gap:7px;justify-content:flex-end;margin-top:2px;}
-  .mbar{width:62px;}
-  .mbar u{font-family:Consolas,monospace;font-size:var(--fs-3xs);letter-spacing:.14em;display:block;
-    text-align:center;opacity:.5;text-decoration:none;color:#a9c6d6;}
-  .mbar i{display:block;height:3px;margin-top:3px;background:rgba(255,255,255,.10);position:relative;}
-  .mbar i b{position:absolute;left:0;top:0;bottom:0;width:0%;display:block;transition:width .35s;}
+  /* PR 11.5: percentuais de moralidade saíram do HUD; ficou só o chip do
+     perfil dominante com pips de tier — detalhes no TAB [Ficha de Combate] */
+  #moralp{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:2px;
+    font-family:Consolas,monospace;font-size:var(--fs-sm);letter-spacing:.16em;white-space:nowrap;}
+  #moralp b{font-weight:600;}
+  #moral-tiers{display:inline-flex;align-items:center;}
 
   /* ---------- barra de vida do chefe ---------- */
   #bosswrap{position:fixed;top:96px;left:50%;transform:translateX(-50%);width:min(760px,86vw);
@@ -434,6 +462,20 @@
   #tip .tlock{font-family:Consolas,monospace;font-size:var(--fs-xs);letter-spacing:.1em;
     color:#ffd166;margin-top:9px;padding-top:8px;
     border-top:1px solid rgba(255,209,102,.22);}
+  /* PR 11.5 §11 — hierarquia de tooltip: seções rotuladas */
+  #tip .tsec{font-family:Consolas,monospace;font-size:var(--fs-3xs);letter-spacing:.26em;
+    color:rgba(140,180,205,.62);margin-top:10px;display:block;}
+  #tip .tsec:first-of-type{margin-top:0;}
+  #tip .tline{font-family:Consolas,monospace;font-size:var(--fs-xs);line-height:1.7;
+    color:#c3dcea;display:block;}
+  #tip .tcond{font-family:Consolas,monospace;font-size:var(--fs-xs);color:#8ff6ff;}
+  #tip .tcost{font-family:Consolas,monospace;font-size:var(--fs-xs);color:#ffb386;}
+  #tip .tsyn{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;}
+  #tip .tsyn span{font-family:Consolas,monospace;font-size:var(--fs-3xs);letter-spacing:.1em;
+    color:#c9a9ff;border:1px solid rgba(197,107,255,.4);background:rgba(197,107,255,.08);
+    padding:2px 6px;border-radius:2px;}
+  #tip .tcard-tr{margin-top:8px;font-family:Consolas,monospace;font-size:var(--fs-xs);
+    letter-spacing:.18em;color:#ff9df7;}
 
   /* ---------- itens bloqueados no codex ---------- */
   .cxitem.lock{opacity:.42;filter:grayscale(.75);}
@@ -636,10 +678,12 @@
       <div class="panel" id="coinp"><span class="lbl">CRÉDITOS</span><div id="coinsp">◈ 0</div></div>
       <div class="chip" id="chip1">ECHO·01 — INATIVO</div>
       <div class="chip" id="chip2">ECHO·02 — INATIVO</div>
-      <div id="moralp">
-        <div class="mbar"><u>COMP</u><i><b id="mb-c" style="background:#7dffc4"></b></i></div>
-        <div class="mbar"><u>GANÂ</u><i><b id="mb-g" style="background:#ffd166"></b></i></div>
-        <div class="mbar"><u>VIOL</u><i><b id="mb-v" style="background:#ff5c7a"></b></i></div>
+      <!-- PR 11.5: percentuais de moralidade saem do HUD (vão para o TAB).
+           Aqui fica só o perfil dominante — feedback imediato, sem poluição. -->
+      <div class="chip" id="moralp" title="Perfil moral — detalhes no TAB [TAB]">
+        <span class="lbl">PERFIL</span>
+        <b id="moral-dom">NEUTRO</b>
+        <span id="moral-tiers"></span>
       </div>
     </div>
   </div>
@@ -1069,7 +1113,12 @@ function initAudio(){AUDIO.init();AUDIO.enabled=audioOn;AUDIO.musicOn=musicOn;}
    ===================================================================== */
 const CFG_KEY='echoCfg.v1';
 let cfg={music:1,shake:1,aberr:1,parts:1,quality:1,dmgnum:1,autofire:0,
-  rumble:1,aimAssist:1};
+  rumble:1,aimAssist:1,
+  /* PR 11.5 — acessibilidade & controle de informação */
+  flash:1,            // 1 NORMAL · .55 REDUCED (picos de flash/aberração)
+  tabMode:'hold',     // 'hold' (segurar TAB) | 'toggle' (apertar p/ abrir/fechar)
+  hudPreset:'full'    // 'full' (padrão) — reserva futura p/ HUD mínimo
+};
 function loadCfg(){
   try{
     const r=localStorage.getItem(CFG_KEY);
@@ -1077,6 +1126,9 @@ function loadCfg(){
       if(c&&typeof c==='object')for(const k in cfg)
         if(c[k]!==undefined)cfg[k]=c[k];}
   }catch(e){}
+  /* migração: dmgnum legado era binário (1=ligado). O novo 1 é REDUCED;
+     quem tinha "ligado" passa a ver FULL — comportamento idêntico ao antigo. */
+  if(cfg.dmgnum===true)cfg.dmgnum=2;
   applyCfg();
 }
 function saveCfg(){try{localStorage.setItem(CFG_KEY,JSON.stringify(cfg));}catch(e){}}
@@ -1088,7 +1140,12 @@ function applyCfg(){
   if(typeof scheduleResize==='function')scheduleResize();
 }
 let musicOn=true;
-const SHAKE_MUL=()=>cfg.shake?1:0;
+/* tremor de tela em níveis: 1 · .75 · .5 · .25 · 0 (§23) */
+const SHAKE_MUL=()=>(cfg.shake==null?1:cfg.shake);
+/* flash/aberração em 2 níveis: NORMAL (1) · REDUCED (.55) (§24) */
+const FLASH_MUL=()=>cfg.flash==null?1:cfg.flash;
+/* pico de aberração cromática — único ponto que aplica o nível de flash */
+function aberrPeak(v){aberr=Math.max(aberr,v*FLASH_MUL());}
 const ABERR_MUL=()=>cfg.aberr?1:0;
 const PARTS_MUL=()=>cfg.parts?1:.35;
 /* wrapper legado usado em todo o motor */
@@ -3130,8 +3187,49 @@ function ageGhosts(arr,dt){
    As falas dos Ecos usam um corpo maior (legibilidade em 1080p). */
 const FTEXT_SIZE=13;          // era 11px — PR 6.5: números/avisos legíveis
 const FTEXT_SPEAK=15;         // falas dos Ecos
+const FTEXT_CRIT=17;          // PR 11.5: crítico tem peso próprio
 function floatText(x,y,txt,color,size){
   ftexts.push({x,y,txt,color,t:0,life:1.1,sz:size||0});
+}
+/* ---------------------------------------------------------------------
+   PR 11.5 — FEEDBACK DE COMBATE PADRONIZADO
+   dmgNum ..... números de dano (settings FULL/REDUCED/OFF, §22)
+   procText ... texto de proc importante com anti-spam por chave (§21)
+   shieldFx ... hit/break do escudo do operador (§18)
+   --------------------------------------------------------------------- */
+const FTEXT_MAX=52;              // teto global de textos simultâneos
+function dmgNumShow(e,d,crit){
+  if(cfg.dmgnum===0)return;                    // OFF
+  if(crit){                                    // crítico: peso + símbolo (§17)
+    floatText(e.x,e.y-e.r-10,'✦ '+fmtStat(d),'#fff6b0',FTEXT_CRIT);
+    return;
+  }
+  const heavy=d>=e.maxHp*.18;                  // golpe pesado merece número
+  if(cfg.dmgnum===1&&!heavy)return;            // REDUCED: só crítico/pesado
+  if(ftexts.length>=FTEXT_MAX)return;          // orçamento visual por frame
+  floatText(e.x,e.y-e.r-6,fmtStat(d),'#dff3ff');
+}
+const _procCd=Object.create(null);
+function procText(x,y,txt,color,key,cd){
+  if(key){                                     // anti-spam: 1 por janela
+    const now=performance.now(),w=cd||1100;
+    if(_procCd[key]&&now-_procCd[key]<w)return;
+    _procCd[key]=now;
+  }
+  if(ftexts.length>=FTEXT_MAX)return;
+  floatText(x,y,txt,color);
+}
+/* classes temporárias na barra de escudo do HUD (#shbar) */
+let _shieldFxT=0;
+function shieldFx(kind){
+  const b=document.getElementById('shbar');
+  if(!b||!player||!(player.shieldMax>0))return;
+  b.classList.remove('hit','break');
+  void b.offsetWidth;                          // reinicia a animação CSS
+  b.classList.add(kind==='break'?'break':'hit');
+  if(_shieldFxT)clearTimeout(_shieldFxT);
+  _shieldFxT=setTimeout(()=>{b.classList.remove('hit','break');_shieldFxT=0;},
+    kind==='break'?620:320);
 }
 
 /* ---------------- HUD / DOM ---------------- */
@@ -3152,7 +3250,7 @@ function toast(txt){
   const d=document.createElement('div');d.className='toast';d.textContent=txt;
   toastsEl.appendChild(d);setTimeout(()=>d.remove(),2100);
 }
-const coinsEl=$('coinsp'),mbC=$('mb-c'),mbG=$('mb-g'),mbV=$('mb-v');
+const coinsEl=$('coinsp');
 const weapWrapEl=$('weapwrap');
 function setChip(el,slot,echo){
   el.className='chip';
@@ -3192,21 +3290,22 @@ function updateHUD(force){
   if(!force&&hudAcc<.09)return;
   hudAcc=0;
   hpfill.style.width=clamp(player.hp/player.maxHp*100,0,100)+'%';
-  hpnum.textContent=Math.max(0,Math.ceil(player.hp))+' / '+player.maxHp;
+  hpnum.textContent=Math.max(0,Math.ceil(player.hp))+' / '+fmtNum(player.maxHp);
   // ---- ESCUDO DO OPERADOR ----
   const shR=clamp(player.shield/(player.shieldMax||1)*100,0,100);
   shfill.style.width=shR+'%';
-  shnum.textContent=Math.max(0,Math.ceil(player.shield))+' / '+player.shieldMax;
+  shnum.textContent=Math.max(0,Math.ceil(player.shield))+' / '+fmtNum(player.shieldMax);
   const _pf=itemStateGet(player,'_perfect','fired',false);
+  const _regen=player.shieldMax>0&&player.shieldDelayT<=0&&
+    player.shield<player.shieldMax&&player.shieldRegen>0;
   shbar.classList.toggle('full',player.shieldMax>0&&player.shield>=player.shieldMax);
   shbar.classList.toggle('partial',player.shield>0&&player.shield<player.shieldMax);
   shbar.classList.toggle('empty',player.shield<=0);
   shbar.classList.toggle('perfect',!!_pf&&player.shieldMax>0&&player.shield>=player.shieldMax);
+  shbar.classList.toggle('regen',_regen);   // PR 11.5: regeneração visível (§18)
   waveEl.textContent=boss?'PARADOXO':(miniBoss?'ARAUTO':
     ('ONDA '+String(Math.max(1,wave)).padStart(2,'0')+' / 20'));
-  const m=String(Math.floor(runTime/60)).padStart(2,'0'),
-        s=String(Math.floor(runTime%60)).padStart(2,'0');
-  timerEl.textContent=m+':'+s+' · ABATES '+kills;
+  timerEl.textContent=fmtTime(runTime)+' · ABATES '+kills;
   xpfill.style.width=clamp(player.xp/player.xpNext*100,0,100)+'%';
   lvlEl.textContent='NV '+player.level+' · '+Math.floor(player.xp)+'/'+player.xpNext;
   const dr=player.dashCd>0?1-player.dashCd/player.dashCdMax:1;
@@ -3236,15 +3335,21 @@ function updateHUD(force){
   setChip(chip1,1,echoes.find(e=>e&&e.slot===1)||null);
   setChip(chip2,2,echoes.find(e=>e&&e.slot===2)||null);
   coinsEl.textContent='◈ '+player.coins;
-  mbC.style.width=clamp(moral.comp/12*100,0,100)+'%';
-  mbG.style.width=clamp(moral.greed/12*100,0,100)+'%';
-  mbV.style.width=clamp(moral.viol/12*100,0,100)+'%';
-  // brilho crescente conforme o tier — feedback do peso da escolha
-  const gl=(el,t)=>el.style.boxShadow=t>=3?'0 0 10px currentColor':
-    (t>=2?'0 0 6px currentColor':'none');
-  gl(mbC,moralTier(moral.comp));
-  gl(mbG,moralTier(moral.greed));
-  gl(mbV,moralTier(moral.viol));
+  coinsEl.textContent='◈ '+fmtCompact(player.coins);
+  /* PR 11.5: HUD mostra só o PERFIL dominante — percentuais de moralidade
+     e tiers ficam na Ficha de Combate (TAB) e na pausa (§15). */
+  const _dom=moralDom();
+  const domEl=$('moral-dom'),tiersEl=$('moral-tiers');
+  if(domEl){
+    domEl.textContent=DOM_NAME[_dom];
+    domEl.style.color=DOM_COLOR[_dom];
+  }
+  if(tiersEl){
+    const tC=moralTier(moral.comp),tG=moralTier(moral.greed),tV=moralTier(moral.viol);
+    const pip=(t,c)=>t?'<i style="display:inline-block;width:5px;height:5px;'+
+      'margin-left:4px;background:'+c+';box-shadow:0 0 6px '+c+'"></i>':'';
+    tiersEl.innerHTML=pip(tC,'#7dffc4')+pip(tG,'#ffd166')+pip(tV,'#ff5c7a');
+  }
 }
 
 /* =====================================================================
@@ -3314,7 +3419,7 @@ function moralGain(c,g,v){
   _lastTier=now;
   const shout=(nm,tier,col,txt)=>{
     banner(nm+' · '+TIER_NAME[tier],txt);
-    shake=Math.max(shake,10);aberr=Math.max(aberr,.6);
+    shake=Math.max(shake,10);aberrPeak(.6);
     spawnRing(player.x,player.y,col,14,260,.9);
     spawnShards(player.x,player.y,col,16,6);
     AUDIO.bossPhase();
@@ -3331,7 +3436,7 @@ function moralGain(c,g,v){
   if(mEff.conflict&&!_wasConflict){
     _wasConflict=1;
     banner('CONFLITO INTERNO','SEUS EXTREMOS SE DEVORAM — MERCADO E INIMIGOS REAGEM');
-    aberr=Math.max(aberr,.9);
+    aberrPeak(.9);
   }
 }
 let _lastTier={c:0,g:0,v:0},_wasConflict=0;
@@ -4299,7 +4404,7 @@ function echoSetDis(e,st){
     e.beamT=0;e.beamRamp=1;e.beamTarget=null;
     banner('FRATURA IMINENTE','ECHO·0'+e.slot+' ESTÁ SE DESLIGANDO DE VOCÊ');
     toast('ECHO·0'+e.slot+' — FRATURANDO');
-    shake=Math.max(shake,7);aberr=Math.max(aberr,.55);
+    shake=Math.max(shake,7);aberrPeak(.55);
     spawnRing(e.x,e.y,'#ff9d3c',10,150,.7);
     spawnShards(e.x,e.y,'#ff9d3c',12,5);
     AUDIO.tone(150,.8,'sawtooth',.06,-30);
@@ -4381,7 +4486,7 @@ function enterDissonance(e,opts){
   e.rel.streak=-1;e.rel.lastRejectAt=runTime;
   e.rel.last={t:'reject',r:'dissonance',v:-2,at:Math.round(runTime*10)/10};
   relRememberMoment(e,'dissonance',-2);
-  shake=Math.max(shake,12);aberr=Math.max(aberr,.9);
+  shake=Math.max(shake,12);aberrPeak(.9);
   spawnRing(e.x,e.y,'#ff2f5e',10,200,.8);
   spawnRing(e.x,e.y,'#ff4df0',6,150,1.0);
   spawnShards(e.x,e.y,'#ff2f5e',20,6);
@@ -4643,7 +4748,7 @@ function echoRoleTick(e,dt){
       if(ap)relFeedback(e,ap);
     }
     if(hit)echoSpeak(e,'DISTORÇÃO LIBERADA.','#ff9df7');
-    aberr=Math.max(aberr,.45);
+    aberrPeak(.45);
     AUDIO.tone(180,.4,'sawtooth',.04,-70);
   }
 }
@@ -5016,6 +5121,10 @@ function itemTick(p,dt){
     st.t+=dt;
     if(st.t>=PERFECT_SHIELD_SECONDS&&!st.fired){
       st.fired=true;
+      /* PR 11.5: Perfect Shield identificável mesmo sem item (§19) —
+         feedback neutro; os itens adicionam seus próprios procs em cima. */
+      spawnRing(p.x,p.y,'#8ff6ff',6,58,.5);
+      procText(p.x,p.y-44,'ESCUDO PERFEITO','#8ff6ff','perfect',1500);
       itemEmit('onShieldFull',{player:p,reason:'perfect',seconds:Math.round(st.t*10)/10});
     }
   }else if(p.shieldMax>0&&p.shield<p.shieldMax-1e-6){
@@ -5741,6 +5850,25 @@ function mkCard(nm,ds,extra,disabled,onClick,icon,lockCfg){
   }
   return d;
 }
+/* PR 11.5 §12: diferencia item básico / sinérgico / transformador */
+function styleItemCard(card,it){
+  if(!card||!it||!card.classList)return card;
+  if(it.transformer){
+    card.classList.add('card-tr');
+    const r=document.createElement('div');r.className='trribbon';
+    r.textContent='◆ TRANSFORMADOR · MUDA A RUN';
+    card.appendChild(r);
+  }else{
+    const syn=itemSynergyContrib(it.id);
+    if(syn.length){
+      card.classList.add('card-syn');
+      const r=document.createElement('div');r.className='synribbon';
+      r.textContent='⟡ COMPOE: '+syn.join(' · ');
+      card.appendChild(r);
+    }
+  }
+  return card;
+}
 function lockIconSVG(on){
   return on
     ? '<svg viewBox="0 0 24 24" fill="none" stroke="#ffd166" stroke-width="2.2" '+
@@ -5962,9 +6090,9 @@ function renderShop(){
     {className:'cds',innerHTML:'TODOS OS MÓDULOS PASSIVOS JÁ FORAM INSTALADOS.'}));
   for(const it of shopItems){
     const pr=priceItem(it),poor=player.coins<pr;
-    mRow2.appendChild(mkCard(
+    const icard=mkCard(
       '<span style="color:'+it.color+'">'+it.nm+'</span>'+rarTag(it.rar),
-      it.desc+moralAffinityTagHTML(it.id,true),
+      itemDescParts(it).body+moralAffinityTagHTML(it.id,true),
       '<div class="cprice">◈ '+pr+'</div>',poor,()=>{
         player.coins-=pr;giveItem(it,false);
         if(isLocked('item',it.id))shopLock=null;
@@ -5972,8 +6100,10 @@ function renderShop(){
         checkpointShopPurchase();       // PR 7.5: compra concluída → checkpoint
       },
       shopIcon(it.id,it.color),
-      lockCfgFor('item',it.id,it.nm)));
-    bindTip(mRow2.lastChild,()=>itemTipHTML(it));
+      lockCfgFor('item',it.id,it.nm));
+    styleItemCard(icard,it);            // PR 11.5 §12: hierarquia visual
+    mRow2.appendChild(icard);
+    bindTip(icard,()=>itemTipHTML(it));
   }
   // ---- REPARO DE EMERGÊNCIA: opção fixa, custo escala +50% por uso ----
   const rp=repairCost();
@@ -6233,7 +6363,7 @@ function renderRift(){
       spawnRing(beacon.x,beacon.y,'#ffd166',10,170,.8);
       spawnShards(beacon.x,beacon.y,'#ffd166',16,6);
       spawnParticles(player.x,player.y,'#9d7bff',24,260,.7,3.5);
-      aberr=Math.max(aberr,.8);shake=Math.max(shake,8);
+      aberrPeak(.8);shake=Math.max(shake,8);
       AUDIO.tone(120,.8,'sawtooth',.07,-40);AUDIO.noise(.7,.05,500,.7,'lowpass');
       toast('ANOMALIA ATIVA · LENTIDÃO POR 30s');
       moralGain(0,3,1);closeEvent();
@@ -6452,7 +6582,7 @@ function renderScrap(){
       for(let i=0;i<4;i++)spawnRing(beacon.x,beacon.y,
         i%2?'#39d98a':'#ffd166',10+i*30,260+i*60,.7);
       spawnShards(beacon.x,beacon.y,'#39d98a',26,8);
-      shake=Math.max(shake,18);aberr=Math.max(aberr,.8);
+      shake=Math.max(shake,18);aberrPeak(.8);
       AUDIO.boom();AUDIO.bossRoar();
       player.invT=0;damagePlayer(18);
       toast('JARDIM DETONADO · ◈ +'+boomLoot);
@@ -6698,7 +6828,7 @@ reactor(){
       }
       curAttacker=prev;
       for(let i=0;i<5;i++)spawnRing(beacon.x,beacon.y,'#ff2f5e',20+i*40,420,.9);
-      shake=Math.max(shake,22);aberr=Math.max(aberr,1);
+      shake=Math.max(shake,22);aberrPeak(1);
       player.invT=0;damagePlayer(15);
       AUDIO.boom();AUDIO.bossRoar();
       banner('NÚCLEO DETONADO','A ARENA INTEIRA QUEIMA');
@@ -6839,7 +6969,7 @@ function spawnAmbushHorde(){
     spawnParticles(x,y,'#ff4d6d',16,300,.55,3);
   }
   banner('EMBOSCADA TEMPORAL','4 PERSEGUIDORES DE ELITE — RECOMPENSA TRIPLA');
-  shake=Math.max(shake,12);aberr=Math.max(aberr,.7);
+  shake=Math.max(shake,12);aberrPeak(.7);
   AUDIO.bossRoar();
 }
 function spawnGuards(x,y){
@@ -8677,7 +8807,7 @@ function fireDelayed(d){
           if(e)e.bounty=6;
         }
         banner('O GERADOR ATRAIU ATENÇÃO',n+' ENXAMES — CADA UM LEVA ◈6');
-        aberr=Math.max(aberr,.4);
+        aberrPeak(.4);
       })();
       break;
     case 'posto_ferido':
@@ -8708,7 +8838,7 @@ function fireDelayed(d){
       if(!player)break;
       waveBuff('dmgTaken','x.olho.juros','JUROS DO OLHO +10% DANO RECEBIDO',1.10,2);
       banner('JUROS DO OLHO','VISÃO EMPRESTADA SE PAGA · +10% DANO RECEBIDO');
-      aberr=Math.max(aberr,.6);
+      aberrPeak(.6);
       break;
     case 'anexo_noticia':
       if(!player)break;
@@ -8888,7 +9018,7 @@ function tryStartArenaEvent(){
   def.start(arenaEv);
   arenaEvWave=wave;
   banner('⚠ '+def.nm,def.desc);
-  aberr=Math.max(aberr,.5);
+  aberrPeak(.5);
   AUDIO.tone(220,.5,'sawtooth',.05,-60);
 }
 function tickArenaEvent(dt){
@@ -8923,7 +9053,7 @@ const MICRO_EVENTS=[
      }
    }},
   {id:'me_interferencia',nm:'INTERFERÊNCIA',
-   run(){aberr=Math.max(aberr,.5);_aeInterfT=Math.max(_aeInterfT,2.5);
+   run(){aberrPeak(.5);_aeInterfT=Math.max(_aeInterfT,2.5);
      toast('INTERFERÊNCIA NO CANAL VISUAL');}},
   {id:'me_assinatura',nm:'ASSINATURA DESCONHECIDA',
    run(){
@@ -9452,10 +9582,14 @@ function buildWeaponHUD(){
   player.owned.forEach((wi,slot)=>{
     const d=WEAPONS[wi];
     const rg=Math.round(weaponRange(d,player));
-    html+='<div class="wslot'+(player.wi===wi?' act':'')+'" data-slot="'+slot+'">'+
+    const act=player.wi===wi;
+    /* PR 11.5 §61: arma ativa em destaque com alcance; as demais viram
+       resumo compacto (tag em vez de números) — detalhes no tooltip/TAB. */
+    html+='<div class="wslot'+(act?' act':'')+'" data-slot="'+slot+'">'+
       '<span class="key">['+(slot+1)+']</span>'+weaponIconSVG(wi)+
-      '<div class="nm">'+d.nm+'</div>'+
-      '<div class="wrange">◄ '+rg+'px · '+rangeLabel(rg)+'</div></div>';
+      '<div class="nm" style="color:'+(act?d.color:'')+'">'+d.nm+'</div>'+
+      (act?'<div class="wrange">◄ '+fmtStat(rg,0)+'px · '+rangeLabel(rg)+'</div>'
+          :'<div class="wrange" style="opacity:.55">'+d.tag+'</div>')+'</div>';
   });
   // slots vazios visíveis
   for(let s=player.owned.length;s<player.maxSlots;s++)
@@ -9662,7 +9796,7 @@ function fireWeaponFrom(src,def,team,mul){
     player.vx-=Math.cos(src.aim)*def.kick;player.vy-=Math.sin(src.aim)*def.kick;
     if(def.id==='shotgun')sShotg();else if(def.id==='orb')sOrb();else sShoot();
   }else{
-    if(src.slot===2)aberr=Math.max(aberr,.55);   // distorção quando o Echo 2 ataca
+    if(src.slot===2)aberrPeak(.55);   // distorção quando o Echo 2 ataca
     if(Math.random()<.5)sEShoot();
   }
 }
@@ -9694,7 +9828,7 @@ function trySpecial(){
       player.x=nx;player.y=ny;
       spawnRing(nx,ny,C.pal.glow,8,130,.6);
       player.invT=Math.max(player.invT||0,1.2);
-      aberr=Math.max(aberr,.85);
+      aberrPeak(.85);
       AUDIO.tone(1200,.2,'sine',.05,-700);AUDIO.dash();
       break;
     }
@@ -9719,7 +9853,7 @@ function trySpecial(){
       spawnRing(player.x,player.y,'#ff7a2f',16,R,.85);
       spawnRing(player.x,player.y,'#ffd166',10,R*.7,.7);
       spawnShards(player.x,player.y,'#ff7a2f',26,8);
-      shake=Math.max(shake,16);aberr=Math.max(aberr,.8);
+      shake=Math.max(shake,16);aberrPeak(.8);
       const prev=curAttacker;curAttacker=player;
       for(const e of enemies){
         if(e.dead||e.spawnT>0)continue;
@@ -9760,7 +9894,7 @@ function trySpecial(){
         floatText(player.x,player.y-34,'+'+heal+' HP · '+reaped+' COLHIDOS','#a8ff3d');
       }
       banner('COLHEITA MACABRA',reaped?reaped+' EXECUÇÕES':'NENHUM ALVO MADURO');
-      shake=Math.max(shake,14);aberr=Math.max(aberr,.7);
+      shake=Math.max(shake,14);aberrPeak(.7);
       AUDIO.boom();AUDIO.tone(160,.5,'sawtooth',.05,-70);
       break;
     }
@@ -9967,7 +10101,7 @@ function damageEnemy(e,d,srcx,srcy,crit,isDot){
   e.vx+=Math.cos(a)*kb;e.vy+=Math.sin(a)*kb;
   if(crit){
     if(curAttacker===player)bumpProg('crits');
-    if(cfg.dmgnum)floatText(e.x,e.y-e.r-8,'✦ '+Math.round(d),'#fff6b0');
+    dmgNumShow(e,d,true);                      // PR 11.5: crítico com peso (§17)
     spawnParticles(e.x,e.y,'#fff6b0',7,260,.32,3);
     // BISTURI SIMBIÓTICO: cura ao crítico
     if(curAttacker===player&&player&&player.critHeal){
@@ -9975,7 +10109,11 @@ function damageEnemy(e,d,srcx,srcy,crit,isDot){
     }
     /* PR 11: hooks de crítico dos itens (build Crit/Status). */
     if(curAttacker===player)itemEmit('onCrit',{target:e,dmg:d,crit:true});
-  }else spawnParticles(e.x,e.y,e.color,3,190,.25,2.5);
+  }else{
+    spawnParticles(e.x,e.y,e.color,3,190,.25,2.5);
+    /* PR 11.5: número de acerto direto do jogador (settings §22) */
+    if(curAttacker===player&&!isDot)dmgNumShow(e,d,false);
+  }
   /* PR 11: hook de acerto do jogador (nunca para DoT/repique de EA). */
   if(curAttacker===player)itemEmit('onHit',{target:e,dmg:d,crit});
   // PROTOCOLO DE EXECUÇÃO: execução de alvos abaixo do limiar
@@ -10001,7 +10139,7 @@ function triggerResonance(e,by,baseDmg){
   bumpProg('reso');
   const rp=(player&&player.resoPower)||1;   // RESSONADOR DUPLO
   const R=132*Math.sqrt(rp), dmg=Math.max(26,baseDmg*1.35)*rp;
-  resoFlash=1;shake=Math.max(shake,9);aberr=Math.max(aberr,.55);
+  resoFlash=1;shake=Math.max(shake,9);aberrPeak(.55);
   spawnRing(e.x,e.y,'#8ff6ff',10,R,.55);
   spawnRing(e.x,e.y,'#ffffff',6,R*.62,.42);
   spawnShards(e.x,e.y,'#8ff6ff',16,6);
@@ -10107,7 +10245,7 @@ function killEnemy(e){
   if(e.type==='miniboss'){
     // recompensa pesada + limpeza de tela
     clearMiniBossHUD();
-    shake=Math.max(shake,20);aberr=Math.max(aberr,.9);
+    shake=Math.max(shake,20);aberrPeak(.9);
     for(let i=0;i<5;i++)setTimeout(()=>{
       spawnRing(e.x+rand(-70,70),e.y+rand(-70,70),'#ff9d3c',8,rand(120,260),.7);
       spawnShards(e.x+rand(-60,60),e.y+rand(-60,60),'#ffd166',12,7);
@@ -10209,7 +10347,13 @@ function damagePlayer(d){
   const absorbed=Math.min(player.shield,real);
   player.shield=Math.max(0,player.shield-absorbed);
   player.shieldDelayT=player.shieldDelay;    // dano válido reinicia o delay
-  if(absorbed>0){resetPerfectShield(player);itemEmit('onShieldHit',{player,real,absorbed});}
+  if(absorbed>0){
+    resetPerfectShield(player);
+    shieldFx('hit');                     // PR 11.5: escudo brilha no impacto (§18)
+    if(absorbed>=6)procText(player.x,player.y-38,'ESCUDO −'+fmtStat(absorbed,0),
+      '#ffe9a8','shhit',700);
+    itemEmit('onShieldHit',{player,real,absorbed});
+  }
   const rest=real-absorbed;
   if(rest>0)player.hp-=rest;
   player.hurtT=clamp(.18+real/70,.18,.55);
@@ -10217,14 +10361,18 @@ function damagePlayer(d){
   const mag=clamp(2.5+real*0.62,2.5,26);
   shake=Math.max(shake,mag);
   if(real>=25){                          // impacto massivo: distorção temporal
-    aberr=Math.max(aberr,clamp(real/45,.3,1));
+    aberrPeak(clamp(real/45,.3,1));
     spawnRing(player.x,player.y,'#ff4d6d',8,60+real*1.4,.4);
   }
   spawnParticles(player.x,player.y,'#ff5c7a',clamp(5+Math.round(real/3),5,22),240,.3,3);
   if(shieldBroke){                       // feedback curto — sem dano/stun/mecânica extra
-    floatText(player.x,player.y-30,'ESCUDO ROMPIDO','#8ff6ff');
+    floatText(player.x,player.y-30,'ESCUDO ROMPIDO','#8ff6ff',FTEXT_SPEAK);
     spawnRing(player.x,player.y,'#8ff6ff',8,72,.42);
+    spawnRing(player.x,player.y,'#ffffff',4,96,.3);
+    shieldFx('break');                   // PR 11.5: quebra perceptível (§18)
+    aberrPeak(.35);
     AUDIO.tone(rand(300,360),.18,'sine',.04,-140);
+    AUDIO.tone(rand(180,220),.3,'sawtooth',.03,-90,.05);
     if(runSt)runSt.sb++;                 // PR 8: registro de quebra de escudo
     echoReact('shieldBreak');            // PR 8: fala reativa (cooldown global segura o spam)
     /* PR 11: BUILD DE QUEBRA — procs com cooldown interno (anti-loop §8/§14) */
@@ -10259,7 +10407,7 @@ function damagePlayer(d){
       player.revives--;
       player.hp=Math.round(player.maxHp*.45);
       player.invT=Math.max(player.invT||0,2.2);
-      shake=Math.max(shake,18);aberr=Math.max(aberr,.9);
+      shake=Math.max(shake,18);aberrPeak(.9);
       spawnRing(player.x,player.y,'#7dffc4',12,260,1);
       spawnShards(player.x,player.y,'#7dffc4',22,7);
       banner('TALISMÃ CONSUMIDO','O CICLO TE DEVOLVEU — 45% DE VIDA');
@@ -10400,6 +10548,8 @@ function chainShock(from,dmg,jumps,src,hitSet){
   damageEnemy(best,dmg,from.x,from.y,false);
   curAttacker=prev;
   AUDIO.tone(rand(1200,1500),.05,'square',.014,-500);
+  /* PR 11.5: proc de cadeia legível (§21) — anti-spam por chave */
+  procText(best.x,best.y-best.r-14,'CADEIA','#ffe74d','chain',900);
   if(jumps>1&&!best.dead)chainShock(best,dmg*.78,jumps-1,src,hitSet);
 }
 /* processa todos os status de um inimigo (chamado no update dele) */
@@ -10480,6 +10630,19 @@ function drawStatus(e){
     ctx.moveTo(e.x+Math.cos(a)*R,e.y+Math.sin(a)*R);
     ctx.lineTo(e.x+Math.cos(a+.6)*(R+9),e.y+Math.sin(a+.6)*(R+9));
     ctx.stroke();ctx.restore();
+  }
+  /* PR 11.5 §20: pips compactos de status — cor + forma mínima, sem ícones
+     gigantes sobre o inimigo. Ordem fixa: queimadura, corrosão, gelo,
+     sangramento, choque. */
+  {
+    let px=0;
+    const pip=col=>{ctx.save();ctx.globalAlpha=.9;ctx.fillStyle=col;
+      ctx.fillRect(e.x-11+px,e.y-R-15,5,3);ctx.restore();px+=7;};
+    if(s.burnT>0)pip(STATUS_COLOR.burn);
+    if(s.corrP>0)pip(STATUS_COLOR.corrode);
+    if(s.chillP>0)pip(STATUS_COLOR.chill);
+    if(s.bleedT>0)pip(STATUS_COLOR.bleed);
+    if(s.shockT>0)pip(STATUS_COLOR.shock);
   }
 }
 /* arcos elétricos temporários */
@@ -10687,7 +10850,7 @@ function updateMiniBoss(e,dt){
   if(e.phase===1&&e.hp<=e.maxHp*.5){
     e.phase=2;e.chargeCd=Math.min(e.chargeCd,1.4);
     banner('ARAUTO ENFURECIDO','BLINDAGEM COMPROMETIDA — ELE ACELERA');
-    shake=Math.max(shake,14);aberr=Math.max(aberr,.8);
+    shake=Math.max(shake,14);aberrPeak(.8);
     spawnRing(e.x,e.y,'#ff9d3c',16,340,.9);
     spawnShards(e.x,e.y,'#ff9d3c',20,7);
     AUDIO.bossPhase();
@@ -10780,7 +10943,7 @@ function updateMiniBoss(e,dt){
     e.x=clamp(p.x+Math.cos(a)*rr,e.r,ARENA.w-e.r);
     e.y=clamp(p.y+Math.sin(a)*rr,e.r,ARENA.h-e.r);
     spawnRing(e.x,e.y,e.color,6,110,.5);
-    aberr=Math.max(aberr,.5);
+    aberrPeak(.5);
     AUDIO.tone(1300,.14,'square',.035,-700);
     if(SK.slash){e.telegraphT=.28;}
   }
@@ -11607,7 +11770,7 @@ function updateEnemy(e,dt){
         e.strikeT=.34;e.vx=e.vy=0;
         spawnRing(e.x,e.y,'#c56bff',6,66,.45);
         spawnParticles(e.x,e.y,'#c56bff',18,300,.45,3);
-        aberr=Math.max(aberr,.5);
+        aberrPeak(.5);
         AUDIO.tone(1500,.13,'square',.035,-900);
       }
       return;                          // não colide nem se move fora de fase
@@ -11620,7 +11783,7 @@ function updateEnemy(e,dt){
       e.blinkCd=4;e.phaseT=.30;
       spawnParticles(e.x,e.y,'#c56bff',20,330,.5,3.2);
       spawnShards(e.x,e.y,'#c56bff',6,4);
-      aberr=Math.max(aberr,.62);
+      aberrPeak(.62);
       AUDIO.tone(1850,.14,'square',.042,-260);   // sinal agudo característico
       AUDIO.noise(.12,.02,5200,2.4,'highpass');
       return;
@@ -14648,7 +14811,7 @@ function render(){
     cam.y=minCY>maxCY?ARENA.h/2:clamp(cam.y,minCY,maxCY);
   }
   if(shake>0)shake*=Math.pow(.001,1/60);
-  const shM=cfg.shake?1:0;
+  const shM=SHAKE_MUL();
   const shx=shake>0.3?rand(-shake,shake)*shM:0,shy=shake>0.3?rand(-shake,shake)*shM:0;
 
   ctx.save();
@@ -14911,7 +15074,7 @@ function loop(now){
 
   // aberração cromática decai; picos vêm do dash e dos ataques do Echo 2
   if(aberr>0)aberr=Math.max(0,aberr-dt*2.4);
-  if(player&&player.dashT>0)aberr=Math.max(aberr,.75);
+  if(player&&player.dashT>0)aberrPeak(.75);
   // trilha procedural adaptativa
   let inten=0;
   if(state==='play'||state==='event'){
@@ -15676,10 +15839,15 @@ function renderConfig(){
     'Resolução interna de renderização. Reduza se o jogo estiver travando.',
     QN[cfg.quality],'',
     ()=>{cfg.quality=(cfg.quality+1)%3;saveCfg();applyCfg();}));
+  /* PR 11.5 §23: tremor em níveis — 100/75/50/25/OFF */
+  const SHN=['OFF','25%','50%','75%','100%'];
+  const shIdx=[0,.25,.5,.75,1].indexOf(cfg.shake)>=0?
+    [0,.25,.5,.75,1].indexOf(cfg.shake):4;
   cxBody.appendChild(cfgRow('TREMOR DE TELA',
     'Screen shake proporcional a explosões e dano recebido.',
-    cfg.shake?'ATIVO':'DESLIGADO',cfg.shake?'':'off',
-    ()=>{cfg.shake=cfg.shake?0:1;saveCfg();}));
+    SHN[shIdx],cfg.shake?'':'off',
+    ()=>{const L=[0,.25,.5,.75,1];
+      cfg.shake=L[(shIdx+1)%L.length];saveCfg();}));
   cxBody.appendChild(cfgRow('ABERRAÇÃO CROMÁTICA',
     'Distorção temporal durante o dash e ataques do Echo 2.',
     cfg.aberr?'ATIVA':'DESLIGADA',cfg.aberr?'':'off',
@@ -15688,10 +15856,22 @@ function renderConfig(){
     'Volume de estilhaços e faíscas. Reduzir melhora o desempenho.',
     cfg.parts?'COMPLETA':'REDUZIDA',cfg.parts?'':'off',
     ()=>{cfg.parts=cfg.parts?0:1;saveCfg();}));
+  /* PR 11.5 §22: números de dano FULL/REDUCED/OFF */
+  const DN=['OFF','REDUCIDO','FULL'];
   cxBody.appendChild(cfgRow('NÚMEROS DE DANO',
-    'Exibe o valor dos acertos críticos sobre os inimigos.',
-    cfg.dmgnum?'VISÍVEIS':'OCULTOS',cfg.dmgnum?'':'off',
-    ()=>{cfg.dmgnum=cfg.dmgnum?0:1;saveCfg();}));
+    'FULL: todo acerto seu numera. REDUCIDO: só críticos e golpes pesados. OFF: nenhum número.',
+    DN[cfg.dmgnum||0],cfg.dmgnum?'':'off',
+    ()=>{cfg.dmgnum=((cfg.dmgnum||0)+1)%3;saveCfg();}));
+  /* PR 11.5 §24: flash NORMAL/REDUCED */
+  cxBody.appendChild(cfgRow('FLASH DE TELA',
+    'Picos de luz e distorção em impactos fortes. REDUCED suaviza flashes.',
+    cfg.flash>=1?'NORMAL':'REDUCED',cfg.flash>=1?'':'off',
+    ()=>{cfg.flash=cfg.flash>=1?.55:1;saveCfg();}));
+  /* PR 11.5 §26: TAB em HOLD ou TOGGLE */
+  cxBody.appendChild(cfgRow('MODO DO TAB (FICHA)',
+    'HOLD: a Ficha de Combate fica aberta enquanto TAB é segurado. TOGGLE: aperte uma vez para abrir e outra para fechar.',
+    (cfg.tabMode==='toggle')?'TOGGLE':'HOLD','',
+    ()=>{cfg.tabMode=(cfg.tabMode==='toggle')?'hold':'toggle';saveCfg();}));
   cxBody.appendChild(cfgRow('DISPARO AUTOMÁTICO',
     'Atira continuamente sem precisar segurar o botão do mouse.',
     cfg.autofire?'LIGADO':'DESLIGADO',cfg.autofire?'':'off',
@@ -15877,23 +16057,96 @@ function lockLineFor(t,id){
   return '<div class="tlock">🔒 BLOQUEADO — '+u.txt+
     '<br>PROGRESSO: '+c+' / '+u.max+'</div>';
 }
-/* PR 11 — tooltip de item com condição/efeito/trade-off/tags/cooldown */
+/* =====================================================================
+   PR 11.5 §11 — TOOLTIP COM HIERARQUIA
+   NOME → descrição → EFEITO → CONDIÇÃO → TRADE-OFF → COOLDOWN →
+   SINERGIAS. Seções vazias NÃO são renderizadas.
+   A leitura de efeito/trade-off usa os modificadores REAIS do pipeline
+   (p.sm) quando o módulo está instalado — nunca texto inventado.
+   ===================================================================== */
+/* separa "CONDIÇÃO: efeito" do desc e extrai COOLDOWN fixo */
+function itemDescParts(it){
+  const d=(it&&it.desc)||'';
+  const cdM=d.match(/COOLDOWN\s+([\d.,]+)\s*s/i);
+  let body=d.replace(/,\s*COOLDOWN\s+[\d.,]+\s*s/i,'')
+            .replace(/\s*·\s*COOLDOWN\s+[\d.,]+\s*s/i,'')
+            .replace(/\s*COOLDOWN\s+[\d.,]+\s*s/i,'');
+  let cond=null;
+  const cM=body.match(/^((?:AO |APÓS |DENTRO |ESCUDO CHEIO|NO |NA |EM |COM |SE |AO FIM )[^^:]{2,40}):\s*/i);
+  if(cM){cond=cM[1];body=body.slice(cM[0].length);}
+  return {cond,body:body.trim(),cd:cdM?cdM[1].replace(',', '.')+'s':null};
+}
+/* modificadores vivos aplicados por um item (ids item.<id>[.<k>]) */
+function itemLiveMods(p,id){
+  if(!p||!p.sm)return [];
+  return p.sm.filter(m=>m&&m.id&&
+    (m.id==='item.'+id||m.id.indexOf('item.'+id+'.')===0));
+}
+/* a quais famílias de sinergia o item CONTRIBUI (tags compartilhadas) */
+const SYN_GROUPS=[
+  {nm:'ESCUDO · QUEBRA',tags:['shield_break','shield']},
+  {nm:'ESCUDO · PERFEITO',tags:['shield_full','shield']},
+  {nm:'ESCUDO · REGEN',tags:['shield_regen']},
+  {nm:'CRÍTICO',tags:['crit_build','crit']},
+  {nm:'STATUS · ELEMENTAL',tags:['status','burn','corrode','chill']},
+  {nm:'DASH · MOVIMENTO',tags:['dash','movement']},
+  {nm:'ECONOMIA · RISCO',tags:['economy','risk']}
+];
+function itemSynergyContrib(id){
+  const tags=itemTags(id);
+  const out=[];
+  for(const g of SYN_GROUPS)
+    if(g.tags.some(t=>tags.indexOf(t)>=0))out.push(g.nm);
+  return out;
+}
 function itemTipHTML(it){
   if(!it)return '';
-  const tags=itemTags(it).map(t=>{
-    const c=t.indexOf('risk')>=0?'#ff5c7a':t.indexOf('tradeoff')>=0?'#ffb347':
-      t.indexOf('shield')>=0?'#8ff6ff':t.indexOf('crit')>=0?'#ffd166':
-      t.indexOf('dash')>=0?'#7df9ff':t.indexOf('economy')>=0?'#c9a9ff':'#9db8c8';
-    return '<span class="cxtag" style="color:'+c+';border:1px solid '+c+
-      '55;background:'+c+'12">'+t.toUpperCase()+'</span>';
-  }).join(' ');
-  let h='<b style="color:'+it.color+'">'+it.nm+'</b><br>'+
-    '<span style="opacity:.8">'+it.desc+'</span>'+
-    (it.transformer?'<br><span style="color:#ff4df0">◆ TRANSFORMADOR — muda como a run é jogada</span>':'');
-  const hooks=it.hooks?Object.keys(it.hooks):[];
-  if(hooks.length)h+='<br><span style="color:#8ff6ff">GATILHOS: '+hooks.map(x=>x.replace('on','')).join(' · ')+'</span>';
-  if(tags)h+='<div style="margin-top:6px">'+tags+'</div>';
+  const parts=itemDescParts(it);
+  const RC=RARITY[it.rar||0];
+  let h='<div class="tnm" style="color:'+it.color+'">'+it.nm+'</div>'+
+    '<div class="trole" style="color:'+RC.c+'">'+RC.nm+
+    (it.transformer?' · <span style="color:#ff9df7">◆ TRANSFORMADOR</span>':'')+
+    '</div>';
+  /* EFEITO — mods reais quando instalado; texto do catálogo como base */
+  const owned=player&&player.items&&player.items.indexOf(it.id)>=0;
+  if(owned){
+    const mods=itemLiveMods(player,it.id);
+    if(mods.length){
+      h+='<span class="tsec">EFEITO ATIVO</span>';
+      for(const m of mods){
+        const neg=(m.type==='mult'&&m.value<1)||(m.type!=='mult'&&m.value<0);
+        const val=m.type==='mult'?fmtMult(m.value):fmtSigned(m.value);
+        h+='<span class="tline '+(neg?'tcost':'')+'">· '+(m.label||m.id)+
+          ' <b style="color:'+(neg?'#ffb386':'#7dffc4')+'">'+val+'</b></span>';
+      }
+    }
+  }
+  if(parts.body){
+    h+='<span class="tsec">'+(owned?'DETALHE':'EFEITO')+'</span>'+
+      '<span class="tline">'+parts.body+'</span>';
+  }
+  if(parts.cond)h+='<span class="tsec">CONDIÇÃO</span>'+
+    '<span class="tline"><span class="tcond">'+parts.cond+'</span></span>';
+  /* TRADE-OFF — só custos reais do pipeline (§11) */
+  if(owned){
+    const costs=itemLiveMods(player,it.id)
+      .filter(m=>(m.type==='mult'&&m.value<1)||(m.type!=='mult'&&m.value<0));
+    if(costs.length){
+      h+='<span class="tsec">TRADE-OFF</span>';
+      for(const m of costs)
+        h+='<span class="tline tcost">· '+(m.label||m.id)+'</span>';
+    }
+  }
+  if(parts.cd)h+='<span class="tsec">COOLDOWN</span>'+
+    '<span class="tline">'+parts.cd+'</span>';
+  const syn=itemSynergyContrib(it.id);
+  if(syn.length){
+    h+='<span class="tsec">SINERGIAS</span><span class="tsyn">'+
+      syn.map(s=>'<span>'+s+'</span>').join('')+'</span>';
+  }
+  if(it.transformer)h+='<div class="tcard-tr">◆ TRANSFORMADOR — muda como a run é jogada</div>';
   h+=moralAffinityTagHTML(it.id,false);
+  h+=lockLineFor('i',it.id);
   return h;
 }
 function weaponTipHTML(d){
@@ -15906,8 +16159,6 @@ function weaponTipHTML(d){
   stats.push(rangeLabel(rg));
   if(d.basePierce)stats.push(d.basePierce>50?'PERFURA TUDO':'PERFURA +'+d.basePierce);
   if(d.aoe)stats.push('ÁREA '+fmtStat(d.aoe,0));
-  if(d.lifesteal)stats.push('ROUBO '+fmtPct(d.lifesteal,0));
-  if(d.chain)stats.push('CADEIA ×'+d.chain);
   if(d.crit)stats.push('+'+fmtPct(d.crit,0)+' CRÍT');
   let h='<div class="tnm" style="color:'+d.color+'">'+d.nm+'</div>'+
     '<div class="trole" style="color:'+d.color+'">'+d.tag+
@@ -15916,8 +16167,22 @@ function weaponTipHTML(d){
     '<div class="tst">';
   for(const s of stats)h+='<span>'+s+'</span>';
   h+='</div>';
-  if(d.fx)h+='<div class="tperk" style="color:'+(STATUS_COLOR[d.fx.k]||'#fff')+
-    '">◆ APLICA '+d.fx.k.toUpperCase()+' POR '+d.fx.dur+'s</div>';
+  /* PR 11.5 §11: EFEITO / CONDIÇÃO rotulados e separados dos números */
+  if(d.fx)h+='<span class="tsec">EFEITO</span>'+
+    '<span class="tline" style="color:'+(STATUS_COLOR[d.fx.k]||'#fff')+'">◆ APLICA '+
+    d.fx.k.toUpperCase()+' POR '+fmtSec(d.fx.dur)+'</span>';
+  if(d.lifesteal)h+='<span class="tline" style="color:#7dffc4">◆ ROUBO DE VIDA '+
+    fmtPct(d.lifesteal,0)+' do dano</span>';
+  if(d.chain)h+='<span class="tline" style="color:#ffe74d">◆ ENCADEIA ×'+d.chain+
+    ' com '+fmtPct(.78,0)+' do dano</span>';
+  if(d.farBonus)h+='<span class="tsec">CONDIÇÃO</span>'+
+    '<span class="tline"><span class="tcond">ALVO ALÉM DE 450px</span> → '+
+    fmtSigned(d.farBonus)+' de dano</span>';
+  if(d.spinUp)h+='<span class="tline" style="color:#ffb347">◆ SEGURAR O GATILHO '+
+    'acelera a cadência até 2.2×</span>';
+  if(d.boomerang)h+='<span class="tline" style="color:#7dffc4">◆ O disco VOLTA e fere na ida e na volta</span>';
+  if(d.bounce)h+='<span class="tline" style="color:#ff9df7">◆ QUICA nas paredes ×'+d.bounce+
+    ' (+15% de dano por ricochete)</span>';
   h+=lockLineFor('w',d.id);
   return h;
 }
