@@ -1897,7 +1897,8 @@ window.addEventListener('mousedown',e=>{
   // BOTÕES DA UI NÃO INICIAM A RUN (mousedown dispara antes do click)
   const t=e.target;
   if(t&&t.closest&&t.closest('#ov-menu,#ov-char,#ov-slots,#ov-slotacts,'+
-    '#ov-actions,#pause-menu,#modal,#endwrap,#codex,#devpanel,#sheet'))return;
+    '#ov-actions,#pause-menu,#modal,#endwrap,#codex,#devpanel,#sheet,'+
+    '#sb-chip,#sandboxp'))return;
   if(state==='title'){showSlotSelect();return;}          // PR 7.5: escolhe memória
   if(state==='slots'||state==='slotMenu'||state==='slotConfirm')return;
   if(state==='fracture'){
@@ -2788,13 +2789,23 @@ function sbRender(){
     (sbSwapA!==-1?'<div class="ashint">'+(sbSwapA>=0?
       'FONTE: SLOT '+(sbSwapA+1)+' — CLIQUE NO SLOT DE DESTINO PARA TROCAR':
       'CLIQUE NA ARMA DE ORIGEM')+'</div>':'');
-  if(sbPick!=null){
+  if(sbPick!=null&&sbPendingWi==null){
     h+='<div class="sbpick"><div class="sect" style="margin:10px 0 6px">ESCOLHA A ARMA '+
-      (sbPick==='add'?'PARA O PRIMEIRO SLOT LIVRE':'PARA SUBSTITUIR')+'</div><div class="sbopts">';
+      (typeof sbPick==='number'?'PARA SUBSTITUIR O SLOT '+(sbPick+1):'PARA ADICIONAR')+'</div><div class="sbopts">';
     WEAPONS.forEach((w,i)=>{
       h+='<span class="sbbtn" data-sbw="'+i+'" style="border-color:'+w.color+'55;color:'+w.color+'">'+w.nm+'</span>';
     });
     h+='</div><div class="sbrow"><span class="asbtn" data-sb="cancelpick">CANCELAR</span></div></div>';
+  }
+  /* §62: arsenal cheio → SUBSTITUIR QUAL SLOT? */
+  if(sbPendingWi!=null){
+    const pd=WEAPONS[sbPendingWi];
+    h+='<div class="sbpick"><div class="sect" style="margin:10px 0 6px">ARSENAL CHEIO — '+
+      'SUBSTITUIR QUAL SLOT COM <span style="color:'+pd.color+'">'+pd.nm+'</span>?</div><div class="sbrow">';
+    player.owned.forEach((owi,s)=>{
+      h+='<span class="sbbtn" data-sbslotpick="'+s+'">['+(s+1)+'] '+WEAPONS[owi].nm+'</span>';
+    });
+    h+='<span class="asbtn" data-sb="cancelpick">CANCELAR</span></div></div>';
   }
   h+='</div>';
   /* ---- ITENS (§80/§81) ---- */
@@ -2849,7 +2860,7 @@ function sbRender(){
   $('sb-body').innerHTML=h;
   sbBind();
 }
-let sbSwapA=-1,sbPick=null,sbItemPick=false;
+let sbSwapA=-1,sbPick=null,sbItemPick=false,sbPendingWi=null;
 function sbSpawnPos(){
   const a=rand(0,TAU),R=220;
   return {x:clamp(player.x+Math.cos(a)*R,40,ARENA.w-40),
@@ -2884,26 +2895,45 @@ function sbBind(){
   });
   body.querySelectorAll('[data-sbadd]').forEach(el=>{
     el.addEventListener('click',ev=>{ev.stopPropagation();
-      sbPick='add';sbRender();});
+      sbPick='add';sbPendingWi=null;sbRender();});
   });
   body.querySelectorAll('[data-sbrep]').forEach(el=>{
     el.addEventListener('click',ev=>{ev.stopPropagation();
-      sbPick=parseInt(el.dataset.sbrep,10);sbRender();});
+      sbPick=parseInt(el.dataset.sbrep,10);sbPendingWi=null;sbRender();});
   });
   body.querySelectorAll('[data-sbw]').forEach(el=>{
     el.addEventListener('click',ev=>{ev.stopPropagation();
       const wi=parseInt(el.dataset.sbw,10);
-      if(sbPick==='add'){
-        const free=player.owned.length<player.maxSlots;
-        grantWeapon(wi,false,free?null:sbPick);   // slot cheio → substitui
-      }else if(typeof sbPick==='number'){
+      if(typeof sbPick==='number'){          // substituição direta de slot
         grantWeapon(wi,false,sbPick);
+        sbPick=null;
+        toast('SANDBOX: '+WEAPONS[wi].nm+' NO ARSENAL');
+      }else if(player.owned.length<player.maxSlots){  // slot livre (§123)
+        grantWeapon(wi,false,null);
+        sbPick=null;
+        toast('SANDBOX: '+WEAPONS[wi].nm+' NO ARSENAL');
+      }else{                                 // cheio → SUBSTITUIR QUAL SLOT? (§62)
+        sbPendingWi=wi;
       }
-      sbPick=null;AUDIO.ui(820);toast('SANDBOX: '+WEAPONS[wi].nm+' NO ARSENAL');
-      buildWeaponHUD();sbRender();
+      AUDIO.ui(820);buildWeaponHUD();sbRender();
     });
     const w=WEAPONS[parseInt(el.dataset.sbw,10)];
     if(w)bindTip(el,()=>weaponTipHTML(w));
+  });
+  body.querySelectorAll('[data-sbslotpick]').forEach(el=>{
+    el.addEventListener('click',ev=>{ev.stopPropagation();
+      const s=parseInt(el.dataset.sbslotpick,10);
+      if(sbPendingWi!=null){
+        grantWeapon(sbPendingWi,false,s);
+        toast('SLOT '+(s+1)+': '+WEAPONS[sbPendingWi].nm);
+      }
+      sbPendingWi=null;sbPick=null;
+      AUDIO.ui(820);buildWeaponHUD();sbRender();
+    });
+    if(sbPendingWi!=null){
+      const od=WEAPONS[player.owned[parseInt(el.dataset.sbslotpick,10)]];
+      if(od)bindTip(el,()=>weaponTipHTML(od));
+    }
   });
   body.querySelectorAll('[data-sbpreset]').forEach(el=>{
     el.addEventListener('click',ev=>{ev.stopPropagation();
@@ -3009,7 +3039,7 @@ function sbAction(a){
     case 'pickitem':
       sbItemPick=!sbItemPick;break;
     case 'cancelpick':
-      sbPick=null;sbItemPick=false;break;
+      sbPick=null;sbItemPick=false;sbPendingWi=null;break;
     case 'group':{
       for(let i=0;i<6;i++){
         const pos=sbSpawnPos();
@@ -17628,6 +17658,11 @@ $('ov-config').addEventListener('click',e=>{
 $('ov-sandbox').addEventListener('click',e=>{
   e.stopPropagation();initAudio();sandboxOpenSetup();
 });
+/* chip do HUD (em run): abre o painel do laboratório */
+const _sbChip=$('sb-chip');
+if(_sbChip)_sbChip.addEventListener('click',e=>{
+  e.stopPropagation();initAudio();sbPanelToggle();
+});
 /* ---- PR 7.5: botão "VOLTAR AO MENU" da tela de morte ---- */
 $('ov-back').addEventListener('click',e=>{
   e.stopPropagation();initAudio();AUDIO.ui(440);exitToSlotMenuFromDeath();
@@ -19368,7 +19403,8 @@ function devTick(dt){
   const p=player,e1=DEV.echo(1),e2=DEV.echo(2);
   const ln=[];
   ln.push('FPS        '+_devFps.toFixed(0));
-  ln.push('ESTADO     '+state+(devTainted?' · DEBUG':''));
+  ln.push('ESTADO     '+state+(devTainted?' · DEBUG':'')+
+    (sandboxRun?' · SANDBOX':''));
   ln.push('ONDA       '+wave+'/'+MAX_WAVE);
   ln.push('INIMIGOS   '+enemies.length);
   if(p){
