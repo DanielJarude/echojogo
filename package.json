@@ -1,7 +1,7 @@
 {
   "name": "echo-roguelite",
   "productName": "ECHO",
-  "version": "0.6.6-alpha",
+  "version": "0.7.0-alpha",
   "description": "ECHO — roguelite top-down de ressonância temporal. Suas runs anteriores voltam como Ecos e lutam ao seu lado. Build de playtest (alpha).",
   "main": "main.js",
   "author": {
