@@ -67,7 +67,10 @@ escolhas peculiares (`x_procissao`, `x_olho`, `x_onda0`, `x_observador`,
 Campos de bloqueio (todos reportam **motivo** legível no inspetor DEV):
 `min_wave`, `max_wave`, `requires_echo`, `requires_no_echo`, `requires_relation`,
 `requires_flag:*`, `forbid_flag:*`, `once_per_run`, `condicao_contexto`,
-`cooldown_evento`, `familia_consecutiva`.
+`cooldown_evento`, `cooldown_ondas`, `familia_consecutiva`.
+
+`cdW` (opcional) sobrepõe o cooldown por ID em ondas (padrão `EV_CD_WAVES=5`);
+`cdW:0` desliga para um evento específico.
 
 ### Escolhas com custo real
 
@@ -91,13 +94,19 @@ scoreEvent(d,ctx)    → peso efetivo
 pickRunEvent(ctx,rng) → evento sorteado (rng injetável p/ simulação)
 ```
 
-Pipeline do `pickRunEvent`:
+Pipeline do `pickRunEvent` (devolve **null** quando a cadência bloqueia):
 
-1. **Fila de chains** (`evQueue`) tem prioridade — continuação forçada;
-2. Passada estrita de elegibilidade;
-3. Se nada sobrou → relaxa só `familia_consecutiva`;
-4. Se nada sobrou → relaxa tudo menos `once_per_run`;
-5. Último recurso → sorteio legado puro (`pickEventKind`) — **nunca trava**.
+1. **Fila de chains** (`evQueue`) tem prioridade — continuação projetada por
+   `evDelay` fura a janela global, mas **nunca cai na mesma wave** da última
+   decisão, salvo continuação marcada `chainImmediate` (nenhuma usa hoje;
+   a exceção é sempre declarada no evento, nunca acidental);
+2. **Mesma wave** da última decisão → null;
+3. **Janela global** não fechada (`wave − última decisão < EV_DECISION_GAP`) → null;
+4. Passada estrita de elegibilidade;
+5. Se nada sobrou → relaxa só `familia_consecutiva`;
+6. Se nada sobrou → relaxa tudo menos `once_per_run`;
+7. Último recurso → sorteio legado puro (`pickEventKind`) — **nunca fica sem
+   opção dentro da janela**.
 
 ### Peso efetivo (`scoreEvent`) — sem pity óbvio
 
@@ -130,22 +139,42 @@ spawn de beacon — **nada roda por frame**.
   números finitos, recortes de janela). Save legado sem campo `ev` → memória vazia
   e sem erro. Checkpoint preserva histórico/chains/flags; slots são isolados.
 
-## 6. Anti-repetição
+## 6. Anti-repetição e CADÊNCIA (PR 10.5.1)
 
-Três camadas, da dura para a suave:
+O playtest da PR 10.5 revelou spam de decisões (4 eventos nas waves 4–6 e o
+ESPELHO FRATURADO repetindo wave 5→6). Causa raiz: o agendador de beacons era
+**temporal em segundos** (`evTimer=rand(7,12)`) — 1–3 oportunidades por wave —
+e o cooldown por evento contava **aparições**, não ondas (sob spam, a janela
+esvaziava em ~2 waves). A correção (10.5.1) é toda em **ONDAS**:
 
-1. **Bloqueio duro** — `cooldown_evento` (por evento, janela `cd`) e
-   `familia_consecutiva` (a família do último evento fica bloqueada inteira);
-2. **Relaxamento garantido** — se o bloqueio esvaziar o pool, a família cede
-   primeiro; o sistema nunca trava nem repete por falta de opção;
-3. **Fadiga suave** — mesmo elegível, família repetida e evento repetido perdem
-   peso gradualmente (tabela acima).
+| Régua | Regra | Constante |
+|---|---|---|
+| Janela global de decisão | decisão na wave N → próxima só em N+3 (~2 waves completas de respiro) | `EV_DECISION_GAP=3` |
+| Mesma wave | **nunca** duas decisões independentes na mesma wave (onboarding incluso); exceção única: continuação de chain `chainImmediate` declarada | — |
+| Cooldown por ID em ondas | o MESMO evento não repete por N waves (`cooldown_ondas`), robusto sob spam | `EV_CD_WAVES=5` (def pode sobrescrever com `cdW`) |
+
+- `evMem.dw` guarda a wave da última decisão; `evMem.lw[id]` a wave da última
+  aparição de cada evento — gravados **no ato da seleção** (`evMemRecord`),
+  sem janela cega entre seletores;
+- `spawnBeacon` fora da janela apenas **reagenda** (7–12s) — sem gastar o
+  evento, sem beacon na tela; continuação imediata declarada pode furar;
+- Onboarding fixo (survivor/merchant) não passa pela janela global, mas
+  obedece a regra de mesma wave;
+- **Microeventos, arena events e transmissões NÃO passam por essas réguas** —
+  eles preenchem os espaços entre decisões (alternância
+  combate → micro → combate → arena → decisão);
+- Chains respeitam ritmo: `evDelay(off≥1)` é o "minWavesAfterPrevious" — a
+  continuação só é entregue no próximo beacon **dentro** da rota agendada,
+  nunca na mesma wave da decisão que a originou.
+
+Camadas antigas mantidas por baixo: `cooldown_evento` (janela em aparições),
+`familia_consecutiva` com relaxamento garantido e fadiga suave por peso.
 
 ## 7. Integração com a run (pontos de contato)
 
 | Ponto | Integração |
 |---|---|
-| `spawnBeacon` | a partir da 2ª aparição de beacon usa `pickRunEvent()`; as duas primeiras continuam legadas (onboarding) |
+| `spawnBeacon` | a partir da 3ª aparição usa `pickRunEvent()` (as duas primeiras são onboarding fixo); fora da janela de cadência apenas **reagenda** — e nunca há dois beacons de decisão na mesma wave |
 | `openEvent` | `RUN_EVENT_BY_KIND[kind]` novo → `d.render()` no modal existente; legados seguem o caminho antigo |
 | `spawnWave` | `stopArenaEvent`+`waveBuffSweep`+`processDelayedEvents` no início; moldagem de onda (modos de eventos); `expireWave` de aliados; `tryStartArenaEvent` antes das MINI_WAVES (arena **nunca** em onda de mini-chefe) |
 | loop principal | `tickArenaEvent` + `tickMicroEvents` só sob `play` e sem boss |
@@ -195,7 +224,7 @@ smMul` (id estável) com a validade guardada em `evMem.vars` e varridos por
 |---|---|
 | `DEV.eventInspector()` | contexto, elegíveis (peso/família/raridade), bloqueados com motivo, memória, flags, chains, fila, pool |
 | `DEV.forceEvent(id)` | empurra o evento no próximo beacon (`evQueue.unshift`), mata o beacon atual e reagenda |
-| `DEV.simulateEvents(n,seed)` | simula n seleções (padrão 600; ≤2000) com mulberry32 e **restaura a memória da run em `finally`**; retorna `perEvent/perFamily/sameFamilyConsecutive/maxSameFamilyStreak/avgRepeatDistance/neverDrawn` |
+| `DEV.simulateEvents(n,seed,opts)` | simula **n runs de 20 ondas** (≤2000; 1 oportunidade de beacon por wave) com mulberry32 e **restaura a memória da run em `finally`**; retorna distribuição (`perEvent/perFamily/maxSameFamilyStreak/avgRepeatDistance/neverDrawn`) **e cadência** (`decisionsPerRun/minDecisionGap/avgDecisionGap/sameWaveDecisions/sameIdWithin5`); `opts.pacing:'legacy'` reproduz o ritmo ANTIGO (timer em segundos, sem janela) para comparar antes/depois |
 | `DEV.endingPreview()` | ver `ENDING_SYSTEM.md` |
 
 Painel **EVENT DIRECTOR** no `devRender` (input de força, simulações 100/500/1000,
@@ -205,7 +234,8 @@ run como `devTainted` (nunca gera save legítimo).
 
 ## 11. Testes
 
-`tests/events.test.js` (54 asserções, blocos A–J): pool/registro, elegibilidade
+`tests/events.test.js` (69 asserções, blocos A–K — K é o bloco de cadência com
+o caso real do playtest): pool/registro, elegibilidade
 com motivos, anti-repetição (cooldown/família/fadiga/saturação/novidade/adaptação),
 sorteio determinístico com RNG injetado, chains e consequências atrasadas,
 moralidade pelo caminho real (`evOpt → moralGain`), Echo reactions pelo pipeline

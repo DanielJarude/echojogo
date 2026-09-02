@@ -39,7 +39,8 @@ src+=';globalThis.__t={'+
   'startRun,resumeRun,captureCheckpoint,clearActiveRun,hasActiveRun,'+
   'smBuildCheckpoint,smSanitizeRun,activateSlot,'+
   'makeEcho,changeEchoTrust,relAddPressure,echoRelState,echoAllied,'+
-  'killEnemy,spawnWave,'+
+  'killEnemy,spawnWave,spawnBeacon,getBeacon:()=>beacon,'+
+  'getMicroT:()=>microT,setMicroT:v=>{microT=v;},'+
   'DEV_get:()=>DEV,DEV_on:()=>{DEV_MODE=true;},DEV_off:()=>{DEV_MODE=false;},'+
   'getMoral:()=>moral,setMoral:(c,g,v)=>{moral.comp=c;moral.greed=g;moral.viol=v;applyMoral();},'+
   'getMEff:()=>mEff,getPlayer:()=>player,setPlayer:p=>{player=p;},'+
@@ -53,8 +54,8 @@ src+=';globalThis.__t={'+
   'getEvQueue:()=>evQueue,setEvQueue:v=>{evQueue=v;},'+
   'getInterfT:()=>_aeInterfT,setInterfT:v=>{_aeInterfT=v;},'+
   'getTainted:()=>devTainted,clearDevTaint:()=>{devTainted=false;},'+
+  'EV_DECISION_GAP,EV_CD_WAVES,'+
   'getCurSlot:()=>curSlot,getRoot:()=>smRoot,'+
-  'getMicroT:()=>microT,'+
   'getRunTime:()=>runTime,setRunTime:v=>{runTime=v;}};';
 
 /* ---------------- DOM mínimo (igual aos outros harnesses) ---------------- */
@@ -366,11 +367,11 @@ ok('pickRunEvent registra o acontecimento na memória (rc/sn/família)',()=>{
   assert.strictEqual(mem.lf,d.family,'família última não registrada');
 });
 ok('a fila de chains tem prioridade sobre o sorteio',()=>{
-  freshRun();
+  freshRun();t.setWave(6);
   t.setEvMem(t.evMemFresh());
   t.setEvQueue(['x_resposta']);
   const d=t.pickRunEvent();
-  assert.strictEqual(d.id,'x_resposta');
+  assert(d&&d.id==='x_resposta','fila ignorada: '+JSON.stringify(t.getEvQueue()));
   assert.strictEqual(t.getEvQueue().length,0);
 });
 ok('pickRunEvent nunca devolve evento de continuação pelo sorteio',()=>{
@@ -378,19 +379,24 @@ ok('pickRunEvent nunca devolve evento de continuação pelo sorteio',()=>{
   t.setEvMem(t.evMemFresh());t.setEvQueue([]);
   const rnd=mulberry32(1234);
   for(let i=0;i<120;i++){
+    t.getEvMem().dw=0;                 // isola a cadência: teste é do POOL
     const d=t.pickRunEvent(null,rnd);
+    assert(d,'pool vazio na iteração '+i);
     assert(!d.chain,'chain vazou pelo sorteio: '+d.id);
   }
 });
-ok('sorteio é determinístico com RNG injetado',()=>{
+ok('sorteio é determinístico com RNG injetado (estado idêntico → sequência idêntica)',()=>{
   for(let attempt=0;attempt<2;attempt++){
     freshRun();t.setWave(6);
     t.setEvMem(t.evMemFresh());t.setEvQueue([]);
     const rnd=mulberry32(777);
     const seq=[];
     for(let i=0;i<40;i++){
+      t.setEvMem(t.evMemFresh());t.setEvQueue([]);   // mesmo estado de entrada
       t.setWave(2+(i%8));
-      seq.push(t.pickRunEvent(null,rnd).id);
+      const d=t.pickRunEvent(null,rnd);
+      assert(d,'cadência bloqueou seleção determinística em '+i);
+      seq.push(d.id);
     }
     if(attempt===1){
       assert.strictEqual(seq.join(','),first.join(','),'sequências divergem');
@@ -651,26 +657,25 @@ ok('evMemPack é COMPACTO (sem texto de evento serializado)',()=>{
 });
 
 /* ==================== J. DISTRIBUIÇÃO (SIMULAÇÃO) ==================== */
-console.log('\n[J] DISTRIBUIÇÃO');
-function runSim(n,seed){
+console.log('\n[J] DISTRIBUIÇÃO E CADÊNCIA (runs de 20 ondas)');
+function runSim(n,seed,pacing){
   t.DEV_on();
-  const r=t.DEV_get().simulateEvents(n,seed);
+  const r=t.DEV_get().simulateEvents(n,seed,pacing?{pacing:pacing}:undefined);
   t.DEV_off();t.clearDevTaint();
   return r;
 }
 ok('simulação determinística: mesma seed → resultado idêntico',()=>{
-  const a=runSim(200,42),b=runSim(200,42);
-  assert.deepStrictEqual(a.perEvent,b.perEvent);
-  assert.deepStrictEqual(a.perFamily,b.perFamily);
-  assert.strictEqual(a.neverDrawn.join(','),b.neverDrawn.join(','));
+  const a=runSim(60,42),b=runSim(60,42);
+  assert.strictEqual(JSON.stringify(a),JSON.stringify(b),
+    'simulação não é determinística');
 });
-ok('nenhum evento comum domina o pool (topo < 22% em 600 seleções)',()=>{
-  const r=runSim(600,777);
+ok('nenhum evento comum domina o pool (topo < 22% em 400 runs×20 ondas)',()=>{
+  const r=runSim(400,777);
   const top=r.perEvent[0];
   assert(top.pct<22,'evento dominante: '+top.id+' '+top.pct+'%');
 });
 ok('eventos raros continuam raros e anomalous MUITO raros',()=>{
-  const r=runSim(600,777);
+  const r=runSim(400,777);
   const avg=rar=>{
     const xs=r.perEvent.filter(e=>e.rarity===rar);
     return xs.reduce((s,x)=>s+x.pct,0)/Math.max(1,xs.length);
@@ -681,44 +686,210 @@ ok('eventos raros continuam raros e anomalous MUITO raros',()=>{
   };
   const ac=avg('common'),au=avg('uncommon'),ar=avg('rare'),aa=avg('anomalous');
   assert(ac>au&&au>ar,'escala de raridade invertida: '+ac+'/'+au+'/'+ar);
-  /* anomalous é oncePerRun: cada um aparece no máximo 1× na simulação */
   assert(max('anomalous')<=max('rare'),'anomalous apareceu mais que raro');
-  assert(aa<1.0,'anomalous apareceu demais: '+aa+'% média');
+  /* anomalous é oncePerRun: no máximo 1× por run (~1 slot em ~6/run) */
+  assert(aa<0.5,'anomalous apareceu demais: '+aa+'% média');
 });
 ok('famílias variadas: nenhuma família domina sem condição contextual',()=>{
-  const r=runSim(600,777);
+  const r=runSim(400,777);
   const top=r.perFamily[0];
   assert(top.pct<30,'família dominante: '+top.family+' '+top.pct+'%');
   assert(r.perFamily.length>=6,'poucas famílias ativas: '+r.perFamily.length);
 });
 ok('anti-repetição visível: sequência nunca empilha a mesma família',()=>{
-  const r=runSim(600,777);
+  const r=runSim(400,777);
   assert(r.maxSameFamilyStreak<=3,'sequência máxima de família: '+
     r.maxSameFamilyStreak);
-  assert(r.sameFamilyConsecutive<r.n*.25,' back-to-back demais: '+
-    r.sameFamilyConsecutive);
 });
-ok('todo evento comum incondicional foi sorteado em 600 seleções',()=>{
-  const r=runSim(600,777);
+ok('todo evento comum incondicional foi sorteado em 400 runs',()=>{
+  const r=runSim(400,777);
   const drawn=new Set(r.perEvent.filter(e=>e.n>0).map(e=>e.id));
   for(const d of t.ALL_RUN_EVENTS){
     if(d.rarity!=='common')continue;
     if(d.echoReq||d.relReq||d.reqFlag||d.forbidFlag||d.cond||d.oncePerRun)continue;
     assert(drawn.has(d.id),'comum incondicional nunca sorteado: '+d.id);
   }
+  /* o que NUNCA saiu só pode ser evento condicional/contextual */
+  for(const id of r.neverDrawn){
+    const d=t.RUN_EVENT_BY_ID[id];
+    assert(d&&(d.echoReq||d.relReq||d.reqFlag||d.forbidFlag||d.cond),
+      'evento incondicional nunca sorteado: '+id);
+  }
 });
 ok('distância média até repetir existe e é razoável',()=>{
-  const r=runSim(600,777);
-  assert(r.avgRepeatDistance>3&&r.avgRepeatDistance<60,
+  const r=runSim(400,777);
+  assert(r.avgRepeatDistance>5&&r.avgRepeatDistance<100,
     'distância média implausível: '+r.avgRepeatDistance);
+});
+ok('CADÊNCIA (depois): ~6 decisões/20 ondas, intervalo mín. 3, zero spam',()=>{
+  const r=runSim(400,777);
+  assert(r.decisionsPerRun>=5&&r.decisionsPerRun<=7,
+    'decisões por run fora do alvo: '+r.decisionsPerRun);
+  assert.strictEqual(r.minDecisionGap,3,
+    'intervalo mínimo entre decisões: '+r.minDecisionGap);
+  assert.strictEqual(r.sameWaveDecisions,0,
+    'decisões na mesma wave: '+r.sameWaveDecisions);
+  assert.strictEqual(r.sameIdWithin5,0,
+    'repetições do mesmo ID em ≤5 waves: '+r.sameIdWithin5);
+});
+ok('CADÊNCIA (antes, pacing legacy): o spam do playtest é reproduzido',()=>{
+  const r=runSim(400,777,'legacy');
+  assert(r.decisionsPerRun>20,'ritmo antigo subestimado: '+r.decisionsPerRun);
+  assert(r.sameWaveDecisions>0,'antigo não fazia 2 decisões na mesma wave?');
+  assert(r.sameIdWithin5>0,'antigo não repetia ID em ≤5 waves?');
+  assert.strictEqual(r.minDecisionGap,0,'antigo tinha intervalo mín. > 0?');
 });
 ok('DEV.simulateEvents restaura a memória da run (não polui o estado)',()=>{
   freshRun();
   t.setEvMem(t.evMemFresh());t.setEvQueue([]);
   t.evSetFlag('caravana_ajudada');
-  runSim(100,5);
+  runSim(30,5);
   assert(t.evFlag('caravana_ajudada'),'memória da run foi destruída pela sim');
   assert.strictEqual(t.getEvQueue().length,0,'fila vazada pela sim');
+});
+
+/* ==================== K. CADÊNCIA — CASO REAL DO PLAYTEST ==================== */
+console.log('\n[K] CADÊNCIA DE DECISÕES (PR 10.5.1)');
+ok('CASO REAL: decisão na wave 4 → waves 5 e 6 vazias → wave 7 livre',()=>{
+  freshRun();t.setWave(4);
+  const a=t.pickRunEvent();
+  assert(a,'decisão A não aconteceu na wave 4');
+  t.setWave(5);
+  assert.strictEqual(t.pickRunEvent(),null,'wave 5 deveria ficar sem decisão');
+  t.setWave(5);
+  assert.strictEqual(t.pickRunEvent(),null,'2ª tentativa na wave 5 também');
+  t.setWave(6);
+  assert.strictEqual(t.pickRunEvent(),null,'wave 6 deveria ficar sem decisão');
+  t.setWave(7);
+  const b=t.pickRunEvent();
+  assert(b,'wave 7 deveria permitir nova decisão');
+});
+ok('spawnBeacon respeita a janela: sem beacon fora dela, sem beacon na mesma wave',()=>{
+  freshRun();t.setWave(2);
+  t.spawnBeacon();                                 // onboarding: survivor
+  assert(t.getBeacon()&&t.getBeacon().kind==='survivor');
+  t.setBeacon(null);
+  t.spawnBeacon();                                 // MESMA wave → reagenda
+  assert.strictEqual(t.getBeacon(),null,'segundo beacon na mesma wave!');
+  t.setWave(3);
+  t.spawnBeacon();                                 // onboarding: merchant
+  assert(t.getBeacon()&&t.getBeacon().kind==='merchant');
+  t.setBeacon(null);
+  t.setWave(4);
+  t.spawnBeacon();                                 // diretor: fora da janela
+  assert.strictEqual(t.getBeacon(),null,'decisão fora da janela global!');
+  t.setWave(6);
+  t.spawnBeacon();                                 // 6−3=3 → janela fechou
+  assert(t.getBeacon(),'beacon deveria nascer na janela');
+  assert(t.RUN_EVENT_BY_KIND[t.getBeacon().kind],'kind sem registro');
+});
+ok('MESMO EVENTO: ESPELHO FRATURADO (lg_mirror) não repete antes de 5 waves',()=>{
+  freshRun();t.setWave(5);
+  assert.strictEqual(t.RUN_EVENT_BY_ID.lg_mirror.nm,'ESPELHO FRATURADO');
+  t.evMemRecord('lg_mirror','anomalias');          // apareceu na wave 5
+  t.evMemRecord('x_camara','exploracao');
+  t.setWave(6);t.evMemRecord('x_gerador','recursos');
+  t.setWave(7);t.evMemRecord('x_carga','exploracao');
+  t.evMemRecord('x_caravana','sobreviventes');     // 4 eventos depois do espelho
+  t.setWave(8);                                    // 3 waves depois
+  const pass=t.getEligibleEvents(t.buildEventContext());
+  const b=pass.blocked.find(x=>x.id==='lg_mirror');
+  assert(b&&b.reason==='cooldown_ondas',
+    'espelho elegível 3 waves depois: '+JSON.stringify(b));
+  t.setWave(10);                                   // 5 waves depois → libera
+  const why=t.eventBlockReason(t.RUN_EVENT_BY_ID.lg_mirror,t.buildEventContext());
+  assert.strictEqual(why,null,'espelho ainda preso após o cooldown: '+why);
+});
+ok('MESMA WAVE: dois seletores independentes → só o primeiro abre decisão',()=>{
+  freshRun();t.setWave(5);
+  const d1=t.pickRunEvent();
+  assert(d1,'primeira decisão deveria acontecer');
+  const d2=t.pickRunEvent();
+  assert.strictEqual(d2,null,'segunda decisão na mesma wave!');
+});
+ok('durante o cooldown de decisão, MICROEVENTO continua elegível',()=>{
+  freshRun();t.setWave(5);
+  assert(t.pickRunEvent(),'contexto sem decisão inicial');
+  t.setMicroT(1);t.tickMicroEvents(2);
+  const mt=t.getMicroT();
+  t.setWave(6);t.setMicroT(1);t.tickMicroEvents(2);
+  assert(t.getMicroT()!==1,'microevento congelado durante a janela');
+});
+ok('durante o cooldown de decisão, ARENA EVENT continua funcionando',()=>{
+  freshRun();t.setWave(5);
+  assert(t.pickRunEvent(),'contexto sem decisão inicial');
+  t.setWave(6);
+  t.setEnemies([{dead:false,spawnT:0,type:'chaser'}]);
+  MathF._rng=()=>0.02;
+  try{t.tryStartArenaEvent();}finally{MathF._rng=null;}
+  assert(t.getArenaEv(),'arena deixou de funcionar durante a janela');
+  t.stopArenaEvent(false);
+});
+ok('CHAIN: continuação respeita o delay agendado (nunca na mesma wave)',()=>{
+  freshRun();t.setWave(4);
+  assert(t.pickRunEvent(),'decisão inicial ausente');
+  t.evDelay(2,'chain_signal');                     // projetada: wave 6
+  t.setWave(5);t.processDelayedEvents();
+  assert.strictEqual(t.getEvQueue().length,0,'chain disparou antes do delay');
+  t.setWave(6);t.processDelayedEvents();
+  /* fireDelayed('chain_signal') empurra a CONTINUAÇÃO x_resposta na fila */
+  assert(t.getEvQueue().indexOf('x_resposta')>=0,
+    'chain não chegou na wave agendada: '+JSON.stringify(t.getEvQueue()));
+});
+ok('CHAIN: continuação projetada fura a janela global (exceção declarada)',()=>{
+  freshRun();t.setWave(4);
+  assert(t.pickRunEvent(),'decisão inicial ausente');
+  t.setEvQueue(['x_resposta']);                    // chegou por evDelay ≥1 wave
+  t.setWave(5);                                    // dentro da janela global
+  const d=t.pickRunEvent();
+  assert(d&&d.id==='x_resposta',
+    'continuação projetada foi barrada pela janela');
+});
+ok('CHAIN: na MESMA wave da última decisão, continuação reentra na fila',()=>{
+  freshRun();t.setWave(5);
+  assert(t.pickRunEvent(),'decisão inicial ausente');
+  t.setEvQueue(['x_resposta']);
+  t.setWave(5);                                    // mesma wave
+  assert.strictEqual(t.pickRunEvent(),null,'segunda decisão na mesma wave');
+  assert(t.getEvQueue().indexOf('x_resposta')>=0,
+    'continuação foi descartada em vez de reagendada');
+});
+ok('CHAIN: flag chainImmediate explícita permite continuação na mesma wave',()=>{
+  freshRun();t.setWave(5);
+  assert(t.pickRunEvent(),'decisão inicial ausente');
+  t.RUN_EVENT_BY_ID.x_resposta.chainImmediate=true;     // exceção DECLARADA
+  try{
+    t.setEvQueue(['x_resposta']);
+    t.setWave(5);
+    const d=t.pickRunEvent();
+    assert(d&&d.id==='x_resposta','chainImmediate não furou a mesma wave');
+  }finally{
+    delete t.RUN_EVENT_BY_ID.x_resposta.chainImmediate;
+  }
+});
+ok('LEGADOS: todos passam pelo MESMO registro, seletor e anti-repeat',()=>{
+  for(const k of t.EV_KINDS){
+    assert(t.RUN_EVENT_BY_ID['lg_'+k],'legado fora do índice: '+k);
+    assert(t.RUN_EVENT_BY_KIND[k],'kind legado sem registro: '+k);
+  }
+  const legacyInPool=t.ALL_RUN_EVENTS.filter(d=>String(d.id).indexOf('lg_')===0);
+  assert.strictEqual(legacyInPool.length,20,
+    'legados no pool principal: '+legacyInPool.length);
+  /* um único ponto de disparo: spawnBeacon no loop; um único consumidor:
+     openEvent pelo toque no beacon; pickEventKind só como último recurso */
+  const count=(re)=>(RAWSRC.match(re)||[]).length;
+  assert.strictEqual(count(/\bopenEvent\(/g),2,'openEvent ganhou outro gatilho');
+  assert.strictEqual(count(/\bspawnBeacon\(/g),2,'spawnBeacon ganhou outro gatilho');
+  assert.strictEqual(count(/\bpickEventKind\(/g),2,'pickEventKind fora do fallback');
+});
+ok('CONTEÚDO PRESERVADO: 25 novos, 20 legados, 6 chains, 5 arenas, 4 micro',()=>{
+  assert.strictEqual(t.RUN_EVENTS.length,25);
+  assert.strictEqual(t.EV_KINDS.length,20);
+  assert.strictEqual(t.RUN_CHAIN_EVENTS.length,6);
+  assert.strictEqual(t.ARENA_EVENTS.length,5);
+  assert.strictEqual(t.MICRO_EVENTS.length,4);
+  assert(t.EV_DECISION_GAP>=3,'janela global enfraquecida');
+  assert(t.EV_CD_WAVES>=4,'cooldown por ID enfraquecido');
 });
 
 console.log('\n---------------------------------------------');

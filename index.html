@@ -5410,16 +5410,26 @@ const EV_LABEL={
   mirror  :['ESPELHO FRATURADO','#bffbff']
 };
 function spawnBeacon(){
-  // primeiros dois eventos são fixos (ensinam a mecânica), depois diretor
+  /* PR 10.5.1: MESMA WAVE — nunca dois eventos de decisão independentes
+     (vale inclusive para o onboarding fixo). Reagenda e tenta depois. */
+  if((evMem.dw|0)===(wave|0)){scheduleBeacon();return;}
   let kind;
   if(evCount===0)kind='survivor';
   else if(evCount===1)kind='merchant';
   else{
-    /* PR 10.5: seleção via Event Director (memória + anti-repetição) */
+    /* continuação de chain explicitamente projetada como imediata pode
+       furar a janela global (nenhuma chain usa hoje; suporte declarado) */
+    const imm=evQueue.some(id=>{
+      const d=RUN_EVENT_BY_ID[id];return !!d&&!!d.chainImmediate;});
+    if(!imm&&!evDecisionReady()){scheduleBeacon();return;}
+    /* PR 10.5: seleção via Event Director (memória + anti-repetição +
+       cadência). null = fora da janela → reagenda sem gastar o evento. */
     const def=pickRunEvent();
-    kind=def?def.kind:pickEventKind();
+    if(!def){scheduleBeacon();return;}
+    kind=def.kind;
   }
   evCount++;
+  evMem.dw=wave|0;   // PR 10.5.1: decisão (mesmo onboarding) abre a régua global
   beacon={x:ARENA.w/2+rand(-260,260),y:ARENA.h/2+rand(-170,170),r:36,kind,t:0,life:38,pulse:0};
   const L=EV_LABEL[kind];
   banner(L[0],'APROXIME-SE PARA INTERAGIR');
@@ -6248,13 +6258,34 @@ const RARITY_META={
    Nada de texto de evento serializado. */
 function evMemFresh(){
   return {rc:[],sn:{},fc:{},lf:null,le:null,seenN:0,
-    fl:{},ch:{},ep:[],dl:[],vars:{}};
+    fl:{},ch:{},ep:[],dl:[],vars:{},dw:0,lw:{}};
 }
 let evMem=evMemFresh();
 let evQueue=[];                 // chains/continuações que forçam o próximo beacon
 const EV_MEM_RC_MAX=12;         // janela de "recente"
 const EV_MEM_EP_MAX=8;          // epílogos prometidos (compacto)
 const EV_MEM_DL_MAX=8;          // consequências atrasadas agendadas
+/* ---- PR 10.5.1: CADÊNCIA DE DECISÕES ------------------------------
+   Eventos de decisão são MOMENTOS IMPORTANTES, não ruído de fundo.
+   Três réguas, todas em ONDAS (a régua antiga era em segundos e deixava
+   1–3 beacons por wave — 4 decisões nas waves 4–6 em playtest):
+   · EV_DECISION_GAP — depois de uma decisão, ~2 waves completas de
+     respiro: decisão na wave N → próxima só na N+3 (4→5→6→7);
+   · MESMA WAVE — nunca duas decisões independentes na mesma wave
+     (exceção explícita: continuação de chain marcada chainImmediate);
+   · EV_CD_WAVES — o MESMO evento não repete por N waves (cooldown por
+     ID em ondas; o antigo cd em aparições vazava sob spam de beacons:
+     era isso que deixou o ESPELHO FRATURADO voltar na wave seguinte).
+   Microeventos, arena e transmissões NÃO passam por essas réguas —
+   eles preenchem os espaços entre decisões (alternância). */
+const EV_DECISION_GAP=3;
+const EV_CD_WAVES=5;
+let evSimNoCdW=false;        // apenas a simulação 'legacy' do DEV desliga o cdW
+function evDecisionReady(w){
+  const last=evMem.dw|0;
+  if(!last)return true;
+  return (((w==null?wave|0:w)-last)>=EV_DECISION_GAP);
+}
 
 function evFlag(k){return !!evMem.fl[k];}
 function evSetFlag(k){if(k)evMem.fl[String(k)]=1;return true;}
@@ -6284,6 +6315,11 @@ function evMemRecord(id,fam){
   evMem.sn[id]=(evMem.sn[id]|0)+1;
   evMem.fc[fam]=(evMem.fc[fam]|0)+1;
   evMem.lf=fam;evMem.le=id;evMem.seenN=(evMem.seenN|0)+1;
+  /* PR 10.5.1: registrado IMEDIATAMENTE na seleção (sem janela cega entre
+     seletores) — wave da última aparição (cooldown por ID) e da última
+     decisão (janela global). */
+  evMem.lw[id]=wave|0;
+  evMem.dw=wave|0;
 }
 /* quantas vezes a família apareceu na janela recente (anti-temática) */
 function evFamRecent(fam){
@@ -6299,10 +6335,13 @@ function evFamRecent(fam){
 }
 /* empacotamento para o checkpoint (versão sanitizada) */
 function evMemPack(){
+  const lw={};
+  for(const k in evMem.lw){const v=evMem.lw[k]|0;if(v>0)lw[String(k).slice(0,40)]=v;}
   return {rc:evMem.rc.slice(-EV_MEM_RC_MAX).map(String),
     sn:Object.assign({},evMem.sn),fc:Object.assign({},evMem.fc),
     lf:evMem.lf||null,le:evMem.le||null,
     fl:Object.assign({},evMem.fl),vars:Object.assign({},evMem.vars),
+    dw:evMem.dw|0,lw:lw,
     ep:evMem.ep.slice(),dl:evMem.dl.map(d=>({at:d.at|0,
       id:String(d.id),arg:d.arg||null,ch:(d.chance!=null?d.chance:undefined)}))};
 }
@@ -6321,6 +6360,12 @@ function evMemRestore(p){
       if(p.fl[k])evMem.fl[String(k).slice(0,40)]=1;
     if(p.vars&&typeof p.vars==='object')for(const k in p.vars)
       if(Number.isFinite(p.vars[k]))evMem.vars[String(k).slice(0,40)]=p.vars[k];
+    /* PR 10.5.1: cadência persiste no checkpoint (save antigo → defaults) */
+    if(Number.isFinite(p.dw)&&p.dw>0)evMem.dw=p.dw|0;
+    if(p.lw&&typeof p.lw==='object')for(const k in p.lw){
+      const v=p.lw[k];
+      if(Number.isFinite(v)&&v>0)evMem.lw[String(k).slice(0,40)]=v|0;
+    }
     if(Array.isArray(p.ep))evMem.ep=p.ep.filter(x=>typeof x==='string').slice(-EV_MEM_EP_MAX);
     if(Array.isArray(p.dl))evMem.dl=p.dl.filter(d=>d&&typeof d==='object'&&d.id)
       .slice(-EV_MEM_DL_MAX)
@@ -7836,6 +7881,15 @@ function eventBlockReason(d,ctx){
     for(let i=0;i<Math.min(d.cd,n);i++)
       if(rc[n-1-i]===d.id)return 'cooldown_evento';
   }
+  /* PR 10.5.1: cooldown por ID em ONDAS — o mesmo evento não repete cedo,
+     mesmo sob spam de beacons (a régua antiga, em aparições, esvaziava). */
+  if(!evSimNoCdW){
+    const cdW=(d.cdW!=null)?d.cdW:EV_CD_WAVES;
+    if(cdW>0){
+      const lastLw=evMem.lw[d.id]|0;
+      if(lastLw&&((ctx.wave|0)-lastLw)<cdW)return 'cooldown_ondas';
+    }
+  }
   if(ctx.lastFamily&&d.family===ctx.lastFamily)return 'familia_consecutiva';
   return null;
 }
@@ -7870,27 +7924,39 @@ function scoreEvent(d,ctx){
   else if(ctx.disRuptured&&d.family==='ruptura')w*=1.35;
   return Math.max(.01,w);
 }
-/* sorteio principal. rng injetável (simulação determinística). */
+/* sorteio principal. rng injetável (simulação determinística).
+   PR 10.5.1: devolve NULL quando a cadência bloqueia (mesma wave da última
+   decisão, ou janela global de ~2 waves não fechada). A fila de chains é a
+   única exceção — e mesmo ela nunca cai na mesma wave, salvo uma
+   continuação explicitamente marcada com chainImmediate. */
 function pickRunEvent(ctx,rng){
   const rnd=rng||Math.random;
-  /* 1) chains/continuações forçadas têm vez primeiro */
+  const c=ctx||buildEventContext();
+  const now=c.wave|0;
+  const sameWave=(evMem.dw|0)===now;
+  /* 1) chains/continuações forçadas têm vez primeiro (exceção DE RITMO
+     projetada: chegaram por evDelay com offset mínimo de 1 wave) */
   while(evQueue.length){
     const id=evQueue.shift();
     const d=RUN_EVENT_BY_ID[id];
-    if(d&&!(d.oncePerRun&&(evMem.sn[d.id]|0)>0)){
-      evMemRecord(d.id,d.family);
-      return d;
-    }
+    if(!d)continue;
+    if(d.oncePerRun&&(evMem.sn[d.id]|0)>0)continue;
+    if(sameWave&&!d.chainImmediate){evQueue.push(id);break;}  // reentra: ritmo
+    evMemRecord(d.id,d.family);
+    return d;
   }
-  const c=ctx||buildEventContext();
-  /* 2) passada estrita */
+  /* 2) MESMA WAVE: nunca duas decisões independentes */
+  if(sameWave)return null;
+  /* 3) JANELA GLOBAL: ~2 waves completas entre decisões */
+  if(!evDecisionReady(now))return null;
+  /* 4) passada estrita */
   let pass=getEligibleEvents(c);
-  /* 3) relaxa o bloqueio de família consecutiva se não sobrou nada */
+  /* 5) relaxa o bloqueio de família consecutiva se não sobrou nada */
   if(!pass.elig.length)pass=getEligibleEvents(c,{relaxFamily:true});
-  /* 4) relaxa tudo (exceto once-per-run) — rede de segurança */
+  /* 6) relaxa tudo (exceto once-per-run) — rede de segurança */
   if(!pass.elig.length)pass=getEligibleEvents(c,{relaxAll:true});
   if(!pass.elig.length){
-    /* 5) último recurso: sorteio legado puro */
+    /* 7) último recurso: sorteio legado puro */
     const k=pickEventKind();
     evMemRecord('lg_'+k,EV_LEGACY_FAMILY[k]||'risco');
     return RUN_EVENT_BY_KIND[k];
@@ -16174,7 +16240,11 @@ const DEV={
         echoCount:ctx.echoCount,operator:ctx.operator,
         relBest:ctx.relBest,relWorst:ctx.relWorst,
         disRuptured:ctx.disRuptured,disReconciled:ctx.disReconciled,
-        queued:ctx.queued},
+        queued:ctx.queued,
+        decisionReady:evDecisionReady(),
+        lastDecisionWave:evMem.dw|0,
+        nextDecisionWave:(evMem.dw|0)+EV_DECISION_GAP,
+        cdWaves:EV_CD_WAVES},
       eligible:elig,blocked:blocked,
       relaxed:relax.elig.map(d=>d.id),
       recent:evMem.rc.slice(),lastEvent:evMem.le,lastFamily:evMem.lf,
@@ -16203,10 +16273,15 @@ const DEV={
   /* simulação determinística de N seleções SEM progressão real:
      frequencies por evento/família, repetição consecutiva, distância
      média até repetir e eventos nunca sorteados. */
-  simulateEvents(n,seed){
+  simulateEvents(n,seed,opts){
     if(!DEV_MODE)return null;
     n=clamp(Math.round(n)||100,1,2000);
     seed=(seed==null?20090214:seed)|0;
+    opts=opts||{};
+    /* pacing 'legacy' reproduz o comportamento ANTES da 10.5.1 (beacons por
+       tempo: ~1–2 decisões por wave, sem janela global, sem cooldown por ID
+       em ondas) — para comparar antes/depois com o mesmo instrumento. */
+    const legacyPacing=opts.pacing==='legacy';
     /* mulberry32 — RNG determinístico para reproducibilidade */
     let s=seed>>>0;
     const rnd=function(){s|=0;s=(s+0x6D2B79F5)|0;
@@ -16216,45 +16291,100 @@ const DEV={
     /* snapshot da memória para restaurar depois (a simulação é suja,
        porém devolve o estado — e contamina do mesmo jeito) */
     const snapMem=JSON.stringify(evMem),snapQ=evQueue.slice();
-    const perEv={},perFam={},byId={};
+    const perEv={},perFam={};
     for(const d of ALL_RUN_EVENTS){perEv[d.id]=0;perFam[d.family]=0;}
-    let consec=0,maxConsec=0,consecPairs=0,prevFam=null;
-    const lastAt={};let distSum=0,distN=0;
+    let consec=0,maxConsec=0,prevFam=null;
+    const lastAt={};let distSum=0,distN=0,decTotal=0;
+    /* métricas de CADÊNCIA (PR 10.5.1) */
+    let minGap=999,sameId5=0,sameWave=0,gapSum=0,gapN=0;
     const w0=wave;
     try{
-      for(let i=0;i<n;i++){
-        /* contexto sintético avançando: wave sobe a cada 2 sorteios para
-           variar condições (simulação nunca toca a run real de verdade) */
-        const simWave=clamp(1+Math.floor(i/2),1,MAX_WAVE-1);
-        const realWave=wave;wave=simWave;
-        const ctx=buildEventContext();
-        const d=pickRunEvent(ctx,rnd);
-        wave=realWave;
-        perEv[d.id]=(perEv[d.id]|0)+1;
-        perFam[d.family]=(perFam[d.family]|0)+1;
-        if(prevFam===d.family){consecPairs++;consec++;}
-        else consec=0;
-        maxConsec=Math.max(maxConsec,consec);
-        prevFam=d.family;
-        if(lastAt[d.id]!=null){distSum+=(i-lastAt[d.id]);distN++;}
-        lastAt[d.id]=i;
+      for(let run=0;run<n;run++){
+        evMem=evMemFresh();evQueue=[];
+        const decWaves=[];const decIds=[];
+        for(let w=2;w<MAX_WAVE;w++){
+          const realWave=wave;wave=w;
+          /* oportunidades: jogo novo = 1 beacon por wave; legado = o timer
+             de 7–12s produzia 1–2 decisões por wave (alternado aqui) */
+          const opps=legacyPacing?(1+(w%2)):1;
+          for(let o=0;o<opps;o++){
+            const ctx=buildEventContext();
+            let d=null;
+            if(legacyPacing){
+              /* seletor antigo: sem janela global e sem cooldown por ID
+                 em ondas (mantém cd em aparições + família consecutiva) */
+              evSimNoCdW=true;
+              let pass=getEligibleEvents(ctx);
+              if(!pass.elig.length)pass=getEligibleEvents(ctx,{relaxFamily:true});
+              if(!pass.elig.length)pass=getEligibleEvents(ctx,{relaxAll:true});
+              if(pass.elig.length){
+                let tot=0;
+                const ws=pass.elig.map(dd=>{const ww=scoreEvent(dd,ctx);tot+=ww;return ww;});
+                let r=rnd()*tot;
+                for(let i=0;i<pass.elig.length;i++){
+                  r-=ws[i];
+                  if(r<=0){d=pass.elig[i];break;}
+                }
+                if(!d)d=pass.elig[pass.elig.length-1];
+                evMemRecord(d.id,d.family);
+              }
+              evSimNoCdW=false;
+            }else{
+              d=pickRunEvent(ctx,rnd);
+            }
+            if(!d)break;               // janela fechada: sem beacon na wave
+            decTotal++;
+            perEv[d.id]=(perEv[d.id]|0)+1;
+            perFam[d.family]=(perFam[d.family]|0)+1;
+            if(prevFam===d.family){consec++;}
+            else consec=0;
+            maxConsec=Math.max(maxConsec,consec);
+            prevFam=d.family;
+            if(lastAt[d.id]!=null){distSum+=(decTotal-lastAt[d.id]);distN++;}
+            lastAt[d.id]=decTotal;
+            /* cadência */
+            if(decWaves.length){
+              const g=w-decWaves[decWaves.length-1];
+              minGap=Math.min(minGap,g);gapSum+=g;gapN++;
+              if(g===0)sameWave++;
+            }
+            if(decIds.indexOf(d.id)>=0){
+              for(let i=decIds.length-1;i>=0;i--){
+                if(decIds[i]===d.id){
+                  if(w-decWaves[i]<=5)sameId5++;
+                  break;
+                }
+              }
+            }
+            decWaves.push(w);decIds.push(d.id);
+          }
+        }
+        wave=w0;
       }
     }finally{
+      evSimNoCdW=false;
       evMem=JSON.parse(snapMem);evQueue=snapQ.slice();wave=w0;
     }
     const never=Object.keys(perEv).filter(k=>!perEv[k]).sort();
     const fams=Object.keys(perFam).map(k=>({family:k,n:perFam[k],
-      pct:+(perFam[k]/n*100).toFixed(1)})).sort((a,b)=>b.n-a.n);
+      pct:+(perFam[k]/Math.max(1,decTotal)*100).toFixed(1)})).sort((a,b)=>b.n-a.n);
     const evs=Object.keys(perEv).map(k=>{
       const d=RUN_EVENT_BY_ID[k]||{};
       return {id:k,family:d.family,rarity:d.rarity,n:perEv[k],
-        pct:+(perEv[k]/n*100).toFixed(1)};
+        pct:+(perEv[k]/Math.max(1,decTotal)*100).toFixed(1)};
     }).sort((a,b)=>b.n-a.n);
     devTaint();
-    devLog('SIMULAÇÃO '+n+'× · topo: '+evs[0].id+' '+evs[0].pct+
-      '% · nunca: '+never.length+' · famílias: '+fams.length);
-    return {n:n,seed:seed,perEvent:evs,perFamily:fams,
-      sameFamilyConsecutive:consecPairs,
+    devLog('SIMULAÇÃO '+n+' runs×20 ondas ('+(legacyPacing?'ritmo ANTIGO':'ritmo 10.5.1')+
+      ') · decisões/run: '+(decTotal/Math.max(1,n)).toFixed(1)+
+      ' · intervalo mín.: '+(minGap===999?'—':minGap)+' waves · mesma wave: '+sameWave+
+      ' · mesmo ID ≤5 waves: '+sameId5);
+    return {n:n,seed:seed,decisions:decTotal,
+      decisionsPerRun:+(decTotal/Math.max(1,n)).toFixed(2),
+      minDecisionGap:minGap===999?null:minGap,
+      avgDecisionGap:gapN?+(gapSum/gapN).toFixed(2):null,
+      sameIdWithin5:sameId5,sameWaveDecisions:sameWave,
+      perEvent:evs,perFamily:fams,
+      sameFamilyConsecutive:maxConsec,
       maxSameFamilyStreak:maxConsec,
       avgRepeatDistance:distN?+(distSum/distN).toFixed(1):null,
       neverDrawn:never};
@@ -16817,6 +16947,9 @@ function devCommand(c){
       if(!r)return false;
       devLog('DOMINÂNCIA: '+r.perEvent[0].id+' '+r.perEvent[0].pct+'% · '+
         'NUNCA SORTEADOS: '+(r.neverDrawn.join(', ')||'nenhum'));
+      devLog('CADÊNCIA: '+r.decisionsPerRun+' decisões/20 ondas · intervalo mín. '+
+        r.minDecisionGap+' waves · mesma wave: '+r.sameWaveDecisions+
+        ' · mesmo ID ≤5 waves: '+r.sameIdWithin5);
       devLog('FAMÍLIA CONSECUTIVA: '+r.sameFamilyConsecutive+'×/'+r.n+
         ' · dist. média repetição: '+r.avgRepeatDistance);
       return true;
