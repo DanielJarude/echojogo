@@ -1008,7 +1008,10 @@ const MINUS='−';                        // sinal tipográfico (igual ao resto 
 function fmtNum(v,maxDec){
   if(v==null||!isFinite(v))return '—';
   if(maxDec==null)maxDec=1;
-  let r=Math.round(v*Math.pow(10,maxDec))/Math.pow(10,maxDec);
+  const p=Math.pow(10,maxDec);
+  /* arredondamento half-away-from-zero (Math.round puro enviesaria
+     negativos para cima: -3.25 → -3.2 em vez de -3.3) */
+  let r=Math.round(Math.abs(v)*p)/p*(v<0?-1:1);
   if(Object.is(r,-0))r=0;
   if(Number.isInteger(r))return String(r);
   return r.toFixed(maxDec).replace(/\.?0+$/,'');
@@ -1020,13 +1023,13 @@ function fmtPct(v,maxDec){
   if(v==null||!isFinite(v))return '—';
   return fmtNum(v*100,maxDec==null?1:maxDec)+'%';
 }
-/* escala compacta — só onde o valor exato não importa: 1200→"1.2K" */
+/* escala compacta — só onde o valor exato não importa: 1200→"1.2K" (§9) */
 function fmtCompact(v){
   if(v==null||!isFinite(v))return '—';
   const s=v<0?MINUS:'',a=Math.abs(v);
   if(a>=1e9)return s+fmtNum(a/1e9,2)+'B';
   if(a>=1e6)return s+fmtNum(a/1e6,2)+'M';
-  if(a>=1e4)return s+fmtNum(a/1e3,1)+'K';
+  if(a>=1e3)return s+fmtNum(a/1e3,1)+'K';
   return s+fmtNum(a,a<100?1:0);
 }
 /* tempo de relógio de run: fmtTime(83.2) → "01:23" */
@@ -10655,11 +10658,9 @@ function swapWeaponSlots(a,b){
   if(a<0||b<0||a>=n||b>=n||a===b)return false;
   const wa=player.owned[a],wb=player.owned[b];
   player.owned[a]=wb;player.owned[b]=wa;
-  /* arma ativa segue a arma — nunca troca de arma "de brinde" */
-  if(player.wi===wa)player.wi=wb;
-  else if(player.wi===wb)player.wi=wa;
-  if(player.lastWi===wa)player.lastWi=wb;
-  else if(player.lastWi===wb)player.lastWi=wa;
+  /* PR 11.5 §53: wi/lastWi guardam IDENTIDADE de arma (não slot).
+     Permutar slots não muda qual arma está ativa — nada para
+     "repontar" aqui: trocar essas linhas trocaria a arma ativa. */
   buildWeaponHUD();
   return true;
 }
