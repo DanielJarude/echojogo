@@ -477,6 +477,99 @@
   #tip .tcard-tr{margin-top:8px;font-family:Consolas,monospace;font-size:var(--fs-xs);
     letter-spacing:.18em;color:#ff9df7;}
 
+  /* =====================================================================
+     PR 11.5 §25 — FICHA DE COMBATE (TAB)
+     Mesma linguagem visual do jogo: painéis escuros, borda ciano fina,
+     monoespaçada para números. Não é um menu DEV — é profundidade da run.
+     ===================================================================== */
+  #sheet{position:fixed;inset:4%;z-index:40;display:none;flex-direction:column;
+    border:1px solid rgba(70,224,255,.35);border-radius:4px;
+    background:linear-gradient(180deg,rgba(5,12,20,.96),rgba(3,7,13,.98));
+    box-shadow:0 20px 80px rgba(0,0,0,.9),0 0 40px rgba(70,224,255,.08);
+    color:#cfeffc;}
+  #sheet.on{display:flex;animation:sheetIn .14s ease-out;}
+  @keyframes sheetIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;}}
+  .shead{display:flex;justify-content:space-between;align-items:center;gap:16px;
+    padding:14px 20px 12px;border-bottom:1px solid rgba(70,224,255,.18);}
+  .shead-l{min-width:0;}
+  .s-tag{font-family:Consolas,monospace;font-size:var(--fs-head);letter-spacing:.4em;
+    color:#eaffff;text-shadow:0 0 16px var(--cy);}
+  .s-sub{font-family:Consolas,monospace;font-size:var(--fs-xs);letter-spacing:.2em;
+    color:rgba(160,220,240,.6);margin-top:4px;}
+  .s-headhint{font-family:Consolas,monospace;font-size:var(--fs-3xs);letter-spacing:.2em;
+    color:rgba(255,233,168,.7);text-align:right;line-height:1.8;flex:none;}
+  .sbody{flex:1;overflow-y:auto;padding:18px 20px;}
+  .sbody::-webkit-scrollbar{width:8px;}
+  .sbody::-webkit-scrollbar-thumb{background:rgba(70,224,255,.25);border-radius:4px;}
+  .sfoot{padding:10px 20px;border-top:1px solid rgba(70,224,255,.18);
+    font-family:Consolas,monospace;font-size:var(--fs-3xs);letter-spacing:.18em;
+    color:rgba(150,190,210,.55);}
+  .sgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
+  @media(max-width:1100px){.sgrid{grid-template-columns:repeat(2,1fr);}}
+  .span-3{grid-column:1/-1;}
+  .span-2{grid-column:span 2;}
+  .ssect{border:1px solid rgba(70,224,255,.16);border-radius:3px;
+    background:rgba(6,14,24,.6);padding:12px 14px;min-width:0;}
+  .ssect h4{font-family:Consolas,monospace;font-size:var(--fs-xs);letter-spacing:.3em;
+    color:rgba(159,243,255,.85);margin-bottom:10px;font-weight:400;
+    border-bottom:1px solid rgba(70,224,255,.12);padding-bottom:7px;}
+  .srow{display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+    padding:4px 0;font-size:var(--fs-sm);}
+  .srow .k{font-family:Consolas,monospace;font-size:var(--fs-xs);letter-spacing:.14em;
+    color:rgba(160,200,225,.72);}
+  .srow .v{font-family:Consolas,monospace;font-size:var(--fs-md);color:#eaffff;
+    white-space:nowrap;}
+  .srow .v small{color:rgba(150,190,210,.55);font-size:var(--fs-3xs);}
+  /* linha de stat expansível (smBreakdown §36) */
+  .srow.brk{cursor:pointer;border-radius:2px;}
+  .srow.brk:hover{background:rgba(70,224,255,.07);}
+  .srow.brk .v:after{content:' ▸';color:rgba(143,246,255,.5);font-size:var(--fs-3xs);}
+  .srow.brk.open .v:after{content:' ▾';color:rgba(143,246,255,.9);}
+  .sbrk{margin:2px 0 8px;padding:8px 10px;border-left:2px solid rgba(70,224,255,.4);
+    background:rgba(70,224,255,.05);display:none;}
+  .sbrk.on{display:block;}
+  .sbrk .bline{display:flex;justify-content:space-between;gap:10px;
+    font-family:Consolas,monospace;font-size:var(--fs-2xs);color:#a9cce0;
+    padding:2px 0;}
+  .sbrk .bline.bt{border-top:1px dashed rgba(70,224,255,.25);margin-top:4px;
+    padding-top:5px;color:#eaffff;}
+  .sbrk .bline .bv{white-space:nowrap;}
+  /* arsenal da ficha (§43–53) */
+  .aslot{display:flex;align-items:center;gap:12px;padding:8px 10px;margin-bottom:6px;
+    border:1px solid rgba(120,150,170,.25);border-radius:3px;background:rgba(4,12,20,.5);
+    cursor:pointer;transition:all .12s;min-width:0;}
+  .aslot:hover{border-color:rgba(70,224,255,.5);background:rgba(10,26,40,.6);}
+  .aslot.act{border-color:rgba(125,255,196,.65);
+    box-shadow:0 0 14px rgba(125,255,196,.15),inset 0 0 12px rgba(125,255,196,.05);}
+  .aslot.sel{border-color:#ffd166;box-shadow:0 0 16px rgba(255,209,102,.3);}
+  .aslot.empty{opacity:.4;border-style:dashed;cursor:default;}
+  .aslot .anum{font-family:Consolas,monospace;font-size:var(--fs-lg);color:rgba(159,243,255,.9);
+    width:30px;text-align:center;flex:none;}
+  .aslot .anm{flex:1;min-width:0;font-family:Consolas,monospace;font-size:var(--fs-md);
+    letter-spacing:.1em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .aslot .ast{font-family:Consolas,monospace;font-size:var(--fs-3xs);letter-spacing:.2em;
+    color:rgba(150,190,210,.6);flex:none;}
+  .aslot.act .ast{color:#7dffc4;}
+  .aslot .abtns{display:flex;gap:6px;flex:none;}
+  .asbtn{font-family:Consolas,monospace;font-size:var(--fs-3xs);letter-spacing:.14em;
+    padding:4px 9px;border:1px solid rgba(120,160,190,.35);border-radius:2px;
+    color:#a9cce0;cursor:pointer;white-space:nowrap;}
+  .asbtn:hover{border-color:var(--cy);color:#eaffff;background:rgba(70,224,255,.1);}
+  .ashint{font-family:Consolas,monospace;font-size:var(--fs-3xs);letter-spacing:.16em;
+    color:rgba(255,209,102,.75);padding:6px 2px 2px;min-height:20px;}
+  /* itens da build na ficha (§39) */
+  .bpill{display:inline-flex;align-items:center;gap:7px;margin:0 6px 6px 0;
+    padding:5px 10px;border:1px solid rgba(120,150,170,.3);border-radius:2px;
+    background:rgba(4,12,20,.55);font-family:Consolas,monospace;font-size:var(--fs-xs);
+    cursor:pointer;transition:all .12s;}
+  .bpill:hover{border-color:var(--cy);background:rgba(10,26,40,.6);}
+  .bpill.tr{border-color:rgba(255,77,240,.55);color:#ffc7fb;}
+  .bpill .bstate{color:rgba(255,233,168,.85);font-size:var(--fs-3xs);}
+  .ssyn{display:flex;flex-wrap:wrap;gap:6px;}
+  .ssyn span{font-family:Consolas,monospace;font-size:var(--fs-xs);letter-spacing:.14em;
+    color:#8ff6ff;border:1px solid rgba(70,224,255,.4);background:rgba(70,224,255,.07);
+    padding:4px 10px;border-radius:2px;}
+
   /* ---------- itens bloqueados no codex ---------- */
   .cxitem.lock{opacity:.42;filter:grayscale(.75);}
   .cxlockbar{height:4px;margin-top:7px;background:rgba(255,209,102,.14);
@@ -767,6 +860,19 @@
   <div id="ov-echos"></div>
   <div id="ov-frac-lines"></div>
   <div id="ov-ver">ECHO</div>
+</div>
+
+<!-- ===== PR 11.5 — FICHA DE COMBATE (TAB) — detalhes da run atual ===== -->
+<div id="sheet">
+  <div class="shead">
+    <div class="shead-l">
+      <div class="s-tag" id="s-tag">FICHA DE COMBATE</div>
+      <div class="s-sub" id="s-sub">—</div>
+    </div>
+    <div class="s-headhint" id="s-hint">TEMPO SUSPENSO · SEM I-FRAMES AO FECHAR</div>
+  </div>
+  <div class="sbody" id="s-body"></div>
+  <div class="sfoot" id="s-foot">TAB — FECHAR · ESC — FECHAR · ARSENAL: CLIQUE EM 2 SLOTS PARA TROCAR</div>
 </div>
 
 <div id="tip"></div>
@@ -1413,7 +1519,7 @@ const keys={},keyPulse={}; let mouse={x:0,y:0}, firing=false;
 const MOVE_CODES=new Set(['KeyW','KeyA','KeyS','KeyD',
   'ArrowUp','ArrowDown','ArrowLeft','ArrowRight']);
 window.addEventListener('keydown',e=>{
-  if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();
+  if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Tab'].includes(e.code))e.preventDefault();
   // painel de Arsenal/Configurações captura o input
   const _cx=document.getElementById('codex');
   if(_cx&&_cx.classList.contains('on')){
@@ -1463,7 +1569,18 @@ window.addEventListener('keydown',e=>{
     if(!e.repeat)onGameEsc();
     return;
   }
+  /* PR 11.5 §26 — TAB abre a Ficha de Combate
+     HOLD (padrão): abrir no pressionar, fechar ao soltar.
+     TOGGLE: aperte para abrir, aperte de novo para fechar. */
+  if(e.code==='Tab'){
+    if(e.repeat)return;
+    if(cfg.tabMode==='toggle')sheetToggle();
+    else if(sheetOpen)sheetHide();          // TOGGLE pode estar desatualizado
+    else sheetShow();
+    return;
+  }
   if(state==='paused')return;              // menu de pausa captura todo o input
+  if(state==='sheet')return;               // ficha captura o resto do input
   if(e.code==='KeyM'){setAudio(!audioOn);
     toast(audioOn?'ÁUDIO ATIVO':'ÁUDIO MUDO');return;}
   if(state!=="play")return;
@@ -1474,12 +1591,16 @@ window.addEventListener('keydown',e=>{
     keys[e.code]=true;
     keyPulse[e.code]=performance.now();
   }
-  if(e.code==='Digit1')setWeaponSlot(0);
-  if(e.code==='Digit2')setWeaponSlot(1);
-  if(e.code==='Digit3')setWeaponSlot(2);
-  if(e.code==='Digit4')setWeaponSlot(3);
-  if(e.code==='Digit5')setWeaponSlot(4);
+  /* PR 11.5 §54: seleção por slot — só responde se o operador POSSUI o slot
+     (setWeaponSlot valida contra owned.length; operadores de 2 slots
+     ignoram 3–5, e a arquitetura aceita qualquer maxSlots). */
+  if(e.code==='Digit1'||e.code==='Numpad1')setWeaponSlot(0);
+  if(e.code==='Digit2'||e.code==='Numpad2')setWeaponSlot(1);
+  if(e.code==='Digit3'||e.code==='Numpad3')setWeaponSlot(2);
+  if(e.code==='Digit4'||e.code==='Numpad4')setWeaponSlot(3);
+  if(e.code==='Digit5'||e.code==='Numpad5')setWeaponSlot(4);
   if(e.code==='KeyQ')cycleWeapon(1);
+  if(e.code==='KeyX')quickSwitchWeapon();   // §55: Q já é ciclar — X alterna
   if(e.code==='KeyE')trySpecial();
   if(e.code==='Space')tryDash();
 });
@@ -1488,6 +1609,9 @@ window.addEventListener('keyup',e=>{
     keys[e.code]=false;
     delete keyPulse[e.code];
   }
+  /* PR 11.5 §26: soltar TAB fecha no modo HOLD — fechar nunca concede
+     i-frames nem avança o mundo (§28). */
+  if(e.code==='Tab'&&cfg.tabMode!=='toggle'&&sheetOpen)sheetHide();
 });
 // Captura também no document para cobrir overlays internos do Electron.
 document.addEventListener('keyup',e=>{
@@ -1609,6 +1733,7 @@ function pollGamepad(){
   // ---- navegação de menus ----
   const cxOpen=codexEl&&codexEl.classList.contains('on');
   if(padEdge(gp,PB.START)){
+    if(sheetOpen){sheetHide();return;}      // PR 11.5: START fecha a ficha
     if(cxOpen)closeCodex();
     else if(state==='play')pauseGame();
     else if(state==='paused')resumeGame();
@@ -1617,6 +1742,7 @@ function pollGamepad(){
     return;
   }
   if(padEdge(gp,PB.B)){
+    if(sheetOpen){sheetHide();return;}
     if(cxOpen){closeCodex();return;}
     if(state==='paused'){resumeGame();return;}
     if(state==='slots'){showTitle();return;}
@@ -1672,6 +1798,7 @@ function pollGamepad(){
   if(padEdge(gp,PB.LB))cycleWeapon(-1);
   if(padEdge(gp,PB.RB))cycleWeapon(1);
   if(padEdge(gp,PB.Y))cycleWeapon(1);
+  if(padEdge(gp,PB.UP))sheetShow();        // PR 11.5: D-PAD ↑ abre a ficha
   if(padEdge(gp,PB.SELECT))openCodex('organizer');
 }
 window.addEventListener('mousemove',e=>{
@@ -1686,7 +1813,7 @@ window.addEventListener('mousedown',e=>{
   // BOTÕES DA UI NÃO INICIAM A RUN (mousedown dispara antes do click)
   const t=e.target;
   if(t&&t.closest&&t.closest('#ov-menu,#ov-char,#ov-slots,#ov-slotacts,'+
-    '#ov-actions,#pause-menu,#modal,#endwrap,#codex,#devpanel'))return;
+    '#ov-actions,#pause-menu,#modal,#endwrap,#codex,#devpanel,#sheet'))return;
   if(state==='title'){showSlotSelect();return;}          // PR 7.5: escolhe memória
   if(state==='slots'||state==='slotMenu'||state==='slotConfirm')return;
   if(state==='fracture'){
@@ -1696,6 +1823,7 @@ window.addEventListener('mousedown',e=>{
     return;
   }
   if(state==='shop'||state==='event'||state==='paused'||state==='victory')return;
+  if(state==='sheet')return;               // PR 11.5: ficha captura o clique
   if(e.button===0)firing=true;
   if(e.button===2)tryDash();
 });
@@ -1885,6 +2013,8 @@ function onGameEsc(){
   if(typeof devPanelOpen!=='undefined'&&devPanelOpen){devClosePanel();return;}
   // 1. modais de loja / evento (não podem ser fechados por ESC: exigem escolha)
   if(state==='shop'||state==='event')return;
+  // 1.5 PR 11.5 §111/§112: a Ficha nunca empilha com pausa — ESC fecha
+  if(state==='sheet'){sheetHide();return;}
   // 2. painel de Arsenal / Configurações
   const cx=document.getElementById('codex');
   if(cx&&cx.classList.contains('on')){closeCodex();return;}
@@ -1970,6 +2100,298 @@ function abortRun(){
   frameGate=last;
   toast('RUN ABORTADA — CICLO FRATURADO MANUALMENTE');
   onPlayerDeath();                       // vira Echo 1 e aplica a fila de Ecos
+}
+
+/* =====================================================================
+   PR 11.5 §25–42 — FICHA DE COMBATE (TAB / RUN DETAIL)
+   ---------------------------------------------------------------------
+   Profundidade da run, não ferramenta técnica (§37: nada de IDs fonte,
+   confiança oculta do Echo, pressão de Dissonância crua ou flags debug).
+   COMPORTAMENTO (§26/§27/§28):
+   · HOLD (padrão): abrir segurando TAB, fechar ao soltar. TOGGLE via
+     Configurações.
+   · O tempo PAUSA enquanto aberta (decisão documentada: sem exploit —
+     o mundo congela como na pausa, e fechar NÃO concede i-frames nem
+     restaura/toca cooldowns: nada avança enquanto aberta).
+   · Custo fechado: zero (só o atalho de teclado existe).
+   · Custo aberto: re-render sob demanda por assinatura de estado —
+     nunca por frame.
+   ===================================================================== */
+let sheetOpen=false;
+let sheetSel=-1;              // slot armado para TROCA no arsenal
+let sheetBrk=Object.create(null);   // stats expandidos (smBreakdown)
+let _sheetAcc=0,_sheetSig='';
+
+function sheetEl(){return document.getElementById('sheet');}
+function sheetCanOpen(){
+  if(typeof devPanelOpen!=='undefined'&&devPanelOpen)return false; // DEV > TAB
+  const cx=document.getElementById('codex');
+  if(cx&&cx.classList.contains('on'))return false;                 // painéis > TAB
+  return state==='play'&&!!player;
+}
+function sheetShow(){
+  if(sheetOpen||!sheetCanOpen())return;
+  sheetOpen=true;sheetSel=-1;
+  releaseAllInput();
+  state='sheet';                       // tempo congelado (§27 — PAUSAR)
+  sheetEl().classList.add('on');
+  sheetRender(true);
+  AUDIO.tone(660,.1,'sine',.03,180);
+}
+function sheetHide(){
+  if(!sheetOpen)return;
+  sheetOpen=false;sheetSel=-1;
+  sheetEl().classList.remove('on');
+  /* §28: fechar o TAB NÃO dá invulnerabilidade nem mexe em timers —
+     diferente do menu de pausa (0.5s de fase), aqui nada é concedido. */
+  state='play';
+  AUDIO.tone(440,.08,'sine',.025,-120);
+}
+function sheetToggle(){
+  if(sheetOpen){sheetHide();return;}
+  if(sheetCanOpen())sheetShow();
+}
+/* rótulo humano do estado visível de um item (§40 — nada de itemState cru) */
+function itemHumanState(p,id){
+  const st=p&&p.itemState?p.itemState[id]:null;
+  if(!st)return '';
+  const out=[];
+  if(st.cd>0)out.push('CD '+fmtSec(st.cd));
+  if(st.critLock)out.push('CRIT PRONTO');
+  if(st.pierceT>0)out.push('ATIVO '+fmtSec(st.pierceT));
+  if(st.dashT>0)out.push('ATIVO '+fmtSec(st.dashT));
+  if(st.windowT>0)out.push('JANELA '+fmtSec(st.windowT));
+  return out.join(' · ');
+}
+/* linha de stat com breakdown expansível (§35/§36) */
+function smValTxt(type,v){
+  if(type==='mult')return fmtMult(v);
+  if(type==='add')return fmtSigned(v);
+  return (v>0?'+':v<0?MINUS:'')+fmtNum(Math.abs(v),2);   // flat: valor cru
+}
+function sheetStatRow(stat,label,val,extra){
+  const bd=smBreakdown(player,stat);
+  const has=bd&&bd.lines&&bd.lines.length;
+  const open=!!sheetBrk[stat];
+  let h='<div class="srow'+(has?' brk':'')+(open?' open':'')+'"'+
+    (has?' data-brk="'+stat+'"':'')+'><span class="k">'+label+'</span>'+
+    '<span class="v">'+val+(extra?' <small>'+extra+'</small>':'')+'</span></div>';
+  if(has&&open){
+    let flat=0,add=0,mult=1;
+    for(const ln of bd.lines){
+      if(ln.active){
+        if(ln.type==='flat')flat+=ln.value;
+        else if(ln.type==='add')add+=ln.value;
+        else if(ln.type==='mult')mult*=ln.value;
+      }
+      h+='<div class="sbrk on"><span class="bline"'+(ln.active?'':' style="opacity:.45"')+
+        '><span>· '+(ln.label||'mod')+
+        (ln.temp?' <small>('+fmtSec(ln.dur)+')</small>':'')+
+        (ln.active?'':' <small>[inativo]</small>')+
+        '</span><span class="bv">'+smValTxt(ln.type,ln.value)+'</span></span></div>';
+    }
+    h+='<div class="sbrk on"><span class="bline"><span>BASE</span>'+
+      '<span class="bv">'+fmtNum(bd.base,2)+'</span></span>'+
+      (flat?'<span class="bline"><span>FLAT</span><span class="bv">'+
+        (flat>0?'+':MINUS)+fmtNum(Math.abs(flat),2)+'</span></span>':'')+
+      (add?'<span class="bline"><span>ADD</span><span class="bv">'+fmtSigned(add)+'</span></span>':'')+
+      (mult!==1?'<span class="bline"><span>MULT</span><span class="bv">'+fmtMult(mult)+'</span></span>':'')+
+      '<span class="bline bt"><span>FINAL</span><span class="bv">'+fmtNum(bd.final,2)+'</span></span></div>';
+  }
+  return h;
+}
+/* ---- ARSENAL da ficha (§43–53): todos os slots REAIS do operador ---- */
+function sheetArsenalHTML(){
+  const n=player.owned.length;
+  let h='';
+  for(let s=0;s<player.maxSlots;s++){
+    const wi=player.owned[s];
+    if(wi==null){
+      h+='<div class="aslot empty"><span class="anum">'+(s+1)+'</span>'+
+        '<span class="anm">— VAZIO —</span>'+
+        '<span class="ast">SLOT LIVRE</span></div>';
+      continue;
+    }
+    const d=WEAPONS[wi],act=player.wi===wi,sel=sheetSel===s;
+    h+='<div class="aslot'+(act?' act':'')+(sel?' sel':'')+'" data-aslot="'+s+'">'+
+      '<span class="anum">'+(s+1)+'</span>'+
+      '<span class="anm" style="color:'+d.color+'">'+d.nm+'</span>'+
+      '<span class="ast">'+(act?'◄ ATIVA':d.tag)+'</span>'+
+      '<span class="abtns">'+
+      (act?'':'<span class="asbtn" data-a="eq">EQUIPAR</span>')+
+      (n>1?'<span class="asbtn" data-a="mv">MOVER</span>':'')+
+      '</span></div>';
+  }
+  return h;
+}
+function sheetBindArsenal(){
+  const body=$('s-body');
+  body.querySelectorAll('[data-aslot]').forEach(el=>{
+    const s=parseInt(el.dataset.aslot,10);
+    el.querySelectorAll('.asbtn').forEach(b=>{
+      b.addEventListener('click',ev=>{ev.stopPropagation();sheetArsenalAction(s,b.dataset.a);});
+    });
+    el.addEventListener('click',()=>sheetArsenalAction(s,sheetSel<0?'sel':'swap'));
+  });
+}
+function sheetArsenalAction(slot,action){
+  if(!player||slot<0||slot>=player.owned.length)return;
+  if(action==='eq'){                        // equipar agora
+    setWeaponSlot(slot);sheetRender(true);return;
+  }
+  if(action==='mv'){                        // arma o modo TROCA (§51)
+    sheetSel=(sheetSel===slot)?-1:slot;
+    AUDIO.ui(sheetSel>=0?760:520);
+    sheetRender(true);return;
+  }
+  if(action==='swap'&&sheetSel>=0&&sheetSel!==slot){
+    const a=sheetSel;sheetSel=-1;
+    swapWeaponSlots(a,slot);                // §50: função central · §58: estado preservado
+    toast('SLOTS '+(a+1)+' ⇄ '+(slot+1)+' TROCADOS');
+    AUDIO.ui(880);
+    sheetRender(true);return;
+  }
+  sheetSel=slot;sheetRender(true);
+}
+/* assinatura barata: só campos que alteram a ficha (§108) */
+function sheetSignature(){
+  const p=player;
+  let e='';for(const ec of echoes)e+=Math.round(ec.trust)+','+(ec.alive?1:0)+';';
+  return [p.owned.join(','),p.wi,p.level,wave,kills,
+    p.items.join(','),p.itemVer||0,
+    moral.comp,moral.greed,moral.viol,
+    Math.ceil(p.hp),Math.ceil(p.shield),p.coins|0,e,
+    Object.keys(sheetBrk).filter(k=>sheetBrk[k]).join('.')].join('|');
+}
+function sheetRender(force){
+  if(!sheetOpen||!player)return;
+  const sig=sheetSignature();
+  if(!force&&sig===_sheetSig)return;
+  _sheetSig=sig;
+  const p=player,C=curChar();
+  const w=WEAPONS[p.wi];
+  $('s-sub').textContent=C.nm+' · ONDA '+String(Math.max(1,wave)).padStart(2,'0')+
+    ' / 20 · NV '+p.level+' · '+fmtTime(runTime)+' · ABATES '+kills;
+  const dmgMul=calcDamageMul(p)*mEff.dmgMul;
+  const wRate=w.interval/(p.fireRateMul||1);
+  const wDps=(w.dmg*dmgMul*(w.count||1))/wRate;
+  /* ---------- OFENSIVA / DEFESA / MOBILIDADE / ECONOMIA ---------- */
+  let h='<div class="sgrid">';
+  h+='<div class="ssect"><h4>OPERADOR</h4>'+
+    '<div class="srow"><span class="k">NOME</span><span class="v" style="color:'+C.color+'">'+C.nm+'</span></div>'+
+    '<div class="srow"><span class="k">ARQUÉTIPO</span><span class="v" style="font-size:var(--fs-sm)">'+C.role+'</span></div>'+
+    '<div class="srow"><span class="k">PASSIVA</span><span class="v" style="font-size:var(--fs-xs);white-space:normal;text-align:right;max-width:70%">'+C.perk+'</span></div>'+
+    (C.sp?'<div class="srow"><span class="k">ESPECIAL [E]</span><span class="v" style="font-size:var(--fs-sm)">'+C.sp.nm+
+      ' <small>'+(p.spCd>0?fmtSec(p.spCd):'PRONTA')+'</small></span></div>':'')+
+    '<div class="srow"><span class="k">ARMA ATIVA</span><span class="v" style="color:'+w.color+';font-size:var(--fs-sm)">'+w.nm+'</span></div>'+
+    '</div>';
+  h+='<div class="ssect"><h4>DEFESA</h4>'+
+    '<div class="srow"><span class="k">INTEGRIDADE</span><span class="v">'+fmtStat(Math.max(0,p.hp),0)+' / '+fmtNum(p.maxHp)+'</span></div>'+
+    '<div class="srow"><span class="k">ESCUDO</span><span class="v">'+fmtStat(p.shield,0)+' / '+fmtNum(p.shieldMax)+
+      (p.shieldMax>0?' <small>'+(p.shieldDelayT>0?fmtSec(p.shieldDelayT)+' P/ REGEN':'REGEN LIBERADO')+'</small>':'')+'</span></div>'+
+    sheetStatRow('shieldRegen','REGEN. ESCUDO',fmtRate(smGet(p,'shieldRegen')))+
+    sheetStatRow('shieldDelay','DELAY ESCUDO',fmtSec(smGet(p,'shieldDelay')))+
+    sheetStatRow('dmgTaken','DANO RECEBIDO',fmtMult(smGet(p,'dmgTaken')*mEff.playerDmgTaken))+
+    ((p.regen||mEff.regen)?'<div class="srow"><span class="k">REGEN. VIDA</span><span class="v">'+fmtRate((p.regen||0)+mEff.regen)+'</span></div>':'')+
+    '</div>';
+  h+='<div class="ssect"><h4>OFENSIVA</h4>'+
+    sheetStatRow('damage','DANO',fmtMult(smGet(p,'damage')),'· EFETIVO '+fmtMult(dmgMul))+
+    '<div class="srow"><span class="k">DANO/PROJÉTIL</span><span class="v">'+fmtStat(w.dmg*dmgMul)+'</span></div>'+
+    sheetStatRow('fireRate','CADÊNCIA',fmtMult(smGet(p,'fireRate')),'· '+fmtRate(1/wRate)+' (ARMA)')+
+    '<div class="srow"><span class="k">DPS ESTIMADO</span><span class="v">'+fmtStat(wDps,0)+'</span></div>'+
+    sheetStatRow('crit','CRÍTICO',fmtPct(smGet(p,'crit')))+
+    sheetStatRow('critMul','DANO CRÍT.',fmtMult(smGet(p,'critMul')))+
+    sheetStatRow('range','ALCANCE',fmtMult(smGet(p,'range')),'· '+fmtStat(weaponRange(w,p),0)+'px')+
+    sheetStatRow('projSpd','VEL. PROJÉTIL',fmtMult(smGet(p,'projSpd')))+
+    sheetStatRow('aoe','ÁREA',fmtMult(smGet(p,'aoe')))+
+    sheetStatRow('pierce','PERFURAÇÃO','+'+fmtStat(smGet(p,'pierce'),0))+
+    '</div>';
+  h+='<div class="ssect"><h4>MOBILIDADE</h4>'+
+    sheetStatRow('speed','VELOCIDADE',fmtStat(smGet(p,'speed'),0)+'px/s')+
+    '<div class="srow"><span class="k">DASH</span><span class="v">'+
+      (p.dashCd>0?fmtSec(p.dashCd)+' <small>RECARGA</small>':'PRONTO')+
+      ' <small>'+fmtSec(p.dashCdMax)+' CICLO</small></span></div>'+
+    (C.sp?'<div class="srow"><span class="k">ESPECIAL</span><span class="v">'+
+      (p.spT>0?'ATIVO '+fmtSec(p.spT):(p.spCd>0?fmtSec(p.spCd):'PRONTA'))+
+      ' <small>'+C.sp.cd+'s CICLO</small></span></div>':'')+
+    '</div>';
+  h+='<div class="ssect"><h4>ECONOMIA</h4>'+
+    '<div class="srow"><span class="k">CRÉDITOS</span><span class="v" style="color:var(--gold)">◈ '+fmtCompact(p.coins)+'</span></div>'+
+    sheetStatRow('coinMul','MULT. MOEDAS',fmtMult(smGet(p,'coinMul')*mEff.coinMul))+
+    sheetStatRow('pickupR','RAIO DE COLETA',fmtStat(smGet(p,'pickupR'),0)+'px')+
+    '<div class="srow"><span class="k">PREÇO DA LOJA</span><span class="v">'+fmtMult(mEff.shopMul*(p.shopPersonal||1))+'</span></div>'+
+    '</div>';
+  /* ---------- ARSENAL (§43) ---------- */
+  h+='<div class="ssect span-3"><h4>ARSENAL · '+p.owned.length+'/'+p.maxSlots+' SLOTS — '+
+    C.nm.toUpperCase()+'</h4>'+sheetArsenalHTML()+
+    '<div class="ashint" id="as-hint">'+
+    (sheetSel>=0?'SLOT '+(sheetSel+1)+' ARMADO — CLIQUE NO DESTINO PARA TROCAR (SWAP). NENHUMA ARMA É PERDIDA.':
+      'CLIQUE EM UMA ARMA E DEPOIS EM OUTRA PARA TROCAR OS SLOTS · TECLAS 1–'+p.maxSlots+' EM COMBATE · X VOLTA PARA A ARMA ANTERIOR')+
+    '</div></div>';
+  /* ---------- BUILD (§38/§39/§40) ---------- */
+  h+='<div class="ssect span-2"><h4>BUILD — SINERGIAS ATIVAS</h4>';
+  const syn=activeSynergies(p);
+  h+=syn.length?'<div class="ssyn">'+syn.map(s=>'<span>'+s+'</span>').join('')+'</div>'
+    :'<div class="srow"><span class="k">NENHUMA SINERGIA ATIVA AINDA</span></div>';
+  h+='<div style="margin-top:12px">';
+  if(p.items.length){
+    for(const id of p.items){
+      const it=itemById(id);if(!it)continue;
+      const st=itemHumanState(p,id);
+      h+='<span class="bpill'+(it.transformer?' tr':'')+'" data-itip="'+id+'" style="color:'+it.color+'">'+
+        (it.transformer?'◆ ':'')+it.nm+(st?' <span class="bstate">'+st+'</span>':'')+'</span>';
+    }
+  }else h+='<span class="bpill" style="opacity:.5;cursor:default">NENHUM MÓDULO INSTALADO</span>';
+  h+='</div></div>';
+  /* ---------- MORALIDADE (§41) ---------- */
+  const mrow=(lab,v,col)=>{
+    const t=moralTier(v);
+    return '<div class="srow"><span class="k">'+lab+'</span><span class="v" style="color:'+col+'">'+
+      fmtStat(v,0)+(t?' <small>'+TIER_NAME[t]+'</small>':'')+'</span></div>';
+  };
+  const prof=getMoralProfile();
+  h+='<div class="ssect"><h4>MORALIDADE</h4>'+
+    '<div class="srow"><span class="k">PERFIL</span><span class="v" style="color:'+DOM_COLOR[moralDom()]+'">'+DOM_NAME[moralDom()]+'</span></div>'+
+    mrow('COMPAIXÃO',moral.comp,'#7dffc4')+
+    mrow('GANÂNCIA',moral.greed,'#ffd166')+
+    mrow('VIOLÊNCIA',moral.viol,'#ff5c7a')+
+    (mEff.conflict?'<div class="srow"><span class="k">CONFLITO</span><span class="v" style="color:#ff4df0">ATIVO</span></div>':'')+
+    '<div class="srow"><span class="k">MÓDULOS AFINS</span><span class="v">'+countAttunedItems(p)+'/'+p.items.length+'</span></div>'+
+    (prof&&prof.state?'<div class="srow"><span class="k">ESTADO</span><span class="v" style="font-size:var(--fs-xs)">'+MORAL_STATE_LABEL[prof.state]+'</span></div>':'')+
+    '</div>';
+  h+='</div>';
+  /* ---------- ECO (§42) — humano, sem internals ---------- */
+  if(echoes.length){
+    h+='<div class="sgrid" style="margin-top:14px">';
+    for(const e of echoes){
+      const rs=echoRelState(e),P=e.pers||(e.ps&&PERSONALITIES[e.ps.id])||null;
+      const ds=(e.dis&&e.dis.st)||'stable';
+      h+='<div class="ssect"><h4>ECHO·0'+e.slot+(e.alive?'':' — OFFLINE')+'</h4>'+
+        '<div class="srow"><span class="k">PERSONALIDADE</span><span class="v" style="font-size:var(--fs-sm)">'+(P?P.lab:'—')+'</span></div>'+
+        '<div class="srow"><span class="k">RELAÇÃO</span><span class="v" style="color:'+rs.col+';font-size:var(--fs-sm)">'+rs.lab+'</span></div>'+
+        '<div class="srow"><span class="k">CONFIANÇA</span><span class="v">'+fmtStat(e.trust,0)+'% <small>'+TRUST_NAME[trustTier(e)]+'</small></span></div>'+
+        (ds!=='stable'?'<div class="srow"><span class="k">SINAL</span><span class="v" style="color:'+(DIS_LABEL[ds]?'#ff8095':'#8ff6ff')+';font-size:var(--fs-xs)">'+
+          (DIS_LABEL[ds]||ds)+'</span></div>':'')+
+        '</div>';
+    }
+    h+='</div>';
+  }
+  $('s-body').innerHTML=h;
+  sheetBindArsenal();
+  /* tooltips dos itens (§39) */
+  $('s-body').querySelectorAll('[data-itip]').forEach(el=>{
+    const it=itemById(el.dataset.itip);
+    if(it)bindTip(el,()=>itemTipHTML(it));
+  });
+  /* breakdown por clique (§36) */
+  $('s-body').querySelectorAll('[data-brk]').forEach(el=>{
+    el.addEventListener('click',()=>{
+      const k=el.dataset.brk;
+      sheetBrk[k]=!sheetBrk[k];
+      AUDIO.ui(560);
+      sheetRender(true);
+    });
+  });
 }
 
 /* ---------------- persistência dos Ecos ----------------
@@ -9499,6 +9921,8 @@ function setWeaponSlot(slot){
   if(slot<0||slot>=player.owned.length)return;
   const wi=player.owned[slot];
   if(player.wi===wi)return;
+  /* PR 11.5 §55: lembra a arma anterior para o quick switch (tecla X) */
+  player.lastWi=player.wi;
   player.wi=wi;player.fireTimer=Math.min(player.fireTimer,.12);
   player.beamRamp=1;player.beamTarget=null;player.beamT=0;
   const d=WEAPONS[wi];
@@ -9514,6 +9938,44 @@ function cycleWeapon(dir){
   const next=((cur<0?0:cur)+(dir||1)+player.owned.length)%player.owned.length;
   setWeaponSlot(next);
 }
+/* PR 11.5 §55 — QUICK SWITCH: alterna com a ÚLTIMA arma usada.
+   A tecla Q já tem função (ciclar) — o quick switch usa X (e o mesmo
+   estado lastWi é salvo no checkpoint para sobreviver ao Continue). */
+function quickSwitchWeapon(){
+  if(!player||!player.owned.length)return;
+  const slot=player.owned.indexOf(player.lastWi);
+  if(slot<0||player.owned[slot]===player.wi){   // sem "anterior" válida
+    cycleWeapon(1);return;
+  }
+  setWeaponSlot(slot);
+}
+/* =====================================================================
+   PR 11.5 §49–53 · §58–60 — SWAP CENTRAL DO ARSENAL
+   swapWeaponSlots(a,b): troca as armas ENTRE os slots a e b (0-based).
+   · É uma TROCA (swap): nenhuma arma é destruída, nenhum espaço muda.
+   · A identidade da arma ativa ACOMPANHA A ARMA (§53): se a arma do
+     slot b era a equipada, ela continua equipada depois da troca.
+   · NÃO toca em estado de combate (fireTimer, beam, spin), modificadores
+     do pipeline (sm), itemState, cooldowns ou timers — swap repetido
+     não pode resetar cooldown nem alterar DPS (§59).
+   · Operação leve: permuta o array owned e reambula o índice ativo.
+     O player/build nunca é recriado (§60).
+   ===================================================================== */
+function swapWeaponSlots(a,b){
+  if(!player||!Array.isArray(player.owned))return false;
+  const n=player.owned.length;
+  if(!Number.isInteger(a)||!Number.isInteger(b))return false;
+  if(a<0||b<0||a>=n||b>=n||a===b)return false;
+  const wa=player.owned[a],wb=player.owned[b];
+  player.owned[a]=wb;player.owned[b]=wa;
+  /* arma ativa segue a arma — nunca troca de arma "de brinde" */
+  if(player.wi===wa)player.wi=wb;
+  else if(player.wi===wb)player.wi=wa;
+  if(player.lastWi===wa)player.lastWi=wb;
+  else if(player.lastWi===wb)player.lastWi=wa;
+  buildWeaponHUD();
+  return true;
+}
 /* ---- adiciona uma arma comprada permanentemente ao arsenal da run ---- */
 function grantWeapon(wi,silent,slot){
   if(!player)return false;
@@ -9524,6 +9986,7 @@ function grantWeapon(wi,silent,slot){
     replaced=player.owned[slot];       // substitui a arma daquele slot
     player.owned[slot]=wi;
     if(player.wi===replaced)player.wi=wi;
+    if(player.lastWi===replaced)player.lastWi=player.wi;  // PR 11.5
   }else if(player.owned.length<player.maxSlots){
     player.owned.push(wi);
   }else return false;                  // sem espaço e sem slot escolhido
@@ -13284,8 +13747,9 @@ function smBuildCheckpoint(reason,waveOverride){
       shieldRegen:player.shieldRegen,shieldDelay:player.shieldDelay,
       coins:player.coins,
       level:player.level,xp:player.xp,xpNext:player.xpNext,
-      /* arsenal */
+      /* arsenal — ordem dos slots, arma ativa e quick switch (PR 11.5 §65) */
       owned:player.owned.slice(),wi:player.wi,maxSlots:player.maxSlots,
+      lastWi:player.lastWi!=null?player.lastWi:player.wi,
       /* módulos e histórico (upgLog é só para exibição) */
       items:player.items.slice(),upgLog:player.upgLog.slice(),
       /* PR 11: estado compacto de BUILD (cooldowns/stacks/timers/charges).
@@ -13412,6 +13876,9 @@ function resumeRun(){
   if(!player.owned.length)player.owned=makePlayer().owned;
   player.wi=player.owned.indexOf(q.wi)>=0?q.wi:player.owned[0];
   player.maxSlots=clamp(num(q.maxSlots,player.maxSlots)|0,1,8);
+  /* PR 11.5 §66: quick switch restaura junto com o arsenal */
+  player.lastWi=(q.lastWi!=null&&player.owned.indexOf(q.lastWi)>=0)?
+    q.lastWi:player.wi;
   player.items=(Array.isArray(q.items)?q.items:[]).slice(0,64);
   player.upgLog=(Array.isArray(q.upgLog)?q.upgLog:[]).slice(0,400);
   /* PR 11: estado de build é restaurado; save antigo (sem itemState) vira {}. */
@@ -13614,6 +14081,8 @@ function hideOverlay(){
    resetRunWorld: parte comum (limpeza total do mundo) usada por
    startRun (run nova) e resumeRun (continuar um checkpoint). */
 function resetRunWorld(){
+  if(sheetOpen)sheetHide();              // PR 11.5: ficha nunca atravessa runs
+  sheetBrk=Object.create(null);_sheetSig='';
   state='play';runTime=0;fracT=0;shake=0;
   wave=0;kills=0;wavePause=2.2;waveActive=false;waveCleared=false;
   document.getElementById('pause-menu').classList.remove('on');
@@ -15083,10 +15552,10 @@ function loop(now){
   }
   AUDIO.updateMusic(dt,clamp(inten,0,1));
 
-  // CONGELAMENTO ABSOLUTO: com qualquer modal aberto (evento/loja/vitória),
-  // nada no mundo avança — inimigos, tiros e timers ficam suspensos.
+  // CONGELAMENTO ABSOLUTO: com qualquer modal aberto (evento/loja/vitória/
+  // ficha TAB), nada no mundo avança — inimigos, tiros e timers suspendem.
   const frozen=(state==='event'||state==='shop'||state==='victory'||
-                state==='title'||state==='paused');
+                state==='title'||state==='paused'||state==='sheet');
   if(frozen)freezeT+=dt;                    // só alimenta o efeito visual de tempo parado
 
   if(state==='play'){
@@ -15191,6 +15660,12 @@ function loop(now){
   render();
   hudAcc+=dt;
   updateHUD();
+  /* PR 11.5 §108: a ficha só re-renderiza quando aberta e sob demanda
+     (assinatura de estado) — custo fechado é zero, aberto é leve. */
+  if(sheetOpen){
+    _sheetAcc+=dt;
+    if(_sheetAcc>=.12){_sheetAcc=0;sheetRender(false);}
+  }
   devTick(raw);                 // HUD de debug (no-op fora do Modo DEV)
   }catch(err){
     if(errGuard++<8)console.error('[ECHO] erro capturado no ciclo (repetição suprimida):',err);
@@ -15742,10 +16217,10 @@ function renderOrganizer(){
         if(b.classList.contains('dis'))return;
         const a=b.dataset.a;
         if(a==='up'&&i>0){
-          const t=player.owned[i-1];player.owned[i-1]=player.owned[i];player.owned[i]=t;
+          swapWeaponSlots(i,i-1);       // PR 11.5 §50: usa a função central
           AUDIO.ui(660);
         }else if(a==='dn'&&i<player.owned.length-1){
-          const t=player.owned[i+1];player.owned[i+1]=player.owned[i];player.owned[i]=t;
+          swapWeaponSlots(i,i+1);       // PR 11.5 §50: usa a função central
           AUDIO.ui(560);
         }else if(a==='eq'){
           player.wi=wi;player.fireTimer=0;
@@ -15755,6 +16230,7 @@ function renderOrganizer(){
           if(player.owned.length<=1)return;
           player.owned.splice(i,1);
           if(player.wi===wi)player.wi=player.owned[0];
+          if(player.lastWi===wi)player.lastWi=player.wi;
           AUDIO.echoShatter();toast('DESCARTADA: '+d.nm);
         }
         buildWeaponHUD();renderOrganizer();
@@ -16259,8 +16735,9 @@ function showTitle(){
     'MOUSE MIRAR · <span class="k">BOTÃO ESQ.</span> ATIRAR<br>'+
     '<span class="k">ESPAÇO</span> / <span class="k">BOTÃO DIR.</span> DASH · '+
     '<span class="k">ESC</span> PAUSA · <span class="k">M</span> ÁUDIO<br>'+
-    '<span class="k">Q</span> ALTERNAR ARMA · <span class="k">E</span> ESPECIAL · '+
-    '<span class="k">1</span><span class="k">2</span><span class="k">3</span> SLOTS<br>'+
+    '<span class="k">Q</span> CICLAR ARMA · <span class="k">X</span> ARMA ANTERIOR · '+
+    '<span class="k">1</span>–<span class="k">5</span> SLOTS · <span class="k">E</span> ESPECIAL<br>'+
+    '<span class="k">TAB</span> FICHA DE COMBATE (SEGURE) — STATS, BUILD E ARSENAL DA RUN<br>'+
     'COMEÇA COM <b>RIFLE DE PLASMA</b> + <b>LÂMINA DE ARCO</b> — '+
     'ESCOPETA, ORBE E SINGULARIDADE SÃO <b>COMPRADOS NA LOJA</b><br>'+
     'ACERTAR O MESMO ALVO QUE UM ECHO EM &lt;0.5s DETONA <b>RESSONÂNCIA</b><br>'+
