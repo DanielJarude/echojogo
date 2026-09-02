@@ -589,6 +589,21 @@
   #sandboxp .shead{border-bottom-color:rgba(125,255,196,.18);}
   #sandboxp .ssect{border-color:rgba(125,255,196,.16);}
   #sandboxp .ssect h4{color:rgba(125,255,196,.85);border-bottom-color:rgba(125,255,196,.12);}
+  /* PR 11.5 §31–§33: feedback do preparo + falha de início visível */
+  .sbfail{border:1px solid rgba(255,92,122,.55);background:rgba(255,92,122,.10);
+    color:#ffb3c2;font-family:Consolas,monospace;font-size:var(--fs-sm);
+    padding:10px 14px;margin-bottom:14px;letter-spacing:.4px;}
+  .sbgo.dis{opacity:.45;filter:grayscale(.6);cursor:not-allowed;}
+  .sbgo.dis:hover{transform:none;}
+  .sbchar{cursor:pointer;transition:border-color .12s,box-shadow .12s;}
+  .sbchar:hover{border-color:rgba(125,255,196,.5)!important;transform:translateY(-2px);}
+  .sbbtn{cursor:pointer;transition:border-color .12s,background .12s;}
+  .sbbtn:hover{border-color:#7dffc4!important;background:rgba(125,255,196,.08);}
+  .sbbtn.dis{opacity:.4;pointer-events:none;}
+  .sbgo:active{transform:scale(.985);}
+  /* §8: slot vazio apontando como destino no Registro (TAB) */
+  .aslot.dst .anm{color:rgba(125,255,196,.75);}
+  .aslot.dst{border-style:dashed;border-color:rgba(125,255,196,.45);cursor:pointer;}
   .sbrow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:4px;}
   .sbrow .asbtn.sbcur{border-color:#7dffc4;color:#eafff4;background:rgba(125,255,196,.12);}
   .sbopts{display:flex;flex-wrap:wrap;gap:6px;}
@@ -631,6 +646,7 @@
   #ov-sandbox small{color:rgba(125,255,196,.5);}
   #ov-sandbox:hover{color:#eafff4;border-color:#7dffc4;background:rgba(125,255,196,.12);
     box-shadow:0 0 18px rgba(125,255,196,.2);}
+  #ov-exitmenu:hover{color:#eafff4;border-color:#7dffc4;background:rgba(125,255,196,.12);}
 
   /* ---------- painéis de Arsenal e Configurações ---------- */
   #codex{position:fixed;inset:0;z-index:34;display:none;align-items:center;
@@ -896,6 +912,7 @@
   <div id="ov-go">INICIAR CICLO</div>
   <div id="ov-actions">
     <div class="ovbtn slotact" id="ov-back">VOLTAR AO MENU</div>
+    <div class="ovbtn slotact" id="ov-exitmenu" style="display:none">⌂ VOLTAR AO MENU PRINCIPAL</div>
     <div class="hint">ENTER — NOVA RUN · ESC — VOLTAR AO MENU</div>
   </div>
   <div id="ov-char"></div>
@@ -919,7 +936,7 @@
     <div class="s-headhint" id="s-hint">TEMPO SUSPENSO · SEM I-FRAMES AO FECHAR</div>
   </div>
   <div class="sbody" id="s-body"></div>
-  <div class="sfoot" id="s-foot">TAB — FECHAR · ESC — FECHAR · ARSENAL: CLIQUE EM 2 SLOTS PARA TROCAR</div>
+  <div class="sfoot" id="s-foot">TAB — ABRIR/FECHAR · ESC — CANCELA SELEÇÃO / FECHA · ARSENAL: CLIQUE EM 2 SLOTS PARA TROCAR</div>
 </div>
 
 <!-- ===== PR 11.5 — SANDBOX: laboratório do jogador (§69–94) ===== -->
@@ -1286,7 +1303,7 @@ let cfg={music:1,shake:1,aberr:1,parts:1,quality:1,dmgnum:1,autofire:0,
   rumble:1,aimAssist:1,
   /* PR 11.5 — acessibilidade & controle de informação */
   flash:1,            // 1 NORMAL · .55 REDUCED (picos de flash/aberração)
-  tabMode:'hold',     // 'hold' (segurar TAB) | 'toggle' (apertar p/ abrir/fechar)
+  tabMode:'toggle',   // PR 11.5 §26: TOGGLE é o PADRÃO (TAB abre/fecha); 'hold' continua disponível nas Configurações
   hudPreset:'full'    // 'full' (padrão) — reserva futura p/ HUD mínimo
 };
 function loadCfg(){
@@ -2106,9 +2123,19 @@ function onGameEsc(){
   if(typeof devPanelOpen!=='undefined'&&devPanelOpen){devClosePanel();return;}
   // 1. modais de loja / evento (não podem ser fechados por ESC: exigem escolha)
   if(state==='shop'||state==='event')return;
-  // 1.5 PR 11.5 §111/§112: ficha e laboratório nunca empilham — ESC fecha
-  if(state==='sheet'){sheetHide();return;}
-  if(state==='sandbox'){sbPanelClose();return;}
+  // 1.5 PR 11.5 §111/§112: ficha e laboratório nunca empilham — ESC fecha.
+  // §7: se houver seleção de swap armada, ESC CANCELA a seleção primeiro.
+  if(state==='sheet'){
+    if(sheetSel>=0){sheetSel=-1;AUDIO.ui(520);sheetRender(true);return;}
+    sheetHide();return;
+  }
+  if(state==='sandbox'){
+    if(sbSwapA!==-1||sbPick!=null||sbItemPick||sbPendingWi!=null){
+      sbSwapA=-1;sbPick=null;sbItemPick=false;sbPendingWi=null;
+      AUDIO.ui(520);sbRender();return;
+    }
+    sbPanelClose();return;
+  }
   // 2. painel de Arsenal / Configurações
   const cx=document.getElementById('codex');
   if(cx&&cx.classList.contains('on')){closeCodex();return;}
@@ -2128,7 +2155,7 @@ function pauseGame(){
     'INTEGRIDADE <b>'+Math.max(0,Math.ceil(player.hp))+' / '+player.maxHp+'</b> · '+
     'ESCUDO <b>'+Math.max(0,Math.ceil(player.shield))+' / '+player.shieldMax+'</b> · '+
     'CRÉDITOS <b>◈'+player.coins+'</b><br>'+
-    'ARMA <b>'+w.nm+'</b> · ARSENAL <b>'+player.owned.length+'/'+player.maxSlots+
+    'ARMA <b>'+w.nm+'</b> · ARSENAL <b>'+countWeapons(player)+'/'+player.maxSlots+
     ' SLOTS</b> · MÓDULOS <b>'+player.items.length+'</b><br>'+
     'ECHO·01 <b>'+(echoes[0]?(echoes[0].alive?'ATIVO':'OFFLINE'):'INATIVO')+'</b> · '+
     'ECHO·02 <b>'+(echoes[1]?(echoes[1].alive?'ATIVO':'OFFLINE'):'INATIVO')+'</b><br>'+
@@ -2296,24 +2323,27 @@ function sheetStatRow(stat,label,val,extra){
 }
 /* ---- ARSENAL da ficha (§43–53): todos os slots REAIS do operador ---- */
 function sheetArsenalHTML(){
-  const n=player.owned.length;
+  /* PR 11.5 §5–§8: TROCA EM 2 CLIQUES — clique no slot (seleciona) →
+     clique no destino (arma OU vazio) → swap imediato. Clicar de novo
+     no selecionado CANCELA. Sem botões MOVER/confirmar. */
+  const n=countWeapons(player);
   let h='';
   for(let s=0;s<player.maxSlots;s++){
     const wi=player.owned[s];
     if(wi==null){
-      h+='<div class="aslot empty"><span class="anum">'+(s+1)+'</span>'+
+      h+='<div class="aslot empty'+(sheetSel>=0?' dst':'')+'" data-aslot="'+s+'">'+
+        '<span class="anum">'+(s+1)+'</span>'+
         '<span class="anm">— VAZIO —</span>'+
-        '<span class="ast">SLOT LIVRE</span></div>';
+        '<span class="ast">'+(sheetSel>=0?'RECEBER AQUI':'SLOT LIVRE')+'</span></div>';
       continue;
     }
     const d=WEAPONS[wi],act=player.wi===wi,sel=sheetSel===s;
     h+='<div class="aslot'+(act?' act':'')+(sel?' sel':'')+'" data-aslot="'+s+'">'+
       '<span class="anum">'+(s+1)+'</span>'+
       '<span class="anm" style="color:'+d.color+'">'+d.nm+'</span>'+
-      '<span class="ast">'+(act?'◄ ATIVA':d.tag)+'</span>'+
+      '<span class="ast">'+(sel?'SELECIONADO':(act?'◄ ATIVA':d.tag))+'</span>'+
       '<span class="abtns">'+
       (act?'':'<span class="asbtn" data-a="eq">EQUIPAR</span>')+
-      (n>1?'<span class="asbtn" data-a="mv">MOVER</span>':'')+
       '</span></div>';
   }
   return h;
@@ -2325,27 +2355,36 @@ function sheetBindArsenal(){
     el.querySelectorAll('.asbtn').forEach(b=>{
       b.addEventListener('click',ev=>{ev.stopPropagation();sheetArsenalAction(s,b.dataset.a);});
     });
-    el.addEventListener('click',()=>sheetArsenalAction(s,sheetSel<0?'sel':'swap'));
+    el.addEventListener('click',()=>sheetArsenalAction(s,'click'));
   });
 }
 function sheetArsenalAction(slot,action){
-  if(!player||slot<0||slot>=player.owned.length)return;
-  if(action==='eq'){                        // equipar agora
-    setWeaponSlot(slot);sheetRender(true);return;
-  }
-  if(action==='mv'){                        // arma o modo TROCA (§51)
-    sheetSel=(sheetSel===slot)?-1:slot;
-    AUDIO.ui(sheetSel>=0?760:520);
+  if(!player||slot<0||slot>=player.maxSlots)return;
+  if(action==='eq'){                        // equipar (botão discreto)
+    if(player.owned[slot]!=null)setWeaponSlot(slot);
     sheetRender(true);return;
   }
-  if(action==='swap'&&sheetSel>=0&&sheetSel!==slot){
-    const a=sheetSel;sheetSel=-1;
-    swapWeaponSlots(a,slot);                // §50: função central · §58: estado preservado
-    toast('SLOTS '+(a+1)+' ⇄ '+(slot+1)+' TROCADOS');
-    AUDIO.ui(880);
+  /* §7: clicar de novo no slot selecionado CANCELA a seleção */
+  if(sheetSel===slot){
+    sheetSel=-1;AUDIO.ui(520);
     sheetRender(true);return;
   }
-  sheetSel=slot;sheetRender(true);
+  /* §5/§6: segundo clique executa o SWAP imediatamente (arma ou vazio).
+     §8: destino vazio MOVE a arma. §9: a ativa acompanha a arma. */
+  if(sheetSel>=0&&sheetSel!==slot){
+    const a=sheetSel,wa=player.owned[a],wb=player.owned[slot];
+    sheetSel=-1;
+    if(swapWeaponSlots(a,slot)){            // §50: função central · §58: estado preservado
+      toast(wb==null?('SLOT '+(a+1)+' → '+(slot+1)+': '+
+        (wa!=null?WEAPONS[wa].nm+' MOVIDA':''))
+        :('SLOTS '+(a+1)+' ⇄ '+(slot+1)+' TROCADOS'));
+      AUDIO.ui(880);
+    }
+    sheetRender(true);return;
+  }
+  /* §8: clique em slot vazio sem seleção não faz nada (só feedback) */
+  if(player.owned[slot]==null){sheetRender(true);return;}
+  sheetSel=slot;AUDIO.ui(760);sheetRender(true);
 }
 /* assinatura barata: só campos que alteram a ficha (§108) */
 function sheetSignature(){
@@ -2416,11 +2455,11 @@ function sheetRender(force){
     '<div class="srow"><span class="k">PREÇO DA LOJA</span><span class="v">'+fmtMult(mEff.shopMul*(p.shopPersonal||1))+'</span></div>'+
     '</div>';
   /* ---------- ARSENAL (§43) ---------- */
-  h+='<div class="ssect span-3"><h4>ARSENAL · '+p.owned.length+'/'+p.maxSlots+' SLOTS — '+
+  h+='<div class="ssect span-3"><h4>ARSENAL · '+countWeapons(p)+'/'+p.maxSlots+' SLOTS — '+
     C.nm.toUpperCase()+'</h4>'+sheetArsenalHTML()+
     '<div class="ashint" id="as-hint">'+
-    (sheetSel>=0?'SLOT '+(sheetSel+1)+' ARMADO — CLIQUE NO DESTINO PARA TROCAR (SWAP). NENHUMA ARMA É PERDIDA.':
-      'CLIQUE EM UMA ARMA E DEPOIS EM OUTRA PARA TROCAR OS SLOTS · TECLAS 1–'+p.maxSlots+' EM COMBATE · X VOLTA PARA A ARMA ANTERIOR')+
+    (sheetSel>=0?'SELECIONADO — ESCOLHA O SLOT DE DESTINO (clique de novo no slot para CANCELAR · slot vazio MOVE a arma)':
+      'CLIQUE EM UM SLOT E DEPOIS EM OUTRO PARA TROCAR (SWAP) · CLIQUE DE NOVO CANCELA · TECLAS 1–'+p.maxSlots+' EM COMBATE · X VOLTA PARA A ARMA ANTERIOR')+
     '</div></div>';
   /* ---------- BUILD (§38/§39/§40) ---------- */
   h+='<div class="ssect span-2"><h4>BUILD — SINERGIAS ATIVAS</h4>';
@@ -2544,9 +2583,12 @@ function renderSandboxSetup(){
     h+='<div class="sbbtn'+(sandboxCfg.wave===wv?' on':'')+'" data-sbwave="'+wv+'">'+
       (wv>=MAX_WAVE?'20 · CHEFE':String(wv).padStart(2,'0'))+'</div>';
   h+='</div>';
-  h+='<div class="sbgo btn go" id="sb-start">INICIAR TESTE — '+C.nm+' · '+
-    (sandboxCfg.preset?BUILD_PRESETS[sandboxCfg.preset].name:'BUILD VAZIA')+
-    ' · ONDA '+(sandboxCfg.wave>=MAX_WAVE?'20 (CHEFE)':sandboxCfg.wave)+'</div>'+
+  const _cfgv=sandboxValidateCfg();
+  h+='<div class="sbgo btn go'+(_cfgv.ok?'':' dis')+'" id="sb-start">'+
+    (_cfgv.ok?('INICIAR TESTE — '+C.nm+' · '+
+      (sandboxCfg.preset?BUILD_PRESETS[sandboxCfg.preset].name:'BUILD VAZIA')+
+      ' · ONDA '+(sandboxCfg.wave>=MAX_WAVE?'20 (CHEFE)':sandboxCfg.wave))
+      :('INICIAR TESTE INDISPONÍVEL — '+_cfgv.reason))+'</div>'+
     '<div class="cfgds" style="margin-top:14px;line-height:1.9">'+
     'O Sandbox pausa o jogo ao abrir o painel (F1), libera todas as armas, '+
     'itens, minibosses e o chefe, e <b>não cria Echo, não registra final, '+
@@ -2574,7 +2616,12 @@ function renderSandboxSetup(){
     });
   });
   const go=cxBody.querySelector('#sb-start');
-  if(go)go.addEventListener('click',ev=>{ev.stopPropagation();sandboxStart();});
+  if(go)go.addEventListener('click',ev=>{
+    ev.stopPropagation();
+    try{sandboxStart();}
+    catch(e){console.error('[ECHO/SANDBOX] clique INICIAR TESTE:',e);
+      sbStartFail((e&&e.message)||String(e));}
+  });
   cxFoot.textContent='ESC — VOLTAR AO MENU · O SETUP DO SANDBOX NÃO É SALVO';
 }
 /* ---- início da run de laboratório ---- */
@@ -2584,24 +2631,134 @@ let _sbCharBak=0;
 function sandboxSetChar(i){
   charSel=clamp(i,0,CHARS.length-1);
 }
+/* §32: valida a configuração do preparo — {ok,reason} para o botão */
+function sandboxValidateCfg(){
+  if(!Number.isInteger(sandboxCfg.char)||sandboxCfg.char<0||
+     sandboxCfg.char>=CHARS.length)
+    return {ok:false,reason:'OPERADOR INVÁLIDO'};
+  if(sandboxCfg.preset&&!BUILD_PRESETS[sandboxCfg.preset])
+    return {ok:false,reason:'PRESET INEXISTENTE: '+sandboxCfg.preset};
+  if(SB_WAVES.indexOf(sandboxCfg.wave)<0)
+    return {ok:false,reason:'ONDA INICIAL INVÁLIDA'};
+  return {ok:true,reason:''};
+}
+/* §33: falha NUNCA é silenciosa — mensagem clara na UI + console DEV */
+function sbStartFail(msg){
+  try{
+    console.error('[ECHO/SANDBOX] falha ao iniciar o teste: '+msg);
+    const body=$('cx-body');
+    if(body){
+      const old=body.querySelector('.sbfail');
+      if(old)old.remove();
+      const d=document.createElement('div');
+      d.className='sbfail';
+      d.textContent='✕ FALHA AO INICIAR O TESTE — '+msg+
+        ' (o motivo também aparece no console do jogo)';
+      body.insertBefore(d,body.firstChild);
+    }
+    toast('SANDBOX: FALHA AO INICIAR — '+msg);
+  }catch(e){console.error('[ECHO/SANDBOX] sbStartFail:',e);}
+}
 function sandboxStart(){
-  if(sandboxRun)return;
-  sandboxMode=false;
-  sandboxRun=true;
-  closeCodex();
-  /* §75: nenhum Eco real entra no laboratório — a fila do slot é preservada */
-  _sbEchoQueueBak=echoQueue;
-  echoQueue=[];
-  _sbCharBak=charSel;
-  sandboxSetChar(sandboxCfg.char);
-  hideOverlay();
-  startRun();                              // devTainted=!!DEV_MODE (§92 ok)
-  giveSandboxCredits(500);                 // crédito de teste (só sandbox)
-  if(sandboxCfg.preset&&BUILD_PRESETS[sandboxCfg.preset])
-    applyBuildPreset(sandboxCfg.preset,player);
-  if(sandboxCfg.wave>1)sandboxJumpTo(sandboxCfg.wave);
-  const chip=$('sb-chip');if(chip)chip.classList.add('on');
-  banner('SANDBOX ATIVO','LABORATÓRIO — NADA É REGISTRADO · F1 ABRE O PAINEL');
+  if(sandboxRun)return true;
+  const v=sandboxValidateCfg();            // §32: recusa configs inválidas
+  if(!v.ok){sbStartFail(v.reason);return false;}
+  try{
+    sandboxMode=false;
+    sandboxRun=true;
+    closeCodex();
+    /* §75: nenhum Eco real entra no laboratório — a fila do slot é preservada */
+    _sbEchoQueueBak=echoQueue;
+    echoQueue=[];
+    _sbCharBak=charSel;
+    sandboxSetChar(sandboxCfg.char);
+    hideOverlay();
+    startRun();                            // devTainted=!!DEV_MODE (§92 ok)
+    giveSandboxCredits(500);               // crédito de teste (só sandbox)
+    if(sandboxCfg.preset&&BUILD_PRESETS[sandboxCfg.preset])
+      applyBuildPreset(sandboxCfg.preset,player);
+    if(sandboxCfg.wave>1)sandboxJumpTo(sandboxCfg.wave);
+    const chip=$('sb-chip');if(chip)chip.classList.add('on');
+    banner('SANDBOX ATIVO','LABORATÓRIO — NADA É REGISTRADO · F1 ABRE O PAINEL');
+    return true;
+  }catch(e){
+    /* §33: qualquer exceção volta ao preparo com o motivo EXIBIDO —
+       o botão nunca "não faz nada". */
+    console.error('[ECHO/SANDBOX] exceção ao iniciar o teste:',e);
+    sandboxRun=false;sandboxMode=true;sbPanelClose();sandboxRestoreReal();
+    try{hideOverlay();}catch(_e){}
+    sandboxOpenSetup();
+    sbStartFail((e&&e.message)||String(e));
+    return false;
+  }
+}
+/* =====================================================================
+   §12–§18 · §20 — AJUSTES DO JOGADOR (laboratório)
+   Stats NUNCA são editados direto: passam pelo Stat Modifier Pipeline
+   com source IDs exclusivos (sandbox:damage, sandbox:crit, sandbox:speed,
+   sandbox:shield_max, sandbox:shield_regen). RESETAR remove SOMENTE esses
+   mods — itens, operador, moral e status normais permanecem. Nada disto
+   persiste: o laboratório não grava nada e a saída remove tudo (§18).
+   ===================================================================== */
+const SB_MOD_IDS={
+  damage:'sandbox:damage',crit:'sandbox:crit',speed:'sandbox:speed',
+  shieldMax:'sandbox:shield_max',shieldRegen:'sandbox:shield_regen'};
+function _sbModsOf(p){
+  if(!p._sbMods)p._sbMods={damage:1,crit:0,speed:1,shieldMax:0,shieldRegen:0};
+  return p._sbMods;
+}
+function sbApplyMod(stat,dir){
+  const p=player;if(!p)return;
+  if(!SB_MOD_IDS[stat])return;
+  const m=_sbModsOf(p);
+  const step={damage:.1,crit:.05,speed:.1,shieldMax:10,shieldRegen:1}[stat];
+  if(stat==='damage')m.damage=clamp(+(m.damage*(dir>0?1+step:1-step)).toFixed(4),.1,10);
+  else if(stat==='speed')m.speed=clamp(+(m.speed*(dir>0?1+step:1-step)).toFixed(4),.1,10);
+  else m[stat]=clamp(m[stat]+step*dir,{crit:[0,1],shieldMax:[0,200],shieldRegen:[0,60]}[stat][0],
+      {crit:[0,1],shieldMax:[0,200],shieldRegen:[0,60]}[stat][1]);
+  /* re-aplica do zero: mods sandbox são os únicos com esses source ids */
+  for(const s in SB_MOD_IDS)smRemoveId(p,SB_MOD_IDS[s]);
+  if(m.damage!==1)smMul(p,'damage',SB_MOD_IDS.damage,'SANDBOX · DANO',m.damage);
+  if(m.crit)smFlat(p,'crit',SB_MOD_IDS.crit,'SANDBOX · CRÍTICO',m.crit);
+  if(m.speed!==1)smMul(p,'speed',SB_MOD_IDS.speed,'SANDBOX · VELOCIDADE',m.speed);
+  if(m.shieldMax)smFlat(p,'shieldMax',SB_MOD_IDS.shieldMax,'SANDBOX · ESCUDO MÁX',m.shieldMax);
+  if(m.shieldRegen)smFlat(p,'shieldRegen',SB_MOD_IDS.shieldRegen,'SANDBOX · REGEN ESCUDO',m.shieldRegen);
+  smRefresh(p);
+}
+/* §17: remove APENAS os modificadores do sandbox */
+function sbResetMods(){
+  const p=player;if(!p)return;
+  for(const s in SB_MOD_IDS)smRemoveId(p,SB_MOD_IDS[s]);
+  p._sbMods={damage:1,crit:0,speed:1,shieldMax:0,shieldRegen:0};
+  smRefresh(p);
+  toast('SANDBOX: AJUSTES RESETADOS (itens e moral preservados)');
+}
+/* saída do laboratório: tira TUDO que o sandbox colocou no player (§18) */
+function stripSandboxMods(p){
+  if(!p)return;
+  for(const s in SB_MOD_IDS)smRemoveId(p,SB_MOD_IDS[s]);
+  p._sbMods=null;
+}
+/* §15: quebra de escudo pelo PIPELINE REAL — dispara exatamente o mesmo
+   caminho do combate (feedback §18 da PR 11.5 + runSt.sb + echoReact +
+   itemEmit('onShieldBreak') para os itens da PR 11 testarem de verdade). */
+function sandboxBreakShield(){
+  const p=player;if(!p)return;
+  if(p.shield<=0){toast('SANDBOX: O ESCUDO JÁ ESTÁ QUEBRADO');return;}
+  const shieldAntes=p.shield;
+  p.shield=0;p.shieldDelayT=p.shieldDelay;
+  resetPerfectShield(p);
+  shieldFx('break');
+  floatText(p.x,p.y-30,'ESCUDO ROMPIDO','#8ff6ff',FTEXT_SPEAK);
+  spawnRing(p.x,p.y,'#8ff6ff',8,72,.42);
+  spawnRing(p.x,p.y,'#ffffff',4,96,.3);
+  aberrPeak(.35);
+  AUDIO.tone(rand(300,360),.18,'sine',.04,-140);
+  AUDIO.tone(rand(180,220),.3,'sawtooth',.03,-90,.05);
+  if(runSt)runSt.sb++;
+  echoReact('shieldBreak');
+  itemEmit('onShieldBreak',{player:p,real:shieldAntes,absorbed:shieldAntes});
+  toast('SANDBOX: PIPELINE REAL DE SHIELD BREAK DISPARADO');
 }
 function giveSandboxCredits(n){
   if(!sandboxRun||!player)return;
@@ -2620,15 +2777,27 @@ function sandboxExit(toMenu){
   if(!sandboxRun&&!sandboxMode)return;
   sandboxRun=false;sandboxMode=false;
   sbPanelClose();
+  /* §18: nenhum ajuste do laboratório atravessa para o jogo real */
+  if(player){stripSandboxMods(player);}
+  _sbResetPicks();
   sandboxRestoreReal();
+  ovExitMenu(false);
   $('endwrap').classList.remove('on');
   overlay.classList.remove('hidden');
+  /* PR 11.5 §11: sai da run de verdade — sem isso o state ficaria
+     fracture/victory sob a tela de título (overlays fantasma). */
+  state='title';
   if(toMenu)showTitle();else showSlotSelect();
+}
+/* zera todos os fluxos armados do painel (swap/pick/pendência) */
+function _sbResetPicks(){
+  sbSwapA=-1;sbPick=null;sbItemPick=false;sbPendingWi=null;
 }
 /* encerra o teste e volta para a tela de preparo (ALTERAR BUILD) */
 function sandboxEndToSetup(){
   sandboxRun=false;
   sbPanelClose();
+  _sbResetPicks();
   sandboxClearRunState();
   sandboxRestoreReal();
   sandboxCfg.wave=1;
@@ -2671,7 +2840,8 @@ function sandboxDeath(){
     'RECORDES, UNLOCKS OU A MEMÓRIA DOS ECOS.';
   ovFrac.innerHTML='<span class="good">PROGRESSÃO REAL INTACTA</span>';
   ovEchos.textContent='';
-  ovGo.textContent='REINICIAR SANDBOX';
+  ovGo.textContent='REINICIAR TESTE';
+  ovExitMenu(true);                          // §11: 3 opções claras
   const _act=$('ov-actions');
   if(_act)_act.classList.add('on');
   const _ob=$('ov-back');
@@ -2682,6 +2852,7 @@ function sandboxDeath(){
 function sandboxRestart(){
   sandboxRun=false;
   sbPanelClose();
+  _sbResetPicks();
   sandboxClearRunState();
   sandboxRestoreReal();
   hideOverlay();
@@ -2713,7 +2884,8 @@ function sandboxVictory(){
     'como estava.';
   ovFrac.innerHTML='';
   ovEchos.textContent='';
-  ovGo.textContent='REINICIAR SANDBOX';
+  ovGo.textContent='REINICIAR TESTE';
+  ovExitMenu(true);                          // §11: 3 opções claras
   const _act=$('ov-actions');
   if(_act)_act.classList.add('on');
   const _ob=$('ov-back');
@@ -2761,8 +2933,41 @@ function sbRender(){
     '<span class="asbtn" data-sb="clearst">LIMPAR STATUS</span>'+
     '<span class="asbtn" data-sb="resetcd">RESETAR COOLDOWNS</span>'+
     '</div></div>';
+  /* ---- §12–§18/§20: AJUSTES DO JOGADOR (não salvos, pipeline sandbox:*) ---- */
+  const _sbm=_sbModsOf(p);
+  h+='<div class="ssect"><h4>AJUSTES DO JOGADOR <span style="opacity:.55">· NÃO SÃO SALVOS</span></h4>'+
+    '<div class="srow"><span class="k">CRÉDITOS</span><span class="v">◈'+fmtCompact(p.coins|0)+'</span></div>'+
+    '<div class="sbrow"><span class="asbtn" data-sb="crd-100">−100</span>'+
+    '<span class="asbtn" data-sb="crd-10">−10</span>'+
+    '<span class="asbtn" data-sb="crd+10">+10</span>'+
+    '<span class="asbtn" data-sb="crd+100">+100</span>'+
+    '<span class="asbtn" data-sb="crdmax">MAX ◈9999</span></div>'+
+    '<div class="srow"><span class="k">HP</span><span class="v">'+fmtStat(Math.max(0,p.hp),0)+' / '+fmtNum(p.maxHp)+'</span></div>'+
+    '<div class="sbrow"><span class="asbtn" data-sb="fullhp">ENCHER</span>'+
+    '<span class="asbtn" data-sb="hp-25">DANO −25</span>'+
+    '<span class="asbtn" data-sb="hp+25">+25</span>'+
+    '<span class="asbtn" data-sb="hp1">SET 1</span></div>'+
+    '<div class="srow"><span class="k">ESCUDO</span><span class="v">'+fmtStat(Math.max(0,p.shield),0)+' / '+fmtNum(p.shieldMax)+'</span></div>'+
+    '<div class="sbrow"><span class="asbtn" data-sb="fullsh">ENCHER</span>'+
+    '<span class="asbtn" data-sb="breaksh">QUEBRAR (PIPELINE REAL)</span>'+
+    '<span class="asbtn" data-sb="sh-10">−10</span>'+
+    '<span class="asbtn" data-sb="sh+10">+10</span></div>'+
+    '<div class="srow"><span class="k">DANO</span><span class="v">'+
+      (p.dmgMul!==p._smBase?.dmg?'×'+fmtMult(_sbm.damage)+' ('+fmtMult(p.dmgMul)+' TOTAL)':fmtMult(p.dmgMul)+' BASE')+'</span></div>'+
+    '<div class="sbrow"><span class="asbtn" data-sb="mod:damage:-1">−10%</span>'+
+    '<span class="asbtn" data-sb="mod:damage:1">+10%</span>'+
+    '<span class="asbtn" data-sb="mod:crit:-1">CRIT −5%</span>'+
+    '<span class="asbtn" data-sb="mod:crit:1">CRIT +5%</span></div>'+
+    '<div class="sbrow"><span class="asbtn" data-sb="mod:speed:-1">VEL −10%</span>'+
+    '<span class="asbtn" data-sb="mod:speed:1">VEL +10%</span>'+
+    '<span class="asbtn" data-sb="mod:shieldMax:-1">SH.MAX −10</span>'+
+    '<span class="asbtn" data-sb="mod:shieldMax:1">SH.MAX +10</span>'+
+    '<span class="asbtn" data-sb="mod:shieldRegen:-1">REGEN −1</span>'+
+    '<span class="asbtn" data-sb="mod:shieldRegen:1">REGEN +1</span></div>'+
+    '<div class="sbrow"><span class="asbtn" data-sb="resetmods" style="border-color:rgba(255,209,102,.5);color:#ffd166">RESETAR AJUSTES (mantém itens e moral)</span></div>'+
+    '</div>';
   /* ---- ARSENAL (§79/§78) ---- */
-  h+='<div class="ssect span-2"><h4>ARSENAL · '+p.owned.length+'/'+p.maxSlots+
+  h+='<div class="ssect span-2"><h4>ARSENAL · '+countWeapons(p)+'/'+p.maxSlots+
     ' SLOTS (IDENTIDADE DE '+C.nm+')</h4>';
   for(let s=0;s<p.maxSlots;s++){
     const wi=p.owned[s];
@@ -2806,7 +3011,8 @@ function sbRender(){
     h+='<div class="sbpick"><div class="sect" style="margin:10px 0 6px">ARSENAL CHEIO — '+
       'SUBSTITUIR QUAL SLOT COM <span style="color:'+pd.color+'">'+pd.nm+'</span>?</div><div class="sbrow">';
     player.owned.forEach((owi,s)=>{
-      h+='<span class="sbbtn" data-sbslotpick="'+s+'">['+(s+1)+'] '+WEAPONS[owi].nm+'</span>';
+      h+='<span class="sbbtn" data-sbslotpick="'+s+'">['+(s+1)+'] '+
+        (owi==null?'(VAZIO)':WEAPONS[owi].nm)+'</span>';
     });
     h+='<span class="asbtn" data-sb="cancelpick">CANCELAR</span></div></div>';
   }
@@ -2911,7 +3117,7 @@ function sbBind(){
         grantWeapon(wi,false,sbPick);
         sbPick=null;
         toast('SANDBOX: '+WEAPONS[wi].nm+' NO ARSENAL');
-      }else if(player.owned.length<player.maxSlots){  // slot livre (§123)
+      }else if(countWeapons(player)<player.maxSlots){  // slot livre (§123)
         grantWeapon(wi,false,null);
         sbPick=null;
         toast('SANDBOX: '+WEAPONS[wi].nm+' NO ARSENAL');
@@ -2994,13 +3200,19 @@ function sandboxClearMini(){
   miniBoss=null;clearMiniBossHUD();
 }
 function sandboxRemoveSlot(slot){
-  if(!player||slot<0||slot>=player.owned.length||player.owned.length<=1)return;
-  const wi=player.owned[slot],d=WEAPONS[wi];
-  player.owned.splice(slot,1);
-  if(player.wi===wi)player.wi=player.owned[0];
+  if(!player||slot<0||slot>=player.owned.length)return;
+  const wi=player.owned[slot];
+  if(wi==null)return;
+  if(countWeapons(player)<=1){toast('SANDBOX: MANTENHA AO MENOS 1 ARMA');return;}
+  const d=WEAPONS[wi];
+  player.owned[slot]=null;                 // §8: vira SLOT VAZIO (não compacta)
+  if(player.wi===wi){
+    const i=player.owned.findIndex(x=>x!=null);
+    player.wi=i>=0?player.owned[i]:wi;
+  }
   if(player.lastWi===wi)player.lastWi=player.wi;
   buildWeaponHUD();
-  toast('SANDBOX: '+d.nm+' REMOVIDA');
+  toast('SANDBOX: '+d.nm+' REMOVIDA (SLOT '+(slot+1)+' FICOU LIVRE)');
   AUDIO.echoShatter();sbRender();
 }
 function sbAction(a){
@@ -3012,13 +3224,31 @@ function sbAction(a){
     case 'fullsh':
       p.shield=p.shieldMax;p.shieldDelayT=0;
       toast('SANDBOX: ESCUDO CHEIO');AUDIO.levelUp();break;
-    case 'breaksh':
-      if(p.shieldMax<=0)break;
-      p.shield=0;p.shieldDelayT=p.shieldDelay;
-      shieldFx('break');
-      floatText(p.x,p.y-30,'ESCUDO ROMPIDO','#8ff6ff');
-      spawnRing(p.x,p.y,'#8ff6ff',8,80,.45);
-      toast('SANDBOX: ESCUDO QUEBRADO');AUDIO.tone(220,.3,'sawtooth',.04,-100);break;
+    case 'breaksh':                            // §15: pipeline REAL de quebra
+      sandboxBreakShield();break;
+    case 'sh-10': p.shield=Math.max(0,p.shield-10);break;
+    case 'sh+10': p.shield=clamp(p.shield+10,0,p.shieldMax);break;
+    /* ---- §13/§14: dinheiro e HP (só na sessão sandbox) ---- */
+    case 'crd-100': p.coins=clamp((p.coins|0)-100,0,999999);break;
+    case 'crd-10':  p.coins=clamp((p.coins|0)-10,0,999999);break;
+    case 'crd+10':  p.coins=clamp((p.coins|0)+10,0,999999);break;
+    case 'crd+100': p.coins=clamp((p.coins|0)+100,0,999999);break;
+    case 'crdmax':  p.coins=9999;toast('SANDBOX: ◈9999 (TESTE DE ECONOMIA)');break;
+    case 'hp+25':   p.hp=clamp(p.hp+25,0,p.maxHp);break;
+    case 'hp-25':   p.hp=Math.max(1,p.hp-25);toast('SANDBOX: DANO AO JOGADOR (−25)');break;
+    case 'hp1':     p.hp=1;toast('SANDBOX: HP = 1 (TESTE DE CLUTCH)');break;
+    /* ---- §16: stats via Stat Modifier Pipeline (source sandbox:*) ---- */
+    case 'mod:damage:1': case 'mod:damage:-1':
+      sbApplyMod('damage',a.endsWith('1')?1:-1);break;
+    case 'mod:crit:1': case 'mod:crit:-1':
+      sbApplyMod('crit',a.endsWith('1')?1:-1);break;
+    case 'mod:speed:1': case 'mod:speed:-1':
+      sbApplyMod('speed',a.endsWith('1')?1:-1);break;
+    case 'mod:shieldMax:1': case 'mod:shieldMax:-1':
+      sbApplyMod('shieldMax',a.endsWith('1')?1:-1);break;
+    case 'mod:shieldRegen:1': case 'mod:shieldRegen:-1':
+      sbApplyMod('shieldRegen',a.endsWith('1')?1:-1);break;
+    case 'resetmods': sbResetMods();break;
     case 'clearst':
       for(const e of enemies)if(e.st)e.st=null;
       p.anomalyT=0;p.curseT=0;smRemoveId(p,'status.oracle_curse.damage');
@@ -10609,6 +10839,7 @@ function drawWorldExtras(){
 function setWeaponSlot(slot){
   if(!player||!player.owned.length)return;
   if(slot<0||slot>=player.owned.length)return;
+  if(player.owned[slot]==null)return;      // slot vazio não equipa
   const wi=player.owned[slot];
   if(player.wi===wi)return;
   /* PR 11.5 §55: lembra a arma anterior para o quick switch (tecla X) */
@@ -10623,10 +10854,13 @@ function setWeaponSlot(slot){
   buildWeaponHUD();
 }
 function cycleWeapon(dir){
-  if(!player||player.owned.length<2)return;
+  if(!player||countWeapons(player)<2)return;
+  const n=player.owned.length;
   const cur=player.owned.indexOf(player.wi);
-  const next=((cur<0?0:cur)+(dir||1)+player.owned.length)%player.owned.length;
-  setWeaponSlot(next);
+  for(let i=1;i<=n;i++){                   // pula buracos (slots vazios)
+    const idx=(((cur<0?0:cur)+(dir||1)*i)%n+n)%n;
+    if(player.owned[idx]!=null){setWeaponSlot(idx);return;}
+  }
 }
 /* PR 11.5 §55 — QUICK SWITCH: alterna com a ÚLTIMA arma usada.
    A tecla Q já tem função (ciclar) — o quick switch usa X (e o mesmo
@@ -10653,17 +10887,24 @@ function quickSwitchWeapon(){
    ===================================================================== */
 function swapWeaponSlots(a,b){
   if(!player||!Array.isArray(player.owned))return false;
-  const n=player.owned.length;
+  const max=player.maxSlots||player.owned.length;
   if(!Number.isInteger(a)||!Number.isInteger(b))return false;
-  if(a<0||b<0||a>=n||b>=n||a===b)return false;
-  const wa=player.owned[a],wb=player.owned[b];
+  if(a<0||b<0||a>=max||b>=max||a===b)return false;
+  const wa=player.owned[a]??null,wb=player.owned[b]??null;
+  if(wa==null&&wb==null)return false;      // nada para trocar
   player.owned[a]=wb;player.owned[b]=wa;
+  /* normaliza apenas o trecho afetado: buracos viram null explícito
+     (undefined confunde o save). Trocar com slot vazio MOVE a arma — §8. */
+  const end=Math.max(player.owned.length,a+1,b+1);
+  for(let i=0;i<end;i++)if(player.owned[i]===undefined)player.owned[i]=null;
   /* PR 11.5 §53: wi/lastWi guardam IDENTIDADE de arma (não slot).
      Permutar slots não muda qual arma está ativa — nada para
      "repontar" aqui: trocar essas linhas trocaria a arma ativa. */
   buildWeaponHUD();
   return true;
 }
+/* quantas armas reais o arsenal tem (buracos null não contam) */
+function countWeapons(p){return p?p.owned.filter(x=>x!=null).length:0;}
 /* ---- adiciona uma arma comprada permanentemente ao arsenal da run ---- */
 function grantWeapon(wi,silent,slot){
   if(!player)return false;
@@ -10675,9 +10916,14 @@ function grantWeapon(wi,silent,slot){
     player.owned[slot]=wi;
     if(player.wi===replaced)player.wi=wi;
     if(player.lastWi===replaced)player.lastWi=player.wi;  // PR 11.5
-  }else if(player.owned.length<player.maxSlots){
-    player.owned.push(wi);
-  }else return false;                  // sem espaço e sem slot escolhido
+  }else{
+    /* PR 11.5 §8: preenche o PRIMEIRO slot vazio (buraco) antes de
+       crescer o arsenal — remoções deixam vazios no meio. */
+    const free=player.owned.indexOf(null);
+    if(free>=0)player.owned[free]=wi;
+    else if(player.owned.length<player.maxSlots)player.owned.push(wi);
+    else return false;                  // sem espaço e sem slot escolhido
+  }
   if(!silent){
     const n=(slot!=null?slot:player.owned.length-1)+1;
     if(replaced!=null)
@@ -10731,6 +10977,12 @@ function buildWeaponHUD(){
   if(!wrap||!player)return;
   let html='';
   player.owned.forEach((wi,slot)=>{
+    if(wi==null){                        // buraco no meio do arsenal (§8)
+      html+='<div class="wslot empty"><span class="key">['+(slot+1)+']</span>'+
+        '<div class="nm">— VAZIO —</div>'+
+        '<div class="wrange">SLOT LIVRE</div></div>';
+      return;
+    }
     const d=WEAPONS[wi];
     const rg=Math.round(weaponRange(d,player));
     const act=player.wi===wi;
@@ -13951,6 +14203,7 @@ function onVictory(){
   setTimeout(showVictory,1250);
 }
 function showVictory(){
+  ovExitMenu(false);                         // botão sandbox nunca vaza pro jogo real
   const v=victoryData,E=ENDINGS[v.key];
   $('e-title').textContent=E.t;
   $('e-title').style.color=E.c;
@@ -14144,8 +14397,14 @@ function smSanitizeRun(r){
     if(!Number.isFinite(p.maxHp)||p.maxHp<28)return null;
     if(!Number.isInteger(r.charIdx)||r.charIdx<0||r.charIdx>=CHARS.length)return null;
     if(!Array.isArray(p.owned)||!p.owned.length)return null;
-    for(const wi of p.owned)
+    /* PR 11.5 §8: null é slot vazio — válido desde que haja >=1 arma */
+    let _cw=0;
+    for(const wi of p.owned){
+      if(wi==null)continue;
+      _cw++;
       if(!Number.isInteger(wi)||wi<0||wi>=WEAPONS.length)return null;
+    }
+    if(!_cw)return null;
     if(!Number.isInteger(p.wi)||p.wi<0||p.wi>=WEAPONS.length)return null;
     if(p.owned.indexOf(p.wi)<0)return null;
     if(!Array.isArray(p.sm)||!Array.isArray(p.items)||!Array.isArray(p.upgLog))return null;
@@ -14562,12 +14821,13 @@ function resumeRun(){
   player.level=Math.max(1,num(q.level,1)|0);
   player.xp=Math.max(0,num(q.xp,0));
   player.xpNext=Math.max(1,num(q.xpNext,player.xpNext));
-  /* arsenal */
+  /* arsenal — §8: null é SLOT VAZIO (buracos preservados no Continue) */
   player.owned=(Array.isArray(q.owned)?q.owned:player.owned)
-    .filter(wi=>Number.isInteger(wi)&&wi>=0&&wi<WEAPONS.length)
+    .filter(wi=>wi==null||(Number.isInteger(wi)&&wi>=0&&wi<WEAPONS.length))
     .slice(0,8);
-  if(!player.owned.length)player.owned=makePlayer().owned;
-  player.wi=player.owned.indexOf(q.wi)>=0?q.wi:player.owned[0];
+  if(countWeapons(player)===0)player.owned=makePlayer().owned;
+  player.wi=player.owned.indexOf(q.wi)>=0?q.wi:
+    (player.owned.find(x=>x!=null)||player.wi);
   player.maxSlots=clamp(num(q.maxSlots,player.maxSlots)|0,1,8);
   /* PR 11.5 §66: quick switch restaura junto com o arsenal */
   player.lastWi=(q.lastWi!=null&&player.owned.indexOf(q.lastWi)>=0)?
@@ -16895,11 +17155,12 @@ function renderCodexBody(){
    ===================================================================== */
 function renderOrganizer(){
   cxTitle.textContent='O R G A N I Z A R   A R M A S';
-  cxSub.textContent='ARSENAL '+player.owned.length+'/'+player.maxSlots+
+  cxSub.textContent='ARSENAL '+countWeapons(player)+'/'+player.maxSlots+
     ' · '+curChar().nm+' · A ORDEM DEFINE AS TECLAS 1–5';
   cxTabs.style.display='none';
   cxBody.innerHTML='';
   player.owned.forEach((wi,i)=>{
+    if(wi==null)return;                  // buraco: linha não é exibida (§8)
     const d=WEAPONS[wi];
     const rg=Math.round(weaponRange(d,player));
     const row=document.createElement('div');
@@ -17433,6 +17694,7 @@ function refreshTitleChar(){
 
 /* ---------------- boot ---------------- */
 function showTitle(){
+  ovExitMenu(false);
   loadCfg();                    // configurações globais (APP SETTINGS)
   checkUnlocks(true);           // sincroniza unlocks silenciosamente
   ovTitle.textContent='E C H O';ovTitle.setAttribute('data-t','E C H O');
@@ -17667,6 +17929,23 @@ if(_sbChip)_sbChip.addEventListener('click',e=>{
 /* ---- PR 7.5: botão "VOLTAR AO MENU" da tela de morte ---- */
 $('ov-back').addEventListener('click',e=>{
   e.stopPropagation();initAudio();AUDIO.ui(440);exitToSlotMenuFromDeath();
+});
+/* PR 11.5 §11: 3ª opção da morte/vitória do SANDBOX — sai do laboratório,
+   limpa o estado, NÃO salva active run, NÃO cria Echo, NÃO altera
+   progressão e cai no menu principal. Fora do sandbox o botão não existe. */
+function ovExitMenu(v){
+  const b=$('ov-exitmenu');
+  if(b)b.style.display=v?'':'none';
+}
+$('ov-exitmenu').addEventListener('click',e=>{
+  e.stopPropagation();initAudio();AUDIO.ui(440);
+  if(sandboxActive())sandboxExit(true);       // restaura save real → título
+});
+/* §11: as opções da morte/vitória também são CLICÁVEIS — antes, ov-go
+   só respondia a Enter/Space e um clique real não fazia nada. */
+$('ov-go').addEventListener('click',e=>{
+  e.stopPropagation();initAudio();
+  if(state==='fracture'||state==='victory'){AUDIO.ui(660);beginNextRun();}
 });
 $('cx-close').addEventListener('click',e=>{e.stopPropagation();closeCodex();});
 codexEl.addEventListener('click',e=>{if(e.target===codexEl)closeCodex();});
