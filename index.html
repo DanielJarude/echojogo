@@ -478,7 +478,7 @@
     letter-spacing:.18em;color:#ff9df7;}
 
   /* =====================================================================
-     PR 11.5 §25 — FICHA DE COMBATE (TAB)
+     PR 11.5 §25 — REGISTRO DE COMBATE (TAB)
      Mesma linguagem visual do jogo: painéis escuros, borda ciano fina,
      monoespaçada para números. Não é um menu DEV — é profundidade da run.
      ===================================================================== */
@@ -570,6 +570,45 @@
     color:#8ff6ff;border:1px solid rgba(70,224,255,.4);background:rgba(70,224,255,.07);
     padding:4px 10px;border-radius:2px;}
 
+  /* =====================================================================
+     PR 11.5 — SANDBOX: painel de laboratório + chip (§70/§79/§93)
+     Aparência de feature do jogo (§93): mesma linguagem visual da ficha,
+     com acento verde-menta para separar do combate real.
+     ===================================================================== */
+  #sb-chip{position:fixed;left:16px;bottom:132px;z-index:11;display:none;
+    cursor:pointer;border-color:rgba(125,255,196,.4);color:#a9e8c9;}
+  #sb-chip.on{display:block;}
+  #sb-chip:hover{border-color:#7dffc4;color:#eafff4;}
+  #sandboxp{position:fixed;inset:4%;z-index:42;display:none;flex-direction:column;
+    border:1px solid rgba(125,255,196,.4);border-radius:4px;
+    background:linear-gradient(180deg,rgba(4,14,12,.96),rgba(2,8,10,.98));
+    box-shadow:0 20px 80px rgba(0,0,0,.9),0 0 40px rgba(125,255,196,.07);
+    color:#cfeffc;}
+  #sandboxp.on{display:flex;animation:sheetIn .14s ease-out;}
+  #sandboxp .sfoot{border-top-color:rgba(125,255,196,.18);color:rgba(125,255,196,.55);}
+  #sandboxp .shead{border-bottom-color:rgba(125,255,196,.18);}
+  #sandboxp .ssect{border-color:rgba(125,255,196,.16);}
+  #sandboxp .ssect h4{color:rgba(125,255,196,.85);border-bottom-color:rgba(125,255,196,.12);}
+  .sbrow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:4px;}
+  .sbrow .asbtn.sbcur{border-color:#7dffc4;color:#eafff4;background:rgba(125,255,196,.12);}
+  .sbopts{display:flex;flex-wrap:wrap;gap:6px;}
+  .sbbtn{font-family:Consolas,monospace;font-size:var(--fs-xs);letter-spacing:.12em;
+    padding:5px 11px;border:1px solid rgba(120,160,190,.35);border-radius:2px;
+    color:#a9cce0;cursor:pointer;transition:all .12s;}
+  .sbbtn:hover{border-color:var(--cy);color:#eaffff;background:rgba(70,224,255,.1);}
+  .sbbtn.on{border-color:#7dffc4;color:#eafff4;background:rgba(125,255,196,.14);}
+  .sbbtn.dis{opacity:.35;cursor:not-allowed;}
+  .sbchars{display:flex;flex-wrap:wrap;gap:10px;}
+  .sbchar{width:112px;padding:10px 6px;text-align:center;border:1px solid rgba(120,150,170,.3);
+    border-radius:3px;background:rgba(4,12,20,.55);cursor:pointer;transition:all .12s;}
+  .sbchar:hover{border-color:var(--cy);transform:translateY(-2px);}
+  .sbchar .cn{font-family:Consolas,monospace;font-size:var(--fs-sm);letter-spacing:.1em;
+    margin-top:6px;color:#cfeffc;}
+  .sbchar .cr{font-family:Consolas,monospace;font-size:var(--fs-3xs);letter-spacing:.14em;
+    color:rgba(150,190,210,.55);margin-top:2px;}
+  .sbgo{margin-top:16px;padding:12px 20px;text-align:center;cursor:pointer;}
+  .sbpick{border-top:1px dashed rgba(125,255,196,.25);margin-top:8px;}
+
   /* ---------- itens bloqueados no codex ---------- */
   .cxitem.lock{opacity:.42;filter:grayscale(.75);}
   .cxlockbar{height:4px;margin-top:7px;background:rgba(255,209,102,.14);
@@ -585,6 +624,13 @@
     background:rgba(70,224,255,.04);transition:all .14s;}
   .ovbtn:hover{color:#e8fbff;border-color:var(--cy);background:rgba(70,224,255,.16);
     box-shadow:0 0 18px rgba(70,224,255,.22);transform:translateY(-2px);}
+  .ovbtn small{display:block;font-size:var(--fs-3xs);letter-spacing:.14em;
+    color:rgba(150,190,210,.55);margin-top:4px;}
+  /* PR 11.5: SANDBOX é um recurso do jogador — destaque próprio, contido */
+  #ov-sandbox{border-color:rgba(125,255,196,.4);color:#a9e8c9;}
+  #ov-sandbox small{color:rgba(125,255,196,.5);}
+  #ov-sandbox:hover{color:#eafff4;border-color:#7dffc4;background:rgba(125,255,196,.12);
+    box-shadow:0 0 18px rgba(125,255,196,.2);}
 
   /* ---------- painéis de Arsenal e Configurações ---------- */
   #codex{position:fixed;inset:0;z-index:34;display:none;align-items:center;
@@ -855,6 +901,7 @@
   <div id="ov-char"></div>
   <div id="ov-menu">
     <div class="ovbtn" id="ov-arsenal">◈ ARSENAL</div>
+    <div class="ovbtn" id="ov-sandbox">⌖ SANDBOX<small>TESTE OPERADORES, ARMAS E BUILDS SEM AFETAR SUA PROGRESSÃO</small></div>
     <div class="ovbtn" id="ov-config">⚙ CONFIGURAÇÕES</div>
   </div>
   <div id="ov-echos"></div>
@@ -862,17 +909,31 @@
   <div id="ov-ver">ECHO</div>
 </div>
 
-<!-- ===== PR 11.5 — FICHA DE COMBATE (TAB) — detalhes da run atual ===== -->
+<!-- ===== PR 11.5 — REGISTRO DE COMBATE (TAB) — detalhes da run atual ===== -->
 <div id="sheet">
   <div class="shead">
     <div class="shead-l">
-      <div class="s-tag" id="s-tag">FICHA DE COMBATE</div>
+      <div class="s-tag" id="s-tag">REGISTRO DE COMBATE</div>
       <div class="s-sub" id="s-sub">—</div>
     </div>
     <div class="s-headhint" id="s-hint">TEMPO SUSPENSO · SEM I-FRAMES AO FECHAR</div>
   </div>
   <div class="sbody" id="s-body"></div>
   <div class="sfoot" id="s-foot">TAB — FECHAR · ESC — FECHAR · ARSENAL: CLIQUE EM 2 SLOTS PARA TROCAR</div>
+</div>
+
+<!-- ===== PR 11.5 — SANDBOX: laboratório do jogador (§69–94) ===== -->
+<div id="sb-chip" class="chip">⌖ SANDBOX · [F1] LABORATÓRIO</div>
+<div id="sandboxp">
+  <div class="shead">
+    <div class="shead-l">
+      <div class="s-tag" style="text-shadow:0 0 16px #7dffc4">LABORATÓRIO SANDBOX</div>
+      <div class="s-sub" id="sb-sub">TEMPO SUSPENSO · NADA AQUI AFETA SUA PROGRESSÃO</div>
+    </div>
+    <div class="s-headhint">F1 / ESC — FECHAR</div>
+  </div>
+  <div class="sbody" id="sb-body"></div>
+  <div class="sfoot">SANDBOX NÃO CRIA ECO · NÃO REGISTRA FINAL · NÃO DÁ PROGRESSÃO</div>
 </div>
 
 <div id="tip"></div>
@@ -1493,6 +1554,21 @@ function detectDevBuild(){
 const IS_DEV_BUILD=detectDevBuild();
 let DEV_MODE=false;        // NUNCA inicia ligado — nem em build de dev
 let devTainted=false;      // a run atual foi tocada por ferramentas DEV?
+/* =====================================================================
+   PR 11.5 §69–76 — SANDBOX (laboratório do JOGADOR, distinto do DEV)
+   sandboxMode : a tela de preparação do Sandbox está aberta (menu)
+   sandboxRun  : uma run de Sandbox está ativa
+   · NÃO depende de devTainted (§72): flag própria e explícita.
+   · Isolamento total (§73): nenhuma função de persistência/gravação age
+     com sandboxRun — meta, prog, Codex, finais, evars, records, unlocks
+     e echoQueue do save real ficam intocados.
+   · Sandbox libera TODO o conteúdo em Alpha (§76): is*Unlocked → true.
+   ===================================================================== */
+let sandboxMode=false;
+let sandboxRun=false;
+const sandboxCfg={char:0,preset:'',wave:1};   // setup da sessão (não persiste)
+let _sbEchoQueueBak=null;                     // echoQueue real preservada
+function sandboxActive(){return sandboxMode||sandboxRun;}
 /* Marca a run como "suja": nada dela pode atravessar para os sistemas
    permanentes (Ecos salvos, progressão, meta-progresso, recordes). */
 function devTaint(){
@@ -1561,6 +1637,8 @@ window.addEventListener('keydown',e=>{
   }
   if(state==='victory'){
     if(e.code==='KeyM')setAudio(!audioOn);
+    /* sandbox: ENTER reinicia o teste (nenhum final foi registrado) */
+    if(sandboxRun&&(e.code==='Enter'||e.code==='Space'))beginNextRun();
     return;
   }
   // ---- PAUSA [ESC] — o roteamento real fica em onGameEsc() ----
@@ -1569,7 +1647,13 @@ window.addEventListener('keydown',e=>{
     if(!e.repeat)onGameEsc();
     return;
   }
-  /* PR 11.5 §26 — TAB abre a Ficha de Combate
+  /* PR 11.5 §79: F1 abre o painel do laboratório (só no Sandbox) */
+  if(e.code==='F1'){
+    e.preventDefault();
+    if(!e.repeat)sbPanelToggle();
+    return;
+  }
+  /* PR 11.5 §26 — TAB abre o Registro de Combate
      HOLD (padrão): abrir no pressionar, fechar ao soltar.
      TOGGLE: aperte para abrir, aperte de novo para fechar. */
   if(e.code==='Tab'){
@@ -1580,7 +1664,7 @@ window.addEventListener('keydown',e=>{
     return;
   }
   if(state==='paused')return;              // menu de pausa captura todo o input
-  if(state==='sheet')return;               // ficha captura o resto do input
+  if(state==='sheet'||state==='sandbox')return; // registro/laboratório capturam o input
   if(e.code==='KeyM'){setAudio(!audioOn);
     toast(audioOn?'ÁUDIO ATIVO':'ÁUDIO MUDO');return;}
   if(state!=="play")return;
@@ -1822,8 +1906,13 @@ window.addEventListener('mousedown',e=>{
     if(fracT>0.45)beginNextRun();
     return;
   }
-  if(state==='shop'||state==='event'||state==='paused'||state==='victory')return;
-  if(state==='sheet')return;               // PR 11.5: ficha captura o clique
+  if(state==='shop'||state==='event'||state==='paused')return;
+  if(state==='victory'){
+    /* sandbox: clique em qualquer lugar = REINICIAR SANDBOX (§89/§90) */
+    if(sandboxRun)beginNextRun();
+    return;
+  }
+  if(state==='sheet'||state==='sandbox')return; // registro/laboratório capturam
   if(e.button===0)firing=true;
   if(e.button===2)tryDash();
 });
@@ -2013,8 +2102,9 @@ function onGameEsc(){
   if(typeof devPanelOpen!=='undefined'&&devPanelOpen){devClosePanel();return;}
   // 1. modais de loja / evento (não podem ser fechados por ESC: exigem escolha)
   if(state==='shop'||state==='event')return;
-  // 1.5 PR 11.5 §111/§112: a Ficha nunca empilha com pausa — ESC fecha
+  // 1.5 PR 11.5 §111/§112: ficha e laboratório nunca empilham — ESC fecha
   if(state==='sheet'){sheetHide();return;}
+  if(state==='sandbox'){sbPanelClose();return;}
   // 2. painel de Arsenal / Configurações
   const cx=document.getElementById('codex');
   if(cx&&cx.classList.contains('on')){closeCodex();return;}
@@ -2103,7 +2193,7 @@ function abortRun(){
 }
 
 /* =====================================================================
-   PR 11.5 §25–42 — FICHA DE COMBATE (TAB / RUN DETAIL)
+   PR 11.5 §25–42 — REGISTRO DE COMBATE (TAB / RUN DETAIL)
    ---------------------------------------------------------------------
    Profundidade da run, não ferramenta técnica (§37: nada de IDs fonte,
    confiança oculta do Echo, pressão de Dissonância crua ou flags debug).
@@ -2394,6 +2484,556 @@ function sheetRender(force){
   });
 }
 
+/* =====================================================================
+   PR 11.5 §69–94 — SANDBOX (MODO LABORATÓRIO DO JOGADOR)
+   ---------------------------------------------------------------------
+   §70 DEV ≠ SANDBOX: DEV é diagnóstico técnico; SANDBOX é recurso do
+   jogador, com UI própria (tela de preparo + painel de laboratório).
+   §73 Nenhuma progressão: ver guarda global sandboxRun + protetores em
+   saveProg/saveMeta/saveEchoes/bumpProg/checkUnlocks/captureCheckpoint.
+   §76 Todo conteúdo liberado em Alpha (operadores/armas/itens/inimigos).
+   §88 Eventos narrativos DESATIVADOS por padrão (laboratório de combate).
+   §89/§90 Morte → "TESTE ENCERRADO"; vitória → "TESTE CONCLUÍDO" —
+   nenhum Echo criado, nenhum final registrado.
+   §91 Sandbox não cria Continue Run e não é persistido nesta PR.
+   ===================================================================== */
+const SB_WAVES=[1,3,5,10,15,20];
+function sandboxOpenSetup(){
+  initAudio();
+  sandboxMode=true;
+  hideOverlay();
+  state='title';                       // fora de run enquanto no preparo
+  openCodex('sandbox');
+}
+function sandboxCloseSetup(){
+  sandboxMode=false;
+  closeCodex();
+  if(!sandboxRun)showTitle();          // volta ao menu — overlay de volta
+}
+/* ---- tela de preparo (§77): operador + preset + onda inicial ---- */
+function renderSandboxSetup(){
+  cxTitle.textContent='S A N D B O X';
+  cxSub.textContent='LABORATÓRIO DE COMBATE — NADA AQUI AFETA SUA PROGRESSÃO';
+  cxTabs.style.display='none';
+  const C=CHARS[clamp(sandboxCfg.char,0,CHARS.length-1)];
+  let h='<div class="sect">1 · OPERADOR DE TESTE — TODOS LIBERADOS NO SANDBOX</div>'+
+    '<div class="sbchars">';
+  CHARS.forEach((c,i)=>{
+    h+='<div class="sbchar'+(i===sandboxCfg.char?' on':'')+'" data-sbchar="'+i+'"'+
+      ' style="'+(i===sandboxCfg.char?'border-color:'+c.color+';box-shadow:0 0 16px '+c.color+'44':'')+'">'+
+      charPortrait(c,40).replace('class="cicon" ','')+
+      '<div class="cn" style="color:'+(i===sandboxCfg.char?c.color:'')+'">'+c.nm+'</div>'+
+      '<div class="cr">'+c.role+'</div>'+
+      '<div class="cr" style="font-family:Consolas,monospace;opacity:.75">⌗ '+c.slots+' SLOTS</div></div>';
+  });
+  h+='</div>';
+  h+='<div class="sect">2 · BUILD INICIAL (OPCIONAL)</div><div class="sbopts">';
+  h+='<div class="sbbtn'+(sandboxCfg.preset===''?' on':'')+'" data-sbpreset="">VAZIA</div>';
+  for(const k of ['shieldbreak','fullshield','crit','status','dash','economy']){
+    const P=BUILD_PRESETS[k];
+    if(!P)continue;
+    h+='<div class="sbbtn'+(sandboxCfg.preset===k?' on':'')+'" data-sbpreset="'+k+'">'+P.name+'</div>';
+  }
+  h+='</div>';
+  h+='<div class="sect">3 · ONDA INICIAL</div><div class="sbopts">';
+  for(const wv of SB_WAVES)
+    h+='<div class="sbbtn'+(sandboxCfg.wave===wv?' on':'')+'" data-sbwave="'+wv+'">'+
+      (wv>=MAX_WAVE?'20 · CHEFE':String(wv).padStart(2,'0'))+'</div>';
+  h+='</div>';
+  h+='<div class="sbgo btn go" id="sb-start">INICIAR TESTE — '+C.nm+' · '+
+    (sandboxCfg.preset?BUILD_PRESETS[sandboxCfg.preset].name:'BUILD VAZIA')+
+    ' · ONDA '+(sandboxCfg.wave>=MAX_WAVE?'20 (CHEFE)':sandboxCfg.wave)+'</div>'+
+    '<div class="cfgds" style="margin-top:14px;line-height:1.9">'+
+    'O Sandbox pausa o jogo ao abrir o painel (F1), libera todas as armas, '+
+    'itens, minibosses e o chefe, e <b>não cria Echo, não registra final, '+
+    'não dá meta-moeda e não desbloqueia nada</b>. Eventos narrativos ficam '+
+    'desligados. Ao morrer: TESTE ENCERRADO.</div>';
+  cxBody.innerHTML=h;
+  cxBody.querySelectorAll('[data-sbchar]').forEach(el=>{
+    el.addEventListener('click',()=>{
+      sandboxCfg.char=parseInt(el.dataset.sbchar,10);
+      AUDIO.ui(700);renderSandboxSetup();
+    });
+    const c=CHARS[parseInt(el.dataset.sbchar,10)];
+    bindTip(el,()=>charTipHTML(c));
+  });
+  cxBody.querySelectorAll('[data-sbpreset]').forEach(el=>{
+    el.addEventListener('click',()=>{
+      sandboxCfg.preset=el.dataset.sbpreset;
+      AUDIO.ui(620);renderSandboxSetup();
+    });
+  });
+  cxBody.querySelectorAll('[data-sbwave]').forEach(el=>{
+    el.addEventListener('click',()=>{
+      sandboxCfg.wave=parseInt(el.dataset.sbwave,10);
+      AUDIO.ui(620);renderSandboxSetup();
+    });
+  });
+  const go=cxBody.querySelector('#sb-start');
+  if(go)go.addEventListener('click',ev=>{ev.stopPropagation();sandboxStart();});
+  cxFoot.textContent='ESC — VOLTAR AO MENU · O SETUP DO SANDBOX NÃO É SALVO';
+}
+/* ---- início da run de laboratório ---- */
+let _sbCharBak=0;
+/* setChar persiste no slot real — o laboratório troca de operador SEM
+   tocar no registro do save (§73) */
+function sandboxSetChar(i){
+  charSel=clamp(i,0,CHARS.length-1);
+}
+function sandboxStart(){
+  if(sandboxRun)return;
+  sandboxMode=false;
+  sandboxRun=true;
+  closeCodex();
+  /* §75: nenhum Eco real entra no laboratório — a fila do slot é preservada */
+  _sbEchoQueueBak=echoQueue;
+  echoQueue=[];
+  _sbCharBak=charSel;
+  sandboxSetChar(sandboxCfg.char);
+  hideOverlay();
+  startRun();                              // devTainted=!!DEV_MODE (§92 ok)
+  giveSandboxCredits(500);                 // crédito de teste (só sandbox)
+  if(sandboxCfg.preset&&BUILD_PRESETS[sandboxCfg.preset])
+    applyBuildPreset(sandboxCfg.preset,player);
+  if(sandboxCfg.wave>1)sandboxJumpTo(sandboxCfg.wave);
+  const chip=$('sb-chip');if(chip)chip.classList.add('on');
+  banner('SANDBOX ATIVO','LABORATÓRIO — NADA É REGISTRADO · F1 ABRE O PAINEL');
+}
+function giveSandboxCredits(n){
+  if(!sandboxRun||!player)return;
+  player.coins=clamp((player.coins||0)+n,0,999999);
+}
+/* devolve tudo ao estado real do save (fila de Ecos + operador do slot) */
+function sandboxRestoreReal(){
+  if(_sbEchoQueueBak){echoQueue=_sbEchoQueueBak;_sbEchoQueueBak=null;}
+  charSel=_sbCharBak;
+  const chip=$('sb-chip');if(chip)chip.classList.remove('on');
+  const _ob=$('ov-back');
+  if(_ob)_ob.textContent='VOLTAR AO MENU';
+}
+/* ---- fim do laboratório: restaura o estado real do save ---- */
+function sandboxExit(toMenu){
+  if(!sandboxRun&&!sandboxMode)return;
+  sandboxRun=false;sandboxMode=false;
+  sbPanelClose();
+  sandboxRestoreReal();
+  $('endwrap').classList.remove('on');
+  overlay.classList.remove('hidden');
+  if(toMenu)showTitle();else showSlotSelect();
+}
+/* encerra o teste e volta para a tela de preparo (ALTERAR BUILD) */
+function sandboxEndToSetup(){
+  sandboxRun=false;
+  sbPanelClose();
+  sandboxClearRunState();
+  sandboxRestoreReal();
+  sandboxCfg.wave=1;
+  sandboxOpenSetup();
+}
+/* limpa a arena sem tocar em progression (§84 limpar inimigos) */
+function sandboxClearEnemies(){
+  for(const e of enemies){e.dead=true;
+    spawnShards(e.x,e.y,e.color,6,4);}
+  enemies.length=0;projectiles.length=0;beacon=null;
+  if(miniBoss){miniBoss=null;clearMiniBossHUD();}
+  if(boss){boss=null;$('bosswrap').classList.remove('on');}
+}
+/* pula para uma onda arbitrória (§83) — sem records */
+function sandboxJumpTo(n){
+  if(!player)return;
+  n=clamp(n|0,1,MAX_WAVE);
+  sandboxClearEnemies();
+  wave=n;
+  waveCleared=false;waveActive=true;wavePause=2.8;
+  $('bosswrap').classList.remove('on');
+  spawnWave(n);                            // n>=20 despacha O PARADOXO
+  scheduleBeacon();                        // gated: sandbox não gera beacon
+  banner('ONDA '+String(n).padStart(2,'0'),n>=MAX_WAVE?'CHEFE FINAL':'TESTE SANDBOX');
+}
+/* ---- morte no laboratório (§89): TESTE ENCERRADO, sem Echo ---- */
+function sandboxDeath(){
+  state='fracture';fracT=0;shake=14;
+  sDie();
+  spawnParticles(player.x,player.y,'#9ff3ff',40,460,1,4);
+  spawnRing(player.x,player.y,'#7dffc4',10,240,.8);
+  ovTitle.textContent='TESTE ENCERRADO';
+  ovTitle.setAttribute('data-t','TESTE ENCERRADO');
+  ovTitle.style.fontSize='44px';ovTitle.classList.add('glitch');
+  ovSub.textContent='SANDBOX — NENHUM ECO FOI CRIADO · NADA FOI REGISTRADO';
+  ovBody.innerHTML=
+    'ONDA TESTADA <b>'+String(Math.max(1,wave)).padStart(2,'0')+'</b> · '+
+    'OPERADOR <b>'+curChar().nm+'</b> · TEMPO <b>'+fmtTime(runTime)+'</b><br>'+
+    'ABATES NESTE TESTE: <b>'+kills+'</b> — O LABORATÓRIO NÃO ALIMENTA '+
+    'RECORDES, UNLOCKS OU A MEMÓRIA DOS ECOS.';
+  ovFrac.innerHTML='<span class="good">PROGRESSÃO REAL INTACTA</span>';
+  ovEchos.textContent='';
+  ovGo.textContent='REINICIAR SANDBOX';
+  const _act=$('ov-actions');
+  if(_act)_act.classList.add('on');
+  const _ob=$('ov-back');
+  if(_ob)_ob.textContent='ALTERAR BUILD';
+  overlay.classList.remove('hidden');
+}
+/* reinicia o MESMO setup (REINICIAR SANDBOX / ENTER na morte/vitória) */
+function sandboxRestart(){
+  sandboxRun=false;
+  sbPanelClose();
+  sandboxClearRunState();
+  sandboxRestoreReal();
+  hideOverlay();
+  sandboxStart();
+}
+/* limpa entidades do teste anterior antes de reiniciar */
+function sandboxClearRunState(){
+  enemies=[];projectiles=[];xporbs=[];parts=[];ftexts=[];pickups=[];allies=[];
+  swings=[];arcs=[];beacon=null;boss=null;miniBoss=null;
+  $('bosswrap').classList.remove('on');$('endwrap').classList.remove('on');
+  echoes=[];
+}
+/* ---- vitória no laboratório (§90): TESTE CONCLUÍDO, sem final ---- */
+function sandboxVictory(){
+  state='victory';firing=false;
+  boss=null;$('bosswrap').classList.remove('on');
+  for(const e of enemies){e.dead=true;}
+  enemies.length=0;projectiles.length=0;beacon=null;
+  shake=18;aberrPeak(.8);
+  AUDIO.victory();
+  ovTitle.textContent='TESTE CONCLUÍDO';
+  ovTitle.setAttribute('data-t','TESTE CONCLUÍDO');
+  ovTitle.style.fontSize='44px';ovTitle.classList.add('glitch');
+  ovSub.textContent='O PARADOXO CAIU NO LABORATÓRIO — NENHUM FINAL FOI REGISTRADO';
+  ovBody.innerHTML=
+    'O chefe foi derrotado em ambiente de teste.<br>'+
+    '<b style="color:#7dffc4">Nenhum final, variante, epílogo ou Ponto de '+
+    'Memória foi registrado.</b><br>Sua progressão real permanece exatamente '+
+    'como estava.';
+  ovFrac.innerHTML='';
+  ovEchos.textContent='';
+  ovGo.textContent='REINICIAR SANDBOX';
+  const _act=$('ov-actions');
+  if(_act)_act.classList.add('on');
+  const _ob=$('ov-back');
+  if(_ob)_ob.textContent='ALTERAR BUILD';
+  overlay.classList.remove('hidden');
+}
+/* =====================================================================
+   PAINEL DE LABORATÓRIO (em run) — §79–§86
+   ===================================================================== */
+let sbPanelOpen=false;
+function sbPanelCanOpen(){return sandboxRun&&state==='play'&&!!player;}
+function sbPanelShow(){
+  if(sbPanelOpen||!sbPanelCanOpen())return;
+  sbPanelOpen=true;
+  releaseAllInput();
+  state='sandbox';                         // tempo congelado
+  $('sandboxp').classList.add('on');
+  sbRender();
+  AUDIO.tone(760,.1,'sine',.03,160);
+}
+function sbPanelClose(){
+  if(!sbPanelOpen)return;
+  sbPanelOpen=false;
+  $('sandboxp').classList.remove('on');
+  if(state==='sandbox')state='play';
+}
+function sbPanelToggle(){
+  if(sbPanelOpen)sbPanelClose();
+  else if(sbPanelCanOpen())sbPanelShow();
+}
+const SB_ETYPES=['chaser','shooter','tank','spawner','anomaly','swarm','orbiter',
+  'bulwark','splitter','phantom','singular'];
+function sbRender(){
+  if(!sbPanelOpen||!player)return;
+  const p=player,C=curChar();
+  let h='<div class="sgrid">';
+  /* ---- JOGADOR (§82) ---- */
+  h+='<div class="ssect"><h4>JOGADOR</h4>'+
+    '<div class="srow"><span class="k">HP</span><span class="v">'+fmtStat(Math.max(0,p.hp),0)+' / '+fmtNum(p.maxHp)+'</span></div>'+
+    '<div class="srow"><span class="k">ESCUDO</span><span class="v">'+fmtStat(p.shield,0)+' / '+fmtNum(p.shieldMax)+'</span></div>'+
+    '<div class="sbrow">'+
+    '<span class="asbtn" data-sb="fullhp">ENCHER HP</span>'+
+    (p.shieldMax>0?'<span class="asbtn" data-sb="fullsh">ENCHER ESCUDO</span>'+
+      '<span class="asbtn" data-sb="breaksh">QUEBRAR ESCUDO</span>':'')+
+    '<span class="asbtn" data-sb="clearst">LIMPAR STATUS</span>'+
+    '<span class="asbtn" data-sb="resetcd">RESETAR COOLDOWNS</span>'+
+    '</div></div>';
+  /* ---- ARSENAL (§79/§78) ---- */
+  h+='<div class="ssect span-2"><h4>ARSENAL · '+p.owned.length+'/'+p.maxSlots+
+    ' SLOTS (IDENTIDADE DE '+C.nm+')</h4>';
+  for(let s=0;s<p.maxSlots;s++){
+    const wi=p.owned[s];
+    if(wi==null){
+      h+='<div class="aslot empty"><span class="anum">'+(s+1)+'</span>'+
+        '<span class="anm">— VAZIO —</span><span class="abtns">'+
+        '<span class="asbtn" data-sbadd="'+s+'">+ ADICIONAR</span></span></div>';
+      continue;
+    }
+    const d=WEAPONS[wi];
+    h+='<div class="aslot'+(p.wi===wi?' act':'')+(sbSwapA===s?' sel':'')+
+      '"'+(sbSwapA!==-1?' data-sbslot="'+s+'" style="cursor:pointer"':'')+'>'+
+      '<span class="anum">'+(s+1)+'</span>'+
+      '<span class="anm" style="color:'+d.color+'">'+d.nm+'</span>'+
+      '<span class="ast">'+(sbSwapA===s?'FONTE':(p.wi===wi?'◄ ATIVA':d.tag))+'</span>'+
+      '<span class="abtns">'+
+      (sbSwapA>=0?'':
+        (p.wi===wi?'':'<span class="asbtn" data-sbeq="'+s+'">EQUIPAR</span>')+
+        '<span class="asbtn" data-sbrep="'+s+'">SUBSTITUIR</span>'+
+        (p.owned.length>1?'<span class="asbtn" data-sbrm="'+s+'">REMOVER</span>':''))+
+      '</span></div>';
+  }
+  h+='<div class="sbrow" style="margin-top:8px">'+
+    '<span class="asbtn" data-sb="swapmode">'+(sbSwapA!==-1?'CANCELAR TROCA':'TROCAR ARMAS DE SLOT (SWAP)')+'</span>'+
+    '<span class="asbtn" data-sb="clearars">LIMPAR ARSENAL</span>'+
+    '</div>'+
+    (sbSwapA!==-1?'<div class="ashint">'+(sbSwapA>=0?
+      'FONTE: SLOT '+(sbSwapA+1)+' — CLIQUE NO SLOT DE DESTINO PARA TROCAR':
+      'CLIQUE NA ARMA DE ORIGEM')+'</div>':'');
+  if(sbPick!=null){
+    h+='<div class="sbpick"><div class="sect" style="margin:10px 0 6px">ESCOLHA A ARMA '+
+      (sbPick==='add'?'PARA O PRIMEIRO SLOT LIVRE':'PARA SUBSTITUIR')+'</div><div class="sbopts">';
+    WEAPONS.forEach((w,i)=>{
+      h+='<span class="sbbtn" data-sbw="'+i+'" style="border-color:'+w.color+'55;color:'+w.color+'">'+w.nm+'</span>';
+    });
+    h+='</div><div class="sbrow"><span class="asbtn" data-sb="cancelpick">CANCELAR</span></div></div>';
+  }
+  h+='</div>';
+  /* ---- ITENS (§80/§81) ---- */
+  h+='<div class="ssect span-2"><h4>ITENS · '+p.items.length+' INSTALADOS</h4><div class="sbrow">';
+  for(const id of p.items){
+    const it=itemById(id);if(!it)continue;
+    h+='<span class="bpill" data-sbitip="'+id+'" style="color:'+it.color+'">'+
+      (it.transformer?'◆ ':'')+it.nm+' <b class="bx" data-sbrmit="'+id+'" title="remover">✕</b></span>';
+  }
+  if(!p.items.length)h+='<span class="bpill" style="opacity:.5;cursor:default">BUILD VAZIA</span>';
+  h+='</div><div class="sbrow" style="margin-top:6px">';
+  for(const k of ['shieldbreak','fullshield','crit','status','dash','economy']){
+    const P=BUILD_PRESETS[k];if(!P)continue;
+    h+='<span class="asbtn" data-sbpreset="'+k+'">PRESET '+P.name+'</span>';
+  }
+  h+='<span class="asbtn" data-sb="clearbuild">LIMPAR BUILD</span>'+
+     '<span class="asbtn" data-sb="pickitem">+ ADICIONAR ITEM</span></div>';
+  if(sbItemPick){
+    h+='<div class="sbpick"><div class="sect" style="margin:10px 0 6px">ADICIONAR MÓDULO — CATÁLOGO COMPLETO</div><div class="sbopts">';
+    for(const it of ITEMS){
+      const owned=p.items.indexOf(it.id)>=0;
+      h+='<span class="sbbtn'+(owned?' dis':'')+'" data-sbitem="'+it.id+'" style="border-color:'+it.color+'55;color:'+it.color+'">'+
+        (it.transformer?'◆ ':'')+it.nm+'</span>';
+    }
+    h+='</div><div class="sbrow"><span class="asbtn" data-sb="cancelpick">CANCELAR</span></div></div>';
+  }
+  h+='</div>';
+  /* ---- ONDA (§83) ---- */
+  h+='<div class="ssect"><h4>ONDA · ATUAL '+wave+'</h4><div class="sbrow">';
+  for(const wv of SB_WAVES)
+    h+='<span class="asbtn'+(wave===wv?' sbcur':'')+'" data-sbwave="'+wv+'">'+(wv>=MAX_WAVE?'CHEFE':wv)+'</span>';
+  h+='<span class="asbtn" data-sbwave="'+Math.min(MAX_WAVE,wave+1)+'">+1</span>';
+  h+='<span class="asbtn" data-sbwave="'+Math.max(1,wave-1)+'">−1</span>';
+  h+='</div></div>';
+  /* ---- INIMIGOS (§84) / MINIBOSS (§85) / CHEFE (§86) ---- */
+  h+='<div class="ssect"><h4>INIMIGOS</h4><div class="sbrow">';
+  for(const t of SB_ETYPES)h+='<span class="asbtn" data-sbspawn="'+t+'">'+t.toUpperCase()+'</span>';
+  h+='<span class="asbtn" data-sb="group">GRUPO ×6</span>'+
+     '<span class="asbtn" data-sb="clear" style="border-color:rgba(255,92,122,.5);color:#ffb3c2">LIMPAR ARENA</span></div></div>';
+  h+='<div class="ssect"><h4>MINIBOSSES</h4><div class="sbrow">';
+  MINIBOSS.forEach(mb=>{h+='<span class="asbtn" data-sbmini="'+mb.id+'">'+mb.nm+'</span>';});
+  h+='</div></div>';
+  h+='<div class="ssect"><h4>CHEFE</h4><div class="sbrow">'+
+    (boss?'<span class="bpill" style="cursor:default;color:#ff9df7">O PARADOXO EM ARENA</span>':
+      '<span class="asbtn" data-sb="boss">SPAWNAR O PARADOXO</span>')+
+    '</div></div>';
+  h+='</div>';
+  h+='<div class="sbrow" style="margin-top:12px">'+
+    '<span class="asbtn" data-sb="end">ENCERRAR TESTE</span>'+
+    '<span class="asbtn" data-sb="menu">SAIR PARA O MENU</span>'+
+    '<span class="cfgds" style="flex:1;text-align:right">SANDBOX NÃO REGISTRA NADA — PROGRESSÃO REAL INTACTA</span></div>';
+  $('sb-body').innerHTML=h;
+  sbBind();
+}
+let sbSwapA=-1,sbPick=null,sbItemPick=false;
+function sbSpawnPos(){
+  const a=rand(0,TAU),R=220;
+  return {x:clamp(player.x+Math.cos(a)*R,40,ARENA.w-40),
+          y:clamp(player.y+Math.sin(a)*R,40,ARENA.h-40)};
+}
+function sbBind(){
+  const body=$('sb-body');
+  body.querySelectorAll('[data-sb]').forEach(el=>{
+    el.addEventListener('click',ev=>{ev.stopPropagation();sbAction(el.dataset.sb);});
+  });
+  /* fluxo de TROCA do painel: origem → destino (§79) */
+  body.querySelectorAll('[data-sbslot]').forEach(el=>{
+    el.addEventListener('click',ev=>{
+      ev.stopPropagation();
+      const s=parseInt(el.dataset.sbslot,10);
+      if(sbSwapA===-2){sbSwapA=s;}
+      else if(sbSwapA>=0&&s!==sbSwapA){
+        swapWeaponSlots(sbSwapA,s);
+        toast('SLOTS '+(sbSwapA+1)+' ⇄ '+(s+1)+' TROCADOS');
+        sbSwapA=-1;
+      }else sbSwapA=-1;
+      sbRender();
+    });
+  });
+  body.querySelectorAll('[data-sbeq]').forEach(el=>{
+    el.addEventListener('click',ev=>{ev.stopPropagation();
+      setWeaponSlot(parseInt(el.dataset.sbeq,10));sbRender();});
+  });
+  body.querySelectorAll('[data-sbrm]').forEach(el=>{
+    el.addEventListener('click',ev=>{ev.stopPropagation();
+      sandboxRemoveSlot(parseInt(el.dataset.sbrm,10));});
+  });
+  body.querySelectorAll('[data-sbadd]').forEach(el=>{
+    el.addEventListener('click',ev=>{ev.stopPropagation();
+      sbPick='add';sbRender();});
+  });
+  body.querySelectorAll('[data-sbrep]').forEach(el=>{
+    el.addEventListener('click',ev=>{ev.stopPropagation();
+      sbPick=parseInt(el.dataset.sbrep,10);sbRender();});
+  });
+  body.querySelectorAll('[data-sbw]').forEach(el=>{
+    el.addEventListener('click',ev=>{ev.stopPropagation();
+      const wi=parseInt(el.dataset.sbw,10);
+      if(sbPick==='add'){
+        const free=player.owned.length<player.maxSlots;
+        grantWeapon(wi,false,free?null:sbPick);   // slot cheio → substitui
+      }else if(typeof sbPick==='number'){
+        grantWeapon(wi,false,sbPick);
+      }
+      sbPick=null;AUDIO.ui(820);toast('SANDBOX: '+WEAPONS[wi].nm+' NO ARSENAL');
+      buildWeaponHUD();sbRender();
+    });
+    const w=WEAPONS[parseInt(el.dataset.sbw,10)];
+    if(w)bindTip(el,()=>weaponTipHTML(w));
+  });
+  body.querySelectorAll('[data-sbpreset]').forEach(el=>{
+    el.addEventListener('click',ev=>{ev.stopPropagation();
+      const r=applyBuildPreset(el.dataset.sbpreset,player);
+      toast(r?('PRESET '+r.name+' APLICADO ('+r.count+' MÓDULOS)'):'PRESET INDISPONÍVEL');
+      AUDIO.levelUp();sbRender();
+    });
+  });
+  body.querySelectorAll('[data-sbrmit]').forEach(el=>{
+    el.addEventListener('click',ev=>{ev.stopPropagation();
+      removeItemById(player,el.dataset.sbrmit,false);   // §80: sistema real
+      toast('MÓDULO REMOVIDO');AUDIO.ui(300);sbRender();
+    });
+  });
+  body.querySelectorAll('[data-sbitem]').forEach(el=>{
+    el.addEventListener('click',ev=>{ev.stopPropagation();
+      const it=itemById(el.dataset.sbitem);
+      if(it&&grantItemInternal(player,it,true)){
+        toast('MÓDULO ADICIONADO: '+it.nm);AUDIO.levelUp();
+      }
+      sbItemPick=false;sbRender();
+    });
+    const it=itemById(el.dataset.sbitem);
+    if(it)bindTip(el,()=>itemTipHTML(it));
+  });
+  body.querySelectorAll('[data-sbitip]').forEach(el=>{
+    const it=itemById(el.dataset.sbitip);
+    if(it)bindTip(el,()=>itemTipHTML(it));
+  });
+  body.querySelectorAll('[data-sbwave]').forEach(el=>{
+    el.addEventListener('click',ev=>{ev.stopPropagation();
+      sandboxJumpTo(parseInt(el.dataset.sbwave,10));sbRender();});
+  });
+  body.querySelectorAll('[data-sbspawn]').forEach(el=>{
+    el.addEventListener('click',ev=>{ev.stopPropagation();
+      const t=el.dataset.sbspawn,pos=sbSpawnPos();
+      spawnEnemy(t,pos.x,pos.y,wave);
+      AUDIO.ui(500);sbRender();});
+  });
+  body.querySelectorAll('[data-sbmini]').forEach(el=>{
+    el.addEventListener('click',ev=>{ev.stopPropagation();
+      const def=MINIBOSS.find(m=>m.id===el.dataset.sbmini);
+      if(def){
+        if(miniBoss)sandboxClearMini();
+        spawnMiniBoss(Math.max(5,wave),def);
+        toast('MINIBOSS: '+def.nm);AUDIO.ui(420);
+      }
+      sbRender();});
+  });
+}
+function sandboxClearMini(){
+  if(!miniBoss)return;
+  const i=enemies.indexOf(miniBoss);
+  if(i>=0){enemies[i].dead=true;enemies.splice(i,1);}
+  miniBoss=null;clearMiniBossHUD();
+}
+function sandboxRemoveSlot(slot){
+  if(!player||slot<0||slot>=player.owned.length||player.owned.length<=1)return;
+  const wi=player.owned[slot],d=WEAPONS[wi];
+  player.owned.splice(slot,1);
+  if(player.wi===wi)player.wi=player.owned[0];
+  if(player.lastWi===wi)player.lastWi=player.wi;
+  buildWeaponHUD();
+  toast('SANDBOX: '+d.nm+' REMOVIDA');
+  AUDIO.echoShatter();sbRender();
+}
+function sbAction(a){
+  const p=player;if(!p)return;
+  switch(a){
+    case 'fullhp':
+      p.hp=p.maxHp;spawnRing(p.x,p.y,'#7dffc4',8,90,.5);
+      toast('SANDBOX: HP CHEIO');AUDIO.levelUp();break;
+    case 'fullsh':
+      p.shield=p.shieldMax;p.shieldDelayT=0;
+      toast('SANDBOX: ESCUDO CHEIO');AUDIO.levelUp();break;
+    case 'breaksh':
+      if(p.shieldMax<=0)break;
+      p.shield=0;p.shieldDelayT=p.shieldDelay;
+      shieldFx('break');
+      floatText(p.x,p.y-30,'ESCUDO ROMPIDO','#8ff6ff');
+      spawnRing(p.x,p.y,'#8ff6ff',8,80,.45);
+      toast('SANDBOX: ESCUDO QUEBRADO');AUDIO.tone(220,.3,'sawtooth',.04,-100);break;
+    case 'clearst':
+      for(const e of enemies)if(e.st)e.st=null;
+      p.anomalyT=0;p.curseT=0;smRemoveId(p,'status.oracle_curse.damage');
+      toast('SANDBOX: STATUS LIMPOS');AUDIO.ui(520);break;
+    case 'resetcd':
+      p.dashCd=0;p.spCd=0;p.fireTimer=0;
+      if(p.itemState)for(const id in p.itemState)p.itemState[id].cd=0;
+      toast('SANDBOX: COOLDOWNS ZERADOS');AUDIO.ui(760);break;
+    case 'swapmode':
+      sbSwapA=(sbSwapA===-1)?-2:-1;  // -2 armado aguardando origem
+      break;
+    case 'clearars':{
+      const C=curChar(),guns=charGunIdx(C.guns);
+      p.owned=guns.slice();p.wi=guns[0];p.lastWi=guns[0];
+      buildWeaponHUD();toast('SANDBOX: ARSENAL RESTAURADO AO INICIAL');break;
+    }
+    case 'clearbuild':{
+      resetBuildKeepRunBasics(p);
+      toast('SANDBOX: BUILD LIMPA');break;
+    }
+    case 'pickitem':
+      sbItemPick=!sbItemPick;break;
+    case 'cancelpick':
+      sbPick=null;sbItemPick=false;break;
+    case 'group':{
+      for(let i=0;i<6;i++){
+        const pos=sbSpawnPos();
+        spawnEnemy(SB_ETYPES[randi(0,4)],pos.x,pos.y,wave);
+      }
+      toast('SANDBOX: GRUPO GERADO');break;
+    }
+    case 'clear':
+      sandboxClearEnemies();toast('SANDBOX: ARENA LIMPA');break;
+    case 'boss':
+      if(!boss){spawnBoss();toast('O PARADOXO ENTROU NA ARENA (TESTE)');}
+      break;
+    case 'end':
+      sandboxEndToSetup();              // encerra e volta ao preparo
+      return;
+    case 'menu':
+      sbPanelClose();
+      sandboxExit(true);                // restaura save real → título
+      return;
+  }
+  buildWeaponHUD();
+  sbRender();
+}
+
 /* ---------------- persistência dos Ecos ----------------
    PR 7.5: cada SAVE SLOT possui sua própria fila de Ecos.
    saveEchoes grava a fila no slot ativo (echoSave.v3); loadEchoes lê
@@ -2401,6 +3041,11 @@ function sheetRender(force){
 function saveEchoes(){
   /* PROTEÇÃO DEV: uma run tocada pelo Modo Desenvolvedor jamais é gravada
      como Echo legítimo — o arquivo permanente fica exatamente como estava. */
+  /* PROTEÇÃO SANDBOX (PR 11.5 §73): o laboratório não cria Echo. */
+  if(sandboxRun){
+    console.warn('[ECHO/SANDBOX] saveEchoes() ignorado: run de laboratório');
+    return false;
+  }
   if(devTainted){
     console.warn('[ECHO/DEV] saveEchoes() ignorado: run marcada como debug');
     return false;
@@ -2633,12 +3278,16 @@ function loadProg(){
 }
 let _progDirty=false;
 function saveProg(){
+  if(sandboxRun)return false;      // PROTEÇÃO SANDBOX (§73): nada registra
   if(devTainted)return false;      // PROTEÇÃO DEV: progressão permanente intocada
   if(!smEnsureSlot())return false;
   try{smRoot.slots[curSlot].prog=JSON.parse(JSON.stringify(prog));smCommit();}catch(e){}
   return true;
 }
 function bumpProg(k,n){
+  /* PROTEÇÃO SANDBOX (§73): spawns/abates/vitórias do laboratório não
+     alimentam records nem condições de desbloqueio. */
+  if(sandboxRun)return;
   prog[k]=(prog[k]||0)+(n||1);_progDirty=true;
 }
 /* --------- CONDIÇÕES DE DESBLOQUEIO --------- */
@@ -2729,6 +3378,7 @@ function unlockKeyFor(t,id){
   return null;
 }
 function isWeaponUnlocked(id){
+  if(sandboxActive())return true;  // §76: Sandbox libera todo o conteúdo
   if(BASE_WEAPONS.indexOf(id)>=0)return true;
   const k=unlockKeyFor('w',id);
   if(!k)return true;
@@ -2740,18 +3390,21 @@ const BASE_ITEMS=['nucleo','placa','iman','coracao','lente','olho',
 const BASE_UPGRADES=['crit','critd','rate','hp','range','magnet',
   'dmg','dash','aoe','range2'];
 function isItemUnlocked(id){
+  if(sandboxActive())return true;  // §76: Sandbox libera todo o conteúdo
   if(BASE_ITEMS.indexOf(id)>=0)return true;
   const k=unlockKeyFor('i',id);
   if(!k)return true;
   return prog.seen.indexOf(k)>=0||UNLOCKS[k].need();
 }
 function isUpgUnlocked(id){
+  if(sandboxActive())return true;  // §76: Sandbox libera todo o conteúdo
   if(BASE_UPGRADES.indexOf(id)>=0)return true;
   const k=unlockKeyFor('u',id);
   if(!k)return true;
   return prog.seen.indexOf(k)>=0||UNLOCKS[k].need();
 }
 function isCharUnlocked(id){
+  if(sandboxActive())return true;  // §76: Sandbox libera todo o conteúdo
   if(BASE_CHARS.indexOf(id)>=0)return true;
   const k=unlockKeyFor('c',id);
   if(!k)return true;
@@ -2760,6 +3413,7 @@ function isCharUnlocked(id){
 /* verifica novos desbloqueios e notifica */
 let unlockQueue=[];
 function checkUnlocks(silent){
+  if(sandboxRun)return false;      // PROTEÇÃO SANDBOX (§73): nada desbloqueia
   let any=false;
   for(const k in UNLOCKS){
     const u=UNLOCKS[k];
@@ -3759,7 +4413,7 @@ function updateHUD(force){
   coinsEl.textContent='◈ '+player.coins;
   coinsEl.textContent='◈ '+fmtCompact(player.coins);
   /* PR 11.5: HUD mostra só o PERFIL dominante — percentuais de moralidade
-     e tiers ficam na Ficha de Combate (TAB) e na pausa (§15). */
+     e tiers ficam no Registro de Combate (TAB) e na pausa (§15). */
   const _dom=moralDom();
   const domEl=$('moral-dom'),tiersEl=$('moral-tiers');
   if(domEl){
@@ -5637,8 +6291,11 @@ function removeItemStatMods(p,itemId){
   return before-p.sm.length;
 }
 /* remove um item de uma build pelo caminho de DEV (stat pipeline + moral +
-   estado; efeitos diretos de HP/regen são best-effort). */
-function removeItemById(p,itemId){
+   estado; efeitos diretos de HP/regen são best-effort).
+   PR 11.5: `taint=false` permite ao Sandbox remover módulos sem marcar a
+   run como debug — o isolamento do laboratório é da responsabilidade dele. */
+function removeItemById(p,itemId,taint){
+  if(taint===undefined)taint=true;
   if(!p||!p.items)return false;
   if(p.items.indexOf(itemId)<0)return false;
   p.items=p.items.filter(id=>id!==itemId);
@@ -5647,7 +6304,7 @@ function removeItemById(p,itemId){
   applyMoralTuning(p);
   invalidateItemHooks();p.itemVer=(p.itemVer||0)+1;
   resetPerfectShield(p);
-  if(typeof devTaint==='function')try{devTaint();}catch(e){}
+  if(taint&&typeof devTaint==='function')try{devTaint();}catch(e){}
   return true;
 }
 function grantItemInternal(p,it,silent){
@@ -12985,6 +13642,7 @@ function loadMeta(){
   }catch(e){}
 }
 function saveMeta(){
+  if(sandboxRun)return false;      // PROTEÇÃO SANDBOX (§73): meta intocada
   if(devTainted)return false;      // PROTEÇÃO DEV: meta-progresso intocado
   if(!smEnsureSlot())return false;
   try{smRoot.slots[curSlot].meta=JSON.parse(JSON.stringify(meta));smCommit();}catch(e){}
@@ -13192,6 +13850,8 @@ function resolveEnding(){
 
 function onVictory(){
   if(state==='victory')return;
+  /* PR 11.5 §90: vitória no laboratório NÃO registra final/variante/memória. */
+  if(sandboxRun){sandboxVictory();return;}
   state='victory';firing=false;
   echoReact('bossDeath');
   boss=null;$('bosswrap').classList.remove('on');
@@ -13793,6 +14453,8 @@ function smBuildCheckpoint(reason,waveOverride){
   };
 }
 function captureCheckpoint(reason,waveOverride){
+  /* PROTEÇÃO SANDBOX (§91): laboratório não cria Continue Run. */
+  if(sandboxRun)return false;
   /* PROTEÇÃO DEV: run depurada nunca gera checkpoint legítimo */
   if(devTainted)return false;
   if(!player)return false;
@@ -13989,6 +14651,8 @@ function resumeRun(){
 /* ---------------- ciclo de morte ---------------- */
 function onPlayerDeath(){
   if(state!=='play')return;
+  /* PR 11.5 §89: morte no laboratório NÃO cria Echo e NÃO grava nada. */
+  if(sandboxRun){sandboxDeath();return;}
   // ---- PROGRESSÃO: fecha a run ----
   bumpProg('runs');
   bumpProg('waves',Math.max(0,wave-1));
@@ -14066,6 +14730,13 @@ function tickFracture(dt){
   fracT+=dt;
 }
 function beginNextRun(){
+  /* PR 11.5 §89/§90: no laboratório, "NOVA RUN" reinicia o SANDBOX —
+     nunca uma run real. */
+  if(sandboxRun){
+    if(state==='fracture'||state==='victory')sandboxRestart();
+    return;
+  }
+  if(sandboxMode)return;               // preparo aberto: nenhuma run real
   /* "NOVA RUN" da tela de morte: decisão explícita. Mantém o mesmo slot —
      meta, Ecos, unlocks e Codex continuam sendo os do save atual. */
   if(state!=='fracture')return;
@@ -15555,7 +16226,8 @@ function loop(now){
   // CONGELAMENTO ABSOLUTO: com qualquer modal aberto (evento/loja/vitória/
   // ficha TAB), nada no mundo avança — inimigos, tiros e timers suspendem.
   const frozen=(state==='event'||state==='shop'||state==='victory'||
-                state==='title'||state==='paused'||state==='sheet');
+                state==='title'||state==='paused'||state==='sheet'||
+                state==='sandbox');
   if(frozen)freezeT+=dt;                    // só alimenta o efeito visual de tempo parado
 
   if(state==='play'){
@@ -15582,12 +16254,14 @@ function loop(now){
         $('bossfill').style.width=clamp(boss.hp/boss.maxHp*100,0,100)+'%';
       }else if(miniBoss&&!miniBoss.dead)miniBossHUD();
       // agendamento e proximidade do evento de decisão (não durante o chefe)
-      if(!beacon&&wave>0&&wave<MAX_WAVE&&!boss&&enemies.length>0){
+      // PR 11.5 §88: sem beacon narrativo no laboratório
+      if(!beacon&&wave>0&&wave<MAX_WAVE&&!boss&&enemies.length>0&&!sandboxRun){
         evTimer-=dt;
         if(evTimer<=0)spawnBeacon();
       }
-      /* PR 10.5: acontecimentos de ARENA e MICROEVENTOS (sem parar a run) */
-      if(!boss&&state==='play'){
+      /* PR 10.5: acontecimentos de ARENA e MICROEVENTOS (sem parar a run)
+         PR 11.5 §88: desligados no Sandbox (laboratório de combate/build) */
+      if(!boss&&state==='play'&&!sandboxRun){
         if(_aeInterfT>0)_aeInterfT=Math.max(0,_aeInterfT-dt);
         tickArenaEvent(dt);
         tickMicroEvents(dt);
@@ -15660,7 +16334,7 @@ function loop(now){
   render();
   hudAcc+=dt;
   updateHUD();
-  /* PR 11.5 §108: a ficha só re-renderiza quando aberta e sob demanda
+  /* PR 11.5 §108: o registro só re-renderiza quando aberta e sob demanda
      (assinatura de estado) — custo fechado é zero, aberto é leve. */
   if(sheetOpen){
     _sheetAcc+=dt;
@@ -15813,6 +16487,8 @@ function openCodex(mode){
     renderCxTabs();
   }else if(mode==='organizer'){
     renderOrganizer();
+  }else if(mode==='sandbox'){
+    renderSandboxSetup();                 // PR 11.5: preparo do laboratório
   }else{
     cxTitle.textContent='C O N F I G U R A Ç Õ E S';
     cxSub.textContent='AJUSTES DE ÁUDIO, VÍDEO E DADOS PERSISTENTES';
@@ -15825,6 +16501,7 @@ function openCodex(mode){
   AUDIO.ui(680);
 }
 function closeCodex(){
+  if(codexMode==='sandbox'&&sandboxMode&&!sandboxRun)sandboxMode=false;
   codexEl.classList.remove('on');tipHide();AUDIO.ui(360);
   clearTimeout(_quitTimer);_quitArm=0;      // desarma a confirmação de saída
   // volta o rótulo do rodapé conforme a origem
@@ -16344,8 +17021,8 @@ function renderConfig(){
     cfg.flash>=1?'NORMAL':'REDUCED',cfg.flash>=1?'':'off',
     ()=>{cfg.flash=cfg.flash>=1?.55:1;saveCfg();}));
   /* PR 11.5 §26: TAB em HOLD ou TOGGLE */
-  cxBody.appendChild(cfgRow('MODO DO TAB (FICHA)',
-    'HOLD: a Ficha de Combate fica aberta enquanto TAB é segurado. TOGGLE: aperte uma vez para abrir e outra para fechar.',
+  cxBody.appendChild(cfgRow('MODO DO TAB (REGISTRO)',
+    'HOLD: o Registro de Combate fica aberta enquanto TAB é segurado. TOGGLE: aperte uma vez para abrir e outra para fechar.',
     (cfg.tabMode==='toggle')?'TOGGLE':'HOLD','',
     ()=>{cfg.tabMode=(cfg.tabMode==='toggle')?'hold':'toggle';saveCfg();}));
   cxBody.appendChild(cfgRow('DISPARO AUTOMÁTICO',
@@ -16737,7 +17414,7 @@ function showTitle(){
     '<span class="k">ESC</span> PAUSA · <span class="k">M</span> ÁUDIO<br>'+
     '<span class="k">Q</span> CICLAR ARMA · <span class="k">X</span> ARMA ANTERIOR · '+
     '<span class="k">1</span>–<span class="k">5</span> SLOTS · <span class="k">E</span> ESPECIAL<br>'+
-    '<span class="k">TAB</span> FICHA DE COMBATE (SEGURE) — STATS, BUILD E ARSENAL DA RUN<br>'+
+    '<span class="k">TAB</span> REGISTRO DE COMBATE (SEGURE) — STATS, BUILD E ARSENAL DA RUN<br>'+
     'COMEÇA COM <b>RIFLE DE PLASMA</b> + <b>LÂMINA DE ARCO</b> — '+
     'ESCOPETA, ORBE E SINGULARIDADE SÃO <b>COMPRADOS NA LOJA</b><br>'+
     'ACERTAR O MESMO ALVO QUE UM ECHO EM &lt;0.5s DETONA <b>RESSONÂNCIA</b><br>'+
@@ -16947,6 +17624,10 @@ $('ov-arsenal').addEventListener('click',e=>{
 $('ov-config').addEventListener('click',e=>{
   e.stopPropagation();initAudio();openCodex('config');
 });
+/* PR 11.5 §71: SANDBOX no menu principal */
+$('ov-sandbox').addEventListener('click',e=>{
+  e.stopPropagation();initAudio();sandboxOpenSetup();
+});
 /* ---- PR 7.5: botão "VOLTAR AO MENU" da tela de morte ---- */
 $('ov-back').addEventListener('click',e=>{
   e.stopPropagation();initAudio();AUDIO.ui(440);exitToSlotMenuFromDeath();
@@ -17044,6 +17725,8 @@ document.getElementById('p-mainmenu').addEventListener('click',backToMainMenu);
 /* ---- morte → "VOLTAR AO MENU": retorna ao menu do save atual ---- */
 function exitToSlotMenuFromDeath(){
   if(state!=='fracture')return;
+  /* sandbox (§89): "ALTERAR BUILD" volta ao preparo do laboratório */
+  if(sandboxRun){sandboxEndToSetup();return;}
   clearRunEntities();
   state='slotMenu';
   showSlotMenu();
