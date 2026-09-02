@@ -25,6 +25,7 @@ let src=m[1];
 src+=';globalThis.__t={'+
   'CHARS,WEAPONS,ITEMS,MAX_WAVE,SM_STATS,SM_ORDER,SM_KEY,'+
   'makePlayer,smRefresh,smGet,smAdd,calcDamageMul,'+
+  'smBuildCheckpoint,itemById,grantItemInternal,itemStateSet,itemStateGet,applyBuildPreset,'+
   'startRun,resumeRun,resetRunWorld,onPlayerDeath,tickFracture,beginNextRun,'+
   'onVictory,spawnWave,'+
   'smLoadRoot,smBoot,smMigrateLegacy,activateSlot,clearActiveRun,'+
@@ -732,6 +733,39 @@ ok('Vitória → VOLTAR AO MENU: menu do save sem run fantasma',()=>{
   U.victoryToMenu();
   assert.strictEqual(U.getState(),'slotMenu');
   assert(!U.hasActiveRun());
+});
+
+ok('PR11: Continue restaura itemState, itens e rebuild (sem duplicar mods)',()=>{
+  const U=bootGame({});
+  freshRun(U);
+  const p=U.getPlayer();
+  U.grantItemInternal(p,U.itemById('fs_prisma'),true);
+  U.itemStateSet(p,'fs_prisma','critLock',1);
+  U.captureCheckpoint('pr11',1);
+  const cpr=U.getActiveRun();
+  assert(cpr&&cpr.p&&cpr.p.itemState&&cpr.p.itemState.fs_prisma.critLock===1,
+    'checkpoint serializa itemState');
+  U.resumeRun();
+  const q=U.getPlayer();
+  assert(q.items.includes('fs_prisma'),'item ID restaurado');
+  assert.strictEqual(U.itemStateGet(q,'fs_prisma','critLock',0),1,'itemState restaurado');
+  const stacks=q.sm.filter(x=>x.id==='item.fs_prisma.regen').length;
+  assert.strictEqual(stacks,1,'mods não duplicam no resume');
+});
+
+ok('PR11: save antigo (sem itemState) cai em fallback {} sem quebrar',()=>{
+  const U=bootGame({});
+  freshRun(U);
+  const p=U.getPlayer();
+  p.items.push('placa');
+  U.itemById('placa').apply(p);
+  U.captureCheckpoint('legacy',1);
+  const cp=U.getActiveRun();
+  cp.p.itemState=undefined;              // simula save anterior ao PR 11
+  U.resumeRun();
+  const q=U.getPlayer();
+  assert(q.itemState&&typeof q.itemState==='object','fallback vira objeto');
+  assert(q.items.includes('placa'),'itens legados continuam');
 });
 
 console.log('\n---------------------------------------------');
