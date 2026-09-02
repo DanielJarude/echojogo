@@ -4619,8 +4619,10 @@ const ITEMS=[
   apply:p=>{smMul(p,'pickupR','module.iman.pickup','ÍMÃ ×2.2 RAIO COLETA',2.2);
     smMul(p,'coinMul','module.iman.coin','ÍMÃ +30% MOEDAS',1.3);
     smMul(p,'speed','module.iman.speed','ÍMÃ −8% VELOCIDADE',.92);}},
- {id:'placa',nm:'PLACA ABLATIVA',desc:'+55 VIDA MÁXIMA · −12% VELOCIDADE',price:30,color:'#8ff6ff',
-  apply:p=>{p.maxHp+=55;p.hp+=55;smMul(p,'speed','module.placa.speed','PLACA −12% VELOCIDADE',.88);}},
+ {id:'placa',nm:'PLACA ABLATIVA',desc:'+55 VIDA MÁXIMA · +15% ESCUDO MÁX · −12% VELOCIDADE · −10% REGEN ESCUDO',price:30,color:'#8ff6ff',
+  apply:p=>{p.maxHp+=55;p.hp+=55;smMul(p,'speed','module.placa.speed','PLACA −12% VELOCIDADE',.88);
+    smMul(p,'shieldMax','module.placa.shieldMax','PLACA +15% ESCUDO MÁX',1.15);
+    smMul(p,'shieldRegen','module.placa.regen','PLACA −10% REGEN ESCUDO',.90);}},
  {id:'olho',nm:'OLHO DO PREDADOR',desc:'+22% CRÍTICO · +40% DANO CRÍTICO · −10% DANO BASE',price:35,color:'#ffd166',
   apply:p=>{smFlat(p,'crit','module.olho.crit','OLHO +22% CRÍTICO',.22);
     smFlat(p,'critMul','module.olho.critd','OLHO +40% DANO CRÍTICO',.40);
