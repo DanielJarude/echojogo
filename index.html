@@ -5417,13 +5417,10 @@ function spawnBeacon(){
   if(evCount===0)kind='survivor';
   else if(evCount===1)kind='merchant';
   else{
-    /* continuação de chain explicitamente projetada como imediata pode
-       furar a janela global (nenhuma chain usa hoje; suporte declarado) */
-    const imm=evQueue.some(id=>{
-      const d=RUN_EVENT_BY_ID[id];return !!d&&!!d.chainImmediate;});
-    if(!imm&&!evDecisionReady()){scheduleBeacon();return;}
-    /* PR 10.5: seleção via Event Director (memória + anti-repetição +
-       cadência). null = fora da janela → reagenda sem gastar o evento. */
+    /* PR 10.5/10.5.2: toda a cadência vive dentro do pickRunEvent —
+       null = mesma wave/janela fechada → apenas reagenda, sem gastar o
+       evento. Continuações de chain (projetadas) e chainImmediate têm
+       suas exceções tratadas dentro do seletor. */
     const def=pickRunEvent();
     if(!def){scheduleBeacon();return;}
     kind=def.kind;
@@ -6269,22 +6266,34 @@ const EV_MEM_DL_MAX=8;          // consequências atrasadas agendadas
    Eventos de decisão são MOMENTOS IMPORTANTES, não ruído de fundo.
    Três réguas, todas em ONDAS (a régua antiga era em segundos e deixava
    1–3 beacons por wave — 4 decisões nas waves 4–6 em playtest):
-   · EV_DECISION_GAP — depois de uma decisão, ~2 waves completas de
-     respiro: decisão na wave N → próxima só na N+3 (4→5→6→7);
    · MESMA WAVE — nunca duas decisões independentes na mesma wave
      (exceção explícita: continuação de chain marcada chainImmediate);
-   · EV_CD_WAVES — o MESMO evento não repete por N waves (cooldown por
-     ID em ondas; o antigo cd em aparições vazava sob spam de beacons:
-     era isso que deixou o ESPELHO FRATURADO voltar na wave seguinte).
-   Microeventos, arena e transmissões NÃO passam por essas réguas —
-   eles preenchem os espaços entre decisões (alternância). */
-const EV_DECISION_GAP=3;
+   · EV_DECISION_GAP — intervalo GARANTIDO entre decisões. 10.5.1 usava 3
+     (conservador demais: 6 decisões/run). 10.5.2 usa 2 com TEXTURA: uma
+     decisão já na wave seguinte é possível (~50%, rnd injetável) —
+     alterna combate/decisão sem obrigação de esperar → ~12 decisões por
+     run de 20 ondas, com variação real entre runs (9–14);
+   · EV_CD_WAVES — a régua FORTE: o MESMO evento não repete por N waves
+     (cooldown por ID em ondas; o antigo cd em aparições vazava sob
+     spam de beacons: era isso que deixou o ESPELHO FRATURADO voltar na
+     wave seguinte).
+   Filosofia 10.5.2: MUITOS acontecimentos + BAIXA repetição. A variedade
+   vem do cooldown por ID e da penalidade de família — não de esperar
+   várias waves entre decisões. Microeventos, arena e transmissões NÃO
+   passam por essas réguas (alternância combate→micro→arena→decisão). */
+const EV_DECISION_GAP=2;
 const EV_CD_WAVES=5;
 let evSimNoCdW=false;        // apenas a simulação 'legacy' do DEV desliga o cdW
-function evDecisionReady(w){
+function evDecisionReady(w,rnd){
   const last=evMem.dw|0;
   if(!last)return true;
-  return (((w==null?wave|0:w)-last)>=EV_DECISION_GAP);
+  const d=((w==null?wave|0:w)-last);
+  if(d>=EV_DECISION_GAP)return true;
+  /* PR 10.5.2: wave seguinte (d===1) é POSSÍVEL, não garantida — a moeda
+     dá textura de ritmo (algumas sequências viram A→B, outras A→combate→B).
+     rnd injetável mantém a simulação determinística. d<1 = mesma wave → não. */
+  if(d===1&&rnd)return rnd()<.5;
+  return false;
 }
 
 function evFlag(k){return !!evMem.fl[k];}
@@ -7890,7 +7899,9 @@ function eventBlockReason(d,ctx){
       if(lastLw&&((ctx.wave|0)-lastLw)<cdW)return 'cooldown_ondas';
     }
   }
-  if(ctx.lastFamily&&d.family===ctx.lastFamily)return 'familia_consecutiva';
+  /* PR 10.5.2: família recente NÃO é mais bloqueio duro — é penalidade
+     forte de peso em scoreEvent (variedade temática sem derrubar a
+     quantidade de acontecimentos por run). */
   return null;
 }
 function getEligibleEvents(ctx,opts){
@@ -7907,6 +7918,10 @@ function getEligibleEvents(ctx,opts){
 }
 function scoreEvent(d,ctx){
   let w=d.weight;
+  /* PR 10.5.2: MESMA FAMÍLIA RECENTE = penalidade forte (×0.30) — evita
+     "sobrevivente A → sobrevivente B → sobrevivente C" sem bloquear a
+     família inteira (nada some do pool por causa de tema) */
+  if(ctx.lastFamily&&d.family===ctx.lastFamily)w*=.30;
   /* fadiga de família: cada aparição recente da família reduz o peso */
   const fr=evFamRecent(d.family);
   if(fr>0)w/=(1+.30*fr);
@@ -7947,8 +7962,10 @@ function pickRunEvent(ctx,rng){
   }
   /* 2) MESMA WAVE: nunca duas decisões independentes */
   if(sameWave)return null;
-  /* 3) JANELA GLOBAL: ~2 waves completas entre decisões */
-  if(!evDecisionReady(now))return null;
+  /* 3) JANELA GLOBAL: intervalo mínimo entre decisões (garantido = 1
+     wave de combate; a wave seguinte depende da moeda de ritmo — e a
+     exceção projetada de chain já voltou no passo 1) */
+  if(!evDecisionReady(now,rnd))return null;
   /* 4) passada estrita */
   let pass=getEligibleEvents(c);
   /* 5) relaxa o bloqueio de família consecutiva se não sobrou nada */
@@ -12045,6 +12062,49 @@ function smNewRoot(){
 function smCommit(){
   try{localStorage.setItem(SM_KEY,JSON.stringify(smRoot));}catch(e){}
 }
+/* ---- PR 10.5.2: GERÊNCIA DE DADOS DO SLOT (Configurações → Dados) ----
+   Duas ações destrutivas com confirmação obrigatória:
+   · smClearSlotEchoes — remove os Ecos armazenados no slot atual
+     (memória/registro que origina os aliados). Preserva meta, progresso,
+     unlocks, Codex e os outros slots. O checkpoint da run ativa (se houver)
+     perde os Ecos junto — nenhum estado ressuscita o que foi apagado.
+   · smClearSlotSave — zera COMPLETAMENTE o slot atual (meta, prog, Ecos,
+     run ativa, operador, Codex, unlocks, finais registrados, histórico de
+     eventos do checkpoint). Outros slots e as configurações globais (cfg)
+     não são tocados. */
+function smClearSlotEchoes(){
+  if(!smEnsureSlot())return false;
+  echoQueue=[];
+  saveEchoes();                       // grava slots[curSlot].echoes=[]
+  if(activeRun&&curSlot>=1&&smRoot&&smRoot.slots[curSlot]&&
+     smRoot.slots[curSlot].run===activeRun){
+    activeRun.echoes=[];              // o checkpoint não ressuscita Ecos
+    smCommit();
+  }
+  return true;
+}
+function smClearSlotSave(){
+  if(!smEnsureSlot()||curSlot<1)return false;
+  const i=curSlot;
+  smRoot.slots[i]=smDefaultSlot();    // meta/prog/char/echoes/run → zero
+  /* espelhos vivos voltam ao estado inicial coerente com o slot vazio */
+  activeRun=null;
+  meta={mem:0,spd:0,reroll:0,vault:0,wins:0,endings:[],evars:[]};
+  prog={kills:0,runs:0,waves:0,best:0,wins:0,bosses:0,minis:0,
+    elites:0,crits:0,dashes:0,coins:0,items:0,events:0,echoKills:0,
+    reso:0,melee:0,status:0,seen:[]};
+  echoQueue=[];
+  charSel=0;
+  saveProg();saveMeta();
+  smCommit();
+  return true;
+}
+/* após uma limpeza, qualquer tela de slot aberta atrás do painel é
+   redesenhada (sem exigir reinício); o painel em si é re-renderizado
+   pelo próprio cfgRow. */
+function refreshAfterSlotWipe(){
+  if(state==='slotMenu')showSlotMenu();
+}
 /* garante um slot ativo para gravação (no jogo real o boot já ativou um;
    existe como proteção para caminhos alternativos de teste) */
 function smEnsureSlot(){
@@ -14844,6 +14904,36 @@ function cfgRow(nm,ds,valTxt,cls,onClick){
   r.appendChild(b);
   return r;
 }
+/* ---- PR 10.5.2: confirmação genérica para ações destrutivas ----
+   Abre o modal existente SEM mudar o state do jogo (só o overlay).
+   Nenhuma ação é executada antes do clique explícito em CONFIRMAR. */
+let _confirmOpen=false;
+function openConfirm(o){
+  _confirmOpen=true;
+  modalEl.classList.add('on');
+  mSect.style.display='none';mRow2.innerHTML='';mReroll.style.display='none';
+  mTag.textContent=o.tag||'CONFIRMAÇÃO';
+  mTitle.textContent=o.title;
+  mTitle.style.color=o.danger?'#ff5c7a':'';
+  mDesc.innerHTML=o.desc;
+  mCoins.textContent='';mOwned.innerHTML='';
+  mRow.innerHTML='';
+  mRow.appendChild(mkCard('CANCELAR',o.cancelDesc||'Nada é alterado.','',
+    false,()=>closeConfirm()));
+  const yes=mkCard(o.yesLabel||'CONFIRMAR',o.yesDesc||'','',false,()=>{
+    const fn=o.onYes;closeConfirm();if(fn)fn();
+  });
+  yes.style.borderColor=o.danger?'#ff5c7a':'#ffd166';
+  yes.style.boxShadow=o.danger?'0 0 18px rgba(255,92,122,.30)':'0 0 14px rgba(255,209,102,.18)';
+  mRow.appendChild(yes);
+  mClose.textContent='(VOLTAR)';mClose.className='btn';mClose.onclick=closeConfirm;
+  AUDIO.ui(300);
+}
+function closeConfirm(){
+  _confirmOpen=false;
+  modalEl.classList.remove('on');
+  mTitle.style.color='';
+}
 function renderConfig(){
   cxBody.innerHTML='';
   const QN=['BAIXA','MÉDIA','ALTA'];
@@ -14926,19 +15016,34 @@ function renderConfig(){
   cxBody.appendChild(sect);
 
   const q=loadEchoes();
-  cxBody.appendChild(cfgRow('MEMÓRIA TEMPORAL DO SAVE '+curSlot,
-    'Ecos salvos: '+q.length+'/2. Apagar remove as runs gravadas NESTE save '+
-    '(os outros saves não são afetados) — você recomeça sem nenhum Echo aliado.',
-    'APAGAR ECOS','warn',
-    ()=>{echoQueue=[];saveEchoes();       // PR 7.5: afeta somente o slot ativo
-      toast('MEMÓRIA TEMPORAL DO SAVE '+curSlot+' APAGADA');}));
-  cxBody.appendChild(cfgRow('PONTOS DE MEMÓRIA DO SAVE '+curSlot,
-    'Total: ◆'+meta.mem+' · Vitórias: '+meta.wins+' · Finais: '+
-    meta.endings.length+'/'+Object.keys(ENDINGS).length+
-    ' · Variantes: '+meta.evars.length+' · Bônus permanentes desbloqueados.',
-    'ZERAR PROGRESSO','warn',
-    ()=>{meta={mem:0,spd:0,reroll:0,vault:0,wins:0,endings:[],evars:[]};saveMeta();
-      toast('META-PROGRESSO DO SAVE '+curSlot+' ZERADO');}));
+  cxBody.appendChild(cfgRow('LIMPAR ECOS DO SLOT ATUAL',
+    'Ecos salvos: '+q.length+'/2. Remove a MEMÓRIA (registro das runs) que '+
+    'origina os Ecos aliados DESTE save. Progresso, meta e os outros saves '+
+    'são mantidos. Requer confirmação.',
+    'LIMPAR ECOS','warn',
+    ()=>openConfirm({
+      tag:'CONFIRMAÇÃO · SAVE '+curSlot,
+      title:'LIMPAR ECOS DO SLOT ATUAL?',
+      desc:'Esta ação removerá os Echos armazenados neste slot.<br>'+
+        'O restante do progresso será mantido.',
+      yesLabel:'LIMPAR ECOS',
+      onYes:()=>{smClearSlotEchoes();
+        toast('ECOS DO SAVE '+curSlot+' APAGADOS');refreshAfterSlotWipe();}
+    })));
+  cxBody.appendChild(cfgRow('LIMPAR SAVE DO SLOT ATUAL',
+    'Apaga TUDO DESTE save: progresso, Ecos, Codex, unlocks, finais '+
+    'registrados, run ativa e meta. Os outros saves e as configurações '+
+    'globais não são afetados. Requer confirmação.',
+    'APAGAR SLOT','warn',
+    ()=>openConfirm({
+      tag:'AÇÃO DESTRUTIVA · SAVE '+curSlot,
+      title:'APAGAR SAVE DO SLOT ATUAL?',
+      desc:'Todo o progresso deste slot será apagado permanentemente.<br>'+
+        'Esta ação não pode ser desfeita.',
+      yesLabel:'APAGAR SLOT',danger:true,
+      onYes:()=>{smClearSlotSave();
+        toast('SAVE '+curSlot+' APAGADO');refreshAfterSlotWipe();}
+    })));
   appendQuitRow();
   cxFoot.textContent='AS CONFIGURAÇÕES SÃO SALVAS AUTOMATICAMENTE';
 }
@@ -16296,7 +16401,7 @@ const DEV={
     let consec=0,maxConsec=0,prevFam=null;
     const lastAt={};let distSum=0,distN=0,decTotal=0;
     /* métricas de CADÊNCIA (PR 10.5.1) */
-    let minGap=999,sameId5=0,sameWave=0,gapSum=0,gapN=0;
+    let minGap=999,sameId5=0,sameIdCd=0,sameWave=0,gapSum=0,gapN=0;
     const w0=wave;
     try{
       for(let run=0;run<n;run++){
@@ -16351,7 +16456,9 @@ const DEV={
             if(decIds.indexOf(d.id)>=0){
               for(let i=decIds.length-1;i>=0;i--){
                 if(decIds[i]===d.id){
-                  if(w-decWaves[i]<=5)sameId5++;
+                  const gp=w-decWaves[i];
+                  if(gp<=5)sameId5++;
+                  if(gp<EV_CD_WAVES)sameIdCd++;   // violação real do cooldown
                   break;
                 }
               }
@@ -16374,15 +16481,17 @@ const DEV={
         pct:+(perEv[k]/Math.max(1,decTotal)*100).toFixed(1)};
     }).sort((a,b)=>b.n-a.n);
     devTaint();
-    devLog('SIMULAÇÃO '+n+' runs×20 ondas ('+(legacyPacing?'ritmo ANTIGO':'ritmo 10.5.1')+
+    devLog('SIMULAÇÃO '+n+' runs×20 ondas ('+(legacyPacing?'ritmo ANTIGO':'ritmo 10.5.2')+
       ') · decisões/run: '+(decTotal/Math.max(1,n)).toFixed(1)+
       ' · intervalo mín.: '+(minGap===999?'—':minGap)+' waves · mesma wave: '+sameWave+
-      ' · mesmo ID ≤5 waves: '+sameId5);
+      ' · mesmo ID NO cooldown: '+sameIdCd+' · mesmo ID no gap exato 5: '+
+      Math.max(0,sameId5-sameIdCd));
     return {n:n,seed:seed,decisions:decTotal,
       decisionsPerRun:+(decTotal/Math.max(1,n)).toFixed(2),
       minDecisionGap:minGap===999?null:minGap,
       avgDecisionGap:gapN?+(gapSum/gapN).toFixed(2):null,
-      sameIdWithin5:sameId5,sameWaveDecisions:sameWave,
+      sameIdWithin5:sameId5,sameIdWithinCooldown:sameIdCd,
+      sameWaveDecisions:sameWave,
       perEvent:evs,perFamily:fams,
       sameFamilyConsecutive:maxConsec,
       maxSameFamilyStreak:maxConsec,

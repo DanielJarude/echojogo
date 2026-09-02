@@ -41,6 +41,11 @@ src+=';globalThis.__t={'+
   'makeEcho,changeEchoTrust,relAddPressure,echoRelState,echoAllied,'+
   'killEnemy,spawnWave,spawnBeacon,getBeacon:()=>beacon,'+
   'ownedLine,showFracture,'+
+  'smClearSlotEchoes,smClearSlotSave,openConfirm,closeConfirm,renderConfig,'+
+  'getActiveRun:()=>activeRun,getCfg:()=>cfg,setCfgKey:(k,v)=>{cfg[k]=v;},'+
+  'setMeta:v=>{meta=v;},setProg:v=>{prog=v;},saveMeta,saveEchoes,saveProg,'+
+  'getEchoQueue:()=>echoQueue,setEchoQueue:v=>{echoQueue=v;},'+
+  'getCharSel:()=>charSel,'+
   'getMicroT:()=>microT,setMicroT:v=>{microT=v;},'+
   'DEV_get:()=>DEV,DEV_on:()=>{DEV_MODE=true;},DEV_off:()=>{DEV_MODE=false;},'+
   'getMoral:()=>moral,setMoral:(c,g,v)=>{moral.comp=c;moral.greed=g;moral.viol=v;applyMoral();},'+
@@ -84,7 +89,12 @@ function ctx2d(){
 function makeEl(id){
   const el={id:id||'',children:[],dataset:{},value:'',width:0,height:0,
     _cls:new Set(),_handlers:{},isConnected:true,offsetWidth:0,offsetHeight:0,
-    textContent:'',innerHTML:'',className:'',title:'',style:makeStyle()};
+    textContent:'',className:'',title:'',style:makeStyle()};
+  let _html='';
+  Object.defineProperty(el,'innerHTML',{
+    get:()=>_html,
+    set(v){_html=String(v);if(_html==='')el.children.length=0;}
+  });
   el.classList={
     add:(...c)=>c.forEach(x=>el._cls.add(x)),
     remove:(...c)=>c.forEach(x=>el._cls.delete(x)),
@@ -297,20 +307,31 @@ ok('cooldown do EVENTO: apareceu → bloqueado nas próximas seleções',()=>{
   const b=pass.blocked.find(x=>x.id==='x_camara');
   assert(b&&b.reason==='cooldown_evento');
 });
-ok('família consecutiva: a família do último evento é bloqueada inteira',()=>{
+ok('CASO D: família recente sofre PENALIDADE forte de peso (não bloqueio)',()=>{
   freshRun();t.setWave(5);
   t.evMemRecord('x_gerador','recursos');   // último = recursos
-  const pass=t.getEligibleEvents(t.buildEventContext());
-  for(const d of pass.elig)assert(d.family!=='recursos',
-    'recursos vazou: '+d.id);
-  assert(pass.blocked.some(b=>b.family==='recursos'&&
-    b.reason==='familia_consecutiva'));
+  const ctx=t.buildEventContext();
+  const pass=t.getEligibleEvents(ctx);
+  /* a família continua ELEGÍVEL (nada some do pool por causa de tema) */
+  assert(pass.elig.some(d=>d.family==='recursos'),
+    'família não deveria ser bloqueada');
+  assert(!pass.blocked.some(b=>b.reason==='familia_consecutiva'),
+    'bloqueio duro de família ainda existe');
+  /* mas o peso cai significativamente (penalidade ×0.30 + fadiga) */
+  const dRec=t.RUN_EVENT_BY_ID.x_posto;
+  const wPen=t.scoreEvent(dRec,ctx);
+  t.setEvMem(t.evMemFresh());
+  const wBase=t.scoreEvent(dRec,t.buildEventContext());
+  assert(wPen<wBase*.45,'penalidade de família fraca: '+wPen+'/'+wBase);
 });
-ok('relaxamento: com pool vazio, o bloqueio de família cede (nunca trava)',()=>{
+ok('rede de segurança: relaxAll cede bloqueios de cooldown (nunca trava)',()=>{
   freshRun();t.setWave(5);
   t.evMemRecord('x_gerador','recursos');
-  const pass=t.getEligibleEvents(t.buildEventContext(),{relaxFamily:true});
-  assert(pass.elig.some(d=>d.family==='recursos'));
+  const p0=t.getEligibleEvents(t.buildEventContext());
+  assert(p0.blocked.some(b=>b.id==='x_gerador'&&(b.reason==='cooldown_ondas'||
+    b.reason==='cooldown_evento')),'x_gerador não está em cooldown');
+  const p1=t.getEligibleEvents(t.buildEventContext(),{relaxAll:true});
+  assert(p1.elig.some(d=>d.id==='x_gerador'),'relaxAll não cedeu o cooldown');
 });
 ok('fadiga de família: aparições recentes reduzem o PESO (não só bloqueiam)',()=>{
   freshRun();t.setWave(5);
@@ -331,17 +352,21 @@ ok('saturação: evento repetido muitas vezes perde peso devagar',()=>{
   const w0=t.scoreEvent(d,c0);
   for(let i=0;i<4;i++)t.evMemRecord('x_camara','exploracao');
   const w1=t.scoreEvent(d,t.buildEventContext());
-  assert(w1<w0*.85&&w1>w0*.12,'queda abrupta ou inexistente: '+w1+'/'+w0);
+  assert(w1<w0*.85&&w1>w0*.05,'queda abrupta ou inexistente: '+w1+'/'+w0);
 });
 ok('novidade leve: evento nunca visto ganha fôlego (+25%)',()=>{
   freshRun();
   const d=t.RUN_EVENT_BY_ID['x_marcador'];
-  t.getEvMem().rc=[];t.getEvMem().sn={};
-  const w0=t.scoreEvent(d,t.buildEventContext());
-  t.evMemRecord('x_marcador',d.family);
-  const w1=t.scoreEvent(d,t.buildEventContext());
-  /* nunca visto pontua ~25% acima do mesmo evento já visto (fadiga suave incluída) */
-  assert(w0/w1>1.1&&w0/w1<1.9,'novidade não aplicada: '+w0+'→'+w1);
+  /* ctxs idênticos exceto seen — isola o multiplicador de novidade */
+  const base={wave:6,hp:1,coins:100,echoCount:0,
+    moral:{comp:1/3,greed:1/3,viol:1/3},lastFamily:null,disRuptured:false,
+    recent:[]};
+  const w0=t.scoreEvent(d,Object.assign({},base,{seen:{}}));
+  const w1=t.scoreEvent(d,Object.assign({},base,{seen:{x_marcador:1}}));
+  /* base 42 × 1.25 = 52.5 exato; já visto perde a novidade (e ganha saturação) */
+  assert(Math.abs(w0-d.weight*1.25)<.01,
+    'novidade não é +25%: '+w0+' vs '+(d.weight*1.25));
+  assert(w1<w0,'já visto não deveria receber novidade');
 });
 ok('adaptação leve: poucos créditos puxam RECURSOS (sem virar pity óbvio)',()=>{
   freshRun();
@@ -722,16 +747,17 @@ ok('distância média até repetir existe e é razoável',()=>{
   assert(r.avgRepeatDistance>5&&r.avgRepeatDistance<100,
     'distância média implausível: '+r.avgRepeatDistance);
 });
-ok('CADÊNCIA (depois): ~6 decisões/20 ondas, intervalo mín. 3, zero spam',()=>{
+ok('CADÊNCIA (10.5.2): ~12 decisões/20 ondas, zero spam e zero violação de cooldown',()=>{
   const r=runSim(400,777);
-  assert(r.decisionsPerRun>=5&&r.decisionsPerRun<=7,
-    'decisões por run fora do alvo: '+r.decisionsPerRun);
-  assert.strictEqual(r.minDecisionGap,3,
-    'intervalo mínimo entre decisões: '+r.minDecisionGap);
+  assert(r.decisionsPerRun>=9&&r.decisionsPerRun<=14,
+    'decisões por run fora da meta (9–14): '+r.decisionsPerRun);
+  assert(r.minDecisionGap>=1&&r.minDecisionGap<=2,
+    'intervalo mínimo incoerente: '+r.minDecisionGap);
   assert.strictEqual(r.sameWaveDecisions,0,
     'decisões na mesma wave: '+r.sameWaveDecisions);
-  assert.strictEqual(r.sameIdWithin5,0,
-    'repetições do mesmo ID em ≤5 waves: '+r.sameIdWithin5);
+  assert.strictEqual(r.sameIdWithinCooldown,0,
+    'repetições do mesmo ID DENTRO do cooldown: '+r.sameIdWithinCooldown);
+  assert(r.maxSameFamilyStreak<=2,'streak de família: '+r.maxSameFamilyStreak);
 });
 ok('CADÊNCIA (antes, pacing legacy): o spam do playtest é reproduzido',()=>{
   const r=runSim(400,777,'legacy');
@@ -751,21 +777,49 @@ ok('DEV.simulateEvents restaura a memória da run (não polui o estado)',()=>{
 
 /* ==================== K. CADÊNCIA — CASO REAL DO PLAYTEST ==================== */
 console.log('\n[K] CADÊNCIA DE DECISÕES (PR 10.5.1)');
-ok('CASO REAL: decisão na wave 4 → waves 5 e 6 vazias → wave 7 livre',()=>{
-  freshRun();t.setWave(4);
-  const a=t.pickRunEvent();
-  assert(a,'decisão A não aconteceu na wave 4');
-  t.setWave(5);
-  assert.strictEqual(t.pickRunEvent(),null,'wave 5 deveria ficar sem decisão');
-  t.setWave(5);
-  assert.strictEqual(t.pickRunEvent(),null,'2ª tentativa na wave 5 também');
-  t.setWave(6);
-  assert.strictEqual(t.pickRunEvent(),null,'wave 6 deveria ficar sem decisão');
-  t.setWave(7);
-  const b=t.pickRunEvent();
-  assert(b,'wave 7 deveria permitir nova decisão');
+ok('CASO A: wave 3 → evento A · wave 4 → evento B DIFERENTE pode acontecer',()=>{
+  freshRun();t.setWave(3);
+  MathF._rng=()=>0.1;                     // moeda de ritmo a favor
+  try{
+    const a=t.pickRunEvent();
+    assert(a,'decisão A não aconteceu na wave 3');
+    t.setWave(4);
+    const b=t.pickRunEvent();
+    assert(b,'wave 4 deveria poder ter decisão (gap não é mais 3)');
+    assert.notStrictEqual(b.id,a.id,'mesmo evento na wave seguinte');
+  }finally{MathF._rng=null;}
 });
-ok('spawnBeacon respeita a janela: sem beacon fora dela, sem beacon na mesma wave',()=>{
+ok('CASO A′: wave 4 também PODE ficar sem decisão (moeda de ritmo desfavorável)',()=>{
+  freshRun();t.setWave(3);
+  MathF._rng=()=>0.9;                     // moeda contra
+  try{
+    const a=t.pickRunEvent();
+    assert(a,'decisão A ausente na wave 3');
+    t.setWave(4);
+    assert.strictEqual(t.pickRunEvent(),null,'moeda desfavorável deveria pular a wave 4');
+    t.setWave(5);                          // d=2 → garantido, sem moeda
+    const b=t.pickRunEvent();
+    assert(b,'wave 5 deveria permitir decisão (intervalo garantido = 2)');
+  }finally{MathF._rng=null;}
+});
+ok('CASO B: wave 3 → A · wave 4 → A NÃO pode (cooldown por ID em ondas)',()=>{
+  freshRun();t.setWave(3);
+  const a=t.pickRunEvent();
+  assert(a,'decisão A ausente na wave 3');
+  t.setWave(4);
+  const pass=t.getEligibleEvents(t.buildEventContext());
+  const b=pass.blocked.find(x=>x.id===a.id);
+  assert(b&&(b.reason==='cooldown_ondas'||b.reason==='cooldown_evento'),
+    'A deveria estar inelegível por cooldown: '+JSON.stringify(b));
+  /* mesmo com a moeda a favor, o seletor não devolve A de novo */
+  MathF._rng=()=>0.1;
+  try{
+    const again=t.pickRunEvent();
+    assert(again&&again.id!==a.id,
+      'pickRunEvent repetiu A dentro do cooldown: '+(again&&again.id));
+  }finally{MathF._rng=null;}
+});
+ok('spawnBeacon: mesma wave nunca, textura de ritmo controlada pela moeda',()=>{
   freshRun();t.setWave(2);
   t.spawnBeacon();                                 // onboarding: survivor
   assert(t.getBeacon()&&t.getBeacon().kind==='survivor');
@@ -776,13 +830,28 @@ ok('spawnBeacon respeita a janela: sem beacon fora dela, sem beacon na mesma wav
   t.spawnBeacon();                                 // onboarding: merchant
   assert(t.getBeacon()&&t.getBeacon().kind==='merchant');
   t.setBeacon(null);
-  t.setWave(4);
-  t.spawnBeacon();                                 // diretor: fora da janela
-  assert.strictEqual(t.getBeacon(),null,'decisão fora da janela global!');
-  t.setWave(6);
-  t.spawnBeacon();                                 // 6−3=3 → janela fechou
-  assert(t.getBeacon(),'beacon deveria nascer na janela');
-  assert(t.RUN_EVENT_BY_KIND[t.getBeacon().kind],'kind sem registro');
+  MathF._rng=()=>0.9;                              // moeda contra
+  try{
+    t.setWave(4);
+    t.spawnBeacon();
+    assert.strictEqual(t.getBeacon(),null,'wave seguinte sem moeda = sem beacon');
+    t.setWave(5);                                  // d=2 → garantido
+    t.spawnBeacon();
+    assert(t.getBeacon(),'beacon garantido no intervalo 2');
+    t.setBeacon(null);
+    MathF._rng=()=>0.1;                            // moeda a favor
+    t.setWave(6);
+    t.spawnBeacon();
+    assert(t.getBeacon(),'moeda a favor permite decisão na wave seguinte');
+    t.setBeacon(null);
+    MathF._rng=()=>0.9;                            // moeda contra
+    t.setWave(7);
+    t.spawnBeacon();
+    assert.strictEqual(t.getBeacon(),null,'moeda contra na wave seguinte');
+    t.setWave(8);                                  // d≥2 → garantido
+    t.spawnBeacon();
+    assert(t.getBeacon(),'beacon garantido após intervalo');
+  }finally{MathF._rng=null;}
 });
 ok('MESMO EVENTO: ESPELHO FRATURADO (lg_mirror) não repete antes de 5 waves',()=>{
   freshRun();t.setWave(5);
@@ -889,7 +958,7 @@ ok('CONTEÚDO PRESERVADO: 25 novos, 20 legados, 6 chains, 5 arenas, 4 micro',()=
   assert.strictEqual(t.RUN_CHAIN_EVENTS.length,6);
   assert.strictEqual(t.ARENA_EVENTS.length,5);
   assert.strictEqual(t.MICRO_EVENTS.length,4);
-  assert(t.EV_DECISION_GAP>=3,'janela global enfraquecida');
+  assert(t.EV_DECISION_GAP>=2,'janela global enfraquecida');
   assert(t.EV_CD_WAVES>=4,'cooldown por ID enfraquecido');
 });
 
@@ -938,6 +1007,127 @@ ok('mecânica intacta: runData/echoQueue preservados (só texto mudou)',()=>{
     'owned:player.owned.slice()','moral:{comp:moral.comp','dom:moralDom()',
     'echoQueue=[runData,echoQueue[0]]','runData.ps=deriveEchoPersonality(runData)'])
     assert(RAWSRC.indexOf(k)>=0,'mecânica de herança alterada: '+k);
+});
+
+/* ==================== M. CONFIGURAÇÕES — LIMPAR ECOS / LIMPAR SAVE ==================== */
+console.log('\n[M] CONFIGURAÇÕES — CONTROLES DE SAVE (PR 10.5.2)');
+function rd(run){return Object.assign({dur:run,dmgMul:1,frMul:1,wave:5,level:2,
+  trail:[[0,0,1,0,0,0]],crit:0,critMul:1.8,pierce:0,aoeMul:1,rangeMul:1,
+  projSpdMul:1,longRangeBonus:0,coins:10,items:[],upg:[],owned:[0],
+  moral:{comp:1,greed:0,viol:0},dom:'comp',kills:3,mh:100,st:null,ps:null},{});}
+function cfgSnapshot(){return JSON.stringify(t.getCfg());}
+ok('UI: Configurações exibe LIMPAR ECOS DO SLOT ATUAL e LIMPAR SAVE DO SLOT ATUAL',()=>{
+  t.setState('menu');
+  t.renderConfig();
+  const body=elements.get('cx-body').children
+    .map(c=>String(c.innerHTML||'')+'|'+String(c.textContent||'')+'|'+
+      (c.children||[]).map(g=>String(g.textContent||'')).join(' '))
+    .join('\n');
+  assert(body.indexOf('LIMPAR ECOS DO SLOT ATUAL')>=0,
+    'linha LIMPAR ECOS ausente');
+  assert(body.indexOf('LIMPAR SAVE DO SLOT ATUAL')>=0,
+    'linha LIMPAR SAVE ausente');
+  assert(body.indexOf('LIMPAR ECOS')>=0&&body.indexOf('APAGAR SLOT')>=0,
+    'botões de ação ausentes');
+});
+ok('confirmação obrigatória: modal abre, CANCELAR não altera nada',()=>{
+  t.setState('menu');
+  let fired=0;
+  t.openConfirm({tag:'TESTE',title:'CONFIRMA?',danger:true,
+    onYes:()=>{fired++;}});
+  const modal=elements.get('modal');
+  assert(modal._cls.has('on'),'modal não abriu');
+  const row=elements.get('m-row');
+  assert.strictEqual(row.children.length,2,'esperado CANCELAR + ação');
+  assert(row.children[0].innerHTML.indexOf('CANCELAR')>=0,
+    'CANCELAR não é a primeira opção');
+  assert(elements.get('m-title').textContent.indexOf('CONFIRMA?')>=0);
+  row.children[0].click();              // CANCELAR
+  assert.strictEqual(fired,0,'ação executada sem confirmação!');
+  assert(!modal._cls.has('on'),'modal deveria fechar');
+});
+ok('A. LIMPAR ECOS: remove Ecos do slot (e do checkpoint), preserva meta/prog/outros slots',()=>{
+  t.activateSlot(1);t.clearDevTaint();
+  t.setEchoes([]);t.setEvMem(t.evMemFresh());
+  t.getEvQueue().length=0;
+  /* slot 2 com dados próprios (deve ficar intacto) */
+  t.activateSlot(2);
+  t.setMeta({mem:33,spd:0,reroll:0,vault:0,wins:1,endings:['liber'],evars:[]});
+  t.saveMeta();t.setEchoQueue([rd(1),rd(2)]);t.saveEchoes();
+  /* slot 1: meta+prog+ecos+run ativa */
+  t.activateSlot(1);
+  t.setMeta({mem:77,spd:1,reroll:0,vault:0,wins:2,endings:['dueto'],evars:['dueto.ressonancia']});
+  t.saveMeta();t.setProg({kills:9,best:7,seen:[]});t.saveProg();
+  t.setEchoQueue([rd(1)]);t.saveEchoes();
+  const cfg0=cfgSnapshot();
+  t.startRun();                         // run ativa com checkpoint (Ecos vivos)
+  assert(t.getActiveRun(),'sem run ativa para o teste');
+  assert(t.getActiveRun().echoes.length>=1,'checkpoint sem Ecos');
+  assert(t.smClearSlotEchoes());
+  assert.strictEqual(t.getEchoQueue().length,0,'echoQueue não foi limpo');
+  assert.strictEqual(t.getRoot().slots[1].echoes.length,0,'slot 1 ainda tem Ecos');
+  assert.strictEqual(t.getActiveRun().echoes.length,0,
+    'checkpoint ainda ressuscitaria Ecos');
+  assert.strictEqual(t.getRoot().slots[1].meta.mem,77,'meta do slot 1 mudou');
+  assert.strictEqual(t.getRoot().slots[1].prog.kills,9,'prog do slot 1 mudou');
+  assert.strictEqual(t.getRoot().slots[2].meta.mem,33,'meta do slot 2 vazou');
+  assert.strictEqual(t.getRoot().slots[2].echoes.length,2,'Ecos do slot 2 vazaram');
+  assert.strictEqual(cfgSnapshot(),cfg0,'settings globais mudaram');
+});
+ok('B. cancelar LIMPAR ECOS: nada é alterado (coberto pelo fluxo do modal)',()=>{
+  t.activateSlot(1);
+  const n=t.getRoot().slots[1].echoes.length;
+  t.openConfirm({title:'X?',onYes:()=>t.smClearSlotEchoes()});
+  elements.get('m-row').children[0].click();     // CANCELAR
+  assert.strictEqual(t.getRoot().slots[1].echoes.length,n,
+    'cancelar alterou os Ecos');
+});
+ok('C. LIMPAR SAVE: zera só o slot atual (meta/prog/Ecos/run/Codex), resto intacto',()=>{
+  t.activateSlot(1);t.clearDevTaint();
+  t.setEchoQueue([rd(1)]);t.saveEchoes();
+  const cfg0=cfgSnapshot();
+  assert(t.hasActiveRun()||(()=>{t.setState('play');return t.captureCheckpoint('t',3);})(),
+    'sem run ativa');
+  assert(t.smClearSlotSave());
+  const s=t.getRoot().slots[1];
+  assert.strictEqual(s.run,null,'run ativa sobreviveu');
+  assert.strictEqual(s.echoes.length,0,'Ecos sobreviveram');
+  assert.strictEqual(s.meta.mem,0,'meta sobreviveu');
+  assert.deepStrictEqual(s.meta.endings,[],'finais registrados sobreviveram');
+  assert.deepStrictEqual(s.meta.evars,[],'variantes sobreviveram');
+  assert.strictEqual(s.prog.kills,0,'prog sobreviveu');
+  assert.strictEqual(s.char,0,'operador sobreviveu');
+  assert.strictEqual(t.getActiveRun(),null,'espelho da run ativa sobreviveu');
+  assert.strictEqual(t.getEchoQueue().length,0,'echoQueue vivo');
+  assert.strictEqual(t.getCharSel(),0,'operador selecionado não resetou');
+  assert.strictEqual(t.getRoot().slots[2].meta.mem,33,'slot 2 foi afetado');
+  assert.strictEqual(t.getRoot().slots[2].echoes.length,2,'Ecos do slot 2 apagados');
+  assert.strictEqual(cfgSnapshot(),cfg0,'settings globais mudaram');
+});
+ok('D. slots legados/migrados: as duas ações funcionam do mesmo jeito',()=>{
+  /* slot 2 vira um slot "migrado": meta sem evars novo + echoes v2 */
+  const s2=t.getRoot().slots[2];
+  s2.meta={mem:5,spd:0,reroll:0,vault:0,wins:0,endings:[],evars:[]};
+  s2.prog={kills:3,seen:[]};s2.char=1;s2.echoes=[rd(9)];s2.run=null;s2.touched=true;
+  t.activateSlot(2);
+  assert(t.smClearSlotEchoes());
+  assert.strictEqual(t.getRoot().slots[2].echoes.length,0,'ecos legados não limpos');
+  assert.strictEqual(t.getRoot().slots[2].meta.mem,5,'meta mudou no limpar ecos');
+  assert(t.smClearSlotSave());
+  assert.strictEqual(t.getRoot().slots[2].meta.mem,0,'save legado não zerou');
+  assert.strictEqual(t.getRoot().slots[2].char,0,'char legado não resetou');
+  t.activateSlot(1);
+});
+ok('botões não executam nada direto: exigem o clique na confirmação',()=>{
+  t.activateSlot(1);
+  t.setMeta({mem:42,spd:0,reroll:0,vault:0,wins:0,endings:[],evars:[]});t.saveMeta();
+  t.openConfirm({title:'APAGAR SAVE DO SLOT ATUAL?',danger:true,
+    onYes:()=>t.smClearSlotSave()});
+  /* apenas abrir o confirm não pode zerar nada */
+  assert.strictEqual(t.getRoot().slots[1].meta.mem,42,
+    'abrir a confirmação executou a ação');
+  elements.get('m-row').children[1].click();     // APAGAR SLOT
+  assert.strictEqual(t.getRoot().slots[1].meta.mem,0,'confirmação não executou');
 });
 
 console.log('\n---------------------------------------------');

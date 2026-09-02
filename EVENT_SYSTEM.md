@@ -149,15 +149,17 @@ esvaziava em ~2 waves). A correção (10.5.1) é toda em **ONDAS**:
 
 | Régua | Regra | Constante |
 |---|---|---|
-| Janela global de decisão | decisão na wave N → próxima só em N+3 (~2 waves completas de respiro) | `EV_DECISION_GAP=3` |
 | Mesma wave | **nunca** duas decisões independentes na mesma wave (onboarding incluso); exceção única: continuação de chain `chainImmediate` declarada | — |
-| Cooldown por ID em ondas | o MESMO evento não repete por N waves (`cooldown_ondas`), robusto sob spam | `EV_CD_WAVES=5` (def pode sobrescrever com `cdW`) |
+| Intervalo garantido | decisão na wave N → a próxima vem no máximo em N+2; **wave seguinte (N+1) é possível via moeda de ritmo (~50%, rnd injetável)** — textura de ritmo sem cadência rígida (~12 decisões/run de 20 ondas) | `EV_DECISION_GAP=2` |
+| Cooldown por ID em ondas | o MESMO evento não repete por N waves (`cooldown_ondas`), robusto sob spam — a régua FORTE | `EV_CD_WAVES=5` (def pode sobrescrever com `cdW`) |
+| Família recente | **penalidade forte de peso (×0.30)**, não bloqueio — evita "sobrevivente A → B → C" sem tirar conteúdo do pool | `scoreEvent` |
 
 - `evMem.dw` guarda a wave da última decisão; `evMem.lw[id]` a wave da última
   aparição de cada evento — gravados **no ato da seleção** (`evMemRecord`),
   sem janela cega entre seletores;
-- `spawnBeacon` fora da janela apenas **reagenda** (7–12s) — sem gastar o
-  evento, sem beacon na tela; continuação imediata declarada pode furar;
+- `pickRunEvent` fora da janela devolve **null** e `spawnBeacon` apenas
+  **reagenda** (7–12s) — sem gastar o evento, sem beacon na tela; toda a
+  cadência vive dentro do seletor (uma única fonte de verdade);
 - Onboarding fixo (survivor/merchant) não passa pela janela global, mas
   obedece a regra de mesma wave;
 - **Microeventos, arena events e transmissões NÃO passam por essas réguas** —
@@ -167,8 +169,14 @@ esvaziava em ~2 waves). A correção (10.5.1) é toda em **ONDAS**:
   continuação só é entregue no próximo beacon **dentro** da rota agendada,
   nunca na mesma wave da decisão que a originou.
 
-Camadas antigas mantidas por baixo: `cooldown_evento` (janela em aparições),
-`familia_consecutiva` com relaxamento garantido e fadiga suave por peso.
+Filosofia 10.5.2: **MUITOS acontecimentos + BAIXA repetição** — a variedade
+vem do cooldown por ID e da penalidade de família, não de esperar várias
+waves. Simulação (400 runs × 20 ondas, seed 777): original 27 decisões/run
+com 9 na mesma wave e 843 repetições de ID ≤5; 10.5.1 6/run; **10.5.2
+12.3/run · mesma wave 0 · repetição dentro do cooldown 0**.
+
+Camadas mantidas por baixo: `cooldown_evento` (janela em aparições),
+fadiga de família (÷1+0.30×recentes) e saturação lenta do evento.
 
 ## 7. Integração com a run (pontos de contato)
 
