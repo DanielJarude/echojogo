@@ -1586,12 +1586,17 @@ let devTainted=false;      // a run atual foi tocada por ferramentas DEV?
    ===================================================================== */
 let sandboxMode=false;
 let sandboxRun=false;
+/* R4: o Sandbox é um MODO INDEPENDENTE dos save slots. Ao entrar,
+   nenhum slot é carregado como base: o laboratório roda sobre estado
+   TEMPORÁRIO próprio (prog/meta/eco zerados, curSlot=0) e o contexto do
+   modo normal é guardado aqui para ser RECARREGADO DO ARQUIVO na saída.
+   O save nunca é backing store do sandbox (§4/§5/§8/§9). */
+let _sbSlotBak=0;
 /* §3: janela iniciada ao ENTRAR no sandbox e só liberada por uma run
    REAL — mostra título/select logo após sair NÃO pode desbloquear nada
    (checkUnlocks do showTitle ficaria a dever gravações pendentes). */
 let sandboxHoldUnlocks=false;
 const sandboxCfg={char:0,preset:'',wave:1};   // setup da sessão (não persiste)
-let _sbEchoQueueBak=null;                     // echoQueue real preservada
 function sandboxActive(){return sandboxMode||sandboxRun;}
 /* Marca a run como "suja": nada dela pode atravessar para os sistemas
    permanentes (Ecos salvos, progressão, meta-progresso, recordes). */
@@ -2160,7 +2165,8 @@ function pauseGame(){
   const pm=document.getElementById('pause-menu');
   const w=WEAPONS[player.wi];
   document.getElementById('p-stats').innerHTML=
-    'SAVE <b>0'+curSlot+'</b> · ONDA <b>'+String(Math.max(1,wave)).padStart(2,'0')+' / 20</b> · '+
+    (curSlot>=1?('SAVE <b>0'+curSlot+'</b>'):('<b>MODO SANDBOX</b>'))+
+    ' · ONDA <b>'+String(Math.max(1,wave)).padStart(2,'0')+' / 20</b> · '+
     'NÍVEL <b>'+player.level+'</b> · ABATES <b>'+kills+'</b><br>'+
     'INTEGRIDADE <b>'+Math.max(0,Math.ceil(player.hp))+' / '+player.maxHp+'</b> · '+
     'ESCUDO <b>'+Math.max(0,Math.ceil(player.shield))+' / '+player.shieldMax+'</b> · '+
@@ -2551,10 +2557,29 @@ function sheetRender(force){
    §91 Sandbox não cria Continue Run e não é persistido nesta PR.
    ===================================================================== */
 const SB_WAVES=[1,3,5,10,15,20];
+/* estado TEMPORÁRIO do laboratório — equivalente a sandboxSession
+   (operator/arsenal/itens/stats/enemies morrem ao sair — §8) */
+function sandboxSessionInfo(){
+  return {operator:sandboxCfg.char,preset:sandboxCfg.preset,
+    wave:sandboxCfg.wave,active:sandboxRun,slot:0};   // slot 0 = nenhum
+}
 function sandboxOpenSetup(){
   initAudio();
+  /* R4: NENHUM save slot é carregado como base (§5/§9). O contexto do
+     modo normal é apenas ANOTADO; prog/meta/Ecos do laboratório nascem
+     zerados e tudo morre na saída. */
+  _sbSlotBak=curSlot;
+  curSlot=0;                           // §4: nenhum slot ativo
+  activeRun=null;
+  meta={mem:0,spd:0,reroll:0,vault:0,wins:0,endings:[],evars:[]};
+  prog={kills:0,runs:0,waves:0,best:0,wins:0,bosses:0,minis:0,
+    elites:0,crits:0,dashes:0,coins:0,items:0,events:0,echoKills:0,
+    reso:0,melee:0,status:0,seen:[]};
+  echoQueue=[];                        // nenhum Echo é herdado
+  charSel=clamp(sandboxCfg.char,0,CHARS.length-1);
   sandboxMode=true;
   sandboxHoldUnlocks=true;             // §3: a partir daqui nada desbloqueia
+  ovMenuVisible(false);
   hideOverlay();
   state='title';                       // fora de run enquanto no preparo
   openCodex('sandbox');
@@ -2562,7 +2587,7 @@ function sandboxOpenSetup(){
 function sandboxCloseSetup(){
   sandboxMode=false;
   closeCodex();
-  if(!sandboxRun)showTitle();          // volta ao menu — overlay de volta
+  if(!sandboxRun){sandboxRestoreReal();showTitle();}   // R4: menu global
 }
 /* ---- tela de preparo (§77): operador + preset + onda inicial ---- */
 function renderSandboxSetup(){
@@ -2636,7 +2661,6 @@ function renderSandboxSetup(){
   cxFoot.textContent='ESC — VOLTAR AO MENU · O SETUP DO SANDBOX NÃO É SALVO';
 }
 /* ---- início da run de laboratório ---- */
-let _sbCharBak=0;
 /* setChar persiste no slot real — o laboratório troca de operador SEM
    tocar no registro do save (§73) */
 function sandboxSetChar(i){
@@ -2678,10 +2702,9 @@ function sandboxStart(){
     sandboxMode=false;
     sandboxRun=true;
     closeCodex();
-    /* §75: nenhum Eco real entra no laboratório — a fila do slot é preservada */
-    _sbEchoQueueBak=echoQueue;
+    /* §75/R4: nenhum Eco entra no laboratório — a fila já nasce vazia
+       no modo independente (nada é lido do save). */
     echoQueue=[];
-    _sbCharBak=charSel;
     sandboxSetChar(sandboxCfg.char);
     hideOverlay();
     startRun();                            // devTainted=!!DEV_MODE (§92 ok)
@@ -2775,13 +2798,15 @@ function giveSandboxCredits(n){
   if(!sandboxRun||!player)return;
   player.coins=clamp((player.coins||0)+n,0,999999);
 }
-/* devolve tudo ao estado real do save (fila de Ecos + operador do slot) */
+/* R4: devolve o MODO NORMAL — o contexto (slot anterior, prog, meta,
+   Ecos, operador) é RECARREGADO DO ARQUIVO, nunca dos espelhos que o
+   laboratório usou como rascunho (§9/§44). */
 function sandboxRestoreReal(){
-  if(_sbEchoQueueBak){echoQueue=_sbEchoQueueBak;_sbEchoQueueBak=null;}
-  charSel=_sbCharBak;
   const chip=$('sb-chip');if(chip)chip.classList.remove('on');
   const _ob=$('ov-back');
   if(_ob)_ob.textContent='VOLTAR AO MENU';
+  if(_sbSlotBak>=1&&smRoot){activateSlot(_sbSlotBak);}
+  _sbSlotBak=0;
 }
 /* ---- fim do laboratório: restaura o estado real do save ---- */
 function sandboxExit(toMenu){
@@ -2796,10 +2821,10 @@ function sandboxExit(toMenu){
   ovExitMenu(false);
   $('endwrap').classList.remove('on');
   overlay.classList.remove('hidden');
-  /* PR 11.5 §11: sai da run de verdade — sem isso o state ficaria
-     fracture/victory sob a tela de título (overlays fantasma). */
+  /* PR 11.5 §11/§21: sai da run de verdade e volta SEMPRE ao MENU
+     INICIAL GLOBAL — o Sandbox não passa por Save Slots na saída. */
   state='title';
-  if(toMenu)showTitle();else showSlotSelect();
+  showTitle();
 }
 /* zera todos os fluxos armados do painel (swap/pick/pendência) */
 function _sbResetPicks(){
@@ -2811,9 +2836,9 @@ function sandboxEndToSetup(){
   sbPanelClose();
   _sbResetPicks();
   sandboxClearRunState();
-  sandboxRestoreReal();
+  if(player){stripSandboxMods(player);}   // §8: sessão anterior descartada
   sandboxCfg.wave=1;
-  sandboxOpenSetup();
+  sandboxOpenSetup();                     // R4: preparo SEM passar por slots
 }
 /* limpa a arena sem tocar em progression (§84 limpar inimigos) */
 function sandboxClearEnemies(){
@@ -2854,6 +2879,7 @@ function sandboxDeath(){
   ovEchos.textContent='';
   ovGo.textContent='REINICIAR TESTE';
   ovExitMenu(true);                          // §11: 3 opções claras
+  ovMenuVisible(false);
   const _act=$('ov-actions');
   if(_act)_act.classList.add('on');
   const _ob=$('ov-back');
@@ -2862,13 +2888,19 @@ function sandboxDeath(){
 }
 /* reinicia o MESMO setup (REINICIAR SANDBOX / ENTER na morte/vitória) */
 function sandboxRestart(){
-  sandboxRun=false;
   sbPanelClose();
   _sbResetPicks();
   sandboxClearRunState();
-  sandboxRestoreReal();
   hideOverlay();
-  sandboxStart();
+  /* R4: continua no MODO independente (sandboxRun segue true, curSlot 0)
+     — reinicia a sessão com o mesmo operador/build/onda, sem persistir */
+  startRun();
+  giveSandboxCredits(500);
+  if(sandboxCfg.preset&&BUILD_PRESETS[sandboxCfg.preset])
+    applyBuildPreset(sandboxCfg.preset,player);
+  if(sandboxCfg.wave>1)sandboxJumpTo(sandboxCfg.wave);
+  const chip=$('sb-chip');if(chip)chip.classList.add('on');
+  banner('SANDBOX ATIVO','LABORATÓRIO — NADA É REGISTRADO · F1 ABRE O PAINEL');
 }
 /* limpa entidades do teste anterior antes de reiniciar */
 function sandboxClearRunState(){
@@ -2898,6 +2930,7 @@ function sandboxVictory(){
   ovEchos.textContent='';
   ovGo.textContent='REINICIAR TESTE';
   ovExitMenu(true);                          // §11: 3 opções claras
+  ovMenuVisible(false);
   const _act=$('ov-actions');
   if(_act)_act.classList.add('on');
   const _ob=$('ov-back');
@@ -14217,6 +14250,7 @@ function onVictory(){
 }
 function showVictory(){
   ovExitMenu(false);                         // botão sandbox nunca vaza pro jogo real
+  ovMenuVisible(false);
   const v=victoryData,E=ENDINGS[v.key];
   $('e-title').textContent=E.t;
   $('e-title').style.color=E.c;
@@ -15000,6 +15034,7 @@ function onPlayerDeath(){
   showFracture(runData,had1,had2);
 }
 function showFracture(rd,had1,had2){
+  ovMenuVisible(false);
   ovTitle.textContent='CICLO FRATURADO';
   ovTitle.setAttribute('data-t','CICLO FRATURADO');
   ovTitle.style.fontSize='44px';ovTitle.classList.add('glitch');
@@ -17718,6 +17753,7 @@ function refreshTitleChar(){
 /* ---------------- boot ---------------- */
 function showTitle(){
   ovExitMenu(false);
+  ovMenuVisible(true);                 // R4 §3: SANDBOX só no menu global
   loadCfg();                    // configurações globais (APP SETTINGS)
   checkUnlocks(true);           // sincroniza unlocks silenciosamente
   ovTitle.textContent='E C H O';ovTitle.setAttribute('data-t','E C H O');
@@ -17784,6 +17820,7 @@ function slotSummaryLines(i){
   return {cls:'',info,runTxt,runCls};
 }
 function showSlotSelect(){
+  ovMenuVisible(false);                // R4 §3: sem SANDBOX dentro do save
   state='slots';
   slotNav=clamp(curSlot||1,1,3);
   ovTitle.textContent='SELECIONE UMA MEMÓRIA';
@@ -17828,6 +17865,7 @@ function pickSlot(i){
   showSlotMenu();
 }
 function showSlotMenu(){
+  ovMenuVisible(false);                // R4 §3: sem SANDBOX dentro do save
   state='slotMenu';
   slotMenuIdx=0;
   const b=smRoot.slots[curSlot];
@@ -17894,6 +17932,7 @@ function slotMenuAction(idx){
   }
 }
 function showSlotConfirm(){
+  ovMenuVisible(false);
   state='slotConfirm';
   const r=activeRun;
   ovTitle.textContent='ENCERRAR A RUN ATUAL?';
@@ -17953,6 +17992,12 @@ if(_sbChip)_sbChip.addEventListener('click',e=>{
 $('ov-back').addEventListener('click',e=>{
   e.stopPropagation();initAudio();AUDIO.ui(440);exitToSlotMenuFromDeath();
 });
+/* R4 §3: o botão SANDBOX só existe no MENU INICIAL GLOBAL — nas demais
+   telas do overlay (save slots, menu do save, morte/vitória) ele some. */
+function ovMenuVisible(v){
+  const m=document.getElementById('ov-menu');
+  if(m)m.style.display=v?'flex':'none';
+}
 /* PR 11.5 §11: 3ª opção da morte/vitória do SANDBOX — sai do laboratório,
    limpa o estado, NÃO salva active run, NÃO cria Echo, NÃO altera
    progressão e cai no menu principal. Fora do sandbox o botão não existe. */

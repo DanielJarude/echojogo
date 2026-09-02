@@ -40,8 +40,10 @@ src+=';globalThis.__t={'+
   'CHARS,WEAPONS,MAX_WAVE,SB_WAVES,SB_ETYPES,BUILD_PRESETS,'+
   'getState:()=>state,setState:s=>{state=s;},'+
   'getSandboxRun:()=>sandboxRun,getSandboxMode:()=>sandboxMode,'+
-  'getSandboxCfg:()=>sandboxCfg,getSbEchoQueueBak:()=>_sbEchoQueueBak,'+
-  'getSbCharBak:()=>_sbCharBak,getSbPendingWi:()=>sbPendingWi,'+
+  'getSandboxCfg:()=>sandboxCfg,getSbSlotBak:()=>_sbSlotBak,'+
+  'getSbPendingWi:()=>sbPendingWi,sandboxSessionInfo,'+
+  'pickSlot,showSlotMenu,renderSlotSelect,showSlotSelect,ovMenuVisible,'+
+  'refreshTitleChar,activateSlot,smBoot,'+
   'setSbPendingWi:v=>{sbPendingWi=v;},'+
   'getSbSwapA:()=>sbSwapA,setSbSwapA:v=>{sbSwapA=v;},'+
   'getSbPanelOpen:()=>sbPanelOpen,'+
@@ -235,13 +237,23 @@ const CHKEY={pyre:'c_pyre',bulwark:'c_bulwark',nomad:'c_nomad',revenant:'c_reven
 function unlock(t,keys){for(const k of keys)
   if(t.getProg().seen.indexOf(k)<0)t.getProg().seen.push(k);}
 /* prepara um boot com slot 1 real (operador PYRE + fila de Ecos forjada) */
+function mkEcho(mk){
+  /* registro válido para smSanitizeSlot (trail.length>4, sem dev) */
+  return {v:2,dur:12.34,dmgMul:1,frMul:1,wave:7,level:9,crit:.05,critMul:1.8,
+    pierce:0,aoeMul:1,rangeMul:1,projSpdMul:1,longRangeBonus:0,
+    coins:120,items:[],upg:[],owned:[0,1],moral:{comp:1,greed:0,viol:0},
+    dom:'comp',k:0,mh:100,st:null,ps:null,trail:
+      [[0,0,0,0,0],[1,1,1,1,1],[2,2,2,2,2],[3,3,3,3,3],[4,4,4,4,4],[5,5,5,5,5]],
+    marker:mk};
+}
 function realSlot(t){
   t.activateSlot(1);
   unlock(t,[CHKEY.pyre,CHKEY.bulwark,CHKEY.nomad,CHKEY.revenant]);
   t.setChar(3);                          // PYRE — persistido no slot real
-  const marker={marker:'eco-real-1'};
-  const marker2={marker:'eco-real-2'};
+  const marker=mkEcho('eco-real-1');marker.kills=111; // slim grava k=kills
+  const marker2=mkEcho('eco-real-2');marker2.kills=222;
   t.setEchoQueue([marker,marker2]);
+  t.saveEchoes();                        // persiste no arquivo (save real)
   return {marker,marker2};
 }
 
@@ -331,20 +343,34 @@ ok('§76: FORA do sandbox o gate volta ao normal',()=>{
 const S=bootGame();
 const {marker,marker2}=realSlot(S);
 const SAVE_BEFORE=S._ls.getItem('echoSave.v3');
-ok('§75: sandboxStart zera a fila de Ecos NA RUN e preserva a real',()=>{
+ok('R4§5: openSetup entra no modo independente — NADA do slot é herdado',()=>{
+  S.sandboxOpenSetup();
+  assert.strictEqual(S.getCurSlot(),0,'R4§4: nenhum slot ativo');
+  assert.strictEqual(S.getCharSel(),S.getSandboxCfg().char,
+    'charSel vem do setup, não do save');
+  assert.strictEqual(JSON.stringify(S.getEchoQueue()),'[]','nenhum Eco herdado');
+  assert.strictEqual(S.getProg().kills,0,'prog do save NÃO carregado');
+  assert.strictEqual(S.getMeta().mem,0,'meta do save NÃO carregada');
+  assert.strictEqual(S.hasActiveRun(),false,'nenhum checkpoint herdado');
+  assert.strictEqual(S.getSbSlotBak(),1,'contexto real anotado para a saída');
+});
+ok('R4§4: menu Sandbox não altera slot persistente (lastSlot intacto)',()=>{
+  assert.strictEqual(S.getSmRoot().lastSlot,1,'lastSlot do arquivo intacto');
+});
+ok('§75: sandboxStart zera a fila de Ecos NA RUN (modo independente)',()=>{
   S.getSandboxCfg().char=2;                        // BULWARK no laboratório
   S.sandboxStart();
   assert.strictEqual(S.getSandboxRun(),true);
   assert.strictEqual(S.getSandboxMode(),false);
   assert.strictEqual(S.getState(),'play');
-  assert.strictEqual(JSON.stringify(S.getEchoQueue()),'[]','fila esvaziada na run');
-  assert.strictEqual(S.getSbEchoQueueBak()[0],marker,'fila real preservada');
-  assert.strictEqual(S.getEchoQueue().indexOf(marker),-1);
+  assert.strictEqual(S.getCurSlot(),0,'run do laboratório sem slot ativo');
+  assert.strictEqual(JSON.stringify(S.getEchoQueue()),'[]','fila vazia na run');
+  assert.strictEqual(S.getEchoQueue().indexOf(marker),-1,'nada do save na run');
 });
-ok('§75: operador do laboratório ativo; operador REAL guardado em _sbCharBak',()=>{
+ok('§75: operador do laboratório ativo; o save NÃO é lido como base',()=>{
   assert.strictEqual(S.getCharSel(),2,'cfg.char=2 → BULWARK ativo');
-  assert.strictEqual(S.getSbCharBak(),3,'PYRE real guardado');
   assert(S.getPlayer(),'player criado');
+  assert.strictEqual(S.getPlayer().maxSlots,5,'slots do BULWARK (conteúdo total)');
 });
 ok('§73: iniciar sandbox NÃO grava nada no save (byte a byte)',()=>{
   assert.strictEqual(S._ls.getItem('echoSave.v3'),SAVE_BEFORE);
@@ -421,7 +447,7 @@ ok('§89: onPlayerDeath roteia para TESTE ENCERRADO (sem Echo, sem save)',()=>{
   assert(S.getEl('ov-sub').textContent.indexOf('NENHUM ECO')>=0,
     'overlay deve afirmar que nenhum Eco foi criado');
   assert.strictEqual(S.getEchoQueue().length,0,'nenhum Echo criado');
-  assert.strictEqual(S.getSbEchoQueueBak()[0],marker,'fila real intocada');
+  assert.strictEqual(S.getCurSlot(),0,'morte no laboratório não toca slot');
   assert.strictEqual(JSON.stringify(S.getProg()),PROG_DEATH,
     'prog não mudou na morte');
   assert.strictEqual(S._ls.getItem('echoSave.v3'),SAVE_BEFORE,
@@ -430,17 +456,17 @@ ok('§89: onPlayerDeath roteia para TESTE ENCERRADO (sem Echo, sem save)',()=>{
 function T_esc(t){return t.getEl('ov-title').textContent;}
 
 /* ============ §88 — REINICIAR O MESMO SETUP ============ */
-ok('§88: sandboxRestart restaura fila real, troca operador e recomeça IGUAL',()=>{
+ok('§88/R4: sandboxRestart reinicia o MESMO setup sem sair do modo',()=>{
   S.sandboxRestart();
-  assert.strictEqual(S.getSandboxRun(),true);
+  assert.strictEqual(S.getSandboxRun(),true,'continua em modo laboratório');
   assert.strictEqual(S.getState(),'play');
   assert.strictEqual(S.getCharSel(),2,'mesmo operador de teste (BULWARK)');
-  assert.strictEqual(S.getSbCharBak(),3,'PYRE real preservado de novo');
-  assert.strictEqual(JSON.stringify(S.getEchoQueue()),'[]','fila esvaziada de novo');
-  assert.strictEqual(S.getSbEchoQueueBak()[0],marker,'fila real intacta');
+  assert.strictEqual(S.getCurSlot(),0,'§24: sem slot ativo');
+  assert.strictEqual(JSON.stringify(S.getEchoQueue()),'[]','fila vazia de novo');
   assert.strictEqual(S.getWave(),0,'run recomeça do zero (resetRunWorld)');
   assert(S.getPlayer(),'player novo criado');
   assert(S.getPlayer().coins>=500,'crédito de teste de novo');
+  assert.strictEqual(S._ls.getItem('echoSave.v3'),SAVE_BEFORE,'save intacto');
 });
 
 /* ============ §90 — VITÓRIA: TESTE CONCLUÍDO ============ */
@@ -458,14 +484,18 @@ ok('§90: onVictory roteia para TESTE CONCLUÍDO (sem final, sem memória)',()=>
 });
 
 /* ============ §87 — SAIR RESTAURA O SAVE REAL ============ */
-ok('§87: sandboxExit devolve fila real (mesma referência) e operador do slot',()=>{
+ok('§87/R4: sandboxExit devolve o modo normal RECARREGADO DO ARQUIVO',()=>{
   S.sandboxExit(false);
   assert.strictEqual(S.getSandboxRun(),false);
   assert.strictEqual(S.sandboxActive(),false);
-  assert.strictEqual(S.getEchoQueue()[0],marker,'MESMA referência do Eco 1');
-  assert.strictEqual(S.getEchoQueue()[1],marker2,'MESMA referência do Eco 2');
-  assert.strictEqual(S.getCharSel(),3,'charSel restaurado para PYRE');
-  assert.strictEqual(S.getSbEchoQueueBak(),null,'backup consumido');
+  assert.strictEqual(S.getState(),'title','R4§21: menu inicial GLOBAL');
+  assert.strictEqual(S.getCurSlot(),1,'contexto real reativado (slot 1)');
+  assert(S.getEchoQueue()[0]&&S.getEchoQueue()[0].k===111,
+    'Eco 1 do Save 1 recarregado do arquivo');
+  assert(S.getEchoQueue()[1]&&S.getEchoQueue()[1].k===222,
+    'Eco 2 do Save 1 recarregado do arquivo');
+  assert.strictEqual(S.getEchoQueue().length,2,'fila real do Save 1 completa');
+  assert.strictEqual(S.getCharSel(),3,'charSel do Save 1 (PYRE)');
   assert.strictEqual(S.getEl('sb-chip').classList.contains('on'),false,
     'chip SANDBOX desligado');
   assert.strictEqual(S.getSmRoot().slots[1].char,3,'slot real: PYRE');
@@ -479,6 +509,7 @@ ok('§73: setChar real persiste no slot; sandboxSetChar não persiste',()=>{
   const r=realSlot(C2);                 // PYRE no slot 1
   assert.strictEqual(C2.getSmRoot().slots[1].char,3);
   C2.getSandboxCfg().char=1;            // WRAITH no laboratório
+  C2.sandboxOpenSetup();
   C2.sandboxStart();
   assert.strictEqual(C2.getCharSel(),1);
   assert.strictEqual(C2.getSmRoot().slots[1].char,3,
@@ -493,6 +524,8 @@ ok('§73: setChar real persiste no slot; sandboxSetChar não persiste',()=>{
 ok('§92: sandbox com DEV desligado não gera taint ao remover item',()=>{
   /* DEV_MODE=false (produção): devTaint() é cedo-return; nenhuma ação do
      sandbox (remover item/trocar slots/trocar operador) pode manchar. */
+  C2.sandboxOpenSetup();
+  C2.sandboxOpenSetup();
   C2.sandboxStart();                    // run de laboratório nova (DEV off)
   const p=C2.getPlayer();
   C2.applyBuildPreset('crit',p);
@@ -574,6 +607,7 @@ const W2=bootGame();
 ok('§62: arsenal cheio → escolher QUAL SLOT substituir (fluxo completo)',()=>{
   const r=realSlot(W2);
   W2.getSandboxCfg().char=1;                     // WRAITH: 2 slots, 2 armas
+  W2.sandboxOpenSetup();
   W2.sandboxStart();
   W2.sbPanelShow();
   const p=W2.getPlayer();
@@ -708,7 +742,7 @@ function openF1(t){
 ok('§22: F1 abre em run e exibe TODAS as seções (não parece DEV Inspector)',()=>{
   const F=bootGame();
   realSlot(F);
-  F.getSandboxCfg().char=0;F.sandboxStart();
+  F.sandboxOpenSetup();F.getSandboxCfg().char=0;F.sandboxStart();
   openF1(F);
   assert.strictEqual(F.getState(),'sandbox','tempo congelado');
   const h=F.getEl('sb-body').innerHTML;
@@ -719,7 +753,7 @@ ok('§22: F1 abre em run e exibe TODAS as seções (não parece DEV Inspector)',
 ok('§22: adicionar arma por BINDING (data-sbw → slot livre §123)',()=>{
   const F=bootGame();
   realSlot(F);
-  F.getSandboxCfg().char=0;F.sandboxStart();
+  F.sandboxOpenSetup();F.getSandboxCfg().char=0;F.sandboxStart();
   const p=openF1(F);
   F.sbAction('clearars');
   const antes=F.countWeapons(p);
@@ -738,7 +772,7 @@ ok('§22: adicionar arma por BINDING (data-sbw → slot livre §123)',()=>{
 ok('§22: remover arma deixa SLOT VAZIO e grant preenche o buraco (§8)',()=>{
   const F=bootGame();
   realSlot(F);
-  F.getSandboxCfg().char=0;F.sandboxStart();
+  F.sandboxOpenSetup();F.getSandboxCfg().char=0;F.sandboxStart();
   const p=F.getPlayer();
   F.sbPanelShow();
   F.sandboxRemoveSlot(0);
@@ -750,7 +784,7 @@ ok('§22: remover arma deixa SLOT VAZIO e grant preenche o buraco (§8)',()=>{
 ok('§22: remover item por BINDING (✕), adicionar pelo catálogo e limpar build',()=>{
   const F=bootGame();
   realSlot(F);
-  F.getSandboxCfg().char=0;F.sandboxStart();
+  F.sandboxOpenSetup();F.getSandboxCfg().char=0;F.sandboxStart();
   const p=F.getPlayer();
   F.applyBuildPreset('crit',p);
   assert(p.items.length>0,'build com itens');
@@ -768,7 +802,7 @@ ok('§22: remover item por BINDING (✕), adicionar pelo catálogo e limpar buil
 ok('§22: preset por BINDING + heal + shield fill + grupo + limpar arena',()=>{
   const F=bootGame();
   realSlot(F);
-  F.getSandboxCfg().char=0;F.sandboxStart();
+  F.sandboxOpenSetup();F.getSandboxCfg().char=0;F.sandboxStart();
   const p=F.getPlayer();
   p.hp=1;p.shield=0;
   F.sbPanelShow();
@@ -785,7 +819,7 @@ ok('§22: preset por BINDING + heal + shield fill + grupo + limpar arena',()=>{
 ok('§13: CRÉDITOS — ±10/±100/MAX funcionam (só na sessão sandbox)',()=>{
   const F=bootGame();
   realSlot(F);
-  F.getSandboxCfg().char=0;F.sandboxStart();
+  F.sandboxOpenSetup();F.getSandboxCfg().char=0;F.sandboxStart();
   const p=F.getPlayer();
   p.coins=500;
   F.sbPanelShow();
@@ -798,7 +832,7 @@ ok('§13: CRÉDITOS — ±10/±100/MAX funcionam (só na sessão sandbox)',()=>{
 ok('§14: HP — encher, +25, dano e SET 1 (sem NaN/negativo)',()=>{
   const F=bootGame();
   realSlot(F);
-  F.getSandboxCfg().char=0;F.sandboxStart();
+  F.sandboxOpenSetup();F.getSandboxCfg().char=0;F.sandboxStart();
   const p=F.getPlayer();
   F.sbPanelShow();
   p.hp=10;F.sbAction('hp+25');
@@ -813,7 +847,7 @@ ok('§14: HP — encher, +25, dano e SET 1 (sem NaN/negativo)',()=>{
 ok('§15: QUEBRAR ESCUDO dispara o PIPELINE REAL (hook onShieldBreak da PR 11)',()=>{
   const F=bootGame();
   realSlot(F);
-  F.getSandboxCfg().char=0;F.sandboxStart();
+  F.sandboxOpenSetup();F.getSandboxCfg().char=0;F.sandboxStart();
   const p=F.getPlayer();
   const pulso=F.ITEMS.find(i=>i.id==='sb_pulso');
   assert(pulso,'item sb_pulso existe (PR 11, hook onShieldBreak)');
@@ -831,7 +865,7 @@ ok('§15: QUEBRAR ESCUDO dispara o PIPELINE REAL (hook onShieldBreak da PR 11)',
 ok('§16: DANO/CRIT/VEL/SH.MAX/REGEN via Stat Modifier Pipeline (source sandbox:*)',()=>{
   const F=bootGame();
   realSlot(F);
-  F.getSandboxCfg().char=0;F.sandboxStart();
+  F.sandboxOpenSetup();F.getSandboxCfg().char=0;F.sandboxStart();
   const p=F.getPlayer();
   F.sbPanelShow();
   const d0=p.dmgMul,c0=p.crit,s0=p.speed,m0=p.shieldMax,g0=p.shieldRegen;
@@ -855,7 +889,7 @@ ok('§16: DANO/CRIT/VEL/SH.MAX/REGEN via Stat Modifier Pipeline (source sandbox:
 ok('§17: RESETAR AJUSTES remove SOMENTE mods sandbox (itens ficam)',()=>{
   const F=bootGame();
   realSlot(F);
-  F.getSandboxCfg().char=0;F.sandboxStart();
+  F.sandboxOpenSetup();F.getSandboxCfg().char=0;F.sandboxStart();
   const p=F.getPlayer();
   F.applyBuildPreset('crit',p);            // garante mods de item presentes
   F.sbPanelShow();
@@ -873,7 +907,7 @@ ok('§17: RESETAR AJUSTES remove SOMENTE mods sandbox (itens ficam)',()=>{
 ok('§23: spawn de TODOS os 11 tipos de inimigo (objeto válido + HP)',()=>{
   const F=bootGame();
   realSlot(F);
-  F.getSandboxCfg().char=0;F.sandboxStart();
+  F.sandboxOpenSetup();F.getSandboxCfg().char=0;F.sandboxStart();
   F.sandboxJumpTo(3);
   F.sbPanelShow();
   for(const t of F.SB_ETYPES){
@@ -890,7 +924,7 @@ ok('§23: spawn de TODOS os 11 tipos de inimigo (objeto válido + HP)',()=>{
 ok('§24: spawn de TODOS os 8 minibosses (nenhum no-op/erro)',()=>{
   const F=bootGame();
   realSlot(F);
-  F.getSandboxCfg().char=0;F.sandboxStart();
+  F.sandboxOpenSetup();F.getSandboxCfg().char=0;F.sandboxStart();
   F.sbPanelShow();
   for(const mb of F.MINIBOSS){
     F.getEl('sb-body').querySelectorAll('[data-sbmini="'+mb.id+'"]')[0].click();
@@ -904,7 +938,7 @@ ok('§24: spawn de TODOS os 8 minibosses (nenhum no-op/erro)',()=>{
 ok('§25: spawn do BOSS (O PARADOXO) por ação do painel',()=>{
   const F=bootGame();
   realSlot(F);
-  F.getSandboxCfg().char=0;F.sandboxStart();
+  F.sandboxOpenSetup();F.getSandboxCfg().char=0;F.sandboxStart();
   F.sandboxJumpTo(5);
   F.sbPanelShow();
   F.sbAction('boss');
@@ -960,7 +994,7 @@ ok('§27: todos os operadores iniciam (makePlayer/slots/armas/F1)',()=>{
 ok('§11: morte no sandbox — 3 opções claras + VOLTAR AO MENU PRINCIPAL funciona',()=>{
   const V5=bootGame();
   const r=realSlot(V5);
-  V5.getSandboxCfg().char=1;V5.sandboxStart();
+  V5.sandboxOpenSetup();V5.getSandboxCfg().char=1;V5.sandboxStart();
   V5.onPlayerDeath();
   assert.strictEqual(T_esc(V5),'TESTE ENCERRADO');
   assert.strictEqual(V5.getEl('ov-go').textContent,'REINICIAR TESTE');
@@ -975,13 +1009,15 @@ ok('§11: morte no sandbox — 3 opções claras + VOLTAR AO MENU PRINCIPAL func
   assert.strictEqual(V5.getSandboxRun(),false,'estado sandbox limpo');
   assert.strictEqual(V5.sandboxActive(),false);
   assert.strictEqual(V5.getState(),'title','voltou ao Main Menu');
-  assert.strictEqual(V5.getEchoQueue()[0],r.marker,'nenhum Echo criado — fila real');
+  assert(V5.getEchoQueue()[0]&&V5.getEchoQueue()[0].k===111&&
+    V5.getEchoQueue().length===2,
+    'nenhum Echo criado — fila real do Save 1 recarregada');
   assert.strictEqual(V5.getSmRoot().slots[1].char,3,'progressão intacta');
 });
 ok('§11: vitória no sandbox também oferece VOLTAR AO MENU PRINCIPAL',()=>{
   const V6=bootGame();
   realSlot(V6);
-  V6.getSandboxCfg().char=0;V6.sandboxStart();
+  V6.sandboxOpenSetup();V6.getSandboxCfg().char=0;V6.sandboxStart();
   V6.sandboxJumpTo(20);V6.onVictory();
   assert.strictEqual(T_esc(V6),'TESTE CONCLUÍDO');
   assert.strictEqual(V6.getEl('ov-exitmenu').style.display,'');
@@ -992,7 +1028,7 @@ ok('§11: vitória no sandbox também oferece VOLTAR AO MENU PRINCIPAL',()=>{
 ok('§18: SAIR do sandbox remove TODOS os ajustes (mods sandbox não vazam)',()=>{
   const V7=bootGame();
   realSlot(V7);
-  V7.getSandboxCfg().char=0;V7.sandboxStart();
+  V7.sandboxOpenSetup();V7.getSandboxCfg().char=0;V7.sandboxStart();
   const p=V7.getPlayer();
   V7.sbPanelShow();
   V7.sbAction('mod:damage:1');V7.sbAction('mod:crit:1');V7.sbAction('mod:speed:1');
@@ -1006,7 +1042,7 @@ ok('§21: créditos manipuláveis no sandbox mesmo sem loja (documentado)',()=>{
   const V8=bootGame();
   V8.sandboxExit(true);V8.setState('title');
   V8.sandboxOpenSetup();
-  V8.getSandboxCfg().char=0;V8.sandboxStart();
+  V8.sandboxOpenSetup();V8.getSandboxCfg().char=0;V8.sandboxStart();
   const p=V8.getPlayer();
   assert(p.coins>=500,'crédito inicial do laboratório');
   const c0=p.coins;
@@ -1018,7 +1054,7 @@ ok('§21: créditos manipuláveis no sandbox mesmo sem loja (documentado)',()=>{
 ok('UI: REINICIAR TESTE (ov-go) responde a CLIQUE real (não só Enter)',()=>{
   const V9=bootGame();
   realSlot(V9);
-  V9.getSandboxCfg().char=0;V9.sandboxStart();
+  V9.sandboxOpenSetup();V9.getSandboxCfg().char=0;V9.sandboxStart();
   V9.onPlayerDeath();
   assert.strictEqual(T_esc(V9),'TESTE ENCERRADO');
   const go=V9.getEl('ov-go');
@@ -1216,7 +1252,7 @@ ok('R3§10/§13: no Sandbox o F1 aparece e funciona',()=>{
   const R2=bootGame();
   R2.sandboxExit(true);R2.setState('title');
   R2.sandboxOpenSetup();
-  R2.getSandboxCfg().char=0;R2.sandboxStart();
+  R2.sandboxOpenSetup();R2.getSandboxCfg().char=0;R2.sandboxStart();
   assert.strictEqual(R2.getEl('sb-chip').classList.contains('on'),true,
     'chip SANDBOX · [F1] LABORATÓRIO visível só com sandboxRun');
   R2.pressKey('F1');
@@ -1229,7 +1265,7 @@ ok('R3§15/§16: Sandbox → sair → run NORMAL fica 100% limpa',()=>{
   const R3=bootGame();
   R3.sandboxExit(true);R3.setState('title');
   R3.sandboxOpenSetup();
-  R3.getSandboxCfg().char=0;R3.sandboxStart();
+  R3.sandboxOpenSetup();R3.getSandboxCfg().char=0;R3.sandboxStart();
   const sb=R3.getPlayer();
   R3.sbPanelShow();
   R3.sbAction('mod:damage:1');R3.sbAction('mod:speed:1');
@@ -1253,6 +1289,209 @@ ok('R3§15/§16: Sandbox → sair → run NORMAL fica 100% limpa',()=>{
   assert.strictEqual(R3.isCharUnlocked('revenant'),false);
   assert.strictEqual(R3.isWeaponUnlocked('beam'),false);
   assert.strictEqual(R3.getSmRoot().slots[1].prog.seen.indexOf('w_beam'),-1);
+});
+
+/* =====================================================================
+   R4 — SANDBOX COMO MODO INDEPENDENTE DOS SAVE SLOTS
+   ===================================================================== */
+/* forja 3 slots com estados distintos (kill counts e seen diferentes) */
+function forge3(b){
+  b.activateSlot(1);
+  unlock(b,['c_pyre']);
+  b.setChar(3);
+  const r=b.getSmRoot();
+  r.slots[1].prog.kills=400;
+  r.slots[2]={touched:true,char:6,
+    meta:{mem:7,spd:0,reroll:0,vault:0,wins:0,endings:[],evars:[]},
+    prog:{kills:50,runs:1,waves:3,best:2,wins:0,bosses:0,minis:0,
+      elites:0,crits:0,dashes:0,coins:0,items:0,events:0,echoKills:0,
+      reso:0,melee:0,status:0,seen:['c_warden']},
+    echoes:[],run:null};
+  r.slots[3]={touched:true,char:7,
+    meta:{mem:9,spd:1,reroll:1,vault:0,wins:1,endings:[],evars:[]},
+    prog:{kills:1200,runs:4,waves:31,best:11,wins:1,bosses:1,minis:1,
+      elites:2,crits:0,dashes:0,coins:0,items:0,events:0,echoKills:0,
+      reso:0,melee:0,status:0,seen:['c_revenant','c_nomad']},
+    echoes:[],run:null};
+  b.getLS().setItem('echoSave.v3',JSON.stringify(r));
+}
+ok('R4§52: botão SANDBOX existe no menu inicial e some dentro do save',()=>{
+  const M=bootGame();
+  M.showTitle();
+  assert.strictEqual(M.getEl('ov-menu').style.display,'flex',
+    'menu global exibe o botão SANDBOX');
+  assert(html.indexOf('id="ov-sandbox"')>=0);
+  M.pickSlot(2);                          // entra no Save 2 (menu do save)
+  assert.strictEqual(M.getState(),'slotMenu');
+  assert.strictEqual(M.getEl('ov-menu').style.display,'none',
+    'dentro do save: SEM botão Sandbox (R4§3)');
+  /* tela de slots também esconde */
+  M.showSlotSelect();
+  assert.strictEqual(M.getEl('ov-menu').style.display,'none');
+});
+ok('R4§13/§14: UI de operadores — locked no Save, disponível no Sandbox, locked de volta',()=>{
+  const U=bootGame();
+  forge3(U);
+  const snap=U.getLS().getItem('echoSave.v3');
+  /* abre o menu do SAVE 1 e renderiza os cards de operador */
+  U.pickSlot(1);
+  U.refreshTitleChar();
+  const cards=U.getEl('ov-char').querySelectorAll('[data-ch]');
+  assert.strictEqual(cards.length,U.CHARS.length,'8 cards renderizados');
+  const rev=cards.find(n=>n.dataset.ch==='7');
+  assert(rev._cls.indexOf('lock')>=0,'REVENANT aparece BLOQUEADO no Save 1');
+  const raw=U.getEl('ov-char').innerHTML;
+  assert(raw.indexOf('🔒 REVENANT')>=0,'cadeado visual no Save 1');
+  const lun=cards.find(n=>n.dataset.ch==='5');
+  assert(lun._cls.indexOf('lock')>=0,'NÔMADE bloqueado no Save 1');
+  /* SANDBOX: todos disponíveis (classe/visual no PRÓPRIO setup) */
+  U.sandboxOpenSetup();
+  const sb=U.getEl('cx-body').innerHTML;
+  assert(sb.indexOf('TODOS LIBERADOS')>=0,'setup anuncia unlock de teste');
+  for(const C of U.CHARS)
+    assert(sb.indexOf(C.nm)>=0,'operador no preparo: '+C.nm);
+  assert.strictEqual(U.isCharUnlocked('revenant'),true,'disponível no sandbox');
+  /* usa o REVENANT no laboratório */
+  U.getSandboxCfg().char=7;U.getSandboxCfg().preset='';U.getSandboxCfg().wave=1;
+  assert.strictEqual(U.sandboxStart(),true);
+  assert.strictEqual(U.getCharSel(),7,'REVENANT jogável no laboratório');
+  U.sandboxExit(true);
+  /* de volta ao Save 1: os originais voltam a aparecer bloqueados */
+  assert.strictEqual(U.getLS().getItem('echoSave.v3'),snap,
+    'save byte a byte após a sessão');
+  U.pickSlot(1);
+  U.refreshTitleChar();
+  const cards2=U.getEl('ov-char').querySelectorAll('[data-ch]');
+  const rev2=cards2.find(n=>n.dataset.ch==='7');
+  assert(rev2._cls.indexOf('lock')>=0,'REVENANT volta a LOCKED no Save 1');
+  assert(U.getEl('ov-char').innerHTML.indexOf('🔒 REVENANT')>=0,
+    'cadeado de volta');
+  assert.strictEqual(U.isCharUnlocked('revenant'),false,'isCharUnlocked real');
+});
+ok('R4§45/§46/§47: Sandbox → Save 1/2/3 — progressão de TODOS intacta',()=>{
+  const P=bootGame();
+  forge3(P);
+  const snap=P.getLS().getItem('echoSave.v3');
+  P.sandboxOpenSetup();
+  P.getSandboxCfg().char=7;P.getSandboxCfg().preset='status';P.getSandboxCfg().wave=5;
+  P.sandboxStart();
+  P.grantWeapon(P.WEAPONS.findIndex(w=>w.id==='void'),true);
+  P.grantItemInternal(P.getPlayer(),P.itemById('luneta'),true);
+  P.sbPanelShow();P.sandboxJumpTo(20);P.onVictory();
+  P.sandboxRestart();P.onPlayerDeath();P.sandboxExit(true);
+  assert.strictEqual(P.getLS().getItem('echoSave.v3'),snap,
+    'os 3 saves byte a byte após a sessão');
+  P.activateSlot(2);
+  assert.strictEqual(P.getProg().kills,50,'Save 2 intacto');
+  assert.strictEqual(P.getProg().seen.indexOf('c_warden')>=0,true,'Save 2 seen ok');
+  P.activateSlot(3);
+  assert.strictEqual(P.getProg().kills,1200,'Save 3 intacto');
+  assert.strictEqual(P.getMeta().mem,9,'Save 3 meta intacta');
+  P.activateSlot(1);
+  assert.strictEqual(P.getProg().kills,400,'Save 1 intacto');
+});
+ok('R4§48/§49: Save→Menu→Sandbox NÃO herda; Sandbox→Save→Sandbox recomeça limpo',()=>{
+  const Q=bootGame();
+  forge3(Q);
+  Q.pickSlot(1);                           // Save 1 carregado de verdade
+  assert.strictEqual(Q.getProg().kills,400,'Save 1 na memória');
+  Q.showSlotSelect();Q.showTitle();        // volta completamente ao menu
+  Q.sandboxOpenSetup();                    // Sandbox DEPOIS do save
+  assert.strictEqual(Q.getProg().kills,0,'não herda prog do Save 1');
+  assert.strictEqual(JSON.stringify(Q.getEchoQueue()),'[]','não herda Ecos');
+  assert.strictEqual(Q.getMeta().mem,0,'não herda meta');
+  assert.strictEqual(Q.getCurSlot(),0,'sem slot ativo');
+  Q.getSandboxCfg().char=7;Q.sandboxStart();
+  Q.sandboxExit(true);                     // sair
+  Q.activateSlot(1);                       // Save 1 de novo (fluxo normal)
+  assert.strictEqual(Q.getProg().kills,400,'Save 1 intacto após sandbox');
+  Q.showSlotSelect();Q.showTitle();
+  Q.sandboxOpenSetup();                    // segundo Sandbox na mesma sessão
+  assert.strictEqual(Q.getProg().kills,0,'segundo Sandbox nasce limpo');
+  assert.strictEqual(Q.getCurSlot(),0,'sem slot de novo');
+});
+ok('R4§16/§53: 10 reentradas completas — INICIAR TESTE sempre funciona',()=>{
+  const E=bootGame();
+  for(let i=0;i<10;i++){
+    E.sandboxExit(true);E.setState('title');
+    E.sandboxOpenSetup();
+    E.getSandboxCfg().char=i%8;
+    E.getSandboxCfg().preset=['','crit','dash'][i%3];
+    E.getSandboxCfg().wave=3;
+    const go=E.getEl('cx-body').querySelector('#sb-start');
+    assert(go,'ciclo '+i+': botão INICIAR existe');
+    assert.strictEqual(go._h.click.length,1,'ciclo '+i+': exatamente 1 handler');
+    go.click();                            // clique REAL no binding
+    assert.strictEqual(E.getSandboxRun(),true,'ciclo '+i+': run abriu');
+    assert.strictEqual(E.getState(),'play','ciclo '+i+': jogando');
+    assert(E.getPlayer(),'ciclo '+i+': player ok');
+    E.sandboxExit(true);
+    assert.strictEqual(E.getState(),'title','ciclo '+i+': voltou ao menu');
+  }
+});
+ok('R4§17/§18: STRESS 50 ciclos — zero estado residual, listeners únicos',()=>{
+  const X=bootGame();
+  const kd0=window._wl.keydown.length,ku0=window._wl.keyup.length;
+  for(let i=0;i<50;i++){
+    X.sandboxExit(true);X.setState('title');
+    X.sandboxOpenSetup();
+    X.getSandboxCfg().char=0;X.getSandboxCfg().preset='';X.getSandboxCfg().wave=1;
+    assert.strictEqual(X.sandboxStart(),true,'ciclo '+i+' abriu');
+    X.sbPanelShow();X.sbAction('mod:damage:1');X.sbAction('group');
+    X.sbPanelClose();
+    X.sandboxExit(true);
+    /* sem residuais */
+    assert.strictEqual(X.getSandboxRun(),false,'ciclo '+i+': sandboxRun=false');
+    assert.strictEqual(X.getSandboxMode(),false,'ciclo '+i+': sandboxMode=false');
+    assert.strictEqual(X.getState(),'title','ciclo '+i+': state limpo');
+    assert.strictEqual(X.getCurSlot(),1,'ciclo '+i+': contexto real de volta');
+    assert.strictEqual(X.getEnemies().length,0,'ciclo '+i+': arena limpa');
+    assert.strictEqual(X.getSbPanelOpen(),false,'ciclo '+i+': painel fechado');
+  }
+  assert.strictEqual(window._wl.keydown.length,kd0,'keydown listeners NÃO duplicam');
+  assert.strictEqual(window._wl.keyup.length,ku0,'keyup listeners NÃO duplicam');
+  assert.strictEqual(X.getProg().kills,0,'prog do modo normal continua zerado');
+});
+ok('R4§35/§36: fechar no Sandbox não destraí nada — sem checkpoint/Continue',()=>{
+  const F=bootGame();
+  forge3(F);
+  const before=JSON.stringify(F._ls._d);
+  F.sandboxOpenSetup();
+  F.getSandboxCfg().char=0;F.sandboxStart();
+  F.sbPanelShow();F.sandboxJumpTo(10);F.sbPanelClose();
+  /* "fechar o jogo" aqui = nenhuma gravação acontece na sessão */
+  assert.strictEqual(JSON.stringify(F._ls._d),before,
+    'nenhum byte escrito ao fechar durante o Sandbox');
+  /* reabrir o jogo = boot novo sobre o MESMO localStorage */
+  const B2=bootGame(Object.assign({},F._ls._d));
+  assert.strictEqual(B2.getState(),'title','menu inicial normal (sem CONTINUAR SANDBOX)');
+  assert.strictEqual(B2.hasActiveRun(),false,'nenhum activeRun de sandbox');
+});
+ok('R4§43: entrar no Sandbox não altera currentSlot/lastSlot persistente',()=>{
+  const G=bootGame();
+  forge3(G);
+  const snap=G.getLS().getItem('echoSave.v3');
+  G.sandboxOpenSetup();
+  assert.strictEqual(G.getSmRoot().lastSlot,1,'lastSlot persistente intacto');
+  G.getSandboxCfg().char=1;G.sandboxStart();
+  G.sandboxExit(true);
+  assert.strictEqual(G.getLS().getItem('echoSave.v3'),snap);
+  assert.strictEqual(G.getSmRoot().lastSlot,1);
+  assert.strictEqual(G.getCurSlot(),1,'modo normal restaurado');
+});
+ok('R4§8: sandboxSessionInfo documenta a sessão temporária (slot sempre 0)',()=>{
+  const H=bootGame();
+  H.sandboxOpenSetup();
+  H.getSandboxCfg().char=4;H.getSandboxCfg().preset='crit';H.getSandboxCfg().wave=10;
+  const si=H.sandboxSessionInfo();
+  assert.strictEqual(si.operator,4);
+  assert.strictEqual(si.preset,'crit');
+  assert.strictEqual(si.wave,10);
+  assert.strictEqual(si.active,false);
+  assert.strictEqual(si.slot,0,'nenhum slot pertence ao sandbox');
+  H.sandboxStart();
+  assert.strictEqual(H.sandboxSessionInfo().active,true);
+  H.sandboxExit(true);
 });
 
 console.log('---------------------------------------------');
