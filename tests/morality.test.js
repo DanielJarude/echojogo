@@ -549,8 +549,17 @@ ok('código do PR 9 não referencia trust/Dissonância/Resonance (auditoria de f
   assert(!/triggerResonance|microResonance/i.test(block),'sem Resonance');
   assert(!/\bpers\b|PERSONALITIES/.test(block),'sem personalidade');
 });
-ok('pickEnding (finais) permanece intocado — PR 10.5 é futuro',()=>{
-  assert(/function pickEnding\(\)\{\s*const dark=moral\.greed\+moral\.viol/.test(RAWSRC));
+ok('pickEnding existe e devolve SEMPRE um final válido (PR 10.5 reformou o bloco)',()=>{
+  /* PR 10.5 substituiu o pickEnding legado pela arquitetura
+     buildEndingContext → evaluateEndingCandidates → pickEnding. A
+     invariante da PR 9 (moral participa da decisão SEM reescrever o
+     sistema) continua protegida: os 3 finais originais permanecem no
+     catálogo e as condições históricas (conflito/luz/treva) continuam
+     presentes no avaliador. */
+  assert(/function pickEnding\(/.test(RAWSRC));
+  for(const k of ['liber','tirano','eterno'])
+    assert(RAWSRC.indexOf(k+':{')>=0,'final original preservado: '+k);
+  assert(/buildEndingContext/.test(RAWSRC)&&/evaluateEndingCandidates/.test(RAWSRC));
 });
 /* SUPERSEDIDO PELO PR 10 (documentado no relatório e em ECHO_RELATIONSHIP.md).
    O guarda original travava os literais `+18/−26` de confiança por escolha

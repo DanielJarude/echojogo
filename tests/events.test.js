@@ -1,0 +1,1139 @@
+'use strict';
+/* =====================================================================
+   TESTES — PR 10.5A: EVENT DIRECTOR LEVE + MEMÓRIA + ANTI-REPETIÇÃO
+   ---------------------------------------------------------------------
+   · pool/registro: ids únicos, família válida, weight, conditions, render
+   · diretor: elegibilidade (minWave, requiresEcho, flags, cond)
+   · anti-repetição: cooldown de evento, família consecutiva, fadiga
+   · chains: A → flag/agendamento → B; continuações não-garantidas
+   · moralidade: escolhas novas passam por evOpt → moralGain (PR 9 real)
+   · Echo reactions: mudança de trust via changeEchoTrust (PR 10 real)
+   · arena: spawn, telegraph, timer, cleanup, recompensas
+   · save: checkpoint → resume preserva memória; slots isolados; legacy
+   · distribuição: simulação determinística (nada domina; raro continua raro)
+   Executa o script REAL de index.html em sandbox Node (DOM mínimo).
+   Rodar: npm test  |  node tests/events.test.js
+   ===================================================================== */
+const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert');
+
+const ROOT=path.join(__dirname,'..');
+const html=fs.readFileSync(path.join(ROOT,'index.html'),'utf8');
+const m=html.match(/<script>([\s\S]*?)<\/script>/);
+if(!m)throw new Error('script não encontrado em index.html');
+let src=m[1];
+const RAWSRC=m[1];
+
+src+=';globalThis.__t={'+
+  'EV_KINDS,EV_LABEL,EV_FAMILIES,EV_LEGACY_FAMILY,RARITY_META,'+
+  'RUN_EVENTS,RUN_CHAIN_EVENTS,ALL_RUN_EVENTS,RUN_EVENT_BY_ID,RUN_EVENT_BY_KIND,'+
+  'ARENA_EVENTS,MICRO_EVENTS,'+
+  'buildEventContext,getEligibleEvents,eventBlockReason,scoreEvent,pickRunEvent,'+
+  'evMemFresh,evMemPack,evMemRestore,evMemRecord,evFamRecent,'+
+  'evSetFlag,evFlag,evVar,evVarGet,evVarDel,evEpilogue,evDelay,'+
+  'processDelayedEvents,fireDelayed,'+
+  'waveBuff,waveBuffSweep,'+
+  'tryStartArenaEvent,tickArenaEvent,stopArenaEvent,'+
+  'tickMicroEvents,'+
+  'moralGain,applyMoral,getMoralProfile,'+
+  'EVENT_AFFINITY,moralEventWeight,pickEventKind,'+
+  'startRun,resumeRun,captureCheckpoint,clearActiveRun,hasActiveRun,'+
+  'smBuildCheckpoint,smSanitizeRun,activateSlot,'+
+  'makeEcho,changeEchoTrust,relAddPressure,echoRelState,echoAllied,'+
+  'killEnemy,spawnWave,spawnBeacon,getBeacon:()=>beacon,'+
+  'ownedLine,showFracture,'+
+  'smClearSlotEchoes,smClearSlotSave,openConfirm,closeConfirm,renderConfig,'+
+  'getActiveRun:()=>activeRun,getCfg:()=>cfg,setCfgKey:(k,v)=>{cfg[k]=v;},'+
+  'setMeta:v=>{meta=v;},setProg:v=>{prog=v;},saveMeta,saveEchoes,saveProg,'+
+  'getEchoQueue:()=>echoQueue,setEchoQueue:v=>{echoQueue=v;},'+
+  'getCharSel:()=>charSel,'+
+  'getMicroT:()=>microT,setMicroT:v=>{microT=v;},'+
+  'DEV_get:()=>DEV,DEV_on:()=>{DEV_MODE=true;},DEV_off:()=>{DEV_MODE=false;},'+
+  'getMoral:()=>moral,setMoral:(c,g,v)=>{moral.comp=c;moral.greed=g;moral.viol=v;applyMoral();},'+
+  'getMEff:()=>mEff,getPlayer:()=>player,setPlayer:p=>{player=p;},'+
+  'getState:()=>state,setState:s=>{state=s;},'+
+  'getEchoes:()=>echoes,setEchoes:a=>{echoes=a;},'+
+  'getWave:()=>wave,setWave:w=>{wave=w;},'+
+  'getEnemies:()=>enemies,setEnemies:a=>{enemies=a;},setBeacon:b=>{beacon=b;},'+
+  'getPickups:()=>pickups,getAllies:()=>allies,'+
+  'getArenaEv:()=>arenaEv,setArenaEv:v=>{arenaEv=v;},'+
+  'getEvMem:()=>evMem,setEvMem:v=>{evMem=v;},'+
+  'getEvQueue:()=>evQueue,setEvQueue:v=>{evQueue=v;},'+
+  'getInterfT:()=>_aeInterfT,setInterfT:v=>{_aeInterfT=v;},'+
+  'getTainted:()=>devTainted,clearDevTaint:()=>{devTainted=false;},'+
+  'EV_DECISION_GAP,EV_CD_WAVES,'+
+  'getCurSlot:()=>curSlot,getRoot:()=>smRoot,'+
+  'getRunTime:()=>runTime,setRunTime:v=>{runTime=v;}};';
+
+/* ---------------- DOM mínimo (igual aos outros harnesses) ---------------- */
+function makeStyle(){
+  const store={};
+  return new Proxy(store,{
+    get(t,k){return k in t?t[k]:'';},
+    set(t,k,v){t[k]=String(v);return true;}
+  });
+}
+function ctx2d(){
+  const grad={addColorStop(){}};
+  const numProps=new Set(['globalAlpha','lineWidth','shadowBlur','font','fillStyle',
+    'strokeStyle','lineCap','textAlign','imageSmoothingEnabled']);
+  return new Proxy({},{get(t,k){
+    if(k==='canvas')return{width:0,height:0};
+    if(k==='measureText')return()=>({width:0});
+    if(k==='getImageData')return()=>({data:new Uint8ClampedArray(4)});
+    if(k==='createLinearGradient'||k==='createRadialGradient'||k==='createPattern')
+      return()=>grad;
+    if(numProps.has(k))return 1;
+    return()=>{};
+  },set(){return true;}});
+}
+function makeEl(id){
+  const el={id:id||'',children:[],dataset:{},value:'',width:0,height:0,
+    _cls:new Set(),_handlers:{},isConnected:true,offsetWidth:0,offsetHeight:0,
+    textContent:'',className:'',title:'',style:makeStyle()};
+  let _html='';
+  Object.defineProperty(el,'innerHTML',{
+    get:()=>_html,
+    set(v){_html=String(v);if(_html==='')el.children.length=0;}
+  });
+  el.classList={
+    add:(...c)=>c.forEach(x=>el._cls.add(x)),
+    remove:(...c)=>c.forEach(x=>el._cls.delete(x)),
+    contains:c=>el._cls.has(c),
+    toggle:(c,f)=>{if(f===undefined){if(el._cls.has(c)){el._cls.delete(c);return false;}
+      el._cls.add(c);return true;}
+      if(f)el._cls.add(c);else el._cls.delete(c);return !!f;}
+  };
+  el.appendChild=c=>{el.children.push(c);return c;};
+  el.remove=()=>{};
+  el.addEventListener=(ev,fn)=>{(el._handlers[ev]=el._handlers[ev]||[]).push(fn);};
+  el.removeEventListener=()=>{};
+  el.click=()=>{for(const fn of (el._handlers.click||[]))fn({stopPropagation(){}});};
+  el.querySelector=()=>null;el.querySelectorAll=()=>[];
+  el.closest=()=>null;el.focus=()=>{};el.blur=()=>{};
+  el.setAttribute=(k,v)=>{el.dataset[k]=v;};el.getAttribute=k=>el.dataset[k];
+  el.getContext=()=>ctx2d();
+  return el;
+}
+const elements=new Map();
+const document={
+  hidden:false,title:'',body:makeEl('body'),documentElement:makeEl('html'),
+  fullscreenElement:null,webkitFullscreenElement:null,
+  createElement:()=>makeEl(''),
+  getElementById:id=>{if(!elements.has(id))elements.set(id,makeEl(id));
+    return elements.get(id);},
+  querySelectorAll:()=>[],addEventListener:()=>{},removeEventListener:()=>{},
+  hasFocus:()=>true,exitFullscreen:()=>Promise.resolve()
+};
+const window={
+  innerWidth:1280,innerHeight:720,devicePixelRatio:1,
+  screen:{availWidth:1280,availHeight:720},
+  addEventListener:()=>{},removeEventListener:()=>{},
+  matchMedia:()=>({addEventListener:()=>{},addListener:()=>{}}),
+  AudioContext:undefined,webkitAudioContext:undefined,
+  open:()=>({close(){}}),getGamepads:()=>[],echoDesktop:undefined
+};
+const localStorage={_d:{},getItem(k){return this._d[k]||null;},
+  setItem(k,v){this._d[k]=String(v);},removeItem(k){delete this._d[k];}};
+const navigator={getGamepads:()=>[]};
+
+const MathF=Object.create(Math);
+MathF._rng=null;
+MathF.random=function(){return MathF._rng?MathF._rng():Math.random();};
+
+const sandbox={console,Math:MathF,Date,parseInt,parseFloat,isNaN,setTimeout,clearTimeout,
+  requestAnimationFrame:()=>0,
+  Uint8ClampedArray,Array,Object,Number,String,Boolean,RegExp,Error,Map,Set,
+  Promise,Proxy,Reflect,JSON,Symbol,
+  document,window,localStorage,navigator,
+  performance:{now:()=>Date.now()}};
+const ctx=vm.createContext(sandbox);
+vm.runInContext(src,ctx,{timeout:15000});
+const t=vm.runInContext('__t',ctx);
+MathF._rng=null;   // sorteios reais por padrão
+
+/* ---------------- runner ---------------- */
+let passed=0,failed=0;
+function ok(label,fn){
+  try{fn();passed++;console.log('  \u2714 '+label);}
+  catch(e){failed++;console.log('  \u2716 '+label);console.log('     '+e.message);}
+}
+function freshRun(){
+  t.setPlayer(null);
+  t.setEchoes([]);
+  t.startRun();
+  t.clearDevTaint();
+}
+/* RNG determinístico injetável (mulberry32) */
+function mulberry32(seed){
+  let s=seed>>>0;
+  return function(){s|=0;s=(s+0x6D2B79F5)|0;
+    let x=Math.imul(s^(s>>>15),1|s);
+    x=(x+Math.imul(x^(x>>>7),61|x))^x;
+    return ((x^(x>>>14))>>>0)/4294967296;};
+}
+
+console.log('TESTES PR 10.5A — EVENT DIRECTOR + MEMÓRIA + ANTI-REPETIÇÃO');
+console.log('---------------------------------------------');
+
+/* ==================== A. POOL / REGISTRO ==================== */
+console.log('\n[A] POOL E REGISTRO');
+ok('todos os ids são únicos (incluindo legados e chains)',()=>{
+  const ids=t.ALL_RUN_EVENTS.map(d=>d.id)
+    .concat(Object.keys(t.RUN_EVENT_BY_ID));
+  assert.strictEqual(new Set(Object.keys(t.RUN_EVENT_BY_ID)).size,
+    Object.keys(t.RUN_EVENT_BY_ID).length,'ids duplicados no índice');
+});
+ok('toda entrada tem family válida, rarity válida e weight não-negativo',()=>{
+  for(const d of Object.values(t.RUN_EVENT_BY_ID)){
+    assert(t.EV_FAMILIES[d.family],'família inválida: '+d.id+' → '+d.family);
+    assert(t.RARITY_META[d.rarity],'raridade inválida: '+d.id);
+    assert(typeof d.weight==='number'&&d.weight>=0,'weight inválido: '+d.id);
+    assert(d.nm&&d.col,'nm/col ausentes: '+d.id);
+    if(!d.legacy)assert(typeof d.render==='function','render ausente: '+d.id);
+  }
+});
+ok('os 20 eventos legados continuam no pool com família atribuída',()=>{
+  for(const k of t.EV_KINDS){
+    const d=t.RUN_EVENT_BY_ID['lg_'+k];
+    assert(d,'legado ausente: '+k);
+    assert(d.legacy===true);
+    assert(t.EV_LEGACY_FAMILY[k]===d.family,'família divergente: '+k);
+  }
+  assert.strictEqual(t.EV_KINDS.length,20);
+});
+ok('pool principal NÃO contém eventos de continuação de chain',()=>{
+  for(const d of t.RUN_CHAIN_EVENTS)
+    assert.strictEqual(t.ALL_RUN_EVENTS.indexOf(d),-1,
+      'chain vazou para o pool: '+d.id);
+});
+ok('objetivo de conteúdo: 8-12 comuns, 6-8 incomuns, 4-6 raros, 2-3 anomalous',()=>{
+  const count=r=>t.RUN_EVENTS.filter(d=>d.rarity===r).length;
+  const c=count('common'),u=count('uncommon'),r=count('rare'),a=count('anomalous');
+  assert(c>=8&&c<=12,'comuns fora da faixa: '+c);
+  assert(u>=6&&u<=8,'incomuns fora da faixa: '+u);
+  assert(r>=4&&r<=6,'raros fora da faixa: '+r);
+  assert(a>=2&&a<=3,'anomalous fora da faixa: '+a);
+});
+ok('chains registradas e encadeadas por flags/agendamento (3–6)',()=>{
+  assert(t.RUN_CHAIN_EVENTS.length>=3&&t.RUN_CHAIN_EVENTS.length<=6,
+    'chains: '+t.RUN_CHAIN_EVENTS.length);
+});
+ok('EV_LABEL cobre os kinds novos (banner/sprite do beacon não quebram)',()=>{
+  for(const d of Object.values(t.RUN_EVENT_BY_ID))
+    assert(t.EV_LABEL[d.kind],'EV_LABEL sem '+d.kind);
+});
+ok('4+ eventos de arena e 3+ microeventos registrados',()=>{
+  assert(t.ARENA_EVENTS.length>=4,'arena: '+t.ARENA_EVENTS.length);
+  assert(t.MICRO_EVENTS.length>=3,'micro: '+t.MICRO_EVENTS.length);
+  for(const a of t.ARENA_EVENTS){
+    assert(typeof a.start==='function'&&typeof a.cleanup==='function',
+      'arena sem start/cleanup: '+a.id);
+    assert(typeof a.desc==='string'&&a.desc.length>10,
+      'arena sem telegrafia textual: '+a.id);
+  }
+});
+
+/* ==================== B. CONTEXTO / ELEGIBILIDADE ==================== */
+console.log('\n[B] CONTEXTO E ELEGIBILIDADE');
+ok('buildEventContext devolve o quadro completo',()=>{
+  freshRun();
+  t.setWave(5);
+  const c=t.buildEventContext();
+  assert.strictEqual(c.wave,5);
+  assert.strictEqual(c.echoCount,0);
+  assert(c.hp>0&&c.hp<=1);
+  assert(typeof c.coins==='number'&&typeof c.operator==='string');
+  assert(Array.isArray(c.recent)&&c.flags&&c.moral);
+});
+ok('minWave bloqueia com motivo (x_cirurgia na onda 1)',()=>{
+  freshRun();t.setWave(1);
+  const pass=t.getEligibleEvents(t.buildEventContext());
+  const b=pass.blocked.find(x=>x.id==='x_cirurgia');
+  assert(b&&b.reason==='min_wave','bloqueio ausente: '+JSON.stringify(b));
+  assert(pass.elig.every(d=>d.id!=='x_cirurgia'));
+});
+ok('requires_echo bloqueia eventos de Echo sem Eco aliado',()=>{
+  freshRun();t.setWave(6);
+  const pass=t.getEligibleEvents(t.buildEventContext());
+  for(const id of ['x_duplo','x_memoria','x_imitador'])
+    assert(pass.blocked.some(b=>b.id===id&&b.reason==='requires_echo'),id);
+});
+ok('requires_echo destrava com Eco vivo e aliado',()=>{
+  freshRun();t.setWave(6);
+  const e=t.makeEcho({dom:'comp',items:[],trail:[[0,0,1,0,0,0]]},1);
+  e.alive=true;e.trust=70;
+  t.setEchoes([e]);
+  const pass=t.getEligibleEvents(t.buildEventContext());
+  assert(pass.elig.some(d=>d.id==='x_duplo'),'x_duplo deveria estar elegível');
+  assert(pass.elig.some(d=>d.id==='x_memoria'));
+});
+ok('requires_flag: x_cicatriz só existe depois de uma ruptura',()=>{
+  freshRun();t.setWave(6);
+  let pass=t.getEligibleEvents(t.buildEventContext());
+  assert(pass.blocked.some(b=>b.id==='x_cicatriz'&&
+    b.reason==='requires_flag:dis_houve'));
+  t.evSetFlag('dis_houve');
+  pass=t.getEligibleEvents(t.buildEventContext());
+  assert(pass.elig.some(d=>d.id==='x_cicatriz'));
+});
+ok('cond(): O COBRADOR só aparece com rastro de ganância',()=>{
+  freshRun();t.setWave(7);
+  let pass=t.getEligibleEvents(t.buildEventContext());
+  assert(pass.blocked.some(b=>b.id==='x_cobrador'&&b.reason==='condicao_contexto'));
+  t.setMoral(0,7,0);
+  pass=t.getEligibleEvents(t.buildEventContext());
+  assert(pass.elig.some(d=>d.id==='x_cobrador'));
+});
+ok('relReqOn worst: A CONFISSÃO exige relação fraturada/tensa',()=>{
+  freshRun();t.setWave(6);
+  const e=t.makeEcho({dom:'comp',items:[],trail:[[0,0,1,0,0,0]]},1);
+  e.alive=true;e.trust=10;           // relação fraturada
+  t.setEchoes([e]);
+  let pass=t.getEligibleEvents(t.buildEventContext());
+  assert(pass.elig.some(d=>d.id==='x_confissao'),'confissão deveria existir');
+  e.trust=90;                        // ressonante
+  pass=t.getEligibleEvents(t.buildEventContext());
+  assert(pass.blocked.some(b=>b.id==='x_confissao'),
+    'relação alta não pode disparar a confissão');
+  assert(pass.elig.some(d=>d.id==='x_pacto'),'pacto deveria destravar');
+});
+
+/* ==================== C. ANTI-REPETIÇÃO ==================== */
+console.log('\n[C] ANTI-REPETIÇÃO');
+ok('cooldown do EVENTO: apareceu → bloqueado nas próximas seleções',()=>{
+  freshRun();t.setWave(5);
+  t.evMemRecord('x_camara','exploracao');
+  const pass=t.getEligibleEvents(t.buildEventContext());
+  const b=pass.blocked.find(x=>x.id==='x_camara');
+  assert(b&&b.reason==='cooldown_evento');
+});
+ok('CASO D: família recente sofre PENALIDADE forte de peso (não bloqueio)',()=>{
+  freshRun();t.setWave(5);
+  t.evMemRecord('x_gerador','recursos');   // último = recursos
+  const ctx=t.buildEventContext();
+  const pass=t.getEligibleEvents(ctx);
+  /* a família continua ELEGÍVEL (nada some do pool por causa de tema) */
+  assert(pass.elig.some(d=>d.family==='recursos'),
+    'família não deveria ser bloqueada');
+  assert(!pass.blocked.some(b=>b.reason==='familia_consecutiva'),
+    'bloqueio duro de família ainda existe');
+  /* mas o peso cai significativamente (penalidade ×0.30 + fadiga) */
+  const dRec=t.RUN_EVENT_BY_ID.x_posto;
+  const wPen=t.scoreEvent(dRec,ctx);
+  t.setEvMem(t.evMemFresh());
+  const wBase=t.scoreEvent(dRec,t.buildEventContext());
+  assert(wPen<wBase*.45,'penalidade de família fraca: '+wPen+'/'+wBase);
+});
+ok('rede de segurança: relaxAll cede bloqueios de cooldown (nunca trava)',()=>{
+  freshRun();t.setWave(5);
+  t.evMemRecord('x_gerador','recursos');
+  const p0=t.getEligibleEvents(t.buildEventContext());
+  assert(p0.blocked.some(b=>b.id==='x_gerador'&&(b.reason==='cooldown_ondas'||
+    b.reason==='cooldown_evento')),'x_gerador não está em cooldown');
+  const p1=t.getEligibleEvents(t.buildEventContext(),{relaxAll:true});
+  assert(p1.elig.some(d=>d.id==='x_gerador'),'relaxAll não cedeu o cooldown');
+});
+ok('fadiga de família: aparições recentes reduzem o PESO (não só bloqueiam)',()=>{
+  freshRun();t.setWave(5);
+  const d=t.RUN_EVENT_BY_ID['x_trocador'];
+  t.getEvMem().rc=[];
+  const w0=t.scoreEvent(d,t.buildEventContext());
+  t.evMemRecord('x_gerador','recursos');
+  t.evMemRecord('x_posto','recursos');
+  t.evMemRecord('x_trocador','recursos');
+  const w1=t.scoreEvent(t.RUN_EVENT_BY_ID['x_posto'],t.buildEventContext());
+  assert(w1<w0,'peso não caiu com a fadiga ('+w1+' vs '+w0+')');
+});
+ok('saturação: evento repetido muitas vezes perde peso devagar',()=>{
+  freshRun();
+  const d=t.RUN_EVENT_BY_ID['x_camara'];
+  t.getEvMem().rc=[];t.getEvMem().sn={};
+  const c0=t.buildEventContext();
+  const w0=t.scoreEvent(d,c0);
+  for(let i=0;i<4;i++)t.evMemRecord('x_camara','exploracao');
+  const w1=t.scoreEvent(d,t.buildEventContext());
+  assert(w1<w0*.85&&w1>w0*.05,'queda abrupta ou inexistente: '+w1+'/'+w0);
+});
+ok('novidade leve: evento nunca visto ganha fôlego (+25%)',()=>{
+  freshRun();
+  const d=t.RUN_EVENT_BY_ID['x_marcador'];
+  /* ctxs idênticos exceto seen — isola o multiplicador de novidade */
+  const base={wave:6,hp:1,coins:100,echoCount:0,
+    moral:{comp:1/3,greed:1/3,viol:1/3},lastFamily:null,disRuptured:false,
+    recent:[]};
+  const w0=t.scoreEvent(d,Object.assign({},base,{seen:{}}));
+  const w1=t.scoreEvent(d,Object.assign({},base,{seen:{x_marcador:1}}));
+  /* base 42 × 1.25 = 52.5 exato; já visto perde a novidade (e ganha saturação) */
+  assert(Math.abs(w0-d.weight*1.25)<.01,
+    'novidade não é +25%: '+w0+' vs '+(d.weight*1.25));
+  assert(w1<w0,'já visto não deveria receber novidade');
+});
+ok('adaptação leve: poucos créditos puxam RECURSOS (sem virar pity óbvio)',()=>{
+  freshRun();
+  const d=t.RUN_EVENT_BY_ID['x_trocador'];
+  t.getEvMem().rc=[];t.getEvMem().sn={};
+  const p=t.getPlayer();p.coins=200;
+  const wRico=t.scoreEvent(d,t.buildEventContext());
+  p.coins=10;
+  const wPobre=t.scoreEvent(d,t.buildEventContext());
+  assert(wPobre>wRico*1.15,'bônus de escassez ausente');
+  assert(wPobre<wRico*1.6,'bônus exagerado (virou pity)');
+});
+
+/* ==================== D. SORTEIO + MEMÓRIA ==================== */
+console.log('\n[D] SORTEIO E MEMÓRIA');
+ok('pickRunEvent registra o acontecimento na memória (rc/sn/família)',()=>{
+  freshRun();t.setWave(5);
+  t.setEvMem(t.evMemFresh());t.setEvQueue([]);
+  const d=t.pickRunEvent();
+  assert(d,'nenhum evento sorteado');
+  const mem=t.getEvMem();
+  assert(mem.rc.indexOf(d.id)>=0,'não foi registrado em rc');
+  assert((mem.sn[d.id]|0)===1,'contagem não registrada');
+  assert.strictEqual(mem.lf,d.family,'família última não registrada');
+});
+ok('a fila de chains tem prioridade sobre o sorteio',()=>{
+  freshRun();t.setWave(6);
+  t.setEvMem(t.evMemFresh());
+  t.setEvQueue(['x_resposta']);
+  const d=t.pickRunEvent();
+  assert(d&&d.id==='x_resposta','fila ignorada: '+JSON.stringify(t.getEvQueue()));
+  assert.strictEqual(t.getEvQueue().length,0);
+});
+ok('pickRunEvent nunca devolve evento de continuação pelo sorteio',()=>{
+  freshRun();t.setWave(9);
+  t.setEvMem(t.evMemFresh());t.setEvQueue([]);
+  const rnd=mulberry32(1234);
+  for(let i=0;i<120;i++){
+    t.getEvMem().dw=0;                 // isola a cadência: teste é do POOL
+    const d=t.pickRunEvent(null,rnd);
+    assert(d,'pool vazio na iteração '+i);
+    assert(!d.chain,'chain vazou pelo sorteio: '+d.id);
+  }
+});
+ok('sorteio é determinístico com RNG injetado (estado idêntico → sequência idêntica)',()=>{
+  for(let attempt=0;attempt<2;attempt++){
+    freshRun();t.setWave(6);
+    t.setEvMem(t.evMemFresh());t.setEvQueue([]);
+    const rnd=mulberry32(777);
+    const seq=[];
+    for(let i=0;i<40;i++){
+      t.setEvMem(t.evMemFresh());t.setEvQueue([]);   // mesmo estado de entrada
+      t.setWave(2+(i%8));
+      const d=t.pickRunEvent(null,rnd);
+      assert(d,'cadência bloqueou seleção determinística em '+i);
+      seq.push(d.id);
+    }
+    if(attempt===1){
+      assert.strictEqual(seq.join(','),first.join(','),'sequências divergem');
+    }else var first=seq.slice();
+  }
+});
+ok('moral bias (PR 9) continua vivo dentro do scoreEvent',()=>{
+  freshRun();
+  const d=t.RUN_EVENT_BY_ID['x_cirurgia'];   // aff comp
+  t.getEvMem().rc=[];t.getEvMem().sn={};
+  t.setMoral(0,8,0);
+  const wGreed=t.scoreEvent(d,t.buildEventContext());
+  t.setMoral(8,0,0);
+  const wComp=t.scoreEvent(d,t.buildEventContext());
+  assert(wComp>wGreed,'perfil compassivo deveria puxar evento afim');
+});
+
+/* ==================== E. CHAINS / ATRASADAS ==================== */
+console.log('\n[E] CHAINS E CONSEQUÊNCIAS ATRASADAS');
+ok('chain A → agendamento → B: transmissão responde 2-4 ondas depois',()=>{
+  freshRun();t.setWave(3);
+  t.setEvMem(t.evMemFresh());t.setEvQueue([]);
+  t.evDelay(2,'chain_signal',null,{chance:1});
+  t.setWave(5);
+  t.processDelayedEvents();
+  assert(t.getEvQueue().indexOf('x_resposta')>=0,'continuação não agendada');
+});
+ok('chain NÃO-garantida: chance 0 mata a continuação em silêncio',()=>{
+  freshRun();t.setWave(3);
+  t.setEvMem(t.evMemFresh());t.setEvQueue([]);
+  t.evDelay(1,'chain_signal',null,{chance:0});
+  t.setWave(5);
+  t.processDelayedEvents();
+  assert.strictEqual(t.getEvQueue().length,0,'continuação deveria morrer');
+});
+ok('todas as 5 chains têm rota de continuação registrada',()=>{
+  freshRun();
+  const routes=['chain_signal','chain_caravana','cobrador_volta',
+    'cobranca_olho','chain_cinzas'];
+  for(const r of routes){
+    t.setEvMem(t.evMemFresh());t.setEvQueue([]);
+    t.evDelay(1,r,null,{chance:1});
+    t.setWave(t.getWave()+2);
+    t.processDelayedEvents();
+    assert(t.getEvQueue().length>0,'chain sem continuação: '+r);
+  }
+});
+ok('epilogueFlag é registrado e compactado (teto de 8)',()=>{
+  freshRun();
+  for(let i=0;i<12;i++)t.evEpilogue('ep_teste_'+i);
+  assert(t.getEvMem().ep.length<=8);
+  assert(t.getEvMem().ep.indexOf('ep_teste_11')>=0,'mantém os mais recentes');
+});
+ok('consequência direta agendada dispara efeito (gerador → enxames com bounty)',()=>{
+  freshRun();t.setWave(4);
+  t.setEvMem(t.evMemFresh());t.setEvQueue([]);
+  t.setEnemies([]);
+  t.evDelay(1,'gerador_onda',null,{chance:1});
+  t.setWave(5);
+  t.processDelayedEvents();
+  const ens=t.getEnemies();
+  assert(ens.length>=2,'enxames do gerador não entraram');
+  assert(ens.every(e=>(e.bounty|0)>0),'enxames sem recompensa');
+  t.setEnemies([]);
+});
+
+/* ==================== F. MORALIDADE (PR 9 real) ==================== */
+console.log('\n[F] MORALIDADE');
+ok('escolha nova de COMPASSÃO muda o moral pelo caminho REAL (evOpt → moralGain)',()=>{
+  freshRun();t.setWave(4);
+  const p=t.getPlayer();
+  p.hp=p.maxHp=100;
+  const before=t.getMoral().comp;
+  t.RUN_EVENT_BY_ID['x_posto'].render();
+  const mRow=document.getElementById('m-row');
+  const btn=mRow.children.find(c=>c.innerHTML.indexOf('POUPAR O ESTOQUE')>=0);
+  assert(btn,'botão POUPAR não renderizado');
+  btn.click();
+  assert(t.getMoral().comp===before+3,'comp não subiu: '+t.getMoral().comp);
+});
+ok('escolha nova de GANÂNCIA+VIOLÊNCIA aplica o vetor correto',()=>{
+  freshRun();t.setWave(4);
+  const g=t.getMoral().greed,v=t.getMoral().viol;
+  t.setBeacon({x:400,y:300,r:36,kind:'x_posto',t:0,life:99,pulse:0});
+  t.RUN_EVENT_BY_ID['x_posto'].render();
+  const mRow=document.getElementById('m-row');
+  const btn=mRow.children.find(c=>c.innerHTML.indexOf('LEVAR E MINAR')>=0);
+  btn.click();
+  assert(t.getMoral().greed===g+2&&t.getMoral().viol===v+1,
+    'vetor divergente: '+JSON.stringify(t.getMoral()));
+});
+ok('PR 9 preservado: perfil normalizado segue saudável com escolhas novas',()=>{
+  freshRun();
+  for(let i=0;i<40;i++)t.moralGain(4,4,4);
+  const prof=t.getMoralProfile();
+  for(const ax of ['comp','greed','viol']){
+    const v=prof.normalized[ax];
+    assert(v>=0&&v<=1&&Number.isFinite(v),'normalização quebrou: '+ax+'='+v);
+  }
+  /* tiers saturam em 3 (CONSUMIDO) mesmo com escolhas novas em cascata */
+  assert(prof.state==='balanced'||prof.state==='mixed'||prof.state==='dominant');
+});
+
+/* ==================== G. ECHO REACTIONS (PR 10 real) ==================== */
+console.log('\n[G] ECHO REACTIONS');
+ok('escolha nova com Eco em campo mexe a CONFIANÇA pelo pipeline único',()=>{
+  freshRun();t.setWave(4);
+  const e=t.makeEcho({dom:'comp',items:[],trail:[[0,0,1,0,0,0]]},1);
+  e.alive=true;e.trust=60;
+  t.setEchoes([e]);
+  t.RUN_EVENT_BY_ID['x_posto'].render();
+  const mRow=document.getElementById('m-row');
+  const btn=mRow.children.find(c=>c.innerHTML.indexOf('POUPAR O ESTOQUE')>=0);
+  btn.click();
+  assert(e.trust>60,'Echo não reagiu à escolha (trust '+e.trust+')');
+  assert(e.rel&&e.rel.lastTrust&&/posto/.test(e.rel.lastTrust.r),
+    'trust mudou fora do ponto único de mutação: '+
+    JSON.stringify(e.rel.lastTrust));
+});
+ok('estática: eventos novos usam o pipeline PR 10 (sem segundo sistema)',()=>{
+  /* auditando a fonte: mudança de trust fora de changeEchoTrust é proibida */
+  const bad=/e\.trust\s*(\+=|-=|=)[^=]/g;
+  const hits=RAWSRC.slice(RAWSRC.indexOf('NOVOS ACONTECIMENTOS'),
+    RAWSRC.indexOf('MICROEVENTOS')).match(bad)||[];
+  assert.deepStrictEqual(hits,[],'atribuição direta de trust em evento novo');
+});
+
+/* ==================== H. ARENA + MICRO ==================== */
+console.log('\n[H] EVENTOS DE ARENA E MICROEVENTOS');
+ok('arena event dispara com telegrafia e nunca em onda de mini-chefe',()=>{
+  freshRun();
+  t.setEnemies([{dead:false,spawnT:0,type:'chaser'}]);
+  t.setWave(5);                            // MINI_WAVES contém 5
+  MathF._rng=()=>0.01;
+  t.tryStartArenaEvent();
+  MathF._rng=null;
+  assert.strictEqual(t.getArenaEv(),null,'arena em onda de mini-chefe');
+});
+ok('CAMPO INSTÁVEL: telegraph → zonas detonam → cleanup completo',()=>{
+  freshRun();
+  const p=t.getPlayer();p.hp=p.maxHp=100;p.invT=0;p.devInvuln=false;
+  t.setWave(4);t.setEnemies([{dead:false,spawnT:0,type:'chaser'}]);
+  MathF._rng=()=>0.02;
+  t.tryStartArenaEvent();
+  MathF._rng=null;
+  const ae=t.getArenaEv();
+  assert(ae,'arena não disparou');
+  assert.strictEqual(ae.def.id,'ae_campo');
+  assert(ae.zones&&ae.zones.length===3);
+  for(const z of ae.zones)assert(z.t<0,'zona nasceu sem telegrafia');
+  /* avança o tempo: telegrafia termina, pulso detona embaixo do player */
+  for(const z of ae.zones){z.x=p.x;z.y=p.y;}
+  p.shield=0;const hp0=p.hp;
+  t.tickArenaEvent(2.0);                   // termina a telegrafia
+  t.tickArenaEvent(0.3);                   // pulso de detonação
+  assert(p.hp<hp0,'zona telegrafada não causou dano dentro dela');
+  /* cleanup */
+  t.stopArenaEvent(true);
+  assert.strictEqual(t.getArenaEv(),null);
+});
+ok('INTERFERÊNCIA liga e DESLIGA o multiplicador de projéteis',()=>{
+  freshRun();
+  assert.strictEqual(t.getInterfT(),0);
+  const def=t.ARENA_EVENTS.find(a=>a.id==='ae_interf');
+  t.setArenaEv({def:def,t:0,dur:12,zones:null,enemy:null,pending:0});
+  def.start(t.getArenaEv());
+  assert(t.getInterfT()>0,'interferência não ligou');
+  def.cleanup(t.getArenaEv());
+  t.setArenaEv(null);
+  assert.strictEqual(t.getInterfT(),0,'cleanup não desligou');
+});
+ok('ALVO PRIORITÁRIO: marcador, timeout e recompensa no abate',()=>{
+  freshRun();t.setWave(4);
+  const ens=[{dead:false,spawnT:0,type:'chaser',r:14,hp:50,maxHp:50,
+    x:100,y:100,color:'#fff'}];
+  t.setEnemies(ens);
+  const def=t.ARENA_EVENTS.find(a=>a.id==='ae_alvo');
+  const ae={def:def,t:0,dur:16,zones:null,enemy:null,pending:0};
+  def.start(ae);
+  assert.strictEqual(ae.enemy,ens[0]);
+  assert(ens[0].priority===true&&ens[0].prioBounty===50);
+  const p=t.getPlayer();
+  const coins0=p.coins;
+  t.killEnemy(ens[0]);
+  assert(p.coins===coins0+50,'recompensa do alvo não pagou');
+  def.cleanup(ae);
+});
+ok('MICROEVENTOS rodam sem interromper o estado da run',()=>{
+  freshRun();t.setWave(3);
+  const st=t.getState();
+  t.setInterfT(0);
+  for(let i=0;i<6;i++)t.tickMicroEvents(-10);   // força o timer a zerar
+  assert.strictEqual(t.getState(),st,'microevento mudou o estado do jogo');
+});
+
+/* ==================== I. SAVE / SLOTS / MIGRATION ==================== */
+console.log('\n[I] SAVE, SLOTS E MIGRATION');
+ok('checkpoint carrega a memória de eventos; resume devolve idêntica',()=>{
+  freshRun();t.setWave(3);
+  t.setEvMem(t.evMemFresh());t.setEvQueue([]);
+  t.evMemRecord('x_camara','exploracao');
+  t.evSetFlag('caravana_ajudada');
+  t.evEpilogue('ep_posto');
+  t.evDelay(2,'chain_signal',null,{chance:.75});
+  t.setState('play');
+  assert(t.captureCheckpoint('teste',3));
+  const cp=JSON.parse(JSON.stringify(t.getRoot().slots[t.getCurSlot()].run));
+  assert(cp.ev&&cp.ev.rc.indexOf('x_camara')>=0);
+  assert(cp.ev.fl.caravana_ajudada);
+  assert(cp.ev.ep.indexOf('ep_posto')>=0);
+  assert(cp.ev.dl.length===1&&cp.ev.dl[0].id==='chain_signal');
+  /* restaura em uma "run nova" */
+  t.setEvMem(t.evMemFresh());t.setEvQueue([]);
+  t.evMemRestore(cp.ev);
+  assert(t.evFlag('caravana_ajudada'));
+  assert.strictEqual(t.getEvMem().rc.indexOf('x_camara')>=0,true);
+  assert.strictEqual(t.getEvMem().dl.length,1);
+});
+ok('save LEGADO sem campo ev: resume com memória vazia e sem erro',()=>{
+  freshRun();t.setWave(2);
+  t.setState('play');
+  assert(t.captureCheckpoint('teste',2));
+  const cp=t.getRoot().slots[t.getCurSlot()].run;
+  delete cp.ev;                          // simula checkpoint pré-10.5
+  t.setEvMem({rc:['lixo'],sn:{lixo:9},fl:{legado:1},fc:{},dl:[{at:9,id:'x'}]});
+  t.resumeRun();
+  assert(!t.evFlag('legado'),'memória vazou de uma run morta');
+  assert.strictEqual(t.getEvMem().rc.length,0);
+});
+ok('slots não contaminam: flag do slot 1 não aparece no slot 2',()=>{
+  t.activateSlot(1);
+  freshRun();t.setWave(2);
+  t.setEvMem(t.evMemFresh());t.setEvQueue([]);
+  t.evSetFlag('caravana_ajudada');
+  t.setState('play');
+  assert(t.captureCheckpoint('teste',2));
+  t.activateSlot(2);
+  freshRun();t.setWave(1);
+  assert(!t.evFlag('caravana_ajudada'),'flag atravessou o slot');
+});
+ok('evMemPack é SNAPSHOT: mutar a memória depois não altera o pack',()=>{
+  freshRun();
+  t.evMemRecord('x_camara','exploracao');
+  const pk=t.evMemPack();
+  t.evMemRecord('x_marcador','ambiente');
+  t.evSetFlag('flag_depois_do_pack');
+  assert(!pk.sn.x_marcador,'pack compartilha sn vivo (vazamento de referência)');
+  assert(!pk.fl.flag_depois_do_pack,'pack compartilha flags vivas');
+  assert(!pk.fc.ambiente,'pack compartilha contadores de família vivos');
+});
+ok('evMemPack é COMPACTO (sem texto de evento serializado)',()=>{
+  freshRun();
+  for(let i=0;i<12;i++)t.evMemRecord('x_camara','exploracao');
+  const pk=t.evMemPack();
+  const json=JSON.stringify(pk);
+  assert(json.length<1200,'pack grande demais: '+json.length);
+  assert(json.indexOf('ARROMBAR')<0&&json.indexOf('evHead')<0);
+});
+
+/* ==================== J. DISTRIBUIÇÃO (SIMULAÇÃO) ==================== */
+console.log('\n[J] DISTRIBUIÇÃO E CADÊNCIA (runs de 20 ondas)');
+function runSim(n,seed,pacing){
+  t.DEV_on();
+  const r=t.DEV_get().simulateEvents(n,seed,pacing?{pacing:pacing}:undefined);
+  t.DEV_off();t.clearDevTaint();
+  return r;
+}
+ok('simulação determinística: mesma seed → resultado idêntico',()=>{
+  const a=runSim(60,42),b=runSim(60,42);
+  assert.strictEqual(JSON.stringify(a),JSON.stringify(b),
+    'simulação não é determinística');
+});
+ok('nenhum evento comum domina o pool (topo < 22% em 400 runs×20 ondas)',()=>{
+  const r=runSim(400,777);
+  const top=r.perEvent[0];
+  assert(top.pct<22,'evento dominante: '+top.id+' '+top.pct+'%');
+});
+ok('eventos raros continuam raros e anomalous MUITO raros',()=>{
+  const r=runSim(400,777);
+  const avg=rar=>{
+    const xs=r.perEvent.filter(e=>e.rarity===rar);
+    return xs.reduce((s,x)=>s+x.pct,0)/Math.max(1,xs.length);
+  };
+  const max=rar=>{
+    const xs=r.perEvent.filter(e=>e.rarity===rar);
+    return xs.reduce((s,x)=>Math.max(s,x.pct),0);
+  };
+  const ac=avg('common'),au=avg('uncommon'),ar=avg('rare'),aa=avg('anomalous');
+  assert(ac>au&&au>ar,'escala de raridade invertida: '+ac+'/'+au+'/'+ar);
+  assert(max('anomalous')<=max('rare'),'anomalous apareceu mais que raro');
+  /* anomalous é oncePerRun: no máximo 1× por run (~1 slot em ~6/run) */
+  assert(aa<0.5,'anomalous apareceu demais: '+aa+'% média');
+});
+ok('famílias variadas: nenhuma família domina sem condição contextual',()=>{
+  const r=runSim(400,777);
+  const top=r.perFamily[0];
+  assert(top.pct<30,'família dominante: '+top.family+' '+top.pct+'%');
+  assert(r.perFamily.length>=6,'poucas famílias ativas: '+r.perFamily.length);
+});
+ok('anti-repetição visível: sequência nunca empilha a mesma família',()=>{
+  const r=runSim(400,777);
+  assert(r.maxSameFamilyStreak<=3,'sequência máxima de família: '+
+    r.maxSameFamilyStreak);
+});
+ok('todo evento comum incondicional foi sorteado em 400 runs',()=>{
+  const r=runSim(400,777);
+  const drawn=new Set(r.perEvent.filter(e=>e.n>0).map(e=>e.id));
+  for(const d of t.ALL_RUN_EVENTS){
+    if(d.rarity!=='common')continue;
+    if(d.echoReq||d.relReq||d.reqFlag||d.forbidFlag||d.cond||d.oncePerRun)continue;
+    assert(drawn.has(d.id),'comum incondicional nunca sorteado: '+d.id);
+  }
+  /* o que NUNCA saiu só pode ser evento condicional/contextual */
+  for(const id of r.neverDrawn){
+    const d=t.RUN_EVENT_BY_ID[id];
+    assert(d&&(d.echoReq||d.relReq||d.reqFlag||d.forbidFlag||d.cond),
+      'evento incondicional nunca sorteado: '+id);
+  }
+});
+ok('distância média até repetir existe e é razoável',()=>{
+  const r=runSim(400,777);
+  assert(r.avgRepeatDistance>5&&r.avgRepeatDistance<100,
+    'distância média implausível: '+r.avgRepeatDistance);
+});
+ok('CADÊNCIA (10.5.2): ~12 decisões/20 ondas, zero spam e zero violação de cooldown',()=>{
+  const r=runSim(400,777);
+  assert(r.decisionsPerRun>=9&&r.decisionsPerRun<=14,
+    'decisões por run fora da meta (9–14): '+r.decisionsPerRun);
+  assert(r.minDecisionGap>=1&&r.minDecisionGap<=2,
+    'intervalo mínimo incoerente: '+r.minDecisionGap);
+  assert.strictEqual(r.sameWaveDecisions,0,
+    'decisões na mesma wave: '+r.sameWaveDecisions);
+  assert.strictEqual(r.sameIdWithinCooldown,0,
+    'repetições do mesmo ID DENTRO do cooldown: '+r.sameIdWithinCooldown);
+  assert(r.maxSameFamilyStreak<=2,'streak de família: '+r.maxSameFamilyStreak);
+});
+ok('CADÊNCIA (antes, pacing legacy): o spam do playtest é reproduzido',()=>{
+  const r=runSim(400,777,'legacy');
+  assert(r.decisionsPerRun>20,'ritmo antigo subestimado: '+r.decisionsPerRun);
+  assert(r.sameWaveDecisions>0,'antigo não fazia 2 decisões na mesma wave?');
+  assert(r.sameIdWithin5>0,'antigo não repetia ID em ≤5 waves?');
+  assert.strictEqual(r.minDecisionGap,0,'antigo tinha intervalo mín. > 0?');
+});
+ok('DEV.simulateEvents restaura a memória da run (não polui o estado)',()=>{
+  freshRun();
+  t.setEvMem(t.evMemFresh());t.setEvQueue([]);
+  t.evSetFlag('caravana_ajudada');
+  runSim(30,5);
+  assert(t.evFlag('caravana_ajudada'),'memória da run foi destruída pela sim');
+  assert.strictEqual(t.getEvQueue().length,0,'fila vazada pela sim');
+});
+
+/* ==================== K. CADÊNCIA — CASO REAL DO PLAYTEST ==================== */
+console.log('\n[K] CADÊNCIA DE DECISÕES (PR 10.5.1)');
+ok('CASO A: wave 3 → evento A · wave 4 → evento B DIFERENTE pode acontecer',()=>{
+  freshRun();t.setWave(3);
+  MathF._rng=()=>0.1;                     // moeda de ritmo a favor
+  try{
+    const a=t.pickRunEvent();
+    assert(a,'decisão A não aconteceu na wave 3');
+    t.setWave(4);
+    const b=t.pickRunEvent();
+    assert(b,'wave 4 deveria poder ter decisão (gap não é mais 3)');
+    assert.notStrictEqual(b.id,a.id,'mesmo evento na wave seguinte');
+  }finally{MathF._rng=null;}
+});
+ok('CASO A′: wave 4 também PODE ficar sem decisão (moeda de ritmo desfavorável)',()=>{
+  freshRun();t.setWave(3);
+  MathF._rng=()=>0.9;                     // moeda contra
+  try{
+    const a=t.pickRunEvent();
+    assert(a,'decisão A ausente na wave 3');
+    t.setWave(4);
+    assert.strictEqual(t.pickRunEvent(),null,'moeda desfavorável deveria pular a wave 4');
+    t.setWave(5);                          // d=2 → garantido, sem moeda
+    const b=t.pickRunEvent();
+    assert(b,'wave 5 deveria permitir decisão (intervalo garantido = 2)');
+  }finally{MathF._rng=null;}
+});
+ok('CASO B: wave 3 → A · wave 4 → A NÃO pode (cooldown por ID em ondas)',()=>{
+  freshRun();t.setWave(3);
+  const a=t.pickRunEvent();
+  assert(a,'decisão A ausente na wave 3');
+  t.setWave(4);
+  const pass=t.getEligibleEvents(t.buildEventContext());
+  const b=pass.blocked.find(x=>x.id===a.id);
+  assert(b&&(b.reason==='cooldown_ondas'||b.reason==='cooldown_evento'),
+    'A deveria estar inelegível por cooldown: '+JSON.stringify(b));
+  /* mesmo com a moeda a favor, o seletor não devolve A de novo */
+  MathF._rng=()=>0.1;
+  try{
+    const again=t.pickRunEvent();
+    assert(again&&again.id!==a.id,
+      'pickRunEvent repetiu A dentro do cooldown: '+(again&&again.id));
+  }finally{MathF._rng=null;}
+});
+ok('spawnBeacon: mesma wave nunca, textura de ritmo controlada pela moeda',()=>{
+  freshRun();t.setWave(2);
+  t.spawnBeacon();                                 // onboarding: survivor
+  assert(t.getBeacon()&&t.getBeacon().kind==='survivor');
+  t.setBeacon(null);
+  t.spawnBeacon();                                 // MESMA wave → reagenda
+  assert.strictEqual(t.getBeacon(),null,'segundo beacon na mesma wave!');
+  t.setWave(3);
+  t.spawnBeacon();                                 // onboarding: merchant
+  assert(t.getBeacon()&&t.getBeacon().kind==='merchant');
+  t.setBeacon(null);
+  MathF._rng=()=>0.9;                              // moeda contra
+  try{
+    t.setWave(4);
+    t.spawnBeacon();
+    assert.strictEqual(t.getBeacon(),null,'wave seguinte sem moeda = sem beacon');
+    t.setWave(5);                                  // d=2 → garantido
+    t.spawnBeacon();
+    assert(t.getBeacon(),'beacon garantido no intervalo 2');
+    t.setBeacon(null);
+    MathF._rng=()=>0.1;                            // moeda a favor
+    t.setWave(6);
+    t.spawnBeacon();
+    assert(t.getBeacon(),'moeda a favor permite decisão na wave seguinte');
+    t.setBeacon(null);
+    MathF._rng=()=>0.9;                            // moeda contra
+    t.setWave(7);
+    t.spawnBeacon();
+    assert.strictEqual(t.getBeacon(),null,'moeda contra na wave seguinte');
+    t.setWave(8);                                  // d≥2 → garantido
+    t.spawnBeacon();
+    assert(t.getBeacon(),'beacon garantido após intervalo');
+  }finally{MathF._rng=null;}
+});
+ok('MESMO EVENTO: ESPELHO FRATURADO (lg_mirror) não repete antes de 5 waves',()=>{
+  freshRun();t.setWave(5);
+  assert.strictEqual(t.RUN_EVENT_BY_ID.lg_mirror.nm,'ESPELHO FRATURADO');
+  t.evMemRecord('lg_mirror','anomalias');          // apareceu na wave 5
+  t.evMemRecord('x_camara','exploracao');
+  t.setWave(6);t.evMemRecord('x_gerador','recursos');
+  t.setWave(7);t.evMemRecord('x_carga','exploracao');
+  t.evMemRecord('x_caravana','sobreviventes');     // 4 eventos depois do espelho
+  t.setWave(8);                                    // 3 waves depois
+  const pass=t.getEligibleEvents(t.buildEventContext());
+  const b=pass.blocked.find(x=>x.id==='lg_mirror');
+  assert(b&&b.reason==='cooldown_ondas',
+    'espelho elegível 3 waves depois: '+JSON.stringify(b));
+  t.setWave(10);                                   // 5 waves depois → libera
+  const why=t.eventBlockReason(t.RUN_EVENT_BY_ID.lg_mirror,t.buildEventContext());
+  assert.strictEqual(why,null,'espelho ainda preso após o cooldown: '+why);
+});
+ok('MESMA WAVE: dois seletores independentes → só o primeiro abre decisão',()=>{
+  freshRun();t.setWave(5);
+  const d1=t.pickRunEvent();
+  assert(d1,'primeira decisão deveria acontecer');
+  const d2=t.pickRunEvent();
+  assert.strictEqual(d2,null,'segunda decisão na mesma wave!');
+});
+ok('durante o cooldown de decisão, MICROEVENTO continua elegível',()=>{
+  freshRun();t.setWave(5);
+  assert(t.pickRunEvent(),'contexto sem decisão inicial');
+  t.setMicroT(1);t.tickMicroEvents(2);
+  const mt=t.getMicroT();
+  t.setWave(6);t.setMicroT(1);t.tickMicroEvents(2);
+  assert(t.getMicroT()!==1,'microevento congelado durante a janela');
+});
+ok('durante o cooldown de decisão, ARENA EVENT continua funcionando',()=>{
+  freshRun();t.setWave(5);
+  assert(t.pickRunEvent(),'contexto sem decisão inicial');
+  t.setWave(6);
+  t.setEnemies([{dead:false,spawnT:0,type:'chaser'}]);
+  MathF._rng=()=>0.02;
+  try{t.tryStartArenaEvent();}finally{MathF._rng=null;}
+  assert(t.getArenaEv(),'arena deixou de funcionar durante a janela');
+  t.stopArenaEvent(false);
+});
+ok('CHAIN: continuação respeita o delay agendado (nunca na mesma wave)',()=>{
+  freshRun();t.setWave(4);
+  assert(t.pickRunEvent(),'decisão inicial ausente');
+  t.evDelay(2,'chain_signal');                     // projetada: wave 6
+  t.setWave(5);t.processDelayedEvents();
+  assert.strictEqual(t.getEvQueue().length,0,'chain disparou antes do delay');
+  t.setWave(6);t.processDelayedEvents();
+  /* fireDelayed('chain_signal') empurra a CONTINUAÇÃO x_resposta na fila */
+  assert(t.getEvQueue().indexOf('x_resposta')>=0,
+    'chain não chegou na wave agendada: '+JSON.stringify(t.getEvQueue()));
+});
+ok('CHAIN: continuação projetada fura a janela global (exceção declarada)',()=>{
+  freshRun();t.setWave(4);
+  assert(t.pickRunEvent(),'decisão inicial ausente');
+  t.setEvQueue(['x_resposta']);                    // chegou por evDelay ≥1 wave
+  t.setWave(5);                                    // dentro da janela global
+  const d=t.pickRunEvent();
+  assert(d&&d.id==='x_resposta',
+    'continuação projetada foi barrada pela janela');
+});
+ok('CHAIN: na MESMA wave da última decisão, continuação reentra na fila',()=>{
+  freshRun();t.setWave(5);
+  assert(t.pickRunEvent(),'decisão inicial ausente');
+  t.setEvQueue(['x_resposta']);
+  t.setWave(5);                                    // mesma wave
+  assert.strictEqual(t.pickRunEvent(),null,'segunda decisão na mesma wave');
+  assert(t.getEvQueue().indexOf('x_resposta')>=0,
+    'continuação foi descartada em vez de reagendada');
+});
+ok('CHAIN: flag chainImmediate explícita permite continuação na mesma wave',()=>{
+  freshRun();t.setWave(5);
+  assert(t.pickRunEvent(),'decisão inicial ausente');
+  t.RUN_EVENT_BY_ID.x_resposta.chainImmediate=true;     // exceção DECLARADA
+  try{
+    t.setEvQueue(['x_resposta']);
+    t.setWave(5);
+    const d=t.pickRunEvent();
+    assert(d&&d.id==='x_resposta','chainImmediate não furou a mesma wave');
+  }finally{
+    delete t.RUN_EVENT_BY_ID.x_resposta.chainImmediate;
+  }
+});
+ok('LEGADOS: todos passam pelo MESMO registro, seletor e anti-repeat',()=>{
+  for(const k of t.EV_KINDS){
+    assert(t.RUN_EVENT_BY_ID['lg_'+k],'legado fora do índice: '+k);
+    assert(t.RUN_EVENT_BY_KIND[k],'kind legado sem registro: '+k);
+  }
+  const legacyInPool=t.ALL_RUN_EVENTS.filter(d=>String(d.id).indexOf('lg_')===0);
+  assert.strictEqual(legacyInPool.length,20,
+    'legados no pool principal: '+legacyInPool.length);
+  /* um único ponto de disparo: spawnBeacon no loop; um único consumidor:
+     openEvent pelo toque no beacon; pickEventKind só como último recurso */
+  const count=(re)=>(RAWSRC.match(re)||[]).length;
+  assert.strictEqual(count(/\bopenEvent\(/g),2,'openEvent ganhou outro gatilho');
+  assert.strictEqual(count(/\bspawnBeacon\(/g),2,'spawnBeacon ganhou outro gatilho');
+  assert.strictEqual(count(/\bpickEventKind\(/g),2,'pickEventKind fora do fallback');
+});
+ok('CONTEÚDO PRESERVADO: 25 novos, 20 legados, 6 chains, 5 arenas, 4 micro',()=>{
+  assert.strictEqual(t.RUN_EVENTS.length,25);
+  assert.strictEqual(t.EV_KINDS.length,20);
+  assert.strictEqual(t.RUN_CHAIN_EVENTS.length,6);
+  assert.strictEqual(t.ARENA_EVENTS.length,5);
+  assert.strictEqual(t.MICRO_EVENTS.length,4);
+  assert(t.EV_DECISION_GAP>=2,'janela global enfraquecida');
+  assert(t.EV_CD_WAVES>=4,'cooldown por ID enfraquecido');
+});
+
+/* ==================== L. NOMENCLATURA — MEMÓRIA DO ECHO ==================== */
+console.log('\n[L] NOMENCLATURA — MEMÓRIA HERDADA PELO ECHO (PR 10.5.1 UX)');
+ok('tela de morte usa MEMÓRIA HERDADA PELO ECHO (nada de FICHA HERDADA)',()=>{
+  freshRun();t.setRunTime(63);t.setEchoes([]);
+  const rd={dur:63,trail:[[0,0,1,0,0,0]],dmgMul:1,frMul:1,wave:7,level:4,
+    crit:0,critMul:1.8,pierce:0,aoeMul:1,rangeMul:1,projSpdMul:1,
+    longRangeBonus:0,coins:42,items:[],upg:['a','b','c','d'],owned:[0],
+    moral:{comp:1,greed:2,viol:0},dom:'comp',kills:11,mh:100,st:{}};
+  t.showFracture(rd,false,false);
+  const body=document.getElementById('ov-body').innerHTML;
+  assert(body.indexOf('MEMÓRIA HERDADA PELO ECHO')>=0,
+    'novo rótulo ausente na tela de morte');
+  assert(body.indexOf('FICHA HERDADA')<0,'texto antigo ainda na tela de morte');
+  assert(body.indexOf('<b>4</b> UPGRADES')>=0,'contagem de upgrades sumiu');
+});
+ok('modal de eventos/loja: REGISTRO DA RUN + explicação de MEMÓRIA (não herança de itens)',()=>{
+  freshRun();
+  t.setPlayer({owned:[0],maxSlots:4,items:[],upgLog:['DANO +10%'],
+    hp:50,maxHp:100,coins:30});
+  const s=t.ownedLine();
+  assert(s.indexOf('REGISTRO DA RUN → ARSENAL (1/4)')>=0,
+    'cabeçalho novo ausente: '+s.slice(0,60));
+  assert(s.indexOf('ESTA RUN FARÁ PARTE DA MEMÓRIA DO ECHO GERADO APÓS A SUA MORTE.')>=0,
+    'explicação nova ausente');
+  assert(s.indexOf('ESTA FICHA')<0&&s.indexOf('FICHA DA RUN')<0,
+    'texto antigo sobreviveu');
+  assert(s.indexOf('UPGRADES: DANO +10%')>=0,'conteúdo do registro mudou');
+});
+ok('consistência: NENHUM "FICHA" sobrevive no jogo; memória/registro nos footers',()=>{
+  assert(RAWSRC.indexOf('FICHA')<0,'"FICHA" ainda existe em index.html');
+  assert(RAWSRC.indexOf('A ORDEM DOS SLOTS É SALVA NO REGISTRO DA RUN E '+
+    'PRESERVADA NA MEMÓRIA DOS ECOS')>=0,'footer de slots sem o novo texto');
+  assert(RAWSRC.indexOf('FAZEM PARTE DA MEMÓRIA DOS SEUS ECOS')>=0,
+    'footer de itens sem o novo texto');
+  /* nenhum texto promete devolução de build na próxima run */
+  for(const bad of ['ITENS SERÃO','VOCÊ RECUPERARÁ','COMEÇARÁ COM ESSA BUILD',
+    'RECUPERAR OS MÓDULOS'])
+    assert(RAWSRC.toUpperCase().indexOf(bad)<0,'promessa indevida: '+bad);
+});
+ok('mecânica intacta: runData/echoQueue preservados (só texto mudou)',()=>{
+  /* runData continua carregando build+comportamento para o Echo */
+  for(const k of ['items:player.items.slice()','upg:player.upgLog.slice()',
+    'owned:player.owned.slice()','moral:{comp:moral.comp','dom:moralDom()',
+    'echoQueue=[runData,echoQueue[0]]','runData.ps=deriveEchoPersonality(runData)'])
+    assert(RAWSRC.indexOf(k)>=0,'mecânica de herança alterada: '+k);
+});
+
+/* ==================== M. CONFIGURAÇÕES — LIMPAR ECOS / LIMPAR SAVE ==================== */
+console.log('\n[M] CONFIGURAÇÕES — CONTROLES DE SAVE (PR 10.5.2)');
+function rd(run){return Object.assign({dur:run,dmgMul:1,frMul:1,wave:5,level:2,
+  trail:[[0,0,1,0,0,0]],crit:0,critMul:1.8,pierce:0,aoeMul:1,rangeMul:1,
+  projSpdMul:1,longRangeBonus:0,coins:10,items:[],upg:[],owned:[0],
+  moral:{comp:1,greed:0,viol:0},dom:'comp',kills:3,mh:100,st:null,ps:null},{});}
+function cfgSnapshot(){return JSON.stringify(t.getCfg());}
+ok('UI: Configurações exibe LIMPAR ECOS DO SLOT ATUAL e LIMPAR SAVE DO SLOT ATUAL',()=>{
+  t.setState('menu');
+  t.renderConfig();
+  const body=elements.get('cx-body').children
+    .map(c=>String(c.innerHTML||'')+'|'+String(c.textContent||'')+'|'+
+      (c.children||[]).map(g=>String(g.textContent||'')).join(' '))
+    .join('\n');
+  assert(body.indexOf('LIMPAR ECOS DO SLOT ATUAL')>=0,
+    'linha LIMPAR ECOS ausente');
+  assert(body.indexOf('LIMPAR SAVE DO SLOT ATUAL')>=0,
+    'linha LIMPAR SAVE ausente');
+  assert(body.indexOf('LIMPAR ECOS')>=0&&body.indexOf('APAGAR SLOT')>=0,
+    'botões de ação ausentes');
+});
+ok('confirmação obrigatória: modal abre, CANCELAR não altera nada',()=>{
+  t.setState('menu');
+  let fired=0;
+  t.openConfirm({tag:'TESTE',title:'CONFIRMA?',danger:true,
+    onYes:()=>{fired++;}});
+  const modal=elements.get('modal');
+  assert(modal._cls.has('on'),'modal não abriu');
+  const row=elements.get('m-row');
+  assert.strictEqual(row.children.length,2,'esperado CANCELAR + ação');
+  assert(row.children[0].innerHTML.indexOf('CANCELAR')>=0,
+    'CANCELAR não é a primeira opção');
+  assert(elements.get('m-title').textContent.indexOf('CONFIRMA?')>=0);
+  row.children[0].click();              // CANCELAR
+  assert.strictEqual(fired,0,'ação executada sem confirmação!');
+  assert(!modal._cls.has('on'),'modal deveria fechar');
+});
+ok('A. LIMPAR ECOS: remove Ecos do slot (e do checkpoint), preserva meta/prog/outros slots',()=>{
+  t.activateSlot(1);t.clearDevTaint();
+  t.setEchoes([]);t.setEvMem(t.evMemFresh());
+  t.getEvQueue().length=0;
+  /* slot 2 com dados próprios (deve ficar intacto) */
+  t.activateSlot(2);
+  t.setMeta({mem:33,spd:0,reroll:0,vault:0,wins:1,endings:['liber'],evars:[]});
+  t.saveMeta();t.setEchoQueue([rd(1),rd(2)]);t.saveEchoes();
+  /* slot 1: meta+prog+ecos+run ativa */
+  t.activateSlot(1);
+  t.setMeta({mem:77,spd:1,reroll:0,vault:0,wins:2,endings:['dueto'],evars:['dueto.ressonancia']});
+  t.saveMeta();t.setProg({kills:9,best:7,seen:[]});t.saveProg();
+  t.setEchoQueue([rd(1)]);t.saveEchoes();
+  const cfg0=cfgSnapshot();
+  t.startRun();                         // run ativa com checkpoint (Ecos vivos)
+  assert(t.getActiveRun(),'sem run ativa para o teste');
+  assert(t.getActiveRun().echoes.length>=1,'checkpoint sem Ecos');
+  assert(t.smClearSlotEchoes());
+  assert.strictEqual(t.getEchoQueue().length,0,'echoQueue não foi limpo');
+  assert.strictEqual(t.getRoot().slots[1].echoes.length,0,'slot 1 ainda tem Ecos');
+  assert.strictEqual(t.getActiveRun().echoes.length,0,
+    'checkpoint ainda ressuscitaria Ecos');
+  assert.strictEqual(t.getRoot().slots[1].meta.mem,77,'meta do slot 1 mudou');
+  assert.strictEqual(t.getRoot().slots[1].prog.kills,9,'prog do slot 1 mudou');
+  assert.strictEqual(t.getRoot().slots[2].meta.mem,33,'meta do slot 2 vazou');
+  assert.strictEqual(t.getRoot().slots[2].echoes.length,2,'Ecos do slot 2 vazaram');
+  assert.strictEqual(cfgSnapshot(),cfg0,'settings globais mudaram');
+});
+ok('B. cancelar LIMPAR ECOS: nada é alterado (coberto pelo fluxo do modal)',()=>{
+  t.activateSlot(1);
+  const n=t.getRoot().slots[1].echoes.length;
+  t.openConfirm({title:'X?',onYes:()=>t.smClearSlotEchoes()});
+  elements.get('m-row').children[0].click();     // CANCELAR
+  assert.strictEqual(t.getRoot().slots[1].echoes.length,n,
+    'cancelar alterou os Ecos');
+});
+ok('C. LIMPAR SAVE: zera só o slot atual (meta/prog/Ecos/run/Codex), resto intacto',()=>{
+  t.activateSlot(1);t.clearDevTaint();
+  t.setEchoQueue([rd(1)]);t.saveEchoes();
+  const cfg0=cfgSnapshot();
+  assert(t.hasActiveRun()||(()=>{t.setState('play');return t.captureCheckpoint('t',3);})(),
+    'sem run ativa');
+  assert(t.smClearSlotSave());
+  const s=t.getRoot().slots[1];
+  assert.strictEqual(s.run,null,'run ativa sobreviveu');
+  assert.strictEqual(s.echoes.length,0,'Ecos sobreviveram');
+  assert.strictEqual(s.meta.mem,0,'meta sobreviveu');
+  assert.deepStrictEqual(s.meta.endings,[],'finais registrados sobreviveram');
+  assert.deepStrictEqual(s.meta.evars,[],'variantes sobreviveram');
+  assert.strictEqual(s.prog.kills,0,'prog sobreviveu');
+  assert.strictEqual(s.char,0,'operador sobreviveu');
+  assert.strictEqual(t.getActiveRun(),null,'espelho da run ativa sobreviveu');
+  assert.strictEqual(t.getEchoQueue().length,0,'echoQueue vivo');
+  assert.strictEqual(t.getCharSel(),0,'operador selecionado não resetou');
+  assert.strictEqual(t.getRoot().slots[2].meta.mem,33,'slot 2 foi afetado');
+  assert.strictEqual(t.getRoot().slots[2].echoes.length,2,'Ecos do slot 2 apagados');
+  assert.strictEqual(cfgSnapshot(),cfg0,'settings globais mudaram');
+});
+ok('D. slots legados/migrados: as duas ações funcionam do mesmo jeito',()=>{
+  /* slot 2 vira um slot "migrado": meta sem evars novo + echoes v2 */
+  const s2=t.getRoot().slots[2];
+  s2.meta={mem:5,spd:0,reroll:0,vault:0,wins:0,endings:[],evars:[]};
+  s2.prog={kills:3,seen:[]};s2.char=1;s2.echoes=[rd(9)];s2.run=null;s2.touched=true;
+  t.activateSlot(2);
+  assert(t.smClearSlotEchoes());
+  assert.strictEqual(t.getRoot().slots[2].echoes.length,0,'ecos legados não limpos');
+  assert.strictEqual(t.getRoot().slots[2].meta.mem,5,'meta mudou no limpar ecos');
+  assert(t.smClearSlotSave());
+  assert.strictEqual(t.getRoot().slots[2].meta.mem,0,'save legado não zerou');
+  assert.strictEqual(t.getRoot().slots[2].char,0,'char legado não resetou');
+  t.activateSlot(1);
+});
+ok('botões não executam nada direto: exigem o clique na confirmação',()=>{
+  t.activateSlot(1);
+  t.setMeta({mem:42,spd:0,reroll:0,vault:0,wins:0,endings:[],evars:[]});t.saveMeta();
+  t.openConfirm({title:'APAGAR SAVE DO SLOT ATUAL?',danger:true,
+    onYes:()=>t.smClearSlotSave()});
+  /* apenas abrir o confirm não pode zerar nada */
+  assert.strictEqual(t.getRoot().slots[1].meta.mem,42,
+    'abrir a confirmação executou a ação');
+  elements.get('m-row').children[1].click();     // APAGAR SLOT
+  assert.strictEqual(t.getRoot().slots[1].meta.mem,0,'confirmação não executou');
+});
+
+console.log('\n---------------------------------------------');
+console.log('Resultado: '+passed+' passaram · '+failed+' falharam');
+if(failed){
+  console.log('\nFALHAS DETECTADAS');
+  process.exit(1);
+}
+console.log('PR 10.5A — TODOS OS TESTES PASSARAM');
