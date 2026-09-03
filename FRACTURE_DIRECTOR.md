@@ -397,23 +397,24 @@ textual e já mostra tudo que existe de estado.
 
 ---
 
-## 10. Integração futura (ainda **não** ligada)
+## 10. Integração futura
 
-Nada abaixo está ativo no jogo hoje. Está documentado para que os próximos blocos tenham um
-contrato, não uma página em branco.
+Esta seção nasceu no Bloco 1 como contrato para o que ainda não existia. **§10.1 (waves) já
+foi implementada no Bloco 2** e §10.3 ganhou o metadado de tags; o restante segue previsto e
+não está ativo. Mantida aqui para que os próximos blocos tenham o contrato, não uma página em
+branco.
 
-### 10.1 Waves
+### 10.1 Waves — ~~futuro~~ **IMPLEMENTADO NO BLOCO 2**
 
-`waveComp(n)` continua sendo a **única** fonte de composição. O caminho previsto é:
+Ver **§13**. `waveComp(n)` continua sendo a **única** fonte de composição, e o pipeline
+previsto aqui foi implementado exatamente como desenhado:
 
 ```js
-const base = waveComp(n);
-const comp = fractureShapeWave(base, n);   // aplica waveProfile.bias / pool do Tema
+waveComp(n) = waveCompFit(fractureShapeWave(waveCompBase(n), n), ENEMY_BUDGET)
 ```
 
-`waveProfile.bias` (vazio no B1) é o lugar dos multiplicadores por arquétipo; `pool` é o
-lugar de uma composição sobrescrita. Enquanto estiverem vazios, `fractureShapeWave` seria
-identidade — por isso ainda não existe.
+`waveProfile.bias` e `waveProfile.pool` deixaram de ser contrato morto: agora alimentam
+`fractureShapeWave` de verdade (com sanitização dura — ver §13.8).
 
 ### 10.2 Eventos
 
@@ -434,12 +435,25 @@ if (d.fractureTags && tema && d.fractureTags.indexOf(temaTag) >= 0) w *= FRACTUR
 Evento **sem** `fractureTags` mantém o peso de hoje — eventos antigos não quebram.
 `event_triggered` já existe no contrato do bus para o Diretor acompanhar o que a run viu.
 
-### 10.3 Minibosses
+### 10.3 Minibosses — metadado pronto, ponderação ainda **não** ligada
 
-Hoje `pickMiniBoss(n)` filtra o pool de 8 por HP e sorteia. O caminho previsto é o mesmo
-casamento por tags: cada miniboss declara `fractureTags`, e `pickMiniBoss` passa a ponderar
-pelo Tema **antes** do sorteio. `miniboss_spawn` / `miniboss_killed` já estão no contrato
-(`miniboss_killed` já vale +4 de Intensidade quando emitido).
+O **Bloco 2** adicionou `tags` aos 8 minibosses, usando o **mesmo vocabulário** dos
+arquétipos (§13.2):
+
+| miniboss | tags |
+| --- | --- |
+| herald | PRESSAO, INVOCADOR |
+| furnace | PRESSAO, DISTORCAO |
+| sentinel | DEFESA, CONTENCAO, RESISTENTE |
+| brood | ENXAME, INVOCADOR, FRAGMENTACAO |
+| duelist | CACADOR, MOVEL, EVASIVO |
+| colossus | PESADO, RESISTENTE, CONTENCAO |
+| oracle | ANOMALIA, DISTORCAO, DISTANCIA |
+| leech | SUSTENTACAO, DISTANCIA, ANOMALIA |
+
+**`pickMiniBoss(n)` não foi alterado** — continua filtrando por HP e sorteando uniforme.
+As tags são metadado para o hook futuro (ponderar pelo Tema antes do sorteio).
+`miniboss_spawn` / `miniboss_killed` seguem no contrato do bus.
 
 ### 10.4 Facções e Echo
 
@@ -457,6 +471,12 @@ Intensidade 0–100 com API central e clamp, event bus com contrato de 12 evento
 limitado, checkpoint/Continue sanitizado, limpeza em morte/vitória, isolamento de slots,
 contexto próprio no Sandbox, seção e comandos DEV, suíte de testes e documentação.
 
+**Implementado no Bloco 2** (ver **§13**): tags nos 11 arquétipos e nos 8 minibosses,
+correção do teto de `ENEMY_BUDGET`, `waveCompBase`/`waveCompFit`/`fractureShapeWave`,
+perfis `waveBias` nos 6 Temas, Intensidade/Stage como modulação, `waveProfile.bias`/`pool`
+integrados e sanitizados, inspetor DEV expandido com BASE × FINAL, seção do Diretor no
+Sandbox, `fractureSimulate` e 77 verificações novas.
+
 **Explicitamente FORA desta PR:**
 
 - chefe adaptativo ao estilo do jogador (**PR 15**);
@@ -467,8 +487,10 @@ contexto próprio no Sandbox, seção e comandos DEV, suíte de testes e documen
 - dezenas de inimigos novos;
 - sistema de chefe adaptativo completo;
 - rework visual de UI (a UI de Tema/Intensidade fica para o **B4**);
-- qualquer número de balance definitivo (os `bias`/`pool` do catálogo nascem vazios);
-- qualquer efeito de gameplay derivado da Intensidade (neste bloco ela é dado puro).
+- `fractureTags` em eventos e ponderação de `pickMiniBoss` pelo Tema (**B3** — o metadado
+  de tags já está pronto, o consumo não);
+- qualquer alteração de HP/dano/velocidade de inimigo derivada do Tema (**B3/B4**);
+- identidade real de RESSONÂNCIA e ESCASSEZ (**B3/B4** — no B2 elas são sutis de propósito).
 
 ---
 
@@ -492,6 +514,19 @@ Blocos cobertos:
 | 9 | Sandbox (contexto próprio, **byte a byte**, restart/build/preparo, sem checkpoint) |
 | 10 | Dev Mode (inspetor, `fx:*`, seção sem duplicar) |
 | 11 | arquitetura e não-regressão (snapshot defensivo, sistemas existentes, 18 suítes no `npm test`, docs) |
+| **12** | **B2.1** teto de entidades: o bug provado, 0 estouros em 1–19, proporção, pisos, budgets degenerados, onda 20 fora |
+| **13** | **B2.2** pipeline na fonte, `waveCompBase` pura, identidade sem Diretor / sem perfil / Intensidade 0 |
+| **14** | **B2.3** tags dos 11 arquétipos e 8 minibosses, vocabulário de 15, `enemyTags` vs. prototype pollution, `updateEnemy`/`scoreEvent` intactos |
+| **15** | **B2.4/B2.5** perfis dos 6 Temas medidos, sutileza de RESSONÂNCIA/ESCASSEZ, volume de ESCASSEZ, nenhum hard replacement |
+| **16** | **B2.6** monotonia da Intensidade, budget em 0–100, nenhum desbloqueio antecipado, wave 1, sem monocultura |
+| **17** | **B2.7** os 5 stages como modulação, stage reprodutível e monotônico, sem progressão paralela |
+| **18** | **B2.8** thresholds medidos na base, `elite`/`eliteChance`/`makeElite` preservados |
+| **19** | **B2.9** teto de participação, mínimo de arquétipos, jitter determinístico, nenhum `Math.random` |
+| **20** | **B2.10** dois boots, Continue fiel, loja/menu sem reroll, round-trip de `waveProfile`, seed própria no Sandbox |
+| **21** | **B2.11** `bias`/`pool` influenciam de verdade + sanitização dura (NaN, Infinity, string, pollution, duplicata, teto) |
+| **22** | **B2.15–B2.17** isolamento de facções/Echo, comandos DEV e taint, inspetor, Sandbox byte a byte |
+| **23** | **B2.19** simulação 6×19×120 com 0 estouros/violações/monoculturas, curva dentro de ±8 %, participação dos favorecidos |
+| **24** | regressões do B2: combate, `pickMiniBoss`, pool de eventos, `SM_VERSION`, escrita em `waveProfile` |
 
 Rodar:
 
@@ -499,3 +534,355 @@ Rodar:
 npm test                        # tudo
 node tests/fracture-director.test.js   # só a PR 13
 ```
+
+---
+
+## 13. BLOCO 2 — Temas + composição de waves
+
+O Bloco 1 montou o controlador. O Bloco 2 faz o Tema **importar**: duas runs com Temas
+diferentes, mesmo operador/arma/dificuldade/onda, agora têm composição mecânica
+perceptivelmente distinta — sem destruir a curva de dificuldade e sem substituir o sistema
+de waves por geração caótica. **O sistema remodela a composição existente; ele não a
+reinventa.**
+
+### 13.1 Pipeline obrigatório
+
+```
+waveCompBase(n)          intenção original do jogo (fórmulas de sempre, puras)
+      ↓
+fractureShapeWave(base, n, ctx)   Tema dá a DIREÇÃO; Intensidade/Stage dão o QUANTO
+      ↓
+waveCompFit(shaped, ENEMY_BUDGET) teto de entidades (método do maior resto)
+      ↓
+waveComp(n)              composição final — única fonte consultada por spawnWave
+```
+
+Cada etapa é **pura**. `waveComp` é chamado várias vezes por onda (spawn, banner
+`peekWave`, testes), então nada aqui pode depender de relógio, de `Math.random` ou de
+estado mutável além de `fractureRun`.
+
+**Identidade garantida** — `waveComp` devolve exatamente `waveCompFit(base)` quando:
+
+- não há Diretor (`fractureRun === null`);
+- o Tema não tem `waveBias`;
+- a Intensidade é `0` (peso do Tema = 0).
+
+### 13.2 Tags — o casamento sem tabela hardcoded
+
+`ENEMY_TAG_DEFS` define **15 tags** com descrição. Elas são aplicadas aos 11 arquétipos de
+`EDEFS` e aos 8 minibosses:
+
+| arquétipo | tags |
+| --- | --- |
+| chaser | CACADOR, PRESSAO |
+| shooter | DISTANCIA, SUSTENTACAO |
+| tank | PESADO, RESISTENTE, CONTENCAO |
+| spawner | INVOCADOR, PRESSAO |
+| anomaly | ANOMALIA, DISTORCAO |
+| swarm | ENXAME, PRESSAO, MOVEL |
+| orbiter | MOVEL, CACADOR, DISTANCIA |
+| bulwark | DEFESA, CONTENCAO, PESADO, RESISTENTE |
+| splitter | FRAGMENTACAO, PRESSAO |
+| phantom | CACADOR, MOVEL, EVASIVO |
+| singular | ANOMALIA, DISTORCAO, PESADO |
+
+**São só metadado.** `updateEnemy` continua decidindo por `e.type`; não existe nenhum
+`switch (Tema)` escolhendo inimigo. `enemyTags(type)` usa `hasOwnProperty` e devolve `[]`
+para `elite`, para tipos inexistentes e para `'__proto__'`/`'constructor'`/`'toString'`.
+
+O vocabulário é **compartilhado** com `FRACTURE_THEMES[].tags` (ENXAME, FRAGMENTACAO,
+CONTENCAO, SUSTENTACAO, PRESSAO, ANOMALIA, DISTORCAO já existiam no B1). É isso que permite
+casar Tema e arquétipo **sem** uma tabela `Tema → inimigo` espalhada pelo código.
+
+### 13.3 Perfil de cada Tema — `theme.waveBias`
+
+```js
+waveBias:{ force, density, tags:{TAG:peso}, arch:{arquétipo:ajuste}, capShare, minKinds }
+```
+
+O viés de um arquétipo é a **soma** dos pesos das suas tags mais o ajuste fino de `arch`,
+clampado em `[-0.75, +0.90]` (`FRACTURE_BIAS_DOWN` / `FRACTURE_BIAS_UP`). Nunca há *hard
+replacement*: só multiplicadores sobre a base.
+
+| Tema | force | density | capShare | minKinds | favorece | reduz |
+| --- | --- | --- | --- | --- | --- | --- |
+| COLAPSO | 1.00 | 1.12 | .42 | 5 | ENXAME .55, FRAGMENTACAO .50, INVOCADOR .40, PRESSAO .35 | tank −.45, bulwark −.40 |
+| CERCO | 1.00 | 1.05 | .34 | 5 | DEFESA .55, CONTENCAO .50, RESISTENTE .45, PESADO .30, SUSTENTACAO .30, DISTANCIA .20 | swarm −.50, phantom −.45, chaser −.20 |
+| CAÇADA | 1.00 | 1.05 | .34 | 5 | CACADOR .60, MOVEL .50, EVASIVO .40, PRESSAO .20, DISTANCIA .15 | tank −.50, bulwark −.45, spawner −.20 |
+| ANOMALIA | 1.00 | 1.00 | .36 | 4 | ANOMALIA .65, DISTORCAO .55, FRAGMENTACAO .40, EVASIVO .25, singular +.35 | bulwark −.20, shooter −.15 |
+| RESSONÂNCIA | **0.50** | 1.00 | .32 | 5 | ANOMALIA .20, DISTORCAO .18, DISTANCIA .15, EVASIVO .12 | — |
+| ESCASSEZ | **0.55** | 0.94 | .32 | 5 | DISTANCIA .25, INVOCADOR .20, PESADO .18, RESISTENTE .15 | ENXAME −.25, FRAGMENTACAO −.15 |
+
+**RESSONÂNCIA e ESCASSEZ são deliberadamente sutis aqui.** A identidade real delas vem nos
+Blocos 3/4 (eventos, Echo, Dissonância, economia) — não de buff artificial e não de redução
+de HP/dano, que este bloco não faz. ESCASSEZ desloca o mix para alvos de maior valor sem
+encolher a onda: medido, ela mantém **≥ 97 %** do volume da base corrigida.
+
+Viés efetivo por arquétipo (Intensidade 100), medido com `fractureArchBias`:
+
+```
+arquétipo   collapse  siege   hunt  anomaly  reson  scarc
+chaser        +0.35  -0.20  +0.80    0.00   0.00   0.00
+shooter        0.00  +0.50  +0.15   -0.15  +0.15  +0.25
+tank          -0.45  +0.90  -0.50    0.00   0.00  +0.33
+spawner       +0.75  +0.10   0.00    0.00   0.00  +0.20
+anomaly        0.00   0.00   0.00   +0.90  +0.38   0.00
+swarm         +0.90  -0.50  +0.70    0.00   0.00  -0.25
+orbiter       +0.15  +0.20  +0.90    0.00  +0.15  +0.25
+bulwark       -0.40  +0.90  -0.45   -0.20   0.00  +0.33
+splitter      +0.85   0.00  +0.20   +0.40   0.00  -0.15
+phantom       +0.15  -0.45  +0.90   +0.25  +0.12   0.00
+singular      -0.15  +0.30   0.00   +0.90  +0.38  +0.18
+```
+
+### 13.4 O algoritmo de `fractureShapeWave`, passo a passo
+
+1. **Escala + arredondamento estocástico determinístico.** Para cada arquétipo com
+   `base[k] > 0`: `raw = base[k] * (1 + w * force * bias)`. A parte inteira entra direta; a
+   fração vira `+1` se `rnd() < fração`, onde `rnd` vem de `fractureWaveRng(seed, wave)`.
+   Isso faz duas ondas vizinhas não ficarem clones, mantendo o reload reproduzível.
+2. **Pool da run** (`waveProfile.pool`): `+1` nos arquétipos pedidos — sempre respeitando o
+   threshold (um arquétipo com `base[k] === 0` nunca entra).
+3. **Densidade.** O total é renormalizado para `round(baseArchTot * (1 + (density−1) * w * force))`
+   pelo maior resto. **É isto que separa MIX de VOLUME**: sem esse passo a curva de
+   dificuldade derivaria da soma dos vieses (media −16 % de entidades). Com ele, o Tema
+   escolhe a cara da onda e `density` escolhe o tamanho.
+4. **Teto de participação.** `cap = max(2, floor(total * capShare))`; o excedente é
+   redistribuído aos menores. Se `cap * nºDeArquétipos < total` o teto é **ignorado** —
+   diversidade nunca pode custar entidade. Se ainda sobrar excedente, ele volta ao maior
+   arquétipo: **o shaping nunca perde entidade** (quem impõe o teto real é `waveCompFit`).
+5. **Mínimo de arquétipos distintos** (`minKinds`), só entre os desbloqueados: tira 1 do
+   maior (sem zerar o doador) e dá ao ausente.
+6. **`elite` é copiado da base.** O Diretor não mexe em elites neste bloco.
+
+### 13.5 Intensidade e Stage — o QUANTO, nunca o QUÊ
+
+```js
+peso = clamp( (intensidade/100) * FRACTURE_STAGE_MUL[stage] , 0, 1 )
+FRACTURE_STAGE_MUL = { latente:.80, instavel:.90, propagando:1, critica:1.05, ruptura:1.10 }
+```
+
+O *quê* é decidido pelo Tema; a Intensidade só dosa **quanto** dele aparece. Os 5 stages do
+Bloco 1 são usados como **modulação** — não existe segunda barra de progressão, e o stage
+continua sendo função pura da Intensidade.
+
+Distância total da base corrigida (soma de `|final − base|` por arquétipo; 30 seeds ×
+ondas 5/10/15/19), medida com `fractureSimulate`/`fractureShapeWave`:
+
+| Tema | int 0 | int 25 | int 50 | int 75 | int 100 |
+| --- | --- | --- | --- | --- | --- |
+| COLAPSO | **0** | 210 | 692 | 1008 | **1150** |
+| CERCO | **0** | 466 | 818 | 1138 | **1500** |
+| CAÇADA | **0** | 276 | 682 | 1112 | **1316** |
+| ANOMALIA | **0** | 252 | 440 | 668 | **798** |
+| RESSONÂNCIA | **0** | 116 | 198 | 288 | **344** |
+| ESCASSEZ | **0** | 216 | 330 | 416 | **440** |
+
+Estritamente crescente nos 6 Temas, e `int 0` é **exatamente** a base (delta 0,0 %).
+Note a hierarquia: CERCO/CAÇADA/COLAPSO se afastam muito; RESSONÂNCIA e ESCASSEZ ficam
+entre 3× e 4× mais perto da base — é a sutileza exigida, medida e não declarada.
+
+### 13.6 O teto de entidades (correção do `ENEMY_BUDGET`)
+
+`ENEMY_BUDGET = 46` era aplicado a apenas **9 dos 12** campos: `splitter`, `spawner` e
+`elite` passavam intactos. A base da onda 19 soma **69** entidades; o corte antigo fechava em
+**48** — acima do teto — e ainda *sub*-preenchia em 12/13/14/16 (43/44/43).
+
+`waveCompFit` agora corta **todos** os campos pelo método do maior resto (Hare): inteiros
+`≥ 0`, total **exatamente** igual ao budget, proporção preservada ao máximo, desempate por
+resto fracionário e depois pela ordem estável de `WAVE_KEYS`.
+
+`WAVE_PROTECTED_MIN = { chaser:2, swarm:2 }` são **mínimos, não substitutos**: quem ficar
+abaixo do piso sobe, e a diferença sai de quem tem mais — sem estourar o teto, sem zerar o
+doador e sem tocar em outro protegido.
+
+| onda | base | antigo | corrigido |
+| --- | --- | --- | --- |
+| 1–11 | ≤ 43 | igual à base | **igual à base** |
+| 12 | 50 | 43 | **46** |
+| 13 | 56 | 43 | **46** |
+| 14 | 58 | 44 | **46** |
+| 15 | 61 | 46 | **46** |
+| 16 | 62 | 43 | **46** |
+| 17–18 | 66 | 46 | **46** |
+| 19 | 69 | **48 ⚠** | **46** |
+
+**Entidades dinâmicas.** O teto conta o que **nasce na onda**. Filhotes de `spawner` e
+fragmentos de `splitter` aparecem depois, durante o combate, e **não** entram na conta —
+isso está escrito no código, junto de `waveCompFit`. A onda 20 (O PARADOXO) é despachada por
+caminho próprio em `spawnWave` e fica **fora** do reshape.
+
+### 13.7 Thresholds e diversidade — os safeguards
+
+- **Nenhum desbloqueio antecipado.** Só arquétipos com `base[k] > 0` são escalados.
+  Thresholds medidos na base real: chaser/swarm 1, orbiter 2, shooter 3, bulwark 4,
+  tank/anomaly/splitter 6, **spawner 8**, **phantom 8**, singular 13. O Tema altera
+  só a **frequência** depois do desbloqueio — Singular continua impossível na wave 1 com
+  qualquer Tema e qualquer Intensidade.
+  (`elite` aparece em `waveComp` a partir da wave 7; `eliteChance(n)` já é não-nula na 6,
+  porque `spawnWave` elitiza incrementalmente por cima da composição. Os dois caminhos
+  continuam intactos — ver §13.9.)
+- **Sem monocultura.** Nenhum arquétipo passa de 60 % da onda (testado em 6 Temas × 4 ondas
+  × 6 Intensidades × 40 seeds).
+- **Sem extinção.** Em 200 seeds por Tema, todos os 11 arquétipos continuam aparecendo:
+  favorecer nunca vira "só existe isso".
+- **Determinismo.** `fractureWaveRng(seed, wave)`; nenhum `Math.random` no caminho. Mesma
+  `(seed, Tema, Intensidade, onda)` ⇒ mesma composição, em boots separados.
+- **Continue fiel.** seed, Tema e Intensidade vêm do checkpoint; loja, menus e re-render não
+  rerrolam. (`closeShop()` avança a onda — comportamento real do jogo — e a composição muda
+  porque a Intensidade mudou, de forma determinística.)
+
+### 13.8 `waveProfile.bias` / `waveProfile.pool`
+
+Deixaram de ser contrato morto. **O formato mudou** (documentado aqui e nos testes):
+
+| | B1 | B2 |
+| --- | --- | --- |
+| `bias` | `{}` vazio, clamp `[0,10]` se preenchido | multiplicador por arquétipo, clamp **±0.60**, **negativos permitidos** |
+| `pool` | `[]` vazio | até **6** arquétipos, `+1` garantido na onda |
+
+Sanitização dura em `fractureCleanBias` / `fractureCleanPool` (entrada de save é **input não
+confiável**):
+
+- só arquétipos que existem em `WAVE_ARCHETYPES`;
+- só `typeof === 'number'` finito (`'3'`, `NaN`, `Infinity`, `null` são rejeitados);
+- `hasOwnProperty` — nenhuma chave herdada do protótipo entra;
+- pool sem duplicata, com teto.
+
+Escrita só pela API central: `fractureSetWaveBias`, `fractureSetWavePool`,
+`fractureClearWaveProfile`.
+
+### 13.9 O que o Tema **não** faz
+
+- **não** altera HP, dano ou velocidade de inimigo (`diffHp`/`diffDmg`/`diffSpd` não
+  conhecem o Diretor);
+- **não** aumenta `eliteChance` nem chama `makeElite`;
+- **não** muda `pickMiniBoss`;
+- **não** aplica `fractureTags` a eventos nem toca em `scoreEvent`;
+- **não** é determinado por facções, Echo, Personality, Relationship ou Dissonância;
+- **não** é escolhido pelo jogador.
+
+### 13.10 Dev Mode
+
+O inspetor (`fx:insp`) passou a mostrar, além do que o B1 já mostrava:
+
+- peso do Tema em % (Intensidade × multiplicador do estágio);
+- `force`, `density`, teto de participação e mínimo de tipos do perfil;
+- **FAVORECIDOS** e **REDUZIDOS** com o viés numérico de cada um;
+- **COMPOSIÇÃO BASE × FINAL** da onda atual e de uma onda de contraste, com total, budget
+  usado, sobra e nº de tipos.
+
+Comandos novos (os do B1 continuam valendo e não foram duplicados):
+
+| comando | efeito | tainta? |
+| --- | --- | --- |
+| `fx:comp` / `fx:comp:<n>` | BASE × FINAL da onda | **não** (leitura) |
+| `fx:wave:<n>` | no Sandbox salta de verdade; fora dele é prévia | sim (no Sandbox) |
+| `fx:bias:<arch>:<v>` / `fx:bias:off` | viés da run | sim |
+| `fx:pool:<a/b>` / `fx:pool:off` | pool da run | sim |
+| `fx:sim` / `fx:sim:<int>` | simulação de balanceamento no log | não |
+
+### 13.11 Sandbox
+
+Seção **PR 13 — DIRETOR DE FRATURA** dentro do laboratório existente: os 6 Temas,
+Intensidade 0/25/50/75/100, **seed própria**, re-sorteio, salto de onda e leitura
+BASE × FINAL com o viés aplicado.
+
+O isolamento é **herdado** do Sandbox (R5): `captureCheckpoint`, `clearActiveRun`,
+`fracDiscSave` e `saveProg` já retornam cedo quando `sandboxRun` é true. O teste
+byte-for-byte de saves continua passando com a seção ativa.
+
+### 13.12 Simulação de balanceamento — `fractureSimulate(opts)`
+
+Função **pura** (não toca em `fractureRun` nem no estado do jogo). Roda
+`temas × ondas × seeds` e devolve, por Tema: média de entidades, média da base corrigida,
+máximo, acertos/estouros de budget, distribuição por arquétipo, participação percentual,
+média de arquétipos distintos, monoculturas e violações de threshold.
+
+Resultado com **6 Temas × ondas 1–19 × 120 seeds, Intensidade 100**:
+
+| Tema | ent. média | base corr. | delta | máx | estouros | tipos/onda | monoculturas | violações |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| COLAPSO | 34.21 | 32.84 | **+3.8 %** | 46 | 0 | 8.39 | 0 | 0 |
+| CERCO | 33.53 | 32.84 | +1.6 % | 46 | 0 | 8.43 | 0 | 0 |
+| CAÇADA | 33.53 | 32.84 | +1.6 % | 46 | 0 | 8.46 | 0 | 0 |
+| ANOMALIA | 32.84 | 32.84 | −0.5 % | 46 | 0 | 8.52 | 0 | 0 |
+| RESSONÂNCIA | 32.84 | 32.84 | −0.5 % | 46 | 0 | 8.53 | 0 | 0 |
+| ESCASSEZ | 32.47 | 32.84 | **−1.6 %** | 46 | 0 | 8.51 | 0 | 0 |
+
+Participação por arquétipo (%), Intensidade 100, 200 seeds:
+
+| arquétipo | COLAPSO | CERCO | CAÇADA | ANOMALIA | RESSON. | ESCASSEZ |
+| --- | --- | --- | --- | --- | --- | --- |
+| chaser | 23.9 | 17.4 | **27.6** | 20.7 | 20.5 | 20.9 |
+| shooter | 10.4 | **19.2** | 11.2 | 10.9 | 14.4 | 14.9 |
+| tank | 2.6 | **9.3** | 2.5 | 5.2 | 5.1 | 6.4 |
+| spawner | **4.7** | 3.5 | 2.3 | 3.4 | 3.4 | 3.8 |
+| anomaly | 5.5 | 6.7 | 4.9 | **12.1** | 8.5 | 7.0 |
+| swarm | **25.7** | 8.8 | 21.0 | 16.3 | 16.3 | 14.3 |
+| orbiter | 9.4 | 12.5 | **14.5** | 10.2 | 11.7 | 12.0 |
+| bulwark | 3.4 | **10.8** | 2.9 | 5.0 | 6.5 | 7.4 |
+| splitter | **6.1** | 4.3 | 3.7 | 5.6 | 4.3 | 4.2 |
+| phantom | 3.2 | 1.7 | **4.1** | 3.9 | 3.4 | 3.3 |
+| singular | 1.0 | 1.4 | 1.1 | **2.3** | 1.5 | 1.4 |
+
+### 13.13 Exemplos reais (seed 20260903, Intensidade 100)
+
+**Onda 5** — base 18/46: `chaser 6, shooter 3, swarm 5, orbiter 3, bulwark 1`
+
+| Tema | total | composição |
+| --- | --- | --- |
+| COLAPSO | 20 | chaser 7, shooter 3, **swarm 7**, orbiter 2, bulwark 1 |
+| CERCO | 19 | chaser 6, **shooter 5**, **swarm 3**, orbiter 4, bulwark 1 |
+| CAÇADA | 19 | chaser 6, shooter 2, swarm 6, **orbiter 4**, bulwark 1 |
+| ANOMALIA | 18 | chaser 6, shooter 2, swarm 6, orbiter 3, bulwark 1 |
+| RESSONÂNCIA | 18 | chaser 5, shooter 3, swarm 5, orbiter 3, bulwark 2 |
+| ESCASSEZ | 17 | chaser 5, shooter 3, swarm 4, orbiter 3, **bulwark 2** |
+
+**Onda 10** — base 43/46: `chaser 10, shooter 6, tank 2, spawner 1, anomaly 3, swarm 8, orbiter 5, bulwark 3, splitter 2, phantom 1 · elite 2`
+
+| Tema | total | composição |
+| --- | --- | --- |
+| COLAPSO | 46 | chaser 11, shooter 5, tank 1, spawner 1, anomaly 3, **swarm 13**, orbiter 4, bulwark 1, **splitter 4**, phantom 1 · elite 2 |
+| CERCO | 45 | chaser 8, **shooter 10**, **tank 3**, spawner 1, anomaly 3, **swarm 4**, orbiter 6, **bulwark 5**, splitter 2, phantom 1 · elite 2 |
+| CAÇADA | 45 | **chaser 14**, shooter 4, tank 1, spawner 1, anomaly 2, swarm 11, **orbiter 7**, bulwark 1, splitter 1, phantom 1 · elite 2 |
+| ANOMALIA | 43 | chaser 9, shooter 5, tank 2, spawner 1, **anomaly 6**, swarm 7, orbiter 5, bulwark 2, splitter 3, phantom 1 · elite 2 |
+| RESSONÂNCIA | 43 | chaser 9, shooter 6, tank 2, spawner 1, anomaly 4, swarm 8, orbiter 5, bulwark 3, splitter 2, phantom 1 · elite 2 |
+| ESCASSEZ | 42 | chaser 10, shooter 6, tank 2, spawner 1, anomaly 3, swarm 7, orbiter 5, bulwark 3, splitter 2, phantom 1 · elite 2 |
+
+**Onda 15** — base 46/46: `chaser 9, shooter 6, tank 3, spawner 2, anomaly 4, swarm 7, orbiter 5, bulwark 3, splitter 2, phantom 2, singular 1 · elite 2`
+
+| Tema | composição |
+| --- | --- |
+| COLAPSO | chaser 9, shooter 5, tank 2, spawner 3, anomaly 3, **swarm 10**, orbiter 4, **bulwark 1**, **splitter 3**, phantom 3, singular 1 · elite 2 |
+| CERCO | **chaser 6**, **shooter 8**, **tank 6**, spawner 2, anomaly 4, **swarm 3**, orbiter 5, **bulwark 6**, splitter 2, **phantom 1**, singular 1 · elite 2 |
+| CAÇADA | **chaser 12**, shooter 5, **tank 1**, spawner 1, anomaly 3, swarm 9, **orbiter 6**, bulwark 1, **splitter 1**, **phantom 4**, singular 1 · elite 2 |
+| ANOMALIA | chaser 8, shooter 5, tank 3, spawner 2, **anomaly 7**, swarm 6, orbiter 4, bulwark 2, splitter 3, phantom 2, **singular 2** · elite 2 |
+| RESSONÂNCIA | chaser 8, shooter 7, tank 3, spawner 2, anomaly 5, swarm 6, orbiter 5, bulwark 3, splitter 2, phantom 2, singular 1 · elite 2 |
+| ESCASSEZ | chaser 9, shooter 6, **tank 4**, spawner 2, anomaly 4, swarm 6, orbiter 5, bulwark 3, splitter 2, phantom 2, singular 1 · elite 2 |
+
+**Onda 19** — base 46/46: `chaser 8, shooter 5, tank 3, spawner 3, anomaly 5, swarm 6, orbiter 4, bulwark 3, splitter 3, phantom 2, singular 1 · elite 3`
+
+| Tema | composição |
+| --- | --- |
+| COLAPSO | chaser 9, shooter 4, tank 2, **spawner 4**, anomaly 4, **swarm 9**, orbiter 3, **bulwark 1**, **splitter 4**, phantom 2, singular 1 · elite 3 |
+| CERCO | **chaser 6**, **shooter 7**, **tank 5**, spawner 3, anomaly 4, **swarm 3**, orbiter 5, **bulwark 4**, splitter 3, **phantom 1**, **singular 2** · elite 3 |
+| CAÇADA | **chaser 11**, shooter 4, **tank 1**, spawner 2, anomaly 3, swarm 8, **orbiter 6**, bulwark 1, splitter 3, phantom 3, singular 1 · elite 3 |
+| ANOMALIA | chaser 8, shooter 4, tank 3, spawner 3, **anomaly 7**, swarm 5, orbiter 3, bulwark 2, splitter 3, phantom 3, **singular 2** · elite 3 |
+| RESSONÂNCIA | chaser 7, shooter 5, tank 3, spawner 3, anomaly 5, swarm 5, orbiter 5, bulwark 3, splitter 3, phantom 2, singular 2 · elite 3 |
+| ESCASSEZ | chaser 8, shooter 6, tank 3, spawner 3, anomaly 4, swarm 5, orbiter 4, bulwark 3, splitter 3, phantom 2, singular 2 · elite 3 |
+
+Todas as 24 composições fecham em ≤ 46. Nenhuma introduz arquétipo não desbloqueado.
+
+### 13.14 Testes do Bloco 2
+
+`tests/fracture-director.test.js` foi de **67** para **144** verificações (13 blocos novos,
+`[12]` a `[24]`). `npm test` total: **1105** verificações, **0** falhas, **18** suítes.
+
+Dois testes do Bloco 1 foram **atualizados de propósito**, e o motivo está escrito neles:
+
+1. *"waveComp não reage à Intensidade"* → *"nenhum multiplicador de combate referencia o
+   Diretor"*. A primeira afirmação era verdadeira no B1 e é **falsa por design** no B2; a
+   segunda é a que precisa valer para sempre.
+2. O clamp de `waveProfile.bias` mudou de `[0,10]` para `±0.60`, porque o campo passou a
+   alimentar o shaping.
