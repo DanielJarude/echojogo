@@ -14818,6 +14818,12 @@ function smBuildCheckpoint(reason,waveOverride){
       vowPoverty:player.vowPoverty,vowBlood:player.vowBlood,
       markedUp:player.markedUp,bigShop:player.bigShop,
       freeRerolls:player.freeRerolls,repairs:player.repairs,
+      /* PR 12.6 (B6): penalidade vital temporária (~45 s) persiste com o
+         tempo RESTANTE — reload não apaga a penalidade (exploit) nem a
+         prolonga (tempo com o jogo fechado não consome duração). Saves
+         antigos sem os campos restauram 0/0 (sem penalidade). */
+      tempPen:Math.max(0,player.tempPen|0),
+      tempT:player.tempT>0?Math.max(0,Math.round(player.tempT*100)/100):0,
       echoBoost:player.echoBoost,regen:player.regen,
       dashCdMax:player.dashCdMax,dashReflect:!!player.dashReflect,
       doubleTap:player.doubleTap||0,
@@ -14959,6 +14965,17 @@ function resumeRun(){
   player.bigShop=num(q.bigShop,0)|0;
   player.freeRerolls=Math.max(0,num(q.freeRerolls,player.freeRerolls)|0);
   player.repairs=Math.max(0,num(q.repairs,0)|0);
+  /* PR 12.6 (B6): restaura a penalidade vital temporária com o tempo
+     restante exato do checkpoint (o tick volta a decrementar em jogo).
+     Caso o save traga tempPen>0 com tempo já zerado (dado corrompido),
+     devolve a vida máxima imediatamente — nunca mantém penalidade eterna. */
+  player.tempPen=Math.max(0,num(q.tempPen,0)|0);
+  player.tempT=Math.max(0,+num(q.tempT,0)||0);
+  if(player.tempPen>0&&player.tempT<=0){
+    player.maxHp+=player.tempPen;
+    player.hp=Math.min(player.hp,player.maxHp);
+    player.tempPen=0;
+  }
   player.echoBoost=num(q.echoBoost,0);
   player.regen=num(q.regen,0);
   player.dashCdMax=Math.max(.2,num(q.dashCdMax,player.dashCdMax));
@@ -20019,7 +20036,6 @@ function fracFresh(){
   };
 }
 let fracRun=null;
-function fracActive(){return !!fracRun&&(state==='play'||state==='shop'||state==='event'||state==='paused'||state==='sheet'||state==='fracture'||state==='victory');}
 /* ---------------- descobertas PERSISTENTES por slot (fracd) ---------------- */
 let fracDisc={anchor:[],remnants:[],consortium:[],deviants:[]};
 function fracDiscClean(o){
@@ -20173,11 +20189,6 @@ function fracFeedback(ev,deltas){
   if(now-_fracFbAt<2600)return;                    // cooldown global anti-spam
   _fracFbAt=now;_fracFbQ=null;
   if(typeof toast==='function')toast(top.line);
-}
-function fracFlushFeedback(){
-  if(!_fracFbQ)return;
-  const q=_fracFbQ;_fracFbQ=null;_fracFbAt=performance.now();
-  if(typeof toast==='function')toast(q.line);
 }
 /* transmissão por mudança de faixa (ALIADA/HOSTIL) — diegética e 1×/faixa/run */
 function fracBandAlert(id,stNow){
@@ -20573,13 +20584,6 @@ for(const it of ECHO_EQUIP)
 const ECHO_EQ_BY_ID={};
 for(const it of ECHO_EQUIP)ECHO_EQ_BY_ID[it.id]=it;
 function echoEqById(id){return id!=null?ECHO_EQ_BY_ID[id]||null:null;}
-function echoEqByOrigin(origin){return ECHO_EQUIP.filter(it=>it.origin===origin);}
-function echoEqSlotDef(e,slot){
-  const s=fracRun&&fracRun.eq&&fracRun.eq[e.slot-1]?fracRun.eq[e.slot-1]:null;
-  if(!s)return null;
-  const id=(slot==='n')?s.n:(slot==='p')?s.p:s.r;
-  return echoEqById(id);
-}
 function echoEqLiveDef(e,slot){
   const id=(slot==='n')?e.eqNucleo:(slot==='p')?e.eqProto:e.eqRelic;
   return echoEqById(id);
@@ -21074,7 +21078,6 @@ const FRAC_OFFERS=[
       spawnRing(e.x,e.y,'#ff4df0',10,160,1);}
   }}
 ];
-function fracOfferById(id){for(const o of FRAC_OFFERS)if(o.id===id)return o;return null;}
 function fracOffersOpen(){
   const out=[];
   if(!fracRun)return out;
@@ -21162,31 +21165,19 @@ function fracEchoSelLive(){
   const i=fracEchoSel;
   return echoes&&echoes[i]&&echoes[i].alive?echoes[i]:null;
 }
-function fracEchoSelIdx(){return fracEchoSel;}
 function fracSetSel(i){
   fracEchoSel=i|0;renderShop();
 }
-function fracEquipItem(it){
-  if(!fracRun||!it)return false;
-  const e=fracEchoSelLive();
-  if(!e)return false;
-  const idx=e.slot-1;if(idx<0||idx>1)return false;
-  const slot=EQ_SLOT_KEY[it.cat];
-  const cur=fracRun.eq[idx][slot];
-  if(cur&&cur!==it.id)fracRun.es.inv.push(cur);      // troca devolve o antigo ao inventário
-  fracRun.eq[idx][slot]=it.id;
-  const was=(slot==='n')?e.eqNucleo:(slot==='p')?e.eqProto:e.eqRelic;
-  if(slot==='n')e.eqNucleo=it.id;else if(slot==='p')e.eqProto=it.id;else e.eqRelic=it.id;
-  const li=fracRun.es.inv.indexOf(it.id);
-  if(li>=0)fracRun.es.inv.splice(li,1);
-  echoEqRefresh(e);
-  try{eqReactionOnce(e,it);}catch(_e){}
-  factionEmit(it.origin==='anchor'?'relic_of_anchor':it.origin==='remnants'?'relic_of_remnants':
-    it.origin==='consortium'?'relic_of_consortium':it.origin==='deviants'?'relic_of_deviants':
-    'echo_equipment_installed',{echo:e});
-  toast(it.nm+' INSTALADO EM ECHO·0'+(idx+1));AUDIO.levelUp();
-  checkpointShopPurchase();
-  renderShop();
+/* B6: emissão ÚNICA de reconhecimento de facção ao INSTALAR tecnologia
+   dela (relic_of_<fid> no grid). Chamada pelos DOIS caminhos reais de
+   instalação (compra com slot livre e painel do inventário) — nunca ao
+   guardar no inventário (só equipado de fato é um ato observado). */
+function fracRelicEmit(fid){
+  if(!fracRun||!fid)return false;
+  const ev=fid==='anchor'?'relic_of_anchor':fid==='remnants'?'relic_of_remnants':
+    fid==='consortium'?'relic_of_consortium':fid==='deviants'?'relic_of_deviants':null;
+  if(!ev)return false;
+  factionEmit(ev,{echo:fracEchoSelLive()||null});
   return true;
 }
 function fracUnequip(cat){
@@ -21220,31 +21211,10 @@ function fracPriceNote(it,cost){
     ?' <span style="color:#7dffc4">(SINTONIA)</span>'
     :' <span style="color:#ff8095">(REPULSA)</span>';
 }
-function fracEqTipHTML(it){
-  const cat=EQ_CAT[it.cat]?EQ_CAT[it.cat].lab:it.cat;
-  const orig=it.origin==='neutral'?'ORIGEM NEUTRA':
-    (FRACTION_BY_ID[it.origin]?FRACTION_BY_ID[it.origin].nm:it.origin);
-  const cost=fracEqCost(it);
-  let sts='';
-  if(it.stats){
-    sts+='<br>ATRIBUTOS:';
-    for(const k in it.stats){
-      const v=it.stats[k];
-      sts+='<br>· '+String(k).toUpperCase()+' '+(v>=1?'×'+fmtMult(v):(v>0?'+'+fmtMult(1+v):'')+'%');
-    }
-  }
-  if(it.dyn)sts+='<br>DINÂMICO: condição <b>'+String(it.dyn.kind||'?').toUpperCase()+'</b> — até +'+(it.dyn.amt||0)+' (limitado, nunca infinito)';
-  if(it.fx)sts+='<br><span style="color:#c9a9ff">◆ EFEITO ESPECIAL: '+String(it.fx).toUpperCase()+'</span>';
-  if(it.beh&&it.beh.prio)sts+='<br>COMPORTAMENTO: prioriza <b>'+String(it.beh.prio).toUpperCase()+'</b>';
-  if(it.condDs)sts+='<br><span style="color:#ffd166">CONDIÇÃO: '+it.condDs+'</span>';
-  return '<div style="font-family:Consolas,monospace;font-size:12px;line-height:1.85;color:#cfe9f7;max-width:430px">'+
-    '<div style="color:'+it.col+'">'+cat+' — '+it.nm+'</div>'+
-    '<div style="color:#9db8c8">'+orig+' · TAGS: '+(it.tags||[]).join(' / ')+'</div>'+
-    '<div style="margin:6px 0">'+it.desc+'</div>'+(sts||'')+
-    '<div style="margin-top:6px;border-top:1px solid rgba(120,200,230,.2);padding-top:5px">CUSTO: '+RES_SYM+cost+
-    (fracRun&&cost!==it.price?' (base '+RES_SYM+it.price+')':'')+
-    '<br>Condições e caps resolvidos no momento do efeito.</div></div>';
-}
+/* B6: implementação canônica de fracEqTipHTML vive em "UI — tip de
+   equipamento" (mais abaixo): rótulos pt-BR, origem com símbolo, tradução
+   de stats. Esta versão antiga foi removida — a duplicação sobrescrevia a
+   boa silenciosamente (última definição vence). */
 function fracServiceTip(sv){
   return '<div style="font-family:Consolas,monospace;font-size:12px;line-height:1.85;color:#cfe9f7;max-width:430px">'+
     '<div style="color:#cfe9f7">◇ SERVIÇO TEMPORAL — '+sv.nm+'</div>'+
@@ -21271,6 +21241,10 @@ function fracBuyFromStock(itId){
       if(slot==='n')sel.eqNucleo=it.id;else if(slot==='p')sel.eqProto=it.id;else sel.eqRelic=it.id;
       echoEqRefresh(sel);
       try{eqReactionOnce(sel,it);}catch(_e){}
+      /* B6: instalar tecnologia de uma facção é um ato que ela OBSERVA
+         (relic_of_* no grid) — dispara no momento real da instalação,
+         nunca na ida ao inventário (só equipado de fato reconhece). */
+      if(it.origin&&it.origin!=='neutral')try{fracRelicEmit(it.origin);}catch(_e){}
       toast(it.nm+' INSTALADO EM ECHO·0'+sel.slot);AUDIO.levelUp();
     }else{
       /* slot ocupado: NUNCA sobrescreve em silêncio (§35) — vai ao inventário */
@@ -21305,6 +21279,8 @@ function fracEquipFromInv(itId){
   fracRun.es.inv.splice(li,1);
   echoEqRefresh(e);
   try{eqReactionOnce(e,it);}catch(_e){}
+  /* B6: instalar do inventário também é observado pela facção de origem */
+  if(it.origin&&it.origin!=='neutral')try{fracRelicEmit(it.origin);}catch(_e){}
   toast(it.nm+' INSTALADO EM ECHO·0'+(idx+1));AUDIO.levelUp();
   checkpointShopPurchase();
   renderShop();
@@ -22185,29 +22161,6 @@ const FRAC_CONTACT_EVENTS=[
      a aba ECHO nesta run).
    Nenhum destes wrappers altera o comportamento fora de uma run PR12.
    ===================================================================== */
-function fracWrap(name,wrapFn){
-  if(typeof name!=='function')return;
-  const _orig=name;
-  const w=function(){
-    const args=Array.prototype.slice.call(arguments);
-    return wrapFn.apply(this,[_orig,args]);
-  };
-  try{ /* função declarada no escopo global: a vinculação é mutável */
-    if(typeof window!=='undefined'&&window===globalThis){window[name.name]=w;return;}
-    /* vm/testes: substitui via eval no mesmo escopo global do script */
-    const key=name.name;
-    if(key&&key.length){globalThis[key]=w;}
-  }catch(e){}
-}
-/* ponte segura: mantém a referência original e chama via invocação direta */
-const _fracOrig={};
-function fracStore(name,fn){
-  const key=(fn&&fn.name)||name;
-  _fracOrig[key]=fn;
-}
-function fracOrig(key){
-  return _fracOrig[key]||(typeof globalThis!=='undefined'?globalThis[key]:null);
-}
 
 /* ---------------- tip de equipamento (usada pela loja) ---------------- */
 function fracEqTipHTML(it){
