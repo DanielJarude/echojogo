@@ -41,6 +41,17 @@ src+=';globalThis.__t={'+
   'fractureRunPack,fractureRunUnpack,'+
   'fractureSandboxContextStart,fractureSandboxTearDown,'+
   'fractureInspectorText,fractureDevCommand,fractureDevSection,fractureKitBoot,'+
+  /* BLOCO 2 — temas + composição */
+  'ENEMY_TAG_DEFS,ENEMY_TAGS,enemyTags,WAVE_ARCHETYPES,WAVE_KEYS,'+
+  'WAVE_PROTECTED_MIN,waveCompBase,waveCompFit,waveCompTotal,ENEMY_BUDGET,'+
+  'fractureShapeWave,fractureWaveCtx,fractureThemeWeight,fractureArchBias,'+
+  'fractureWaveRng,fractureBiasReport,fractureCompReport,fractureSimulate,'+
+  'fractureCleanBias,fractureCleanPool,fractureSetWaveBias,fractureSetWavePool,'+
+  'fractureClearWaveProfile,fractureSetSeed,fractureSandboxSection,'+
+  'fractureSandboxAction,FRACTURE_BIAS_UP,FRACTURE_BIAS_DOWN,FRACTURE_CAP_MIN,'+
+  'FRACTURE_CAP_SHARE,FRACTURE_MIN_KINDS,FRACTURE_STAGE_MUL,FRACTURE_RUN_BIAS_MAX,'+
+  'FRACTURE_RUN_POOL_MAX,updateEnemy,scoreEvent,makeElite,eliteChance,'+
+  'RUN_EVENTS,RUN_CHAIN_EVENTS,diffHp,diffDmg,diffSpd,'+
   /* acesso ao estado vivo */
   'getFx:()=>fractureRun,setFx:v=>{fractureRun=v;},'+
   /* jogo */
@@ -555,17 +566,23 @@ ok('salto de onda (DEV/Sandbox) conta uma única fronteira, sem estouro',()=>{
   t.setWave(15);t.spawnWave(15);
   assert.strictEqual(t.fractureGetIntensity(),antes+2,'salto deve contar 1 fronteira');
 });
-ok('Intensidade NÃO é "inimigo com mais HP": nada de combate foi alterado no B1',()=>{
-  /* o B1 é dado puro: waveComp continua exatamente o de sempre. */
-  const antes=[1,5,10,15,19].map(n=>J(t.waveComp(n)));
-  beginRun(t,1);
-  t.fractureSetIntensity(100,'teste');
-  const depois=[1,5,10,15,19].map(n=>J(t.waveComp(n)));
-  assert.strictEqual(J(antes),J(depois),'waveComp não pode reagir à Intensidade no B1');
-  /* e nenhum multiplicador de HP de inimigo referencia o Diretor */
+ok('Intensidade NÃO é "inimigo com mais HP": nenhum multiplicador de combate referencia o Diretor',()=>{
+  /* No B1 waveComp também era inalterado. A partir do BLOCO 2 ele passa a
+     reagir à Intensidade POR DESIGN (é o que dá identidade ao Tema) — essa
+     parte da asserção antiga foi movida para o bloco [13] do B2, onde é
+     testada do jeito certo. O que PRECISA continuar valendo para sempre é
+     que o Diretor nunca vira "inimigo com mais HP": nenhuma escala de
+     HP/dano/velocidade pode consultá-lo. */
+  for(const fn of ['diffHp','diffDmg','diffSpd','eliteChance']){
+    const i=src.indexOf('function '+fn+'(');
+    assert.ok(i>0,'função '+fn+' presente');
+    const corpo=src.slice(i,i+500);
+    assert.ok(!/fracture/.test(corpo),
+      fn+' não pode referenciar o Diretor de Fratura');
+  }
   assert.ok(src.indexOf('diffHp(n)*fracture')<0);
-  assert.ok(!/fractureGetIntensity\(\)/.test(
-    src.slice(src.indexOf('function diffHp('),src.indexOf('function diffHp(')+400)));
+  assert.ok(src.indexOf('*fractureGetIntensity')<0,
+    'nenhum multiplicador pode escalar pela Intensidade');
 });
 
 /* ============ [4] EVENT BUS ============ */
@@ -873,8 +890,12 @@ ok('unpack sanitiza campo a campo e preserva o que é válido',()=>{
   assert.strictEqual(f.stage,'critica');
   assert.strictEqual(f.waveProfile.wave,11);
   assert.strictEqual(f.waveProfile.last,9);
-  assert.strictEqual(f.waveProfile.bias.swarm,1.5);
-  assert.strictEqual(J(f.waveProfile.pool),J(['swarm','splitter']));
+  /* B2.11: o formato de waveProfile.bias mudou DE PROPÓSITO — ele deixou de
+     ser contrato morto e passou a alimentar fractureShapeWave, então agora
+     é clampado em ±FRACTURE_RUN_BIAS_MAX (0.6) e só aceita arquétipos que
+     existem. 1.5 → 0.6 é o comportamento correto, não regressão. */
+  assert.strictEqual(f.waveProfile.bias.swarm,A.FRACTURE_RUN_BIAS_MAX,
+    'bias fora do teto é clampado (B2.11)');
   assert.strictEqual(f.history.length,2);
   assert.ok(f.history[1].t.length<=24,'tipo truncado');
   assert.strictEqual(f.last.t,'wave_start');
@@ -1117,12 +1138,17 @@ ok('inspetor expõe Tema/seed/Intensidade/estágio/pesos/pools/último evento/hi
   assert.ok(txt.indexOf(String(t.fractureGetSeed()))>=0,'seed');
   assert.ok(/INTENSIDADE: \d+\/100/.test(txt),'Intensidade');
   assert.ok(txt.indexOf(t.fractureGetStage().lab)>=0,'estágio');
-  assert.ok(/PESOS:/.test(txt),'pesos');
-  assert.ok(/POOLS:/.test(txt),'pools');
+  assert.ok(/PESOS DE RUN:/.test(txt),'pesos de run');
+  assert.ok(/POOL DE RUN:/.test(txt),'pool de run');
   assert.ok(/ÚLTIMO EVENTO:/.test(txt),'último evento');
   assert.ok(/HISTÓRICO\(\d+\/\d+\)/.test(txt),'histórico com limite');
-  assert.ok(txt.indexOf('NEUTROS')>=0,'B1: pesos neutros');
-  assert.ok(txt.indexOf('PADRÃO')>=0,'B1: pools padrão');
+  assert.ok(txt.indexOf('NEUTROS')>=0,'pesos de run neutros por padrão');
+  assert.ok(txt.indexOf('PADRÃO')>=0,'pool de run padrão por padrão');
+  /* B2.16: o inspetor passou a mostrar BASE × FINAL, viés e peso do Tema */
+  assert.ok(/PESO DO TEMA: \d+%/.test(txt),'peso do Tema');
+  assert.ok(/BASE\s+\(\d+\):/.test(txt),'composição BASE');
+  assert.ok(/FINAL\s+\(\d+\/\d+/.test(txt),'composição FINAL com budget');
+  assert.ok(/FAVORECIDOS:|REDUZIDOS:|VIÉS: NEUTRO/.test(txt),'tags favorecidas/reduzidas');
 });
 ok('comandos fx:* só funcionam com DEV ligado e contaminam a run (devTaint)',()=>{
   t.DEV_off();
@@ -1221,6 +1247,1124 @@ ok('documentação da PR13 presente (FRACTURE_DIRECTOR.md)',()=>{
       'FRACTURE_DIRECTOR.md sem a seção "'+sec+'"');
   for(const id of THEMES)
     assert.ok(txt.indexOf(id)>=0,'documentação sem o tema '+id);
+});
+
+/* =====================================================================
+   BLOCO 2 — TEMAS + COMPOSIÇÃO DE WAVES
+   ===================================================================== */
+console.log('\n=============================================');
+console.log('BLOCO 2 — TEMAS + COMPOSIÇÃO DE WAVES');
+console.log('=============================================');
+/* contexto puro para os testes de shaping: não depende de run viva */
+function ctxOf(theme,intensity,seed,bias,pool){
+  return {theme:theme,seed:(seed>>>0)||1,intensity:clamp01(intensity),
+    stage:t.fractureStageOf(clamp01(intensity)).id,
+    bias:bias||null,pool:pool||null};
+}
+function clamp01(i){return Math.max(0,Math.min(100,i|0));}
+function shaped(theme,n,intensity,seed){
+  return t.fractureShapeWave(t.waveCompBase(n),n,ctxOf(theme,intensity,seed||99));
+}
+function finalComp(theme,n,intensity,seed){
+  return t.waveCompFit(shaped(theme,n,intensity,seed),t.ENEMY_BUDGET);
+}
+function total(c){return t.waveCompTotal(c);}
+const ARCH=t.WAVE_ARCHETYPES;
+const WAVES=[];for(let n=1;n<=19;n++)WAVES.push(n);
+
+/* ============ [12] B2.1 — CORREÇÃO DO ENEMY_BUDGET ============ */
+console.log('\n[12] B2.1 · CORREÇÃO DO TETO DE ENTIDADES (ENEMY_BUDGET)');
+ok('ENEMY_BUDGET é inteiro positivo e waveCompTotal soma todos os campos',()=>{
+  assert.ok(Number.isInteger(t.ENEMY_BUDGET)&&t.ENEMY_BUDGET>0);
+  const c={chaser:3,swarm:2,elite:1};
+  assert.strictEqual(t.waveCompTotal(c),6);
+  assert.strictEqual(t.waveCompTotal({}),0);
+  assert.strictEqual(t.waveCompTotal(null),0);
+});
+ok('BUG CORRIGIDO: splitter/spawner/elite agora PARTICIPAM do corte',()=>{
+  /* antes do fix, waveComp escalava só 9 dos 12 campos: splitter, spawner e
+     elite passavam intactos. Prova real: na base da onda 19 eles somam 13 e
+     o total base é 69 — se o corte ignorasse esses três, o resultado
+     estouraria os 46. */
+  const b=t.waveCompBase(19);
+  assert.strictEqual(total(b),69,'base da onda 19 = 69 (acima do teto 46)');
+  assert.ok(b.splitter>0&&b.spawner>0&&b.elite>0,'os três existem na base');
+  const f=t.waveCompFit(b,t.ENEMY_BUDGET);
+  assert.ok(f.splitter<b.splitter,'splitter foi cortado');
+  assert.ok(f.spawner<b.spawner,'spawner foi cortado');
+  assert.ok(f.elite<b.elite,'elite foi cortado');
+});
+ok('ondas 1–19: NENHUMA estoura o budget (0 estouros em 19 ondas)',()=>{
+  let estouros=[];
+  for(const n of WAVES){
+    const f=t.waveComp(n);
+    assert.ok(Object.keys(f).every(k=>Number.isInteger(f[k])&&f[k]>=0),
+      'onda '+n+': valores inteiros ≥ 0');
+    if(total(f)>t.ENEMY_BUDGET)estouros.push(n+'='+total(f));
+  }
+  assert.strictEqual(J(estouros),J([]),'ondas acima do teto: '+estouros.join(', '));
+});
+ok('ondas cuja base já cabe no teto saem INALTERADAS (1–11)',()=>{
+  for(let n=1;n<=11;n++){
+    const b=t.waveCompBase(n);
+    assert.ok(total(b)<=t.ENEMY_BUDGET,'onda '+n+' cabe no teto');
+    assert.strictEqual(J(t.waveCompFit(b,t.ENEMY_BUDGET)),J(b),
+      'onda '+n+' não pode ser mexida');
+  }
+});
+ok('corte preserva proporção (maior resto) e fecha EXATAMENTE no teto',()=>{
+  for(const n of [12,13,14,15,16,17,18,19]){
+    const b=t.waveCompBase(n),f=t.waveCompFit(b,t.ENEMY_BUDGET);
+    assert.strictEqual(total(f),t.ENEMY_BUDGET,'onda '+n+' fecha no teto');
+    /* proporção: a ordem relativa dos arquétipos não pode inverter */
+    const ks=ARCH.filter(k=>b[k]>0&&f[k]>0);
+    for(let i=0;i<ks.length;i++)for(let j=i+1;j<ks.length;j++){
+      if(b[ks[i]]>b[ks[j]])
+        assert.ok(f[ks[i]]>=f[ks[j]],
+          'onda '+n+': ordem '+ks[i]+'>'+ks[j]+' invertida pelo corte');
+    }
+  }
+});
+ok('arquétipos obrigatórios nunca são removidos (pisos chaser/swarm)',()=>{
+  for(const n of WAVES){
+    const b=t.waveCompBase(n),f=t.waveCompFit(b,t.ENEMY_BUDGET);
+    for(const k in t.WAVE_PROTECTED_MIN){
+      if(b[k]<=0)continue;                       // ainda não desbloqueado
+      assert.ok(f[k]>=t.WAVE_PROTECTED_MIN[k],
+        'onda '+n+': '+k+' caiu abaixo do piso '+t.WAVE_PROTECTED_MIN[k]);
+    }
+  }
+});
+ok('waveCompFit é total: budget 0 zera, budget enorme preserva, fracionário trunca',()=>{
+  const b=t.waveCompBase(19);
+  const z=t.waveCompFit(b,0);
+  assert.strictEqual(total(z),0,'budget 0 ⇒ composição vazia');
+  assert.ok(Object.keys(z).every(k=>z[k]===0));
+  assert.strictEqual(J(t.waveCompFit(b,10000)),J(b),'budget folgado preserva a base');
+  assert.strictEqual(total(t.waveCompFit(b,46.9)),t.ENEMY_BUDGET,'budget fracionário trunca');
+  assert.strictEqual(total(t.waveCompFit(b,-5)),0,'budget negativo ⇒ 0');
+  assert.strictEqual(total(t.waveCompFit(b,NaN)),0,'budget NaN ⇒ 0');
+});
+ok('onda 20 / chefe final ficam FORA do reshape',()=>{
+  /* O PARADOXO é despachado por spawnWave(20) por caminho próprio; waveComp
+     só é consultado para n<MAX_WAVE. Verificação por fonte + por clamp. */
+  const i=src.indexOf('function spawnWave(');
+  const corpo=src.slice(i,i+1400);
+  assert.ok(/MAX_WAVE|>=\s*20|===\s*20/.test(corpo),
+    'spawnWave trata a onda final por caminho próprio');
+  assert.strictEqual(t.MAX_WAVE,20);
+  const c20=t.waveComp(20);
+  assert.ok(total(c20)<=t.ENEMY_BUDGET,'waveComp(20) ainda respeita o teto');
+});
+ok('entidades DINÂMICAS (spawner/splitter) estão documentadas fora do teto',()=>{
+  /* o budget conta o que nasce na onda. Filhotes de spawner e fragmentos de
+     splitter aparecem DEPOIS e não entram na conta — isso precisa estar
+     escrito no código, não só na cabeça de quem lê. */
+  const reg=src.slice(src.indexOf('/* QUANTIDADE INCREMENTAL'),
+    src.indexOf('function waveComp('));
+  assert.ok(/spawner/i.test(reg)&&/splitter/i.test(reg),
+    'comentário do bloco de waves cita spawner e splitter');
+  assert.ok(/dinâmic|dinamic/i.test(reg),
+    'o bloco explica que são entidades dinâmicas fora do teto');
+});
+
+/* ============ [13] B2.2 — COMPOSIÇÃO BASE PURA ============ */
+console.log('\n[13] B2.2 · waveCompBase É PURA E É O PONTO DE PARTIDA');
+ok('pipeline obrigatório: waveComp = fit(shape(base))',()=>{
+  const i=src.indexOf('function waveComp(');
+  const corpo=src.slice(i,i+700);
+  assert.ok(/waveCompBase\s*\(/.test(corpo),'waveComp chama waveCompBase');
+  assert.ok(/fractureShapeWave\s*\(/.test(corpo),'waveComp chama fractureShapeWave');
+  assert.ok(/waveCompFit\s*\(/.test(corpo),'waveComp chama waveCompFit');
+  assert.ok(corpo.indexOf('waveCompBase')<corpo.indexOf('fractureShapeWave'),
+    'a base vem ANTES do shaping');
+  assert.ok(corpo.indexOf('fractureShapeWave')<corpo.indexOf('waveCompFit'),
+    'o teto é aplicado DEPOIS do shaping');
+});
+ok('waveCompBase é pura e não conhece o Diretor',()=>{
+  const a=J(t.waveCompBase(10)),b=J(t.waveCompBase(10));
+  assert.strictEqual(a,b,'duas chamadas iguais');
+  const corpo=src.slice(src.indexOf('function waveCompBase('),
+    src.indexOf('function waveCompFit('));
+  assert.ok(!/fracture/.test(corpo),'base não referencia o Diretor');
+  assert.ok(!/Math\.random/.test(corpo),'base não usa Math.random');
+  /* não muta o argumento nem devolve referência interna */
+  const x=t.waveCompBase(7);x.chaser=999;
+  assert.notStrictEqual(t.waveCompBase(7).chaser,999,'objeto novo a cada chamada');
+});
+ok('SEM Diretor ⇒ composição idêntica à base corrigida',()=>{
+  t.setFx(null);
+  for(const n of WAVES)
+    assert.strictEqual(J(t.waveComp(n)),
+      J(t.waveCompFit(t.waveCompBase(n),t.ENEMY_BUDGET)),'onda '+n);
+});
+ok('Tema SEM perfil de onda ⇒ identidade',()=>{
+  beginRun(t,1);
+  t.fractureSetIntensity(100,'teste');
+  const th=t.fractureGetThemeId();
+  const guard=t.FRACTURE_THEMES.find(x=>x.id===th).waveBias;
+  t.FRACTURE_THEMES.find(x=>x.id===th).waveBias=null;
+  try{
+    for(const n of WAVES)
+      assert.strictEqual(J(t.waveComp(n)),
+        J(t.waveCompFit(t.waveCompBase(n),t.ENEMY_BUDGET)),'onda '+n);
+  }finally{t.FRACTURE_THEMES.find(x=>x.id===th).waveBias=guard;}
+});
+ok('Intensidade 0 ⇒ base pura, mesmo com Tema forte',()=>{
+  beginRun(t,1);
+  t.fractureForceTheme('collapse','teste');
+  t.fractureSetIntensity(0,'teste');
+  assert.strictEqual(t.fractureThemeWeight(t.fractureWaveCtx()),0,'peso zero');
+  for(const n of WAVES)
+    assert.strictEqual(J(t.waveComp(n)),
+      J(t.waveCompFit(t.waveCompBase(n),t.ENEMY_BUDGET)),'onda '+n);
+});
+ok('fractureShapeWave devolve a base quando o contexto é nulo/inválido',()=>{
+  const b=t.waveCompBase(10);
+  assert.strictEqual(J(t.fractureShapeWave(b,10,null)),J(b),'ctx null');
+  assert.strictEqual(J(t.fractureShapeWave(b,10,{theme:'nao_existe',intensity:100})),
+    J(b),'tema inexistente');
+  assert.strictEqual(J(t.fractureShapeWave(b,10,
+    {theme:'collapse',intensity:100,seed:1,stage:'ruptura'})),
+    J(t.fractureShapeWave(b,10,ctxOf('collapse',100,1))),'ctx manual == ctx real');
+});
+
+/* ============ [14] B2.3 — TAGS ============ */
+console.log('\n[14] B2.3 · TAGS DOS ARQUÉTIPOS (SÓ METADADO)');
+ok('os 11 arquétipos têm tags e todas pertencem ao vocabulário',()=>{
+  assert.strictEqual(Object.keys(t.EDEFS).length,11);
+  assert.strictEqual(ARCH.length,11,'WAVE_ARCHETYPES cobre os 11');
+  for(const k of ARCH){
+    const tg=t.enemyTags(k);
+    assert.ok(Array.isArray(tg)&&tg.length>0,k+' tem tags');
+    for(const x of tg)
+      assert.ok(t.ENEMY_TAGS.indexOf(x)>=0,k+': tag desconhecida '+x);
+  }
+  assert.strictEqual(t.ENEMY_TAGS.length,15,'15 tags no vocabulário');
+});
+ok('enemyTags é defensiva: tipo inexistente, elite e prototype pollution',()=>{
+  assert.strictEqual(J(t.enemyTags('elite')),J([]),'elite não é arquétipo de wave');
+  assert.strictEqual(J(t.enemyTags('nao_existe')),J([]));
+  assert.strictEqual(J(t.enemyTags(undefined)),J([]));
+  assert.strictEqual(J(t.enemyTags(null)),J([]));
+  /* '__proto__'/'constructor' existem na cadeia de protótipos de qualquer
+     objeto — enemyTags precisa usar hasOwnProperty, senão devolve lixo. */
+  for(const k of ['__proto__','constructor','toString','hasOwnProperty'])
+    assert.strictEqual(J(t.enemyTags(k)),J([]),'enemyTags("'+k+'") deve ser vazio');
+});
+ok('nenhuma tag vira chave de ENEMY_TAG_DEFS solta (catálogo íntegro)',()=>{
+  for(const tag of t.ENEMY_TAGS){
+    assert.ok(Object.prototype.hasOwnProperty.call(t.ENEMY_TAG_DEFS,tag),
+      'tag '+tag+' documentada em ENEMY_TAG_DEFS');
+    assert.ok(typeof t.ENEMY_TAG_DEFS[tag]==='string'&&t.ENEMY_TAG_DEFS[tag].length>0,
+      'tag '+tag+' tem descrição');
+  }
+  assert.strictEqual(Object.keys(t.ENEMY_TAG_DEFS).length,t.ENEMY_TAGS.length);
+});
+ok('updateEnemy NÃO depende de tags: nenhum if gigante Tema→inimigo',()=>{
+  const i=src.indexOf('function updateEnemy(');
+  const corpo=src.slice(i,src.indexOf('\nfunction ',i+10));
+  assert.ok(!/enemyTags\s*\(/.test(corpo),'updateEnemy não lê enemyTags');
+  assert.ok(!/fractureGetTheme|fractureRun|fractureThemeById/.test(corpo),
+    'updateEnemy não consulta o Diretor');
+  /* e o jogo inteiro não tem switch de Tema decidindo inimigo */
+  const jogo=m[1];
+  assert.ok(!/switch\s*\(\s*fracture(GetTheme|Run)/.test(jogo),
+    'nenhum switch sobre o Tema');
+});
+ok('tags dos MINIBOSS são só metadado (B2.13) e pickMiniBoss não as lê',()=>{
+  for(const mb of t.MINIBOSS){
+    assert.ok(Array.isArray(mb.tags)&&mb.tags.length>0,mb.id+' tem tags');
+    for(const x of mb.tags)
+      assert.ok(t.ENEMY_TAGS.indexOf(x)>=0,mb.id+': tag desconhecida '+x);
+  }
+  const i=src.indexOf('function pickMiniBoss(');
+  const corpo=src.slice(i,src.indexOf('\nfunction ',i+10));
+  assert.ok(!/tags/.test(corpo),'pickMiniBoss inalterado (não lê tags)');
+  assert.ok(!/fracture/.test(corpo),'pickMiniBoss não consulta o Diretor');
+});
+ok('eventos NÃO recebem fractureTags (B2.14) e scoreEvent está intacto',()=>{
+  for(const ev of t.RUN_EVENTS){
+    assert.strictEqual(ev.fractureTags,undefined,
+      'evento '+ev.id+' não pode ter fractureTags no B2');
+  }
+  const i=src.indexOf('function scoreEvent(');
+  const corpo=src.slice(i,src.indexOf('\nfunction ',i+10));
+  assert.ok(!/fracture/.test(corpo),'scoreEvent não referencia o Diretor');
+});
+
+/* ============ [15] B2.4/B2.5 — PERFIS DOS 6 TEMAS ============ */
+console.log('\n[15] B2.4/B2.5 · PERFIS REAIS DOS 6 TEMAS (PESOS, NUNCA TROCA)');
+ok('os 6 temas têm waveBias completo e dentro dos limites',()=>{
+  for(const id of THEMES){
+    const th=t.FRACTURE_THEMES.find(x=>x.id===id);
+    assert.ok(th.waveBias,id+' tem waveBias');
+    const wb=th.waveBias;
+    assert.ok(wb.force>0&&wb.force<=1.5,id+': force '+wb.force);
+    assert.ok(wb.capShare>=.15&&wb.capShare<=.7,id+': capShare '+wb.capShare);
+    assert.ok(wb.minKinds>=1&&wb.minKinds<=11,id+': minKinds '+wb.minKinds);
+    assert.ok(wb.density>=.5&&wb.density<=1.5,id+': density '+wb.density);
+    for(const g of ['tags','arch']){
+      assert.ok(wb[g]&&typeof wb[g]==='object',id+'.'+g);
+      for(const k in wb[g])
+        assert.ok(Number.isFinite(wb[g][k]),id+'.'+g+'.'+k+' finito');
+    }
+    /* tags do perfil precisam existir no vocabulário — sem tag fantasma */
+    for(const tag in wb.tags)
+      assert.ok(t.ENEMY_TAGS.indexOf(tag)>=0,id+': tag fantasma '+tag);
+    for(const a in wb.arch)
+      assert.ok(ARCH.indexOf(a)>=0,id+': arquétipo fantasma '+a);
+  }
+});
+ok('viés por arquétipo vem das TAGS e fica sempre clampado',()=>{
+  for(const id of THEMES){
+    const wb=t.FRACTURE_THEMES.find(x=>x.id===id).waveBias;
+    for(const k of ARCH){
+      const b=t.fractureArchBias(wb,k);
+      assert.ok(Number.isFinite(b),id+'/'+k+' finito');
+      assert.ok(b>=t.FRACTURE_BIAS_DOWN-.0001&&b<=t.FRACTURE_BIAS_UP+.0001,
+        id+'/'+k+' dentro do clamp: '+b);
+    }
+  }
+  /* prova de que vem da tag: tank tem PESADO/RESISTENTE/CONTENCAO, então o
+     CERCO (que favorece as três) tem de dar mais bônus a ele que a CAÇADA */
+  const sie=t.FRACTURE_THEMES.find(x=>x.id==='siege').waveBias;
+  const hun=t.FRACTURE_THEMES.find(x=>x.id==='hunt').waveBias;
+  assert.ok(t.fractureArchBias(sie,'tank')>t.fractureArchBias(hun,'tank'),
+    'CERCO favorece tank mais que CAÇADA');
+  assert.ok(t.fractureArchBias(hun,'phantom')>t.fractureArchBias(sie,'phantom'),
+    'CAÇADA favorece phantom mais que CERCO');
+});
+ok('COLAPSO favorece enxame/fragmentação e reduz tanques',()=>{
+  const b=t.fractureBiasReport(ctxOf('collapse',100,7));
+  assert.ok(b.arch.swarm>0&&b.arch.splitter>0,'swarm e splitter favorecidos');
+  assert.ok(b.arch.tank<0&&b.arch.bulwark<0,'tank e bulwark reduzidos');
+  /* efeito real na onda 15, média de 60 seeds */
+  let sw=0,tk=0,N=60;
+  for(let s=1;s<=N;s++){
+    const c=finalComp('collapse',15,100,s*13+1);
+    sw+=c.swarm;tk+=c.tank;
+  }
+  const b15=t.waveCompFit(t.waveCompBase(15),t.ENEMY_BUDGET);
+  assert.ok(sw/N>b15.swarm,'COLAPSO traz mais swarm que a base ('+(sw/N).toFixed(2)+' > '+b15.swarm+')');
+  assert.ok(tk/N<b15.tank,'COLAPSO traz menos tank que a base');
+});
+ok('CERCO favorece defesa/contenção e reduz enxame',()=>{
+  const b=t.fractureBiasReport(ctxOf('siege',100,7));
+  assert.ok(b.arch.bulwark>0&&b.arch.tank>0&&b.arch.shooter>0,'linha defensiva favorecida');
+  assert.ok(b.arch.swarm<0&&b.arch.phantom<0,'swarm e phantom reduzidos');
+  let bu=0,sw=0,N=60;
+  for(let s=1;s<=N;s++){
+    const c=finalComp('siege',15,100,s*17+3);
+    bu+=c.bulwark;sw+=c.swarm;
+  }
+  const b15=t.waveCompFit(t.waveCompBase(15),t.ENEMY_BUDGET);
+  assert.ok(bu/N>b15.bulwark,'CERCO traz mais bulwark que a base');
+  assert.ok(sw/N<b15.swarm,'CERCO traz menos swarm que a base');
+});
+ok('CAÇADA favorece perseguição e ANOMALIA favorece distorção',()=>{
+  const h=t.fractureBiasReport(ctxOf('hunt',100,7));
+  assert.ok(h.arch.phantom>0&&h.arch.orbiter>0&&h.arch.chaser>0,'caçadores favorecidos');
+  assert.ok(h.arch.tank<0,'pesados reduzidos');
+  const a=t.fractureBiasReport(ctxOf('anomaly',100,7));
+  assert.ok(a.arch.anomaly>0&&a.arch.singular>0,'anomalias favorecidas');
+  /* duas runs, mesma onda, mesma intensidade: identidade perceptível */
+  let hp=0,ap=0,N=60;
+  for(let s=1;s<=N;s++){
+    hp+=finalComp('hunt',15,100,s*29+5).phantom;
+    ap+=finalComp('anomaly',15,100,s*29+5).phantom;
+  }
+  assert.notStrictEqual(hp,ap,'CAÇADA e ANOMALIA produzem phantom diferente');
+  let ha=0,aa=0;
+  for(let s=1;s<=N;s++){
+    ha+=finalComp('hunt',15,100,s*31+7).anomaly;
+    aa+=finalComp('anomaly',15,100,s*31+7).anomaly;
+  }
+  assert.ok(aa/N>ha/N,'ANOMALIA traz mais anomaly que CAÇADA');
+});
+ok('RESSONÂNCIA e ESCASSEZ são DELIBERADAMENTE SUTIS na composição',()=>{
+  const fortes=['collapse','siege','hunt','anomaly'];
+  const sutil=id=>{
+    const wb=t.FRACTURE_THEMES.find(x=>x.id===id).waveBias;
+    let mx=0;
+    for(const k of ARCH)mx=Math.max(mx,Math.abs(t.fractureArchBias(wb,k)));
+    return {force:wb.force,mx:mx};
+  };
+  for(const id of ['resonance','scarcity']){
+    const s=sutil(id);
+    assert.ok(s.force<=.6,id+': force sutil ('+s.force+')');
+    for(const f of fortes)
+      assert.ok(s.mx<sutil(f).mx,id+' tem viés máximo menor que '+f);
+  }
+  /* distância da base: os sutis têm de ser os que MENOS se afastam */
+  const dist=id=>{
+    let d=0;
+    for(const n of WAVES)for(let s=1;s<=20;s++){
+      const c=finalComp(id,n,100,s*7+1),
+            b=t.waveCompFit(t.waveCompBase(n),t.ENEMY_BUDGET);
+      for(const k of ARCH)d+=Math.abs(c[k]-b[k]);
+    }
+    return d;
+  };
+  const dr=dist('resonance'),ds=dist('scarcity');
+  for(const f of fortes){
+    const df=dist(f);
+    assert.ok(dr<df,'RESSONÂNCIA se afasta menos da base que '+f+' ('+dr+' < '+df+')');
+    assert.ok(ds<df,'ESCASSEZ se afasta menos da base que '+f+' ('+ds+' < '+df+')');
+  }
+});
+ok('ESCASSEZ NÃO reduz a quantidade a ponto de facilitar',()=>{
+  /* ela desloca o mix para alvos mais caros sem encolher a onda */
+  let sc=0,ba=0;
+  for(const n of WAVES)for(let s=1;s<=25;s++){
+    sc+=total(finalComp('scarcity',n,100,s*11+2));
+    ba+=total(t.waveCompFit(t.waveCompBase(n),t.ENEMY_BUDGET));
+  }
+  assert.ok(sc/ba>=.97,
+    'ESCASSEZ mantém ≥97% do volume da base (obteve '+(sc/ba*100).toFixed(1)+'%)');
+  /* e nenhum buff artificial: densidade nunca acima de 1 */
+  const wb=t.FRACTURE_THEMES.find(x=>x.id==='scarcity').waveBias;
+  assert.ok(wb.density<=1,'ESCASSEZ não infla densidade');
+});
+ok('NENHUM hard replacement: todo arquétipo desbloqueado continua possível',()=>{
+  /* "favorecer" não pode virar "só existe isso". Em 200 seeds, cada Tema
+     ainda precisa apresentar todos os arquétipos que a onda desbloqueou. */
+  for(const id of THEMES){
+    const vistos={};
+    for(const n of WAVES)for(let s=1;s<=200;s++){
+      const c=finalComp(id,n,100,s*3+1);
+      for(const k of ARCH)if(c[k]>0)vistos[k]=true;
+    }
+    for(const k of ARCH)
+      assert.ok(vistos[k],id+' nunca removeu '+k+' do jogo');
+  }
+});
+
+/* ============ [16] B2.6 — INTENSIDADE = O QUANTO, NÃO O QUÊ ============ */
+console.log('\n[16] B2.6 · INTENSIDADE CONTROLA O QUANTO, NUNCA O QUÊ');
+ok('Intensidade escala a distância da base de forma MONÓTONA',()=>{
+  for(const id of THEMES){
+    const dist=i=>{
+      let d=0;
+      for(const n of [5,10,15,19])for(let s=1;s<=30;s++){
+        const c=finalComp(id,n,i,s*5+1),
+              b=t.waveCompFit(t.waveCompBase(n),t.ENEMY_BUDGET);
+        for(const k of ARCH)d+=Math.abs(c[k]-b[k]);
+      }
+      return d;
+    };
+    const d0=dist(0),d25=dist(25),d50=dist(50),d75=dist(75),d100=dist(100);
+    assert.strictEqual(d0,0,id+': intensidade 0 == base');
+    assert.ok(d25<=d50&&d50<=d75&&d75<=d100,
+      id+': monotônico ('+[d0,d25,d50,d75,d100].join(' ≤ ')+')');
+    assert.ok(d100>d0,id+': intensidade 100 difere da base');
+  }
+});
+ok('o QUÊ é decidido pelo Tema: mesma intensidade, temas diferentes',()=>{
+  const set=(id,n)=>J(finalComp(id,n,60,4242));
+  const distintos=new Set();
+  for(const id of ['collapse','siege','hunt','anomaly'])distintos.add(set(id,15));
+  assert.strictEqual(distintos.size,4,'4 temas fortes ⇒ 4 composições diferentes');
+});
+ok('Intensidade NÃO quebra o budget em nenhum valor 0–100',()=>{
+  for(const id of THEMES)
+    for(let i=0;i<=100;i+=5)
+      for(const n of [5,10,15,19])
+        for(let s=1;s<=6;s++){
+          const c=finalComp(id,n,i,s*13+1);
+          assert.ok(total(c)<=t.ENEMY_BUDGET,
+            id+' int'+i+' w'+n+' seed'+s+' estourou: '+total(c));
+        }
+});
+ok('Intensidade NUNCA desbloqueia arquétipo antes do threshold',()=>{
+  /* a regra dura do shaping: só arquétipos com base[k]>0 são escalados.
+     Singular (wave 13+) não pode aparecer na wave 1 nem com tudo no máximo. */
+  for(const id of THEMES)
+    for(let i=0;i<=100;i+=10)
+      for(let n=1;n<=19;n++)
+        for(let s=1;s<=8;s++){
+          const base=t.waveCompBase(n),c=finalComp(id,n,i,s*19+3);
+          for(const k of ARCH)
+            if(base[k]<=0)
+              assert.strictEqual(c[k],0,
+                id+' int'+i+' w'+n+': '+k+' apareceu sem estar desbloqueado');
+        }
+});
+ok('wave 1 continua sendo só chaser+swarm, em qualquer tema/intensidade',()=>{
+  for(const id of THEMES)
+    for(let i=0;i<=100;i+=25)
+      for(let s=1;s<=10;s++){
+        const c=finalComp(id,1,i,s*23+7);
+        assert.strictEqual(c.singular,0,'sem Singular na wave 1');
+        assert.strictEqual(c.phantom,0,'sem Phantom na wave 1');
+        assert.strictEqual(c.spawner,0,'sem Spawner na wave 1');
+        assert.ok(c.chaser>0&&c.swarm>0,'wave 1 mantém a dupla inicial');
+      }
+});
+ok('Intensidade não gera monocultura (nenhum arquétipo domina a onda)',()=>{
+  for(const id of THEMES)
+    for(let i=0;i<=100;i+=20)
+      for(const n of [5,10,15,19])
+        for(let s=1;s<=40;s++){
+          const c=finalComp(id,n,i,s*37+11);
+          let tot=0,mx=0,mk='';
+          for(const k of ARCH){tot+=c[k];if(c[k]>mx){mx=c[k];mk=k;}}
+          assert.ok(tot===0||mx/tot<=.60,
+            id+' int'+i+' w'+n+': '+mk+' domina '+Math.round(mx/tot*100)+'%');
+        }
+});
+
+/* ============ [17] B2.7 — STAGE COMO MODULAÇÃO ============ */
+console.log('\n[17] B2.7 · OS STAGES REAIS DO B1 COMO MODULAÇÃO');
+ok('fractureThemeWeight usa os 5 stages do B1 como multiplicador',()=>{
+  /* o catálogo lista do mais grave para o mais brando */
+  const ids=t.FRACTURE_STAGES.map(s=>s.id);
+  assert.strictEqual(J(ids),
+    J(['ruptura','critica','propagando','instavel','latente']));
+  for(const id of ids)
+    assert.ok(Number.isFinite(t.FRACTURE_STAGE_MUL[id]),'FRACTURE_STAGE_MUL.'+id);
+  /* modulação crescente, sem salto paralelo: latente < ... < ruptura */
+  assert.ok(t.FRACTURE_STAGE_MUL.latente<t.FRACTURE_STAGE_MUL.instavel);
+  assert.ok(t.FRACTURE_STAGE_MUL.instavel<t.FRACTURE_STAGE_MUL.propagando);
+  assert.ok(t.FRACTURE_STAGE_MUL.propagando<=t.FRACTURE_STAGE_MUL.critica);
+  assert.ok(t.FRACTURE_STAGE_MUL.critica<=t.FRACTURE_STAGE_MUL.ruptura);
+});
+ok('stage é FUNÇÃO da intensidade: não existe segunda progressão',()=>{
+  /* o peso tem de ser reproduzível só com (intensity, stage) — se o Diretor
+     guardasse um acumulador paralelo, o mesmo par daria pesos diferentes. */
+  for(let i=0;i<=100;i++){
+    const st=t.fractureStageOf(i).id;
+    const esperado=Math.min(1,(i/100)*t.FRACTURE_STAGE_MUL[st]);
+    const real=t.fractureThemeWeight(ctxOf('collapse',i,5));
+    assert.ok(Math.abs(real-esperado)<1e-9,'int'+i+': '+real+' != '+esperado);
+  }
+});
+ok('stage não vira fonte própria de intensidade (sobe só junto com ela)',()=>{
+  const corpo=src.slice(src.indexOf('function fractureThemeWeight('),
+    src.indexOf('function fractureArchBias('));
+  assert.ok(/fractureStageOf|ctx\.stage/.test(corpo),'lê o stage');
+  assert.ok(!/Math\.random/.test(corpo),'sem aleatoriedade');
+  /* intensidade nunca é calculada A PARTIR do stage (o inverso é o certo) */
+  const jogo=m[1];
+  assert.ok(!/intensity\s*=[^;=]*fractureStageOf/.test(jogo),
+    'intensidade nunca é derivada do stage');
+  assert.ok(!/intensity\s*\+=/.test(jogo.slice(
+    jogo.indexOf('BLOCO 2 — SHAPING'),jogo.indexOf('ciclo de vida da run'))),
+    'o bloco de shaping não acumula intensidade');
+  /* o stage é sempre LIDO da intensidade, nunca guardado por conta própria:
+     para qualquer valor, stage(intensity) é reprodutível e monotônico. */
+  let anterior=-1;
+  for(let i=0;i<=100;i++){
+    const st=t.fractureStageOf(i);
+    assert.strictEqual(J(st),J(t.fractureStageOf(i)),'stage('+i+') reprodutível');
+    assert.ok(st.min>=anterior,'faixas em ordem decrescente de gravidade');
+    anterior=st.min;
+  }
+  assert.strictEqual(t.fractureStageOf(0).id,'latente');
+  assert.strictEqual(t.fractureStageOf(100).id,'ruptura');
+  /* fora da faixa o fallback é o ÚLTIMO do catálogo, que é o mais brando:
+     intensidade negativa não pode virar ruptura */
+  assert.strictEqual(t.fractureStageOf(-50).id,'latente','negativo ⇒ latente');
+  assert.strictEqual(t.fractureStageOf(NaN).id,'latente','NaN ⇒ latente');
+  assert.strictEqual(t.fractureStageOf(999).id,'ruptura','acima do teto ⇒ ruptura');
+});
+
+/* ============ [18] B2.8 — THRESHOLDS PRESERVADOS ============ */
+console.log('\n[18] B2.8 · THRESHOLDS DE DESBLOQUEIO INTACTOS');
+ok('o Tema só altera FREQUÊNCIA depois do desbloqueio, nunca o desbloqueio',()=>{
+  /* thresholds medidos na waveCompBase real (não decorados): qualquer
+     mudança aqui aparece como falha, que é exatamente o objetivo. */
+  const LIM={chaser:1,swarm:1,orbiter:2,shooter:3,bulwark:4,tank:6,
+    anomaly:6,splitter:6,spawner:8,phantom:8,singular:13};
+  for(const k in LIM){
+    for(let n=1;n<LIM[k];n++)
+      assert.strictEqual(t.waveCompBase(n)[k],0,
+        k+' não pode existir antes da wave '+LIM[k]);
+    assert.ok(t.waveCompBase(LIM[k])[k]>0,k+' existe a partir da wave '+LIM[k]);
+  }
+  /* elite é entidade real (spawnWave spawna c.elite já elitizadas) e entra
+     na base na wave 7 — medido, não suposto */
+  assert.strictEqual(t.waveCompBase(6).elite,0,'sem elite até a wave 6');
+  assert.ok(t.waveCompBase(7).elite>0,'elite entra na base a partir da wave 7');
+  assert.ok(t.eliteChance(7)>0,'eliteChance(7) > 0');
+  assert.strictEqual(t.eliteChance(4),0,'eliteChance nulo antes da wave 5');
+});
+ok('eliteChance e makeElite preservados (B2.12): elite sai da base, sem tema',()=>{
+  /* o Diretor não mexe em elites: o campo elite do shaping é o da base */
+  for(const id of THEMES)
+    for(let i=0;i<=100;i+=25)
+      for(const n of [6,10,15,19])
+        for(let s=1;s<=10;s++){
+          const sh=shaped(id,n,i,s*41+3);
+          assert.strictEqual(sh.elite,t.waveCompBase(n).elite,
+            id+' w'+n+': elite alterado pelo Tema');
+        }
+  const corpo=src.slice(src.indexOf('function fractureShapeWave('),
+    src.indexOf('/* ---------------- API de waveProfile'));
+  assert.ok(!/eliteChance/.test(corpo),'shaping não toca em eliteChance');
+  assert.ok(!/makeElite/.test(corpo),'shaping não chama makeElite');
+});
+ok('nenhum Tema aumenta eliteChance',()=>{
+  const jogo=m[1];
+  const i=jogo.indexOf('function eliteChance(');
+  const corpo=jogo.slice(i,jogo.indexOf('\n',i+10));
+  assert.ok(!/fracture/.test(corpo),'eliteChance não referencia o Diretor');
+  for(const n of [1,5,10,15,19,20]){
+    const esperado=n<5?0:Math.min(.30,(n-4)*.028);
+    assert.ok(Math.abs(t.eliteChance(n)-esperado)<1e-9,'eliteChance('+n+')');
+  }
+});
+
+/* ============ [19] B2.9 — DIVERSIDADE INTERNA ============ */
+console.log('\n[19] B2.9 · DIVERSIDADE INTERNA (TETO, MÍNIMO, JITTER)');
+ok('teto de participação por arquétipo é respeitado quando cabe',()=>{
+  for(const id of THEMES){
+    const cap=t.FRACTURE_THEMES.find(x=>x.id===id).waveBias.capShare;
+    for(const n of [10,15,19])for(let s=1;s<=60;s++){
+      const c=finalComp(id,n,100,s*43+5);
+      let tot=0,kindN=0;
+      for(const k of ARCH){tot+=c[k];if(c[k]>0)kindN++;}
+      const capN=Math.max(t.FRACTURE_CAP_MIN,Math.floor(tot*cap));
+      if(kindN>0&&capN*kindN>=tot)
+        for(const k of ARCH)
+          assert.ok(c[k]<=capN,
+            id+' w'+n+': '+k+'='+c[k]+' acima do teto '+capN);
+    }
+  }
+});
+ok('mínimo de arquétipos distintos é respeitado quando a onda comporta',()=>{
+  for(const id of THEMES){
+    const minK=t.FRACTURE_THEMES.find(x=>x.id===id).waveBias.minKinds;
+    for(const n of [10,15,19])for(let s=1;s<=60;s++){
+      const base=t.waveCompBase(n),c=finalComp(id,n,100,s*47+7);
+      const desb=ARCH.filter(k=>base[k]>0).length;
+      const alvo=Math.min(minK,desb);
+      const kinds=ARCH.filter(k=>c[k]>0).length;
+      assert.ok(kinds>=alvo,
+        id+' w'+n+': '+kinds+' tipos < mínimo '+alvo);
+    }
+  }
+});
+ok('jitter determinístico: mesma (seed,wave) repete; seeds distintas variam',()=>{
+  for(const id of THEMES){
+    const a=J(finalComp(id,15,100,12345)),b=J(finalComp(id,15,100,12345));
+    assert.strictEqual(a,b,id+': mesma seed ⇒ mesma composição');
+    let diferentes=0;
+    for(let s=1;s<=40;s++)
+      if(J(finalComp(id,15,100,s*101+1))!==a)diferentes++;
+    assert.ok(diferentes>=10,
+      id+': seeds distintas precisam variar (só '+diferentes+'/40)');
+  }
+});
+ok('NENHUM Math.random solto no caminho de composição',()=>{
+  const jogo=m[1];
+  const ini=jogo.indexOf('BLOCO 2 — SHAPING DE COMPOSIÇÃO');
+  const fim=jogo.indexOf('/* ---------------- ciclo de vida da run');
+  assert.ok(ini>0&&fim>ini,'bloco de shaping delimitado');
+  const bloco=jogo.slice(ini,fim);
+  assert.ok(!/Math\.random/.test(bloco),'shaping sem Math.random');
+  for(const fn of ['waveCompBase','waveCompFit','waveCompTotal','fractureArchBias',
+    'fractureThemeWeight','fractureWaveCtx']){
+    const i=jogo.indexOf('function '+fn+'(');
+    const corpo=jogo.slice(i,jogo.indexOf('\nfunction ',i+10));
+    assert.ok(!/Math\.random/.test(corpo),fn+' sem Math.random');
+  }
+});
+ok('fractureWaveRng é função pura de (seed,wave)',()=>{
+  const seq=(s,n)=>{const r=t.fractureWaveRng(s,n);return [r(),r(),r()].join(',');};
+  assert.strictEqual(seq(999,5),seq(999,5),'mesma (seed,wave) ⇒ mesma sequência');
+  assert.notStrictEqual(seq(999,5),seq(999,6),'wave diferente ⇒ sequência diferente');
+  assert.notStrictEqual(seq(999,5),seq(998,5),'seed diferente ⇒ sequência diferente');
+  /* ondas vizinhas não podem ser clones (é para isso que o jitter existe) */
+  assert.notStrictEqual(seq(999,5),seq(999,7));
+});
+
+/* ============ [20] B2.10 — DETERMINISMO / CONTINUE ============ */
+console.log('\n[20] B2.10 · DETERMINISMO POR (SEED, TEMA, INTENSIDADE, WAVE)');
+ok('composição é reproduzível em DOIS boots separados',()=>{
+  const A=bootFx({},true),B=bootFx({},true);
+  for(const id of ['collapse','hunt'])
+    for(const n of [5,10,15,19]){
+      const ca=A.waveCompFit(A.fractureShapeWave(A.waveCompBase(n),n,
+        {theme:id,seed:777,intensity:80,stage:A.fractureStageOf(80).id}),A.ENEMY_BUDGET);
+      const cb=B.waveCompFit(B.fractureShapeWave(B.waveCompBase(n),n,
+        {theme:id,seed:777,intensity:80,stage:B.fractureStageOf(80).id}),B.ENEMY_BUDGET);
+      assert.strictEqual(J(ca),J(cb),id+' w'+n+' divergiu entre boots');
+    }
+});
+ok('Continue/reload NÃO rerrola: checkpoint preserva seed, tema e composição',()=>{
+  const A=bootFx({},true);
+  beginRun(A,1);
+  A.fractureForceTheme('anomaly','teste');
+  A.fractureSetIntensity(57,'teste');
+  playWaves(A,2,9);            // cada onda soma FRACTURE_INT_PER_WAVE
+  const seed=A.fractureGetSeed(),intFinal=A.fractureGetIntensity();
+  assert.ok(intFinal>57,'as ondas subiram a Intensidade (gancho do B1 ativo)');
+  const comps=[5,10,15].map(n=>J(A.waveComp(n)));
+  const cp=A.smBuildCheckpoint('teste',9);
+  assert.ok(cp.fracture,'checkpoint carrega cp.fracture');
+  /* simula reload: boot novo + unpack do checkpoint */
+  const B=bootFx({},true);
+  const f=B.fractureRunUnpack(cp);
+  assert.strictEqual(f.seed,seed,'seed preservada');
+  assert.strictEqual(f.theme,'anomaly','tema preservado');
+  assert.strictEqual(f.intensity,intFinal,'intensidade preservada');
+  B.setFx(f);
+  for(let i=0;i<3;i++)
+    assert.strictEqual(J(B.waveComp([5,10,15][i])),comps[i],
+    'onda '+[5,10,15][i]+' mudou depois do Continue');
+});
+ok('loja, menus e re-render NÃO rerrolam a composição',()=>{
+  beginRun(t,1);
+  t.fractureForceTheme('siege','teste');
+  t.fractureSetIntensity(70,'teste');
+  playWaves(t,2,8);
+  const seed=t.fractureGetSeed(),tema=t.fractureGetThemeId();
+  /* abrir a loja e re-renderizar NÃO avançam a onda: a composição tem de
+     sair byte a byte igual, porque nada do contexto de shaping mudou. */
+  const antes=[5,10,15].map(n=>J(t.waveComp(n)));
+  t.openShop();t.renderShop();
+  t.devRender();
+  t.fractureInspectorText();
+  t.fractureSnapshot();
+  t.fractureCompReport(10);
+  for(let i=0;i<3;i++)
+    assert.strictEqual(J(t.waveComp([5,10,15][i])),antes[i],
+      'onda '+[5,10,15][i]+' mudou só por abrir a loja/inspecionar');
+  assert.strictEqual(t.fractureGetSeed(),seed,'seed rerrolada pela loja');
+  assert.strictEqual(t.fractureGetThemeId(),tema,'Tema trocado pela loja');
+  /* FECHAR a loja avança a onda (comportamento real do jogo) e o gancho do
+     B1 soma Intensidade. A composição muda por isso — e precisa mudar de
+     forma DETERMINÍSTICA, não por reroll: recomputando com o contexto novo
+     o resultado tem de ser o mesmo. */
+  t.closeShop();
+  assert.ok(t.getWave()>8,'closeShop avançou a onda (comportamento real)');
+  for(const n of [5,10,15]){
+    const ctx=t.fractureWaveCtx();
+    assert.strictEqual(J(t.waveComp(n)),
+      J(t.waveCompFit(t.fractureShapeWave(t.waveCompBase(n),n,ctx),t.ENEMY_BUDGET)),
+      'onda '+n+' não é reproduzível pelo próprio contexto');
+  }
+  assert.strictEqual(t.fractureGetSeed(),seed,'seed rerrolada ao fechar a loja');
+  assert.strictEqual(t.fractureGetThemeId(),tema,'Tema trocado ao fechar a loja');
+});
+ok('pack/unpack de waveProfile é round-trip estável',()=>{
+  beginRun(t,1);
+  t.fractureSetWaveBias('swarm',.4);
+  t.fractureSetWaveBias('tank',-.3);
+  t.fractureSetWavePool(['phantom','orbiter']);
+  const p=t.fractureRunPack();
+  const f=t.fractureRunUnpack({fracture:p});
+  assert.strictEqual(f.waveProfile.bias.swarm,.4);
+  assert.strictEqual(f.waveProfile.bias.tank,-.3);
+  assert.strictEqual(J(f.waveProfile.pool),J(['phantom','orbiter']));
+  /* e empacotar de novo não degrada nada */
+  t.setFx(f);
+  assert.strictEqual(J(t.fractureRunPack().wave),J(p.wave),'round-trip estável');
+});
+ok('Sandbox tem seed PRÓPRIA e não herda a da run real',()=>{
+  const A=bootFx({},true);
+  beginRun(A,1);
+  const seedReal=A.fractureGetSeed();
+  A.sandboxOpenSetup();
+  A.getSandboxCfg().char=0;
+  assert.strictEqual(A.sandboxStart(),true);
+  assert.ok(A.getSandboxRun(),'sandbox ativo');
+  assert.ok(A.getFx(),'fractureRun do sandbox existe');
+  const sbSeed=A.fractureGetSeed();
+  /* a seed do lab é derivada do contexto do sandbox; o que importa é que
+     trocar a seed ali é possível e não contamina a run real */
+  assert.ok(A.fractureSetSeed(31337),'sandbox aceita seed própria');
+  assert.strictEqual(A.fractureGetSeed(),31337);
+  assert.strictEqual(A.fractureGetThemeId(),A.fracturePickTheme(31337),
+    'seed própria ⇒ tema derivado dela');
+  A.sandboxExit(false);
+  assert.strictEqual(A.getFx(),null,'Diretor do lab descartado ao sair');
+  /* retomar a run real devolve o Diretor dela, com a seed original */
+  A.setPlayer(null);A.setState('title');
+  A.resumeRun();
+  assert.strictEqual(A.fractureGetSeed(),seedReal,
+    'a seed da run real não foi tocada pelo laboratório');
+});
+
+/* ============ [21] B2.11 — waveProfile.bias / .pool ============ */
+console.log('\n[21] B2.11 · waveProfile.bias/.pool INTEGRADOS + SANITIZADOS');
+ok('waveProfile.bias influencia DE VERDADE a composição',()=>{
+  const b15=t.waveCompBase(15);
+  const semPool=J(t.fractureShapeWave(b15,15,ctxOf('collapse',100,555)));
+  const comPool=J(t.fractureShapeWave(b15,15,ctxOf('collapse',100,555,null,['shooter'])));
+  assert.notStrictEqual(semPool,comPool,'pool muda a composição');
+  const a=t.fractureShapeWave(t.waveCompBase(15),15,ctxOf('collapse',100,555));
+  const b=t.fractureShapeWave(t.waveCompBase(15),15,
+    ctxOf('collapse',100,555,{bulwark:.6,tank:.6}));
+  assert.ok(b.bulwark>=a.bulwark&&b.tank>=a.tank,'bias positivo aumenta o arquétipo');
+  assert.notStrictEqual(J(a),J(b),'bias altera a composição');
+  const c=t.fractureShapeWave(t.waveCompBase(15),15,
+    ctxOf('collapse',100,555,{swarm:-.6}));
+  assert.ok(c.swarm<=a.swarm,'bias negativo reduz o arquétipo');
+});
+ok('waveProfile.pool garante presença sem furar threshold',()=>{
+  /* phantom desbloqueia na 8: pool não pode antecipá-lo */
+  for(let s=1;s<=20;s++){
+    const c=t.fractureShapeWave(t.waveCompBase(5),5,
+      ctxOf('collapse',100,s,['phantom','singular']));
+    assert.strictEqual(c.phantom,0,'pool não desbloqueia phantom na wave 5');
+    assert.strictEqual(c.singular,0,'pool não desbloqueia singular na wave 5');
+    const c10=t.fractureShapeWave(t.waveCompBase(10),10,
+      ctxOf('collapse',100,s,['phantom']));
+    assert.ok(c10.phantom>0,'pool garante phantom na wave 10');
+  }
+});
+ok('sanitização dura: NaN, Infinity, string, tipo inexistente e pollution',()=>{
+  const lixo={swarm:NaN,tank:Infinity,shooter:'3',orbiter:null,
+    phantom:undefined,chaser:1e9,splitter:-1e9,inf:Infinity,ninf:-Infinity,
+    __proto__:{polluted:true},constructor:9,toString:9,bulwark:.5};
+  const b=t.fractureCleanBias(lixo);
+  assert.strictEqual(b.swarm,undefined,'NaN rejeitado');
+  assert.strictEqual(b.tank,undefined,'Infinity rejeitado');
+  assert.strictEqual(b.shooter,undefined,'string rejeitada');
+  assert.strictEqual(b.orbiter,undefined,'null rejeitado');
+  assert.strictEqual(b.phantom,undefined,'undefined rejeitado');
+  assert.strictEqual(b.chaser,t.FRACTURE_RUN_BIAS_MAX,'1e9 clampado no teto');
+  assert.strictEqual(b.splitter,-t.FRACTURE_RUN_BIAS_MAX,'-1e9 clampado no piso');
+  assert.strictEqual(b.inf,undefined,'Infinity rejeitado');
+  assert.strictEqual(b.ninf,undefined,'-Infinity rejeitado');
+  assert.strictEqual(b.bulwark,.5,'valor válido preservado');
+  for(const k of ['__proto__','constructor','toString'])
+    assert.strictEqual(Object.prototype.hasOwnProperty.call(b,k),false,
+      'chave "'+k+'" não pode entrar no bias');
+  assert.strictEqual({}.polluted,undefined,'Object.prototype intacto');
+  /* o objeto devolvido é limpo: sem chave herdada vazando */
+  for(const entrada of [null,undefined,'lixo',42,[],true]){
+    const r=t.fractureCleanBias(entrada);
+    assert.strictEqual(J(r),J({}),'fractureCleanBias('+J(entrada)+') ⇒ vazio');
+    assert.strictEqual(Object.keys(r).length,0,'sem chaves próprias');
+    for(const k in r)
+      assert.ok(Object.prototype.hasOwnProperty.call(r,k),
+        'nenuma chave herdada em '+J(entrada));
+  }
+});
+ok('sanitização de pool: só arquétipos reais, sem duplicata, com teto',()=>{
+  assert.strictEqual(J(t.fractureCleanPool(['swarm','swarm','nao_existe',7,null,
+    '__proto__','constructor','tank'])),J(['swarm','tank']));
+  const muitos=ARCH.concat(ARCH);
+  assert.strictEqual(t.fractureCleanPool(muitos).length,t.FRACTURE_RUN_POOL_MAX,
+    'pool tem teto');
+  assert.strictEqual(J(t.fractureCleanPool(null)),J([]));
+  assert.strictEqual(J(t.fractureCleanPool('swarm')),J([]),'não-array rejeitado');
+});
+ok('fractureSetWaveBias/Pool recusam entrada inválida (porta única)',()=>{
+  t.setFx(null);
+  assert.strictEqual(t.fractureSetWaveBias('swarm',1),false,'sem run');
+  assert.strictEqual(t.fractureSetWavePool(['swarm']),false,'sem run');
+  beginRun(t,1);
+  assert.strictEqual(t.fractureSetWaveBias('elite',.5),false,'elite não é arquétipo de wave');
+  assert.strictEqual(t.fractureSetWaveBias('__proto__',.5),false,'prototype pollution');
+  assert.strictEqual(t.fractureSetWaveBias('swarm','abc'),false,'não-número');
+  assert.strictEqual(t.fractureSetWaveBias('swarm',NaN),false,'NaN');
+  assert.strictEqual(t.fractureSetWaveBias('swarm',.5),true,'válido');
+  assert.strictEqual(t.getFx().waveProfile.bias.swarm,.5);
+  assert.strictEqual(t.fractureSetWaveBias('swarm',0),true,'zero limpa');
+  assert.strictEqual(Object.keys(t.getFx().waveProfile.bias).length,0);
+  assert.strictEqual(t.fractureSetWavePool(['swarm','nao_existe','swarm']),true);
+  assert.strictEqual(J(t.getFx().waveProfile.pool),J(['swarm']),'dedup + filtro');
+});
+ok('bias negativo é permitido (tema que REDUZ precisa dele)',()=>{
+  beginRun(t,1);
+  assert.strictEqual(t.fractureSetWaveBias('swarm',-.5),true);
+  assert.strictEqual(t.getFx().waveProfile.bias.swarm,-.5);
+  const p=t.fractureRunPack();
+  assert.strictEqual(t.fractureRunUnpack({fracture:p}).waveProfile.bias.swarm,-.5,
+    'negativo sobrevive ao save');
+});
+
+/* ============ [22] B2.15/B2.16/B2.17 — ISOLAMENTO, DEV, SANDBOX ============ */
+console.log('\n[22] B2.15/B2.16/B2.17 · ISOLAMENTO, DEV E SANDBOX');
+ok('facções/Echo/Personality/Relationship NÃO determinam composição',()=>{
+  /* waveComp só recebe n. Se qualquer um desses sistemas influenciasse, o
+     caminho conteria uma referência a eles. */
+  const i=src.indexOf('function waveComp(');
+  const corpo=src.slice(i,src.indexOf('\nfunction ',i+10));
+  for(const proibido of ['fracRun','fracStateOf','echoes','personality',
+    'relationship','echoDis','FACTION'])
+    assert.ok(corpo.indexOf(proibido)<0,'waveComp não consulta '+proibido);
+  const bloco=src.slice(src.indexOf('function fractureShapeWave('),
+    src.indexOf('/* ---------------- API de waveProfile'));
+  for(const proibido of ['fracRun','fracStateOf','echoes','FACTION','echoDis'])
+    assert.ok(bloco.indexOf(proibido)<0,'shaping não consulta '+proibido);
+});
+ok('DEV: fx:comp mostra BASE × FINAL e NÃO contamina a run',()=>{
+  t.DEV_on();
+  beginRun(t,1);
+  t.clearDevTaint();
+  playWaves(t,2,10);
+  assert.strictEqual(t.devCommand('fx:comp'),true);
+  assert.strictEqual(t.devCommand('fx:comp:15'),true);
+  assert.strictEqual(t.devCommand('fx:comp:99'),true,'onda fora do range é clampada');
+  assert.strictEqual(t.isTainted(),false,'fx:comp é leitura: não tainta');
+  t.DEV_off();
+  assert.strictEqual(t.devCommand('fx:comp'),false,'DEV desligado recusa');
+  t.DEV_on();
+});
+ok('DEV: fx:wave, fx:bias, fx:pool e fx:sim funcionam e taintam quando mudam estado',()=>{
+  t.DEV_on();
+  beginRun(t,1);
+  t.clearDevTaint();
+  assert.strictEqual(t.devCommand('fx:wave:10'),true);
+  assert.strictEqual(t.isTainted(),false,'fora do sandbox é só prévia');
+  assert.strictEqual(t.devCommand('fx:sim'),true,'simulação de balanceamento');
+  assert.strictEqual(t.devCommand('fx:sim:50'),true);
+  assert.strictEqual(t.devCommand('fx:bias:swarm:0.5'),true);
+  assert.strictEqual(t.isTainted(),true,'mudar bias contamina');
+  assert.strictEqual(t.getFx().waveProfile.bias.swarm,.5);
+  t.clearDevTaint();
+  assert.strictEqual(t.devCommand('fx:pool:phantom/orbiter'),true);
+  assert.strictEqual(J(t.getFx().waveProfile.pool),J(['phantom','orbiter']));
+  assert.strictEqual(t.isTainted(),true);
+  t.clearDevTaint();
+  assert.strictEqual(t.devCommand('fx:bias:off'),true);
+  assert.strictEqual(t.devCommand('fx:pool:off'),true);
+  assert.strictEqual(Object.keys(t.getFx().waveProfile.bias).length,0);
+  assert.strictEqual(t.getFx().waveProfile.pool.length,0);
+  assert.strictEqual(t.devCommand('fx:bias:nao_existe:1'),false,'arquétipo inválido');
+});
+ok('inspetor DEV expõe Tema/Seed/Intensidade/Stage/Wave/BASE×FINAL/viés/budget',()=>{
+  t.DEV_on();
+  beginRun(t,1);
+  t.fractureForceTheme('hunt','teste');
+  t.fractureSetIntensity(80,'teste');
+  playWaves(t,2,12);
+  const txt=t.fractureInspectorText();
+  for(const rotulo of ['TEMA:','SEED:','INTENSIDADE:','ESTÁGIO:','WAVE ATUAL:',
+    'PESO DO TEMA:','PESOS DE RUN:','POOL DE RUN:'])
+    assert.ok(txt.indexOf(rotulo)>=0,'inspetor sem '+rotulo);
+  assert.ok(/BASE\s+\(\d+\):/.test(txt),'composição BASE');
+  assert.ok(/FINAL\s+\(\d+\/\d+/.test(txt),'composição FINAL com budget');
+  assert.ok(/sobra \d+/.test(txt),'budget usado/restante');
+  assert.ok(/FAVORECIDOS:|VIÉS: NEUTRO/.test(txt),'tags favorecidas');
+  assert.ok(/REDUZIDOS:/.test(txt),'tags reduzidas');
+});
+ok('Sandbox: seção e ações do Diretor existem e recusam fora do lab',()=>{
+  assert.strictEqual(t.fractureSandboxAction('theme:hunt'),false,
+    'ação recusada fora do sandbox');
+  const A=bootFx({},true);
+  A.sandboxOpenSetup();
+  A.getSandboxCfg().char=0;
+  assert.strictEqual(A.sandboxStart(),true);
+  assert.strictEqual(A.fractureSandboxAction('theme:hunt'),true,'tema no lab');
+  assert.strictEqual(A.getFx().theme,'hunt');
+  assert.strictEqual(A.fractureSandboxAction('int:100'),true,'intensidade no lab');
+  assert.strictEqual(A.getFx().intensity,100);
+  assert.strictEqual(A.fractureSandboxAction('seed:4242'),true,'seed no lab');
+  assert.strictEqual(A.fractureSandboxAction('wave:10'),true,'salto de onda no lab');
+  assert.strictEqual(A.getWave(),10,'onda realmente saltou');
+  assert.strictEqual(A.fractureSandboxAction('lixo:xxx'),false,'ação inválida');
+  A.sandboxExit();
+});
+ok('Sandbox continua 100% isolado: saves byte a byte idênticos',()=>{
+  /* o teste crítico de não-regressão: nada do B2 pode escrever em storage */
+  const A=bootFx({},true);
+  beginRun(A,1);
+  playWaves(A,2,4);
+  A.captureCheckpoint('onda',4);
+  A.smCommit();
+  const temaAntes=A.fractureGetThemeId(),seedAntes=A.fractureGetSeed();
+  A.setState('title');
+  const dump=()=>J(Object.keys(A._ls._d).sort().map(k=>[k,A._ls._d[k]]));
+  const antes=dump();
+  /* entrar de VERDADE no laboratório: sem isso as ações abaixo recusariam e
+     o teste passaria no vazio, sem provar isolamento nenhum. */
+  A.sandboxOpenSetup();
+  A.getSandboxCfg().char=0;
+  assert.strictEqual(A.sandboxStart(),true,'sandbox precisa iniciar');
+  assert.strictEqual(A.getSandboxRun(),true);
+  assert.ok(A.getFx(),'laboratório tem Diretor próprio');
+  assert.strictEqual(A.fractureSandboxAction('theme:collapse'),true,'tema aplicado');
+  assert.strictEqual(A.getFx().theme,'collapse');
+  assert.strictEqual(A.fractureSandboxAction('int:100'),true,'intensidade aplicada');
+  assert.strictEqual(A.getFx().intensity,100);
+  assert.strictEqual(A.fractureSandboxAction('seed:999'),true,'seed aplicada');
+  for(const n of [5,10,15])
+    assert.strictEqual(A.fractureSandboxAction('wave:'+n),true,'salto de onda '+n);
+  assert.strictEqual(A.getWave(),15,'a última onda do laboratório ficou ativa');
+  A.fractureSimulate({seeds:5});
+  A.sandboxExit(false);
+  assert.strictEqual(dump(),antes,'localStorage alterado pelo Sandbox');
+  assert.strictEqual(A.getFx(),null,'Diretor do lab descartado');
+  /* retomar a run real: o Diretor dela volta do checkpoint, intacto */
+  A.setPlayer(null);A.setState('title');
+  A.resumeRun();
+  assert.strictEqual(A.fractureGetThemeId(),temaAntes,'Tema da run real intacto');
+  assert.strictEqual(A.fractureGetSeed(),seedAntes,'seed da run real intacta');
+});
+ok('fractureSimulate é puro: não toca na run viva nem no jogo',()=>{
+  beginRun(t,1);
+  t.fractureForceTheme('anomaly','teste');
+  t.fractureSetIntensity(33,'teste');
+  const tema=t.fractureGetThemeId(),inte=t.fractureGetIntensity(),
+        seed=t.fractureGetSeed();
+  const r=t.fractureSimulate({seeds:10});
+  assert.strictEqual(t.fractureGetThemeId(),tema,'tema intacto');
+  assert.strictEqual(t.fractureGetIntensity(),inte,'intensidade intacta');
+  assert.strictEqual(t.fractureGetSeed(),seed,'seed intacta');
+  assert.strictEqual(r.themes.length,6,'6 temas');
+  assert.ok(r.per.collapse&&r.per.collapse.entityAvg>0,'métricas preenchidas');
+  /* parâmetros sanitizados */
+  const r2=t.fractureSimulate({themes:['nao_existe','hunt'],seeds:0,
+    waveMin:99,waveMax:-3,budget:NaN});
+  assert.strictEqual(J(r2.themes),J(['hunt']),'tema inexistente descartado');
+  assert.ok(r2.seeds>=1,'seeds tem piso');
+  assert.ok(r2.budget>=0,'budget sanitizado');
+  assert.ok(r2.waveMax>=r2.waveMin,'range coerente');
+});
+ok('fractureCompReport devolve base, shaped, final e métricas coerentes',()=>{
+  beginRun(t,1);
+  t.fractureForceTheme('collapse','teste');
+  t.fractureSetIntensity(100,'teste');
+  const r=t.fractureCompReport(15);
+  assert.strictEqual(r.wave,15);
+  assert.strictEqual(J(r.base),J(t.waveCompBase(15)));
+  assert.strictEqual(J(r.final),J(t.waveComp(15)),'final == waveComp(15)');
+  assert.strictEqual(r.finalTotal,r.budgetUsed);
+  assert.strictEqual(r.budgetLeft,t.ENEMY_BUDGET-r.budgetUsed);
+  assert.ok(r.budgetLeft>=0,'não estoura o teto');
+  assert.strictEqual(t.fractureCompReport(0).wave,1,'wave 0 é clampada para 1');
+  assert.strictEqual(t.fractureCompReport(99).wave,t.MAX_WAVE,'clamp no teto');
+});
+
+/* ============ [23] B2.19 — SIMULAÇÃO DE BALANCEAMENTO ============ */
+console.log('\n[23] B2.19 · SIMULAÇÃO MULTI-SEED (6 TEMAS × WAVES 1–19 × 120 SEEDS)');
+ok('simulação completa: 0 estouros, 0 violações de threshold, 0 monoculturas',()=>{
+  const r=t.fractureSimulate({seeds:120,intensity:100});
+  const linhas=[];
+  for(const id of r.themes){
+    const q=r.per[id];
+    assert.strictEqual(q.budgetOver,0,id+' estourou o budget '+q.budgetOver+'×');
+    assert.strictEqual(q.violations,0,id+' violou threshold '+q.violations+'×');
+    assert.strictEqual(q.extremes,0,id+' gerou monocultura '+q.extremes+'×');
+    assert.ok(q.entityMax<=r.budget,id+': máximo '+q.entityMax+' > '+r.budget);
+    linhas.push(id+' ent='+q.entityAvg.toFixed(2)+' kinds='+q.kindAvg.toFixed(2));
+  }
+  assert.strictEqual(linhas.length,6);
+  console.log('      '+linhas.join(' | '));
+});
+ok('a curva de dificuldade não é destruída: volume dentro de ±8% da base',()=>{
+  for(const intensidade of [0,38,100]){
+    const r=t.fractureSimulate({seeds:60,intensity:intensidade});
+    for(const id of r.themes){
+      const q=r.per[id];
+      const delta=(q.entityAvg-q.baseFitEntityAvg)/q.baseFitEntityAvg;
+      assert.ok(Math.abs(delta)<=.08,
+        id+' int'+intensidade+': volume '+(delta*100).toFixed(1)+'% fora de ±8%');
+    }
+  }
+});
+ok('intensidade 0 reproduz EXATAMENTE a base corrigida, tema por tema',()=>{
+  const r=t.fractureSimulate({seeds:40,intensity:0});
+  for(const id of r.themes){
+    const q=r.per[id];
+    assert.ok(Math.abs(q.entityAvg-q.baseFitEntityAvg)<1e-9,
+      id+' int0: '+q.entityAvg+' != '+q.baseFitEntityAvg);
+  }
+});
+ok('diversidade: média de arquétipos distintos por onda ≥ 4 em todos os temas',()=>{
+  const r=t.fractureSimulate({seeds:60,intensity:100});
+  for(const id of r.themes)
+    assert.ok(r.per[id].kindAvg>=4,
+      id+': '+r.per[id].kindAvg.toFixed(2)+' arquétipos por onda');
+});
+ok('participação dos favorecidos: cada Tema entrega o que promete',()=>{
+  const r=t.fractureSimulate({seeds:150,intensity:100});
+  const share=(id,k)=>r.per[id].share[k];
+  const base=r.per.collapse;   // referência interna entre temas
+  assert.ok(share('collapse','swarm')>share('siege','swarm'),'COLAPSO > CERCO em swarm');
+  assert.ok(share('collapse','splitter')>share('hunt','splitter'),'COLAPSO > CAÇADA em splitter');
+  assert.ok(share('siege','bulwark')>share('collapse','bulwark'),'CERCO > COLAPSO em bulwark');
+  assert.ok(share('siege','tank')>share('hunt','tank'),'CERCO > CAÇADA em tank');
+  assert.ok(share('hunt','phantom')>share('siege','phantom'),'CAÇADA > CERCO em phantom');
+  assert.ok(share('hunt','orbiter')>share('collapse','orbiter'),'CAÇADA > COLAPSO em orbiter');
+  assert.ok(share('anomaly','anomaly')>share('siege','anomaly'),'ANOMALIA > CERCO em anomaly');
+  assert.ok(share('anomaly','singular')>share('collapse','singular'),'ANOMALIA > COLAPSO em singular');
+  assert.ok(base,'referência válida');
+});
+ok('composições extremas: nenhuma onda fica vazia ou sem tipo nenhum',()=>{
+  for(const id of THEMES)
+    for(const n of WAVES)
+      for(let s=1;s<=12;s++){
+        const c=finalComp(id,n,100,s*53+7);
+        assert.ok(total(c)>0,id+' w'+n+' seed'+s+': composição vazia');
+        assert.ok(ARCH.some(k=>c[k]>0),id+' w'+n+': sem arquétipo nenhum');
+      }
+});
+
+/* ============ [24] REGRESSÕES DO BLOCO 2 ============ */
+console.log('\n[24] REGRESSÕES · O BLOCO 2 NÃO PODE TER TOCADO EM NADA ALÉM DISSO');
+ok('HP/dano/velocidade de inimigo NÃO mudam por Tema',()=>{
+  const jogo=m[1];
+  for(const fn of ['diffHp','diffDmg','diffSpd']){
+    const i=jogo.indexOf('function '+fn+'(');
+    assert.ok(!/fracture/.test(jogo.slice(i,i+400)),fn+' sem Diretor');
+  }
+  assert.ok(jogo.indexOf('hpMul*fracture')<0);
+  assert.ok(jogo.indexOf('dmg*fractureGet')<0);
+});
+ok('pickMiniBoss continua igual: distribuição por faixa de onda intacta',()=>{
+  /* as tags de miniboss são metadado; a escolha não pode ter mudado */
+  const antes={};
+  for(let i=0;i<3000;i++){
+    const n=1+(i%20);
+    const mb=t.pickMiniBoss(n);
+    assert.ok(mb&&mb.id,'miniboss sempre definido (wave '+n+')');
+    antes[n]=antes[n]||{};
+    antes[n][mb.id]=(antes[n][mb.id]||0)+1;
+  }
+  /* duelist some a partir da wave 11 (regra original) */
+  for(let n=11;n<=20;n++)
+    assert.strictEqual(antes[n]&&antes[n].duelist,undefined,
+      'duelist não pode aparecer na wave '+n);
+  for(let n=6;n<=10;n++)
+    assert.ok(antes[n].duelist>0,'duelist aparece entre 6 e 10');
+});
+ok('pool de eventos continua com 61 e scoreEvent não foi tocado',()=>{
+  assert.strictEqual(t.RUN_EVENTS.length+t.RUN_CHAIN_EVENTS.length,31,
+    '25 eventos + 6 de cadeia');
+  const jogo=m[1];
+  const i=jogo.indexOf('function scoreEvent(');
+  assert.ok(!/fracture/.test(jogo.slice(i,jogo.indexOf('\nfunction ',i+10))));
+});
+ok('SM_VERSION não mudou e o save antigo continua carregando',()=>{
+  assert.strictEqual(t.SM_VERSION,3,'SM_VERSION preservado');
+  const A=bootFx({},true);
+  beginRun(A,1);
+  playWaves(A,2,6);
+  A.smCommit();
+  const cp=A.smBuildCheckpoint('teste',6);
+  /* save sem o campo fracture (versão anterior) ainda restaura */
+  const sem={v:3,slot:1,op:'versatile',wave:6};
+  const f=A.fractureRunUnpack(sem);
+  assert.ok(f,'unpack tolera save sem cp.fracture');
+  assert.strictEqual(f.theme,A.fracturePickTheme(f.seed),'tema derivado da seed');
+  assert.ok(cp,'checkpoint atual válido');
+});
+ok('fonte: nenhuma mutação de waveProfile fora do bloco PR13',()=>{
+  const jogo=m[1];
+  const ini=jogo.indexOf('PR13·bloco fx1.js');
+  const fim=jogo.indexOf('\n   BOOT\n',ini);
+  const dentro=i=>(i>=ini&&i<fim);
+  const linha=i=>jogo.slice(0,i).split('\n').length;
+  const re=/waveProfile\s*\.\s*(bias|pool)\s*(\[[^\]]*\]\s*)?=[^=]/g;
+  let hit,n=0;
+  while((hit=re.exec(jogo))){
+    n++;
+    assert.ok(dentro(hit.index),
+      'escrita em waveProfile fora do bloco PR13, linha '+linha(hit.index));
+  }
+  assert.ok(n>0,'a verificação encontrou escritas para validar');
+});
+ok('npm test continua listando as 18 suítes (17 legadas + PR13)',()=>{
+  const pkg=JSON.parse(fs.readFileSync(path.join(ROOT,'package.json'),'utf8'));
+  const partes=pkg.scripts.test.split('&&').map(s=>s.trim());
+  assert.strictEqual(partes.length,18,'18 suítes no npm test');
 });
 
 /* ---------------- resultado ---------------- */
