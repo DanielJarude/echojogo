@@ -12192,9 +12192,45 @@ function edgeSpawn(){
   return {x,y};
 }
 /* QUANTIDADE INCREMENTAL: cada onda adiciona inimigos e destrava
-   arquétipos mais perigosos, respeitando um teto de performance. */
-function waveComp(n){
-  const c={
+   arquétipos mais perigosos, respeitando um teto de performance.
+
+   ---------------------------------------------------------------------
+   PR 13 (B2) — PIPELINE DE COMPOSIÇÃO
+   ---------------------------------------------------------------------
+     waveCompBase(n)          intenção ORIGINAL do jogo (fórmulas + caps)
+            ↓
+     fractureShapeWave(base,n) Diretor: Tema dá a DIREÇÃO,
+                               Intensidade/Stage dão o QUANTO
+            ↓
+     waveCompFit(·,BUDGET)    limites de segurança (teto de entidades)
+            ↓
+     waveComp(n)              composição final usada pelo spawnWave
+
+   Sem Tema / Diretor desligado / fallback / perfil neutro, o passo do
+   Diretor é IDENTIDADE: waveComp(n) === waveCompFit(waveCompBase(n)).
+
+   ENTIDADES DINÂMICAS (fora do escopo do budget, documentado à parte):
+   `spawner` invoca inimigos durante o combate e `splitter` gera dois
+   fragmentos ao morrer. O budget aqui cobre a COMPOSIÇÃO INICIAL da onda
+   — a multiplicação em runtime é propriedade das habilidades e continua
+   sendo tratada por elas (e pelo teto de partículas/entidades do loop). */
+/* arquétipos de wave = as chaves de EDEFS. Definido AQUI, junto do corte de
+   budget, porque é o budget que precisa enumerar os campos — as tags dos
+   arquétipos (bloco PR13) apenas as consultam. */
+const WAVE_ARCHETYPES=Object.keys(EDEFS);
+const WAVE_KEYS=WAVE_ARCHETYPES.concat(['elite']);
+/* espinha dorsal da onda: o corte de orçamento preserva ao menos isto,
+   desde que o arquétipo já esteja desbloqueado e caiba no budget. */
+const WAVE_PROTECTED_MIN={chaser:2,swarm:2};
+function waveCompTotal(c){
+  let t=0;
+  for(const k of WAVE_KEYS)t+=Math.max(0,Math.round(Number(c&&c[k])||0));
+  return t;
+}
+/* ---- COMPOSIÇÃO BASE (intenção original, inalterada) ---- */
+function waveCompBase(n){
+  n=clamp(Math.round(Number(n))||1,1,MAX_WAVE);
+  return {
     chaser : clamp(2+Math.floor(n*.8),2,12),
     swarm  : n>=1?clamp(2+Math.floor(n*.6),2,9):0,
     orbiter: n>=2?clamp(1+Math.floor(n*.4),0,6):0,
@@ -12208,21 +12244,80 @@ function waveComp(n){
     singular: n>=13?clamp(1+Math.floor((n-13)/4),0,2):0,
     elite  : n>=6?clamp(Math.floor((n-3)/3.2),0,6):0
   };
-  // corta proporcionalmente se o total estourar o orçamento de entidades
-  let total=0;for(const k in c)total+=c[k];
-  if(total>ENEMY_BUDGET){
-    const f=ENEMY_BUDGET/total;
-    c.chaser=Math.max(2,Math.floor(c.chaser*f));
-    c.swarm=Math.max(2,Math.floor(c.swarm*f));
-    c.shooter=Math.floor(c.shooter*f);
-    c.orbiter=Math.floor(c.orbiter*f);
-    c.anomaly=Math.floor(c.anomaly*f);
-    c.bulwark=Math.floor(c.bulwark*f);
-    c.tank=Math.max(1,Math.floor(c.tank*f));
-    c.phantom=Math.max(1,Math.floor(c.phantom*f));
-    c.singular=Math.max(1,Math.floor(c.singular*f));
+}
+/* ---- LIMITE DE SEGURANÇA: ajuste ao teto de entidades ----
+   CORRIGE a dívida auditada no B1: o corte antigo rescalava só 9 dos 12
+   campos (splitter/spawner/elite ficavam de fora) e ainda usava
+   Math.max(2,·)/Math.max(1,·) que PODIAM DEVOLVER contagem acima do
+   corte — por isso a onda 19 fechava em 48 contra budget 46.
+
+   Agora: (1) todo campo entra no corte; (2) pisos protegidos são
+   RESERVADOS antes (nunca estouram o teto); (3) o restante é distribuído
+   pelo método do MAIOR RESTO (Hare), que preserva a proporção original
+   ao máximo, devolve inteiros ≥ 0 e fecha o total EXATAMENTE no budget. */
+/* ordem canônica das chaves: preserva a ordem do objeto de entrada (a base)
+   e completa com o que faltar. Sem isso dois objetos iguais gerariam JSON
+   diferente — armadilha para comparação, telemetria e testes. */
+function waveKeyOrder(c){
+  const ord=[];
+  if(c&&typeof c==='object')
+    for(const k in c)                                   // ordem DA ENTRADA
+      if(WAVE_KEYS.indexOf(k)>=0&&ord.indexOf(k)<0)ord.push(k);
+  for(const k of WAVE_KEYS)if(ord.indexOf(k)<0)ord.push(k);
+  return ord;
+}
+function waveCompFit(c,budget){
+  const out={},orig={},ord=waveKeyOrder(c);
+  for(const k of ord){
+    out[k]=Math.max(0,Math.floor(Number(c&&c[k])||0));
+    orig[k]=out[k];
   }
-  return c;
+  budget=Math.max(0,Math.floor(Number(budget)));
+  let total=0;
+  for(const k of WAVE_KEYS)total+=out[k];
+  if(total<=budget)return out;
+  /* 1) quotas proporcionais sobre TODOS os campos, pelo maior resto
+        (Hare): preserva a proporção original, devolve inteiros ≥ 0 e
+        fecha o total EXATAMENTE no budget. */
+  const f=budget/total;
+  const quotas=WAVE_KEYS.filter(k=>out[k]>0).map(k=>({k,x:out[k]*f,b:0}));
+  let used=0;
+  for(const q of quotas){q.b=Math.floor(q.x);used+=q.b;}
+  let sobra=Math.max(0,budget-used);
+  /* desempate por resto fracionário e, em seguida, pela ordem estável de
+     WAVE_KEYS — determinístico, sem depender de ordenação instável */
+  quotas.sort((a,b)=>((b.x-b.b)-(a.x-a.b))||
+    (WAVE_KEYS.indexOf(a.k)-WAVE_KEYS.indexOf(b.k)));
+  for(let i=0;sobra>0&&quotas.length;i=(i+1)%quotas.length){quotas[i].b++;sobra--;}
+  for(const q of quotas)out[q.k]=q.b;
+  /* 2) pisos protegidos são MÍNIMOS, não substitutos: quem ficou abaixo do
+        piso sobe, e a diferença sai de quem tem mais (sem estourar o teto,
+        sem zerar o doador e sem tocar em outro protegido). */
+  for(const k in WAVE_PROTECTED_MIN){
+    if(orig[k]<=0)continue;                       // ainda não desbloqueado
+    const want=Math.min(WAVE_PROTECTED_MIN[k],orig[k]);
+    let falta=want-out[k];
+    while(falta>0){
+      let doar=null;
+      for(const q of quotas){
+        if(q.k===k||WAVE_PROTECTED_MIN[q.k]!=null)continue;
+        if(out[q.k]<=1)continue;
+        if(!doar||out[q.k]>out[doar.k]||
+          (out[q.k]===out[doar.k]&&WAVE_KEYS.indexOf(q.k)<WAVE_KEYS.indexOf(doar.k)))
+          doar=q;
+      }
+      if(!doar)break;
+      out[doar.k]--;out[k]++;falta--;
+    }
+  }
+  return out;
+}
+/* ---- COMPOSIÇÃO FINAL ---- */
+function waveComp(n){
+  const base=waveCompBase(n);
+  let shaped=base;
+  try{shaped=fractureShapeWave(base,n);}catch(e){shaped=base;}  // fallback: base
+  return waveCompFit(shaped,ENEMY_BUDGET);
 }
 function makeElite(e,variant){
   e.elite=variant;
@@ -12244,35 +12339,43 @@ const MINIBOSS=[
  {id:'herald',nm:'O ARAUTO DA FRATURA',c:'#ff9d3c',
   hp:1.0,spd:1.0,r:44,plates:6,
   sk:{charge:1,burst:1,summon:1},
-  desc:'Investidas telegrafadas, rajada radial e escolta.'},
+  desc:'Investidas telegrafadas, rajada radial e escolta.',
+  tags:['PRESSAO','INVOCADOR']},
  {id:'furnace',nm:'A FORNALHA VIVA',c:'#ff5c2f',
   hp:1.25,spd:.72,r:48,plates:7,
   sk:{burn:1,nova:1,trail:1},
-  desc:'Deixa rastro de fogo e detona novas incendiárias.'},
+  desc:'Deixa rastro de fogo e detona novas incendiárias.',
+  tags:['PRESSAO','DISTORCAO']},
  {id:'sentinel',nm:'A SENTINELA ESPELHADA',c:'#8ff6ff',
   hp:1.05,spd:.9,r:42,plates:8,
   sk:{reflect:1,shieldUp:1},
-  desc:'Reflete projéteis e ergue escudos defensivos.'},
+  desc:'Reflete projéteis e ergue escudos defensivos.',
+  tags:['DEFESA','CONTENCAO','RESISTENTE']},
  {id:'brood',nm:'A MATRIZ PROLÍFERA',c:'#39d98a',
   hp:1.15,spd:.62,r:46,plates:5,
   sk:{swarmSpawn:1,heal:1,burst:1},
-  desc:'Gera enxames sem parar e regenera vida.'},
+  desc:'Gera enxames sem parar e regenera vida.',
+  tags:['ENXAME','INVOCADOR','FRAGMENTACAO']},
  {id:'duelist',nm:'O DUELISTA FANTASMA',c:'#ff3d68',
   hp:.70,spd:1.55,r:34,plates:3,
   sk:{blink:1,slash:1},
-  desc:'Extremamente rápido, ataca em investidas curtas.'},
+  desc:'Extremamente rápido, ataca em investidas curtas.',
+  tags:['CACADOR','MOVEL','EVASIVO']},
  {id:'colossus',nm:'O COLOSSO DORMENTE',c:'#ff2f5e',
   hp:1.75,spd:.45,r:56,plates:10,
   sk:{quake:1,slam:1},
-  desc:'Lentíssimo e brutal. Ondas sísmicas em área.'},
+  desc:'Lentíssimo e brutal. Ondas sísmicas em área.',
+  tags:['PESADO','RESISTENTE','CONTENCAO']},
  {id:'oracle',nm:'O ORÁCULO DISSONANTE',c:'#ffd166',
   hp:.90,spd:1.0,r:40,plates:5,
   sk:{curse:1,burst:1},
-  desc:'Amaldiçoa seu dano e dispara rajadas amaldiçoadas.'},
+  desc:'Amaldiçoa seu dano e dispara rajadas amaldiçoadas.',
+  tags:['ANOMALIA','DISTORCAO','DISTANCIA']},
  {id:'leech',nm:'O SANGUESUGA TEMPORAL',c:'#a8ff3d',
   hp:1.0,spd:1.1,r:40,plates:4,
   sk:{drain:1,corrode:1,summon:1},
-  desc:'Drena sua vida à distância e corrói armadura.'}
+  desc:'Drena sua vida à distância e corrói armadura.',
+  tags:['SUSTENTACAO','DISTANCIA','ANOMALIA']}
 ];
 function pickMiniBoss(n){
   const pool=MINIBOSS.filter(m=>{
