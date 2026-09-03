@@ -23135,10 +23135,636 @@ function fracSandboxTearDown(){
   if(d&&d.parentNode)d.parentNode.removeChild(d);
   try{fracHudChip();}catch(e){}
 }
+/* ==================== PR13·bloco fx1.js ==================== */
+/* =====================================================================
+   PR 13 — DIRETOR DE FRATURA · BLOCO 1 (FUNDAÇÃO)
+   ---------------------------------------------------------------------
+   O Diretor de Fratura existe para dar IDENTIDADE a cada run: duas runs
+   nunca devem ser a mesma coisa. No início do ciclo ele escolhe UM Tema
+   de Fratura (o jogador NUNCA escolhe) e passa a acompanhar uma
+   Intensidade (0–100) que cresce com o que acontece na run. Nos próximos
+   blocos esse par (Tema + Intensidade) vai orientar composição de ondas,
+   pacing, eventos, minibosses e anomalias.
+
+   FILOSOFIA DE ARQUITETURA (a mesma de smMul / itemEmit / factionEmit /
+   echoEqEmit — controlador central, nunca lógica espalhada):
+   · TODO efeito relevante entra por fractureEmit(type, payload);
+   · NADA fora deste bloco escreve em fractureRun — não existe
+     `fractureRun.intensity += 5` espalhado em dezenas de funções;
+   · a leitura pública é por API (fractureGetTheme/fractureGetIntensity/
+     fractureGetStage/fractureSnapshot);
+   · o estado é RUN-SCOPED: morre com a run (morte/vitória/troca de slot),
+     é checkpointado em cp.fracture e volta por fractureRunUnpack, que
+     trata o payload como input NÃO confiável (igual a fracRunUnpack);
+   · o Sandbox (R5) tem contexto PRÓPRIO: nunca toca Save 1/2/3.
+
+   LIMITES DESTA PR (documentados em FRACTURE_DIRECTOR.md):
+   · SEM chefe adaptativo ao estilo do jogador (isso é PR 15);
+   · SEM guerra/mapa de facções, finais novos ou árvore de progressão nova;
+   · as facções da PR 12 são apenas INFLUÊNCIA SECUNDÁRIA futura — nunca
+     determinam o Tema da run;
+   · a Intensidade NÃO é "inimigos ganham mais HP": neste bloco ela é dado
+     puro que os próximos blocos vão converter em CONTEÚDO (pools,
+     composições, eventos, minibosses, anomalias).
+   ===================================================================== */
+const FRACTURE_STATE_VERSION=1;      // versão do payload persistido (cp.fracture.v)
+const FRACTURE_INT_MIN=0,FRACTURE_INT_MAX=100;   // faixa conceitual da Intensidade
+const FRACTURE_INT_START=0;          // Intensidade no início da run
+const FRACTURE_INT_PER_WAVE=2;       // ganho mínimo por onda superada (B1)
+const FRACTURE_HIST_MAX=24;          // teto do histórico (anti-crescimento infinito)
+/* ---------------- CATÁLOGO DE TEMAS (6) ----------------
+   Cada Tema carrega identidade narrativa + tags de casamento futuro
+   (eventos/minibosses/inimigos poderão declarar fractureTags). NÃO há
+   números de balance aqui de propósito: os pesos só entram no BLOCO 2,
+   quando existirem consumidores reais (waveComp / pickMiniBoss /
+   scoreEvent). `bias` e `pool` ficam vazios por design. */
+const FRACTURE_THEMES=[
+ {id:'collapse',nm:'COLAPSO',sym:'⋔',col:'#ff6b4d',
+  desc:'A Fratura cede em cascata. O que entra pela fenda entra aos milhares e não para de se dividir.',
+  identidade:['pressão numérica','instabilidade','hordas','fragmentação'],
+  tags:['COLAPSO','ENXAME','FRAGMENTACAO','DENSIDADE'],
+  tendencias:['Swarm','Splitter','maior densidade de inimigos','ondas mais caóticas'],
+  bias:{},pool:[]},
+ {id:'siege',nm:'CERCO',sym:'⬢',col:'#c9a9ff',
+  desc:'A Fratura não avança: ela se entrincheira. Cada sala precisa ser tomada, e o tempo corre contra você.',
+  identidade:['resistência','contenção','pressão sustentada'],
+  tags:['CERCO','CONTENCAO','RESISTENCIA','SUSTENTACAO'],
+  tendencias:['Bulwark','inimigos resistentes','arenas mais demoradas','formações defensivas'],
+  bias:{},pool:[]},
+ {id:'hunt',nm:'CAÇADA',sym:'➤',col:'#ff3d68',
+  desc:'A Fratura escolheu um alvo. Ela não espera você chegar — ela vem até você, e rápido.',
+  identidade:['perseguição','mobilidade','pressão direta sobre o jogador'],
+  tags:['CACADA','PERSEGUICAO','MOBILIDADE','PRESSAO'],
+  tendencias:['Phantom','Orbiter','inimigos rápidos e agressivos','composições de perseguição'],
+  bias:{},pool:[]},
+ {id:'anomaly',nm:'ANOMALIA',sym:'✷',col:'#c56bff',
+  desc:'As regras locais deixaram de valer. A Fratura improvisa, e o improviso dela raramente é gentil.',
+  identidade:['realidade quebrada','distorções','comportamento imprevisível'],
+  tags:['ANOMALIA','DISTORCAO','TEMPORAL','IMPREVISIVEL'],
+  tendencias:['Singular','eventos temporais','anomalias','combinações incomuns'],
+  bias:{},pool:[]},
+ {id:'resonance',nm:'RESSONÂNCIA',sym:'∿',col:'#8ff6ff',
+  desc:'A Fratura lembra. Ela responde aos Ecos que você carrega — e cobra o que o vínculo deixou pendurado.',
+  identidade:['Echo','memória','relacionamento','Dissonância'],
+  tags:['RESSONANCIA','MEMORIA','VINCULO','DISSONANCIA'],
+  tendencias:['eventos ligados ao Echo','Trust','Relationship','Dissonância',
+    'Remanescentes e outras facções podem REAGIR, mas nunca controlam o tema'],
+  bias:{},pool:[]},
+ {id:'scarcity',nm:'ESCASSEZ',sym:'◇',col:'#ffd166',
+  desc:'A Fratura não dá nada de graça. Cada crédito, cada relíquia e cada escolha custa mais do que deveria.',
+  identidade:['sobrevivência','recursos limitados','risco/recompensa'],
+  tags:['ESCASSEZ','RECURSO','RISCO','CONTRATO'],
+  tendencias:['economia mais apertada','eventos econômicos','contratos',
+    'interação com Créditos e Resíduos Temporais'],
+  bias:{},pool:[]}
+];
+const FRACTURE_THEME_IDS=FRACTURE_THEMES.map(t=>t.id);
+const FRACTURE_THEME_BY_ID=(function(){const o={};
+  for(const t of FRACTURE_THEMES)o[t.id]=t;return o;})();
+/* ---------------- ESTÁGIOS DA INTENSIDADE ----------------
+   Faixas narrativas derivadas (nunca barras cruas na UI, mesma política
+   dos FACTION_STATES). O estágio é SEMPRE recalculado a partir da
+   Intensidade — nunca é confiado do save. */
+const FRACTURE_STAGES=[
+ {min:80,id:'ruptura',    lab:'RUPTURA',    col:'#ff5c7a'},
+ {min:60,id:'critica',    lab:'CRÍTICA',    col:'#ff9d3c'},
+ {min:40,id:'propagando', lab:'PROPAGANDO', col:'#ffd166'},
+ {min:20,id:'instavel',   lab:'INSTÁVEL',   col:'#bffbff'},
+ {min:0, id:'latente',    lab:'LATENTE',    col:'#9db8c8'}
+];
+function fractureStageOf(i){
+  const v=Math.round(Number(i)||0);
+  for(const s of FRACTURE_STAGES)if(v>=s.min)return s;
+  return FRACTURE_STAGES[FRACTURE_STAGES.length-1];
+}
+/* ---------------- BARRAMENTO DE EVENTOS (contrato) ----------------
+   `i`      = ganho de Intensidade padrão do evento;
+   `hist`   = entra no histórico do Diretor;
+   `wave`   = atualiza waveProfile.wave (onda conhecida pelo Diretor);
+   `track`  = além disso marca a última FRONTEIRA de onda processada
+              (é isso que permite derivar wave_complete sem tocar no loop).
+   Só os eventos listados existem: qualquer outro tipo é recusado.
+   No BLOCO 1 apenas run_start / wave_start / wave_complete / run_end
+   estão LIGADOS ao jogo; os demais já funcionam se chamados, mas ainda
+   não têm emissor (arquitetura pronta, integração nos próximos blocos). */
+const FRACTURE_EVENT_GRID={
+  run_start       :{i:0,hist:1,wave:1,track:1},
+  wave_start      :{i:0,hist:0,wave:1,track:1},
+  wave_complete   :{i:FRACTURE_INT_PER_WAVE,hist:1,wave:0,track:0},
+  enemy_spawn     :{i:0,hist:0,wave:0,track:0},
+  enemy_killed    :{i:0,hist:0,wave:0,track:0},
+  miniboss_spawn  :{i:0,hist:1,wave:0,track:0},
+  miniboss_killed :{i:4,hist:1,wave:0,track:0},
+  event_triggered :{i:0,hist:1,wave:0,track:0},
+  echo_dissonance :{i:0,hist:1,wave:0,track:0},
+  faction_reaction:{i:0,hist:1,wave:0,track:0},
+  shop_open       :{i:0,hist:0,wave:0,track:0},
+  run_end         :{i:0,hist:1,wave:0,track:0}
+};
+const FRACTURE_EVENT_TYPES=Object.keys(FRACTURE_EVENT_GRID);
+/* lookups SEGUROS: FRACTURE_EVENT_GRID/FRACTURE_THEME_BY_ID são objetos
+   literais, então 'constructor'/'__proto__'/'toString' resolveriam pela
+   cadeia de protótipos e um evento/tema inexistente pareceria válido.
+   Toda consulta do Diretor passa por aqui — inclusive o unpack, que trata
+   o save como input não confiável. */
+function fractureEventDef(t){
+  return Object.prototype.hasOwnProperty.call(FRACTURE_EVENT_GRID,t)
+    ?FRACTURE_EVENT_GRID[t]:null;
+}
+function fractureThemeById(id){
+  return (typeof id==='string'&&
+    Object.prototype.hasOwnProperty.call(FRACTURE_THEME_BY_ID,id))
+    ?FRACTURE_THEME_BY_ID[id]:null;
+}
+
+/* ---------------- SEED + RNG DETERMINÍSTICO ----------------
+   A seed é sorteada UMA vez no início da run e PERSISTIDA no checkpoint.
+   O Tema é uma função pura da seed — por isso reload, Continue, abrir a
+   loja ou entrar/sair de menus jamais trocam o Tema. mulberry32 é o mesmo
+   gerador já usado pelo instrumento DEV.simulateEvents (arquitetura
+   atual), só que aplicado a um valor próprio da run. */
+function fractureHash32(n){
+  let x=(n>>>0)||0x9E3779B9;
+  x^=x>>>15;x=Math.imul(x,0x2C1B3C6D)>>>0;
+  x^=x>>>12;x=Math.imul(x,0x297A2D39)>>>0;
+  x^=x>>>15;
+  return x>>>0;
+}
+function fractureRng(seed){
+  let s=(seed>>>0)||1;
+  return function(){
+    s|=0;s=(s+0x6D2B79F5)|0;
+    let x=Math.imul(s^(s>>>15),1|s);
+    x=(x+Math.imul(x^(x>>>7),61|x))^x;
+    return ((x^(x>>>14))>>>0)/4294967296;
+  };
+}
+/* seed da run: mistura relógio, Math.random, slot e fila de Ecos.
+   Nunca é re-derivada depois — só lida do checkpoint. */
+function fractureMakeSeed(){
+  let s=0;
+  try{
+    s=((Date.now()>>>0)^(Math.floor(Math.random()*4294967296)>>>0)^
+       Math.imul((curSlot|0)+1,0x85EBCA6B)^
+       Math.imul(((typeof echoQueue!=='undefined'&&echoQueue)?echoQueue.length:0)+1,0xC2B2AE35))>>>0;
+  }catch(e){s=Math.floor(Math.random()*4294967296)>>>0;}
+  if(!s)s=0x5EED1337;
+  return s>>>0;
+}
+/* seleção do Tema: função pura da seed (mesma seed ⇒ mesmo Tema) */
+function fracturePickTheme(seed){
+  const h=fractureHash32(seed);
+  return FRACTURE_THEME_IDS[h%FRACTURE_THEME_IDS.length];
+}
+
+/* ---------------- estado da RUN (fractureRun) ---------------- */
+function fractureFresh(seed){
+  return {
+    v:FRACTURE_STATE_VERSION,
+    theme:null,                 // id do Tema (null até fractureEnsureTheme)
+    seed:(seed>>>0)||0,
+    intensity:clamp(FRACTURE_INT_START,FRACTURE_INT_MIN,FRACTURE_INT_MAX),
+    stage:fractureStageOf(FRACTURE_INT_START).id,
+    /* perfil de onda: no B1 é NEUTRO por design — `bias` e `pool` vazios
+       significam "waveComp/pickMiniBoss inalterados". Os próximos blocos
+       passam a consultar isto antes de compor a onda. */
+    waveProfile:{wave:0,last:0,bias:{},pool:[]},
+    history:[],                 // últimos acontecimentos relevantes (limitado)
+    last:null                   // último evento recebido {t,w,d}
+  };
+}
+let fractureRun=null;
+
+/* ---------------- API de leitura ---------------- */
+function fractureGetThemeId(){return (fractureRun&&fractureRun.theme)||null;}
+function fractureGetTheme(){
+  return fractureThemeById(fractureGetThemeId());
+}
+function fractureGetSeed(){return fractureRun?fractureRun.seed>>>0:0;}
+function fractureGetIntensity(){return fractureRun?fractureRun.intensity|0:0;}
+function fractureGetStage(){return fractureStageOf(fractureGetIntensity());}
+function fractureLast(){return fractureRun?fractureRun.last:null;}
+/* snapshot defensivo (DEV/UI/testes) — nunca expõe o objeto vivo */
+function fractureSnapshot(){
+  if(!fractureRun)return null;
+  const f=fractureRun,th=fractureThemeById(f.theme),st=fractureStageOf(f.intensity);
+  return {theme:f.theme,nm:th?th.nm:null,sym:th?th.sym:null,col:th?th.col:null,
+    tags:th?th.tags.slice():[],identidade:th?th.identidade.slice():[],
+    seed:f.seed>>>0,intensity:f.intensity|0,stage:st.id,stageLabel:st.lab,stageColor:st.col,
+    wave:f.waveProfile.wave|0,frontier:f.waveProfile.last|0,
+    bias:Object.assign({},f.waveProfile.bias),pool:(f.waveProfile.pool||[]).slice(),
+    history:f.history.slice(),last:f.last?Object.assign({},f.last):null,
+    sandbox:(typeof sandboxRun!=='undefined')?!!sandboxRun:false};
+}
+
+/* ---------------- seleção de Tema (UMA vez por run) ----------------
+   Retorna false se o Tema já estava definido: é isto que garante
+   "somente uma seleção por run" mesmo se algo chamar de novo. */
+function fractureEnsureTheme(w){
+  if(!fractureRun)return false;
+  if(fractureThemeById(fractureRun.theme))return false;      // já escolhida
+  if(!fractureRun.seed)fractureRun.seed=fractureMakeSeed();
+  fractureRun.theme=fracturePickTheme(fractureRun.seed);
+  fractureHistPush({t:'theme_pick',w:(w==null?wave:w),d:0,s:fractureRun.theme});
+  return true;
+}
+/* troca explícita de Tema — apenas DEV/Sandbox (contamina a run).
+   Não é caminho de jogo: o jogador nunca escolhe o Tema. */
+function fractureForceTheme(id,reason){
+  if(!fractureRun||!fractureThemeById(id))return false;
+  fractureRun.theme=id;
+  fractureHistPush({t:'theme_force',w:wave|0,d:0,s:String(reason||'dev').slice(0,24)});
+  return true;
+}
+function fractureRerollTheme(reason){
+  if(!fractureRun)return false;
+  fractureRun.seed=fractureMakeSeed();
+  fractureRun.theme=null;
+  fractureEnsureTheme();
+  fractureHistPush({t:'theme_reroll',w:wave|0,d:0,s:String(reason||'dev').slice(0,24)});
+  return true;
+}
+
+/* ---------------- histórico limitado ---------------- */
+function fractureHistPush(e){
+  if(!fractureRun||!e)return false;
+  const h=fractureRun.history;
+  if(h.length>=FRACTURE_HIST_MAX)h.shift();       // FIFO: nunca cresce sem teto
+  h.push({t:String(e.t==null?'?':e.t).slice(0,24),
+    w:clamp(Math.round(Number(e.w)||0),0,MAX_WAVE),
+    d:clamp(Math.round(Number(e.d)||0),-FRACTURE_INT_MAX,FRACTURE_INT_MAX),
+    s:String(e.s==null?'':e.s).slice(0,24)});
+  return true;
+}
+
+/* ---------------- API central de Intensidade ----------------
+   Único ponto de mutação. Clamp 0–100, devolve o delta APLICADO (0 se
+   saturou) e o estágio é sempre recalculado. opts.quiet suprime a entrada
+   de histórico quando quem registra é o próprio fractureEmit. */
+function fractureAddIntensity(amount,source,opts){
+  if(!fractureRun)return 0;
+  const d=Math.round(Number(amount)||0);
+  if(!d)return 0;
+  const before=fractureRun.intensity|0;
+  fractureRun.intensity=clamp(before+d,FRACTURE_INT_MIN,FRACTURE_INT_MAX);
+  const applied=(fractureRun.intensity|0)-before;
+  fractureRun.stage=fractureStageOf(fractureRun.intensity).id;
+  if(applied&&!(opts&&opts.quiet))
+    fractureHistPush({t:'intensity',w:wave|0,d:applied,s:String(source||'?').slice(0,24)});
+  return applied;
+}
+function fractureSetIntensity(value,source,opts){
+  if(!fractureRun)return 0;
+  const want=clamp(Math.round(Number(value)||0),FRACTURE_INT_MIN,FRACTURE_INT_MAX);
+  return fractureAddIntensity(want-(fractureRun.intensity|0),source,opts);
+}
+
+/* ---------------- BARRAMENTO: fractureEmit(type, payload) ----------------
+   Porta ÚNICA de entrada. Recusa tipos fora do contrato, devolve o que
+   aconteceu ({ok,delta,before,after,reason}) e nunca lança. */
+function fractureEmit(type,payload){
+  const t=String(type==null?'':type).slice(0,32);
+  const out={ev:t,ok:false,delta:0,before:0,after:0,reason:null};
+  const def=fractureEventDef(t);
+  if(!def){out.reason='evento_desconhecido';return out;}
+  if(!fractureRun){out.reason='sem_run_ativa';return out;}
+  const before=fractureRun.intensity|0;
+  out.before=before;out.ok=true;
+  const pl=(payload&&typeof payload==='object')?payload:{};
+  const w=clamp(Math.round(Number(pl.wave!=null?pl.wave:(typeof wave!=='undefined'?wave:0)))||0,
+    0,MAX_WAVE);
+  const gain=Math.round(Number(pl.intensity!=null?pl.intensity:def.i))||0;
+  if(gain)out.delta=fractureAddIntensity(gain,t,{quiet:true});
+  fractureRun.last={t:t,w:w,d:out.delta};
+  if(def.hist)fractureHistPush({t:t,w:w,d:out.delta,s:String(pl.source||'').slice(0,24)});
+  if(def.wave)fractureWaveSeen(w,!!def.track);
+  out.after=fractureRun.intensity|0;
+  return out;
+}
+function fractureWaveSeen(w,track){
+  if(!fractureRun)return false;
+  const wp=fractureRun.waveProfile;
+  w=clamp(Math.round(Number(w))||0,0,MAX_WAVE);
+  if(w>wp.wave)wp.wave=w;
+  if(track&&w>wp.last)wp.last=w;
+  return true;
+}
+/* ---- fronteira de onda (hook único do Diretor nas ondas) ----
+   Chegar à onda n significa que a onda anterior foi superada — a mesma
+   política de "checkpoint de fronteira de onda" que o save já usa. Por
+   isso wave_complete é DERIVADO aqui e não costurado no loop: um único
+   lugar, sem mutação espalhada. Durante resumeRun (smRestoring) nada é
+   emitido: a onda retomada já estava consolidada no checkpoint. */
+function fractureOnWaveStart(n){
+  if(!fractureRun)return null;
+  n=clamp(Math.round(Number(n))||1,1,MAX_WAVE);
+  const out={complete:null,start:null,restoring:false};
+  if(typeof smRestoring!=='undefined'&&smRestoring){
+    out.restoring=true;
+    fractureWaveSeen(n,true);          // sincroniza sem emitir
+    return out;
+  }
+  const prev=fractureRun.waveProfile.last|0;
+  if(prev>0&&n>prev)
+    out.complete=fractureEmit('wave_complete',{wave:prev,source:'fronteira'});
+  out.start=fractureEmit('wave_start',{wave:n,source:'onda'});
+  return out;
+}
+
+/* ---------------- ciclo de vida da run ---------------- */
+function fractureBeginRun(){
+  fractureRun=fractureFresh(fractureMakeSeed());
+  fractureEnsureTheme(1);                   // UMA seleção, derivada da seed
+  fractureEmit('run_start',{wave:1,source:'nova_run'});
+  return fractureRun;
+}
+function fractureEndRun(reason){
+  if(!fractureRun)return false;
+  try{fractureEmit('run_end',{wave:wave|0,source:String(reason||'fim').slice(0,24)});}catch(e){}
+  fractureRun=null;                         // run-scoped: nada atravessa
+  return true;
+}
+/* troca de slot / apagamento de slot: o contexto em memória é descartado
+   (o checkpoint do slot é a única fonte, via cp.fracture). */
+function fractureForgetRun(){fractureRun=null;return true;}
+
+/* ---------------- pack/unpack (checkpoint/Continue) ---------------- */
+function fractureRunPack(){
+  if(!fractureRun)return null;
+  const f=fractureRun;
+  return {v:FRACTURE_STATE_VERSION,
+    theme:(fractureThemeById(f.theme)?f.theme:null),
+    seed:f.seed>>>0,
+    intensity:clamp(Math.round(f.intensity)||0,FRACTURE_INT_MIN,FRACTURE_INT_MAX),
+    wave:{wave:f.waveProfile.wave|0,last:f.waveProfile.last|0,
+      bias:Object.assign({},f.waveProfile.bias||{}),
+      pool:(f.waveProfile.pool||[]).filter(x=>typeof x==='string').slice(0,12)},
+    hist:f.history.slice(-FRACTURE_HIST_MAX).map(h=>({t:h.t,w:h.w|0,d:h.d|0,s:h.s})),
+    last:f.last?{t:String(f.last.t).slice(0,32),w:f.last.w|0,d:f.last.d|0}:null};
+}
+/* input NÃO confiável (igual a fracRunUnpack): save antigo sem cp.fracture
+   cai em estado fresco + Tema novo; lixo nunca derruba a run. O estágio é
+   sempre rederivado e o Tema inválido é re-derivado da SEED persistida —
+   ou seja, mesmo um payload corrompido devolve uma run coerente e
+   reproduzível. */
+function fractureRunUnpack(cp){
+  const p=(cp&&cp.fracture&&typeof cp.fracture==='object')?cp.fracture:null;
+  if(!p){
+    fractureRun=fractureFresh(fractureMakeSeed());
+    fractureEnsureTheme();
+    return fractureRun;
+  }
+  let seed=0;
+  if(Number.isFinite(p.seed))seed=Math.round(Number(p.seed))>>>0;
+  fractureRun=fractureFresh(seed||fractureMakeSeed());
+  if(fractureThemeById(p.theme))fractureRun.theme=p.theme;
+  else fractureEnsureTheme();                 // Tema inválido → re-deriva da seed
+  fractureRun.intensity=clamp(Math.round(Number(p.intensity))||0,
+    FRACTURE_INT_MIN,FRACTURE_INT_MAX);
+  fractureRun.stage=fractureStageOf(fractureRun.intensity).id;
+  if(p.wave&&typeof p.wave==='object'){
+    fractureRun.waveProfile.wave=clamp(Math.round(Number(p.wave.wave))||0,0,MAX_WAVE);
+    fractureRun.waveProfile.last=clamp(Math.round(Number(p.wave.last))||0,0,MAX_WAVE);
+    if(fractureRun.waveProfile.last>fractureRun.waveProfile.wave)
+      fractureRun.waveProfile.wave=fractureRun.waveProfile.last;
+    if(p.wave.bias&&typeof p.wave.bias==='object'){
+      const b={};
+      for(const k in p.wave.bias){
+        const v=Number(p.wave.bias[k]);
+        if(Number.isFinite(v))b[String(k).slice(0,24)]=clamp(v,0,10);
+      }
+      fractureRun.waveProfile.bias=b;
+    }
+    if(Array.isArray(p.wave.pool))
+      fractureRun.waveProfile.pool=p.wave.pool.filter(x=>typeof x==='string')
+        .map(x=>x.slice(0,24)).slice(0,12);
+  }
+  if(Array.isArray(p.hist))
+    fractureRun.history=p.hist.filter(h=>h&&typeof h==='object')
+      .slice(-FRACTURE_HIST_MAX)
+      .map(h=>({t:String(h.t==null?'':h.t).slice(0,24),
+        w:clamp(Math.round(Number(h.w))||0,0,MAX_WAVE),
+        d:clamp(Math.round(Number(h.d))||0,-FRACTURE_INT_MAX,FRACTURE_INT_MAX),
+        s:String(h.s==null?'':h.s).slice(0,24)}));
+  if(p.last&&typeof p.last==='object')
+    fractureRun.last={t:String(p.last.t==null?'':p.last.t).slice(0,32),
+      w:clamp(Math.round(Number(p.last.w))||0,0,MAX_WAVE),
+      d:clamp(Math.round(Number(p.last.d))||0,-FRACTURE_INT_MAX,FRACTURE_INT_MAX)};
+  return fractureRun;
+}
+
+/* ---------------- SANDBOX (R5): contexto próprio, zero persistência ----
+   O laboratório ganha um Diretor de teste (Tema + Intensidade próprios).
+   Nenhum wrapper grava: captureCheckpoint já recusa em sandbox, então
+   Save 1/2/3 saem byte a byte idênticos. */
+function fractureSandboxContextStart(){
+  if(typeof sandboxRun==='undefined'||!sandboxRun)return false;
+  fractureRun=fractureFresh(fractureMakeSeed());
+  fractureEnsureTheme(1);
+  fractureEmit('run_start',{wave:1,source:'sandbox'});
+  return true;
+}
+function fractureSandboxTearDown(){fractureRun=null;return true;}
+
+/* ---------------- DEV: inspetor + comandos fx:* ---------------- */
+function fractureInspectorText(){
+  if(!fractureRun)return 'SEM RUN ATIVA — O DIRETOR DE FRATURA VIVE NA RUN';
+  const f=fractureRun,th=fractureThemeById(f.theme),st=fractureStageOf(f.intensity);
+  const L=[];
+  L.push('TEMA: '+(th?th.nm:'—')+' ['+(f.theme||'?')+'] · SEED: '+f.seed+
+    ((typeof sandboxRun!=='undefined'&&sandboxRun)?' · SANDBOX':''));
+  L.push('INTENSIDADE: '+f.intensity+'/'+FRACTURE_INT_MAX+' · ESTÁGIO: '+st.lab+
+    ' ('+st.id+')');
+  L.push('IDENTIDADE: '+(th?th.identidade.join('/'):'—'));
+  L.push('TAGS: '+(th?th.tags.join('/'):'—'));
+  L.push('ONDAS: conhecida '+f.waveProfile.wave+' · fronteira '+f.waveProfile.last);
+  const bk=Object.keys(f.waveProfile.bias||{});
+  L.push('PESOS: '+(bk.length?bk.map(k=>k+'×'+f.waveProfile.bias[k]).join(' ')
+    :'NEUTROS (B1 — nenhum viés ativo)'));
+  L.push('POOLS: '+((f.waveProfile.pool||[]).length?f.waveProfile.pool.join('/')
+    :'PADRÃO (B1 — waveComp/pickMiniBoss inalterados)'));
+  L.push('ÚLTIMO EVENTO: '+(f.last?f.last.t+' @w'+f.last.w+(f.last.d?' Δ'+f.last.d:''):'—'));
+  const hh=f.history.slice(-6).map(x=>'w'+x.w+' '+x.t+(x.d?' Δ'+x.d:'')+(x.s?'('+x.s+')':''));
+  L.push('HISTÓRICO('+f.history.length+'/'+FRACTURE_HIST_MAX+'): '+(hh.join(' · ')||'—'));
+  return L.join(' | ');
+}
+function fractureDevSection(){
+  if(!document||typeof document.getElementById!=='function')return;
+  if(!(typeof DEV_MODE!=='undefined'&&DEV_MODE))return;
+  const el=document.getElementById('devpanel');
+  if(!el)return;
+  let sec=document.getElementById('fracture-dev-section');
+  if(!sec){
+    sec=document.createElement('div');
+    sec.id='fracture-dev-section';
+    el.appendChild(sec);
+  }
+  let h='<h4 style="margin-top:10px">PR 13 · DIRETOR DE FRATURA</h4>';
+  if(!fractureRun){
+    h+='<div class="dvrow" style="opacity:.6">SEM RUN ATIVA — TEMA/INTENSIDADE VIVEM NA RUN.</div>';
+  }else{
+    h+='<div style="font-family:Consolas,monospace;font-size:10px;line-height:1.7;color:#9db8c8;white-space:pre-wrap">'+
+      escDev(fractureInspectorText())+'</div>';
+    h+='<div class="dvrow" style="margin-top:6px;flex-wrap:wrap">'+
+      devBtn('fx:int:+5','INT +5')+devBtn('fx:int:-5','INT −5')+
+      devBtn('fx:reroll','RE-SORTEAR TEMA')+devBtn('fx:insp','INSPETOR → LOG')+'</div>';
+    h+='<div class="dvrow" style="flex-wrap:wrap">';
+    for(const id of FRACTURE_THEME_IDS){
+      const th=fractureThemeById(id);
+      h+=devBtn('fx:theme:'+id,(th?th.sym:'?')+' '+id.slice(0,4).toUpperCase());
+    }
+    h+='</div><div class="dvrow" style="flex-wrap:wrap">';
+    for(const t of FRACTURE_EVENT_TYPES)h+=devBtn('fx:emit:'+t,t);
+    h+='</div>';
+  }
+  sec.innerHTML=h;
+}
+function fractureDevCommand(c){
+  if(!(typeof DEV_MODE!=='undefined'&&DEV_MODE))return false;
+  c=String(c||'');
+  if(!fractureRun){try{devLog('FX: SEM RUN ATIVA');}catch(e){}return false;}
+  if(c.indexOf('theme:')===0){
+    const id=c.slice(6);
+    if(!fractureForceTheme(id,'dev'))return false;
+    devTaint();devLog('FX TEMA → '+((fractureThemeById(id)||{}).nm||id));
+    return true;
+  }
+  if(c.indexOf('int:')===0){
+    const raw=c.slice(4);
+    const v=Math.round(Number(raw))||0;
+    const applied=(raw.charAt(0)==='+'||raw.charAt(0)==='-')
+      ?fractureAddIntensity(v,'dev'):fractureSetIntensity(v,'dev');
+    devTaint();devLog('FX INTENSIDADE '+(applied>=0?'+':'')+applied+
+      ' → '+fractureGetIntensity()+' ('+fractureGetStage().lab+')');
+    return true;
+  }
+  if(c.indexOf('emit:')===0){
+    const r=fractureEmit(c.slice(5),{source:'dev'});
+    devTaint();
+    devLog('FX EMIT '+r.ev+(r.ok?(' Δ'+r.delta+' → '+r.after):(' RECUSADO ('+r.reason+')')));
+    return r.ok;
+  }
+  if(c==='reroll'){fractureRerollTheme('dev');devTaint();
+    devLog('FX TEMA RE-SORTEADO → '+fractureGetThemeId());return true;}
+  if(c==='insp'){devLog(fractureInspectorText());return true;}
+  return false;
+}
+
+/* =====================================================================
+   BOOT DO KIT — toda a integração do Diretor com o jogo mora AQUI
+   (monkey-patch explícito, o mesmo padrão de fracKitBoot). Nada do
+   Diretor é costurado dentro das funções de run/onda/save.
+   ===================================================================== */
+function fractureKitBoot(){
+  if(fractureKitBoot.done)return;fractureKitBoot.done=true;
+  /* ---------- 1. checkpoint: cp.fracture ---------- */
+  try{
+    const _bc=smBuildCheckpoint;smBuildCheckpoint=function(reason,waveOverride){
+      const cp=_bc.apply(this,arguments);
+      try{if(cp&&typeof cp==='object')cp.fracture=fractureRunPack();}catch(e){}
+      return cp;
+    };
+  }catch(e){}
+  /* ---------- 2. slot: nada vaza entre Save 1/2/3 ---------- */
+  try{
+    const _as=activateSlot;activateSlot=function(i){
+      const r=_as.apply(this,arguments);
+      try{fractureForgetRun();}catch(e){}
+      return r;
+    };
+    const _cs=smClearSlotSave;smClearSlotSave=function(){
+      const r=_cs.apply(this,arguments);
+      try{fractureForgetRun();}catch(e){}
+      return r;
+    };
+  }catch(e){}
+  /* ---------- 3. início de run: seleção ÚNICA antes do 1º checkpoint ----
+     fractureBeginRun roda ANTES do corpo de startRun para que o
+     checkpoint 'início' já carregue o Tema — Continue na onda 1 devolve
+     exatamente o mesmo Tema. */
+  try{
+    const _st=startRun;startRun=function(opts){
+      try{fractureBeginRun();}catch(e){}
+      return _st.apply(this,arguments);
+    };
+    /* ---------- 4. Continue: restaura ANTES do spawnWave da retomada ----
+       (mesma janela em que a produção faz fracRunUnpack: depois de nada
+       existir e antes de a onda começar — o Tema vale desde o 1º frame). */
+    const _rs=resumeRun;resumeRun=function(){
+      try{fractureRunUnpack(hasActiveRun()?activeRun:null);}catch(e){}
+      return _rs.apply(this,arguments);
+    };
+    /* ---------- 5. fim de run: estado run-scoped morre ---------- */
+    const _pd=onPlayerDeath;onPlayerDeath=function(){
+      const r=_pd.apply(this,arguments);
+      try{fractureEndRun('morte');}catch(e){}
+      return r;
+    };
+    const _ov=onVictory;onVictory=function(){
+      const r=_ov.apply(this,arguments);
+      try{fractureEndRun('vitoria');}catch(e){}
+      return r;
+    };
+    const _sv=showVictory;showVictory=function(){
+      const r=_sv.apply(this,arguments);
+      try{fractureEndRun('vitoria');}catch(e){}
+      return r;
+    };
+  }catch(e){}
+  /* ---------- 6. ondas: hook único (fronteira de onda) ---------- */
+  try{
+    const _sw=spawnWave;spawnWave=function(n){
+      const r=_sw.apply(this,arguments);
+      try{fractureOnWaveStart(n);}catch(e){}
+      return r;
+    };
+  }catch(e){}
+  /* ---------- 7. Sandbox (R5): contexto próprio, nada persiste ---------- */
+  try{
+    const _ss=sandboxStart;sandboxStart=function(){
+      const r=_ss.apply(this,arguments);
+      if(r){try{fractureSandboxContextStart();}catch(e){}}
+      return r;
+    };
+    const _sr=sandboxRestart;sandboxRestart=function(){
+      const r=_sr.apply(this,arguments);
+      try{fractureSandboxContextStart();}catch(e){}
+      return r;
+    };
+    const _se=sandboxEndToSetup;sandboxEndToSetup=function(){
+      const r=_se.apply(this,arguments);
+      try{fractureSandboxTearDown();}catch(e){}
+      return r;
+    };
+    const _sx=sandboxExit;sandboxExit=function(m){
+      const r=_sx.apply(this,arguments);
+      try{fractureSandboxTearDown();}catch(e){}
+      return r;
+    };
+    const _sc=sandboxCloseSetup;sandboxCloseSetup=function(){
+      const r=_sc.apply(this,arguments);
+      try{fractureSandboxTearDown();}catch(e){}
+      return r;
+    };
+  }catch(e){}
+  /* ---------- 8. DEV MODE: inspetor + comandos fx:* ---------- */
+  try{
+    const _dc=devCommand;devCommand=function(c){
+      if(typeof c==='string'&&c.indexOf('fx:')===0)return fractureDevCommand(c.slice(3));
+      return _dc.apply(this,arguments);
+    };
+    const _dr=devRender;devRender=function(){
+      const r=_dr.apply(this,arguments);
+      try{fractureDevSection();}catch(e){}
+      return r;
+    };
+  }catch(e){}
+}
 /* =====================================================================
    BOOT
    ===================================================================== */
 fracKitBoot();
+fractureKitBoot();   // PR 13: Diretor de Fratura (fundação)
 
 /* ---- expõe o namespace no console apenas em build de desenvolvimento ---- */
 if(IS_DEV_BUILD){
