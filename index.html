@@ -8529,6 +8529,7 @@ function evMemFresh(){
 }
 let evMem=evMemFresh();
 let evQueue=[];                 // chains/continuações que forçam o próximo beacon
+const EV_QUEUE_MAX=4;           // PR13-B4: teto persistido da fila de cadeias
 const EV_MEM_RC_MAX=12;         // janela de "recente"
 const EV_MEM_EP_MAX=8;          // epílogos prometidos (compacto)
 const EV_MEM_DL_MAX=8;          // consequências atrasadas agendadas
@@ -8622,7 +8623,11 @@ function evMemPack(){
     fl:Object.assign({},evMem.fl),vars:Object.assign({},evMem.vars),
     dw:evMem.dw|0,lw:lw,
     ep:evMem.ep.slice(),dl:evMem.dl.map(d=>({at:d.at|0,
-      id:String(d.id),arg:d.arg||null,ch:(d.chance!=null?d.chance:undefined)}))};
+      id:String(d.id),arg:d.arg||null,ch:(d.chance!=null?d.chance:undefined)})),
+    /* PR13-B4 hardening: a fila de cadeias é parte do estado da run. Sem ela
+       um Continue depois de aceitar uma cadeia perdia a continuação — bug que
+       valia para as 6 cadeias legadas também, não só para as novas. */
+    q:evQueue.slice(0,EV_QUEUE_MAX).map(x=>String(x).slice(0,40))};
 }
 function evMemRestore(p){
   evMem=evMemFresh();evQueue=[];
@@ -8652,7 +8657,24 @@ function evMemRestore(p){
         arg:(typeof d.arg==='string'?d.arg.slice(0,40):null),
         chance:(d.chance!=null?clamp(+d.chance,0,1):null)}));
     for(const k in evMem.sn)evMem.seenN+=evMem.sn[k]|0;
-  }catch(e){evMem=evMemFresh();}
+    /* a fila volta só com ids que EXISTEM e que são de cadeia. Sem isso um
+       save editado enfileiraria qualquer evento (inclusive oncePerRun já
+       consumido) e o `shift()` da fila bypassaria o sorteio ponderado.
+       hasOwnProperty para não resolver __proto__/constructor. */
+    if(Array.isArray(p.q)){
+      const vistos={};
+      for(const raw of p.q){
+        if(typeof raw!=='string'||!raw)continue;
+        const id=raw.slice(0,40);
+        if(vistos[id])continue;                       // sem duplicata na fila
+        if(!Object.prototype.hasOwnProperty.call(RUN_EVENT_BY_ID,id))continue;
+        if(!RUN_EVENT_BY_ID[id].chain)continue;
+        vistos[id]=1;
+        evQueue.push(id);
+        if(evQueue.length>=EV_QUEUE_MAX)break;
+      }
+    }
+  }catch(e){evMem=evMemFresh();evQueue=[];}
 }
 
 /* ---------------- BUFFS COM EXPIRAÇÃO POR ONDA ----------------
@@ -10418,7 +10440,7 @@ const FRACTURE_RUN_EVENTS=[
       });
     evOpt('DRENAR E VENDER',
       '<b>+'+fractureCoins(66,'fracture_event')+' créditos</b> e <b>+'+
-      fractureScarcityResidues(4,'tempo_drenado')+' resíduos temporais</b>. Custo real: '+
+      fractureScarcityPreview(4)+' resíduos temporais</b>. Custo real: '+
       '<b>-14 de escudo máximo permanente</b> — tempo drenado não volta para ninguém.',
       [0,3,1],'',false,()=>{
         player.coins+=fractureCoins(66,'fracture_event');
@@ -24895,15 +24917,29 @@ function fractureCoins(n,source){
   return Math.max(1,Math.round(v*fractureCoinMul(source)));
 }
 /* oportunidade de Resíduo: usa a API da PR12, nunca escreve em fracRun */
-function fractureScarcityResidues(n,src){
+/* QUANTO o jogador receberia — função PURA, sem efeito colateral.
+   É esta que o texto das opções consulta, para que renderizar o evento
+   (quantas vezes for) não conceda nada. */
+function fractureScarcityPreview(n){
+  const base=Math.round(Number(n))||0;
+  if(base<=0)return 0;
+  /* fora de ESCASSEZ estas oportunidades não pagam resíduo nenhum — é o
+     comportamento do B3 e é parte da identidade do Tema. Preservado. */
   if(!fractureRun||fractureRun.theme!=='scarcity')return 0;
   const w=fractureThemeWeight(fractureWaveCtx());
   if(!(w>0))return 0;
-  const extra=Math.round(FRACTURE_SCAR_RES_BONUS*clamp(w,0,1));
-  const tot=Math.max(0,(Math.round(Number(n))||0)+extra);
-  if(!tot)return 0;
+  return base+Math.round(FRACTURE_SCAR_RES_BONUS*clamp(w,0,1));
+}
+/* CONCEDE de verdade. Caminho explícito: só é chamada dentro do callback de
+   uma escolha, nunca em texto, preview ou render. */
+function fractureGrantResidues(n,src){
+  const tot=fractureScarcityPreview(n);
+  if(!(tot>0))return 0;
   try{return addResidues(tot,String(src||'fratura').slice(0,24))||0;}catch(e){return 0;}
 }
+/* nome antigo mantido como alias da concessão, para os call sites que já
+   estavam corretos (dentro de callback). */
+function fractureScarcityResidues(n,src){return fractureGrantResidues(n,src);}
 /* reroll da loja em ESCASSEZ: mais barato na primeira tentativa da visita.
    Uma vez por visita, sem farm (abrir/fechar não acumula). */
 function fractureShopRerollCost(base){

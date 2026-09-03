@@ -72,6 +72,11 @@ src+=';globalThis.__t={'+
   'fractureCoins,fractureCoinMul,fractureScarcityResidues,fractureShopRerollCost,'+
   'fractureShopRerollUsed,fractureOnShopOpen,fractureOnEventChosen,fractureEvCtx,'+
   'fractureB3InspectorLines,fractureTopEventBias,'+
+  /* B4 hardening do B3: persistência da fila de cadeias + preview puro */
+  'evMemPack,evMemRestore,evMemFresh,EV_QUEUE_MAX,'+
+  'getEvQueue:()=>evQueue,setEvQueue:v=>{evQueue=v;},'+
+  'getEvMem:()=>evMem,setEvMemLive:v=>{evMem=v;},'+
+  'fractureScarcityPreview,fractureGrantResidues,'+
   'FRACTURE_EV_INT_BY_RARITY,fractureEventIntensity,FRACTURE_THEME_IDS,'+
   'changeEchoTrust,echoSpeak,liveEchoesForEvents,evEpilogue,evSetFlag,evMem,evQueue,'+
   'getEchoes:()=>echoes,setEchoesArr:a=>{echoes=a;},relPressurePct,echoAllied,echoRelState,'+
@@ -3030,6 +3035,135 @@ ok('B3-51: os 12 eventos novos não quebram a distribuição do pool legado',()=
   assert.ok(Object.keys(fams).length>=8,'espalhados em ≥8 famílias');
   assert.ok(Math.max.apply(null,Object.keys(fams).map(k=>fams[k]))<=2,
     'nenhuma família recebe mais de 2 eventos novos');
+});
+
+/* =====================================================================
+   BLOCO 4 — HARDENING DO B3 (pontos 1-5)
+   1. fx_cac_assinatura2 sobrevive ao Continue
+   2. a cadeia dispara uma vez
+   3. não duplica recompensa/custo
+   4. render de fx_esc_tempo é puro
+   5. 100 renders não alteram estado
+   ===================================================================== */
+console.log('\n[32] B4 · HARDENING DO B3 (1-5)');
+
+ok('B4-01: fx_cac_assinatura2 sobrevive a checkpoint + Continue',()=>{
+  const A=bootFx({});beginRun(A,1);playWaves(A,2,6);
+  /* o jogador aceita "DEIXAR CHEGAR E ENFRENTAR" → enfileira a continuação */
+  A.setEvQueue(['fx_cac_assinatura2']);
+  assert.strictEqual(A.getEvQueue().length,1,'fila montada');
+  const cp=A.smBuildCheckpoint('teste-chain',6);
+  assert.ok(cp,'checkpoint construído');
+  /* reload real: o Continue passa por evMemRestore */
+  const pack=A.evMemPack();
+  assert.ok(Array.isArray(pack.q),'pack carrega a fila');
+  A.evMemRestore(pack);
+  assert.strictEqual(J(A.getEvQueue()),J(['fx_cac_assinatura2']),
+    'a cadeia continua existindo depois do reload');
+});
+ok('B4-02: a cadeia dispara exatamente uma vez (sem duplicar no restore)',()=>{
+  const A=bootFx({});beginRun(A,1);playWaves(A,2,6);
+  A.setEvQueue(['fx_cac_assinatura2']);
+  const pack=A.evMemPack();
+  /* três ciclos de pack/restore seguidos não podem multiplicar a fila */
+  for(let k=0;k<3;k++){A.evMemRestore(pack);}
+  assert.strictEqual(A.getEvQueue().length,1,
+    'restore repetido não duplica a entrada');
+  /* e o shift() consome: depois de sair da fila, não volta */
+  const id=A.getEvQueue().shift();
+  assert.strictEqual(id,'fx_cac_assinatura2');
+  const pack2=A.evMemPack();
+  A.evMemRestore(pack2);
+  assert.strictEqual(J(A.getEvQueue()),'[]','fila vazia continua vazia');
+});
+ok('B4-03: a fila persistida é sanitizada (ids reais, só cadeia, sem duplicata)',()=>{
+  const A=bootFx({});
+  const sujo={q:['nao_existe','x_carga','fx_cac_assinatura2',
+    'fx_cac_assinatura2','__proto__','constructor',123,null,'x_feridoposto']};
+  A.evMemRestore(sujo);
+  const q=A.getEvQueue();
+  assert.ok(q.indexOf('nao_existe')<0,'id inexistente recusado');
+  assert.ok(q.indexOf('x_carga')<0,'evento que não é cadeia recusado');
+  assert.ok(q.indexOf('__proto__')<0,'chave de protótipo recusada');
+  assert.ok(q.indexOf('constructor')<0,'constructor recusado');
+  assert.strictEqual(q.filter(x=>x==='fx_cac_assinatura2').length,1,'sem duplicata');
+  assert.ok(q.indexOf('x_feridoposto')>=0,'cadeia legada válida aceita');
+  /* teto */
+  const muitas=A.RUN_CHAIN_EVENTS.map(d=>d.id)
+    .concat(A.FRACTURE_CHAIN_EVENTS.map(d=>d.id));
+  A.setEvQueue(muitas);
+  A.evMemRestore(A.evMemPack());
+  assert.ok(A.getEvQueue().length<=A.EV_QUEUE_MAX,
+    'teto EV_QUEUE_MAX='+A.EV_QUEUE_MAX+' respeitado');
+  /* save antigo sem q continua funcionando */
+  A.evMemRestore({rc:['x_carga']});
+  assert.strictEqual(J(A.getEvQueue()),'[]','save antigo → fila vazia');
+});
+ok('B4-04: a cadeia não duplica Intensidade nem recompensa no reload',()=>{
+  const A=bootFx({});beginRun(A,1);playWaves(A,2,6);
+  const d=A.RUN_EVENT_BY_ID['fx_cac_assinatura2'];
+  assert.ok(d&&d.chain,'fx_cac_assinatura2 é cadeia');
+  A.setEvQueue([d.id]);
+  const intAntes=A.fractureGetIntensity();
+  const coinsAntes=A.getPlayer().coins;
+  /* escolha real da cadeia */
+  A.fractureOnEventChosen(d);
+  const ganhoInt=A.fractureGetIntensity()-intAntes;
+  /* agora simula o reload: pack + restore, e escolhe de novo */
+  A.evMemRestore(A.evMemPack());
+  A.fractureOnEventChosen(d);
+  const ganho2=A.fractureGetIntensity()-intAntes;
+  /* cadeia é noPool/rare: o teto por onda impede o segundo pagamento */
+  assert.ok(ganho2<=t.FRACTURE_EV_INT_PER_WAVE_MAX,
+    'reload não duplica Intensidade ('+ganhoInt+' → '+ganho2+')');
+  /* moedas não podem ter sido creditadas duas vezes pelo mesmo evento */
+  assert.ok(A.getPlayer().coins-coinsAntes<200,
+    'recompensa não duplica no reload');
+});
+ok('B4-05: fractureScarcityPreview é pura — 100 chamadas não mudam estado',()=>{
+  const A=bootFx({});beginRun(A,1);playWaves(A,2,10);
+  A.fractureForceTheme('scarcity','teste');A.fractureSetIntensity(100,'teste');
+  const resAntes=A.getResidues();
+  const packAntes=J(A.fractureRunPack());
+  const coinsAntes=A.getPlayer().coins;
+  let v=0;
+  for(let k=0;k<100;k++)v=A.fractureScarcityPreview(4);
+  assert.strictEqual(A.getResidues(),resAntes,'resíduo intacto após 100 previews');
+  assert.strictEqual(A.getPlayer().coins,coinsAntes,'créditos intactos');
+  assert.strictEqual(J(A.fractureRunPack()),packAntes,'estado do Diretor intacto');
+  assert.strictEqual(v,5,'preview devolve 4 + 1 de bônus em ESCASSEZ');
+  /* e a concessão explícita continua funcionando, uma vez */
+  const g=A.fractureGrantResidues(4,'teste');
+  assert.ok(g,'grant concede');
+  assert.strictEqual(A.getResidues()-resAntes,5,'concedeu exatamente o previsto');
+});
+ok('B4-06: fora de ESCASSEZ a oportunidade não paga resíduo (B3 preservado)',()=>{
+  const A=bootFx({});beginRun(A,1);playWaves(A,2,10);
+  for(const th of THEMES.filter(x=>x!=='scarcity')){
+    A.fractureForceTheme(th,'teste');A.fractureSetIntensity(100,'teste');
+    assert.strictEqual(A.fractureScarcityPreview(3),0,th+': preview 0');
+    const r=A.getResidues();
+    A.fractureGrantResidues(3,'teste');
+    assert.strictEqual(A.getResidues(),r,th+': nada concedido');
+  }
+});
+ok('B4-07: o texto de fx_esc_tempo não chama função com efeito colateral',()=>{
+  const jogo=m[1];
+  const i=jogo.indexOf("id:'fx_esc_tempo'");
+  assert.ok(i>0,'evento localizado');
+  const j=jogo.indexOf('\n{id:',i+10);
+  const corpo=jogo.slice(i,j);
+  /* o texto (fora do callback) só pode consultar a função pura */
+  const texto=corpo.slice(0,corpo.indexOf('[0,3,1]'));
+  assert.ok(texto.indexOf('fractureScarcityPreview')>=0,
+    'texto usa fractureScarcityPreview');
+  assert.ok(texto.indexOf('fractureGrantResidues')<0&&
+            texto.indexOf('fractureScarcityResidues')<0,
+    'texto não pode chamar a concessão');
+  /* e o callback chama a concessão exatamente uma vez */
+  const cb=corpo.slice(corpo.indexOf('[0,3,1]'));
+  assert.strictEqual((cb.match(/fractureGrantResidues\(|fractureScarcityResidues\(/g)||[]).length,1,
+    'callback concede uma vez');
 });
 
 /* ---------------- resultado ---------------- */
