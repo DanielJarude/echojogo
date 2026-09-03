@@ -14468,6 +14468,49 @@ function smClearSlotSave(){
 function refreshAfterSlotWipe(){
   if(state==='slotMenu')showSlotMenu();
 }
+/* ---- PR 10.5.2: GERÊNCIA DE DADOS DO SLOT (Configurações → Dados) ----
+   Duas ações destrutivas com confirmação obrigatória:
+   · smClearSlotEchoes — remove os Ecos armazenados no slot atual
+     (memória/registro que origina os aliados). Preserva meta, progresso,
+     unlocks, Codex e os outros slots. O checkpoint da run ativa (se houver)
+     perde os Ecos junto — nenhum estado ressuscita o que foi apagado.
+   · smClearSlotSave — zera COMPLETAMENTE o slot atual (meta, prog, Ecos,
+     run ativa, operador, Codex, unlocks, finais registrados, histórico de
+     eventos do checkpoint). Outros slots e as configurações globais (cfg)
+     não são tocados. */
+function smClearSlotEchoes(){
+  if(!smEnsureSlot())return false;
+  echoQueue=[];
+  saveEchoes();                       // grava slots[curSlot].echoes=[]
+  if(activeRun&&curSlot>=1&&smRoot&&smRoot.slots[curSlot]&&
+     smRoot.slots[curSlot].run===activeRun){
+    activeRun.echoes=[];              // o checkpoint não ressuscita Ecos
+    smCommit();
+  }
+  return true;
+}
+function smClearSlotSave(){
+  if(!smEnsureSlot()||curSlot<1)return false;
+  const i=curSlot;
+  smRoot.slots[i]=smDefaultSlot();    // meta/prog/char/echoes/run → zero
+  /* espelhos vivos voltam ao estado inicial coerente com o slot vazio */
+  activeRun=null;
+  meta={mem:0,spd:0,reroll:0,vault:0,wins:0,endings:[],evars:[]};
+  prog={kills:0,runs:0,waves:0,best:0,wins:0,bosses:0,minis:0,
+    elites:0,crits:0,dashes:0,coins:0,items:0,events:0,echoKills:0,
+    reso:0,melee:0,status:0,seen:[]};
+  echoQueue=[];
+  charSel=0;
+  saveProg();saveMeta();
+  smCommit();
+  return true;
+}
+/* após uma limpeza, qualquer tela de slot aberta atrás do painel é
+   redesenhada (sem exigir reinício); o painel em si é re-renderizado
+   pelo próprio cfgRow. */
+function refreshAfterSlotWipe(){
+  if(state==='slotMenu')showSlotMenu();
+}
 /* garante um slot ativo para gravação (no jogo real o boot já ativou um;
    existe como proteção para caminhos alternativos de teste) */
 function smEnsureSlot(){
