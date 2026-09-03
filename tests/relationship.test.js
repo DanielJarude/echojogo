@@ -1157,9 +1157,15 @@ ok('finais: PR 10.5 reformou o bloco — relação/Dissonância PARTICIPAM do av
     assert(RAWSRC.indexOf(k+':{')>=0,'final PR 10.5 presente: '+k);
   assert.ok(/buildEndingContext/.test(RAWSRC)&&/evaluateEndingCandidates/.test(RAWSRC));
 });
-ok('nada de facções / diretor / boss adaptativo / Echo↔Echo neste PR',()=>{
-  for(const w of ['faction','FACTION','fractureDirector','FRACTURE_DIRECTOR',
-    'echoVsEcho','echoDialogue2'])
+ok('escopo: PR 10 não trouxe facções — o que a PR 12 (factions) também NÃO implementa segue ausente',()=>{
+  /* PR 10 entregou relação/Dissonância SEM facções. A PR 12 entregou as
+     facções (factionEmit/FRACTIONS/fracRun/ECHO_EQUIP) — palavras 'faction'
+     agora existem por design e não podem falhar este guard. O que a PR 12
+     EXPLICITAMENTE adiou (§88: diretor/boss adaptativo/Echo↔Echo/diálogo
+     entre Echos) continua proibido. */
+  assert.ok(/factionEmit\s*\(/.test(CODE),'PR 12 presente (factionEmit)');
+  for(const w of ['fractureDirector','FRACTURE_DIRECTOR',
+    'echoVsEcho','echoDialogue2','echoDialogue'])
     assert.ok(CODE.indexOf(w)<0,'escopo futuro implementado: '+w);
 });
 ok('performance: a relação não é recalculada por frame',()=>{

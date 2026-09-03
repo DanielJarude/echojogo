@@ -257,6 +257,13 @@
   .mtag{font-family:Consolas,monospace;font-size:var(--fs-xs);letter-spacing:.4em;color:rgba(160,220,240,.55);}
   .mtitle{font-family:Consolas,monospace;font-size:var(--fs-head);letter-spacing:.2em;color:#eaffff;
     margin-top:6px;text-shadow:0 0 18px rgba(70,224,255,.5);}
+  .mtabs{display:flex;gap:6px;margin:2px 0 6px;flex-wrap:wrap}
+  .mtab{font-family:Consolas,monospace;font-size:var(--fs-3xs);letter-spacing:.22em;
+    padding:7px 14px;color:rgba(160,220,240,.6);border:1px solid rgba(70,224,255,.18);
+    cursor:pointer;user-select:none;transition:border-color .15s,color .15s,background .15s}
+  .mtab:hover{border-color:rgba(70,224,255,.55);color:#dff6ff}
+  .mtab.on{border-color:#8fd6ff;color:#eaffff;background:rgba(70,224,255,.12);
+    box-shadow:0 0 12px rgba(70,224,255,.18)}
   .mdesc{font-family:Consolas,monospace;font-size:var(--fs-md);line-height:1.95;letter-spacing:.06em;
     color:#9cc6da;margin-top:12px;}
   .mdesc b{color:#e8fbff;font-weight:normal;}
@@ -976,6 +983,7 @@
 <div id="modal"><div class="mbox">
   <div class="mtag" id="m-tag">EVENTO</div>
   <div class="mtitle" id="m-title">—</div>
+  <div class="mtabs" id="m-tabs" style="display:none"></div>
   <div class="mdesc" id="m-desc">—</div>
   <div class="mrow" id="m-row"></div>
   <div class="sect" id="m-sect">MÓDULOS PASSIVOS — TRADE-OFFS REAIS</div>
@@ -5894,6 +5902,10 @@ function enterDissonance(e,opts){
   e.rel.streak=-1;e.rel.lastRejectAt=runTime;
   e.rel.last={t:'reject',r:'dissonance',v:-2,at:Math.round(runTime*10)/10};
   relRememberMoment(e,'dissonance',-2);
+  /* bus de equipment: dissonanceStart — relíquias como MEMÓRIA SELADA reagem
+     ao registro da ruptura (a mutação da relação já aconteceu acima; o
+     handler pode suavizá-la, nunca revertê-la por inteiro) */
+  try{if(typeof echoEqEmit==='function')echoEqEmit(e,'disstart',{});}catch(_e){}
   shake=Math.max(shake,12);aberrPeak(.9);
   spawnRing(e.x,e.y,'#ff2f5e',10,200,.8);
   spawnRing(e.x,e.y,'#ff4df0',6,150,1.0);
@@ -7431,7 +7443,7 @@ function openShop(){
   modalEl.classList.add('on');
   sfx(523,.14,'sine',.04,0);setTimeout(()=>sfx(784,.2,'sine',.04,0),110);
 }
-function renderShop(){
+function renderShopOp(){
   mTag.textContent='NÓDULO DE MANUTENÇÃO · ONDA '+String(wave).padStart(2,'0')+' NEUTRALIZADA';
   mTitle.textContent='LOJA TEMPORAL';
   mDesc.innerHTML=moralStatusLine();
@@ -8435,6 +8447,7 @@ const EV_FAMILIES={
   ambiente     :{lab:'AMBIENTE',     col:'#8ff6ff'},
   memoria      :{lab:'MEMÓRIA',      col:'#c56bff'},
   ruptura      :{lab:'RUPTURA',      col:'#ff2f5e'},
+  fracao       :{lab:'FACÇÕES',      col:'#c9a9ff'},
   raro         :{lab:'RARO',         col:'#eaffff'}
 };
 /* mapa dos eventos LEGADOS (PR ≤10) para o sistema de famílias */
@@ -14396,7 +14409,8 @@ let smRestoring=false;        // spawnWave executando dentro de resumeRun
 
 function smClone(o){return o==null?null:JSON.parse(JSON.stringify(o));}
 function smDefaultSlot(){
-  return {meta:null,prog:null,char:0,echoes:[],run:null,touched:false};
+  return {meta:null,prog:null,char:0,echoes:[],run:null,touched:false,
+    fracd:null};   // PR 12 (B5): descobertas de facção — estado NARRATIVO per-slot
 }
 function smNewRoot(){
   return {version:SM_VERSION,lastSlot:1,
@@ -14500,6 +14514,10 @@ function smSanitizeSlot(s){
   out.echoes=Array.isArray(s.echoes)?
     s.echoes.filter(r=>r&&!r.dev&&Array.isArray(r.trail)&&r.trail.length>4).slice(0,2):[];
   out.run=smSanitizeRun(s.run);
+  /* PR 12 (B5): fracd (Codex de facções) é tratado como input NÃO confiável —
+     passa pelo mesmo filtro de limpeza de leitura (fracDiscClean) e nunca
+     invalida o slot. Save antigo sem fracd → descoberta vazia, sem erro. */
+  out.fracd=fracDiscClean(s.fracd);
   out.touched=!!s.touched;
   return out;
 }
@@ -14764,6 +14782,12 @@ function smBuildCheckpoint(reason,waveOverride){
        gravado — só o que é relevante para a coerência (§58). */
     echoes:echoes.map(e=>({trust:clamp(Math.round(e.trust),0,100),alive:!!e.alive,
       rel:relPackEcho(e),dis:disPackEcho(e)})),
+    /* PR 12 (B5): estado MECÂNICO da run (fracRun — facções, Resíduos,
+       reroll, estoque, inventário, equipamento, ofertas, caps per-run).
+       Run-scoped: morre com a run, nunca atravessa runs. Save antigo sem
+       este campo cai em fracFresh no resume — ausência NUNCA é erro.
+       (fracDisc — descobertas narrativas — é per-slot e vive em slots[n].fracd.) */
+    frac:(typeof fracRunPack==='function'&&fracRun)?fracRunPack():null,
     /* snapshot anti-duplicação: prog volta ao estado do checkpoint ao
        retomar, então um trecho de onda repetido nunca conta duas vezes */
     prog:smClone(prog),
@@ -14794,6 +14818,12 @@ function smBuildCheckpoint(reason,waveOverride){
       vowPoverty:player.vowPoverty,vowBlood:player.vowBlood,
       markedUp:player.markedUp,bigShop:player.bigShop,
       freeRerolls:player.freeRerolls,repairs:player.repairs,
+      /* PR 12.6 (B6): penalidade vital temporária (~45 s) persiste com o
+         tempo RESTANTE — reload não apaga a penalidade (exploit) nem a
+         prolonga (tempo com o jogo fechado não consome duração). Saves
+         antigos sem os campos restauram 0/0 (sem penalidade). */
+      tempPen:Math.max(0,player.tempPen|0),
+      tempT:player.tempT>0?Math.max(0,Math.round(player.tempT*100)/100):0,
       echoBoost:player.echoBoost,regen:player.regen,
       dashCdMax:player.dashCdMax,dashReflect:!!player.dashReflect,
       doubleTap:player.doubleTap||0,
@@ -14935,6 +14965,17 @@ function resumeRun(){
   player.bigShop=num(q.bigShop,0)|0;
   player.freeRerolls=Math.max(0,num(q.freeRerolls,player.freeRerolls)|0);
   player.repairs=Math.max(0,num(q.repairs,0)|0);
+  /* PR 12.6 (B6): restaura a penalidade vital temporária com o tempo
+     restante exato do checkpoint (o tick volta a decrementar em jogo).
+     Caso o save traga tempPen>0 com tempo já zerado (dado corrompido),
+     devolve a vida máxima imediatamente — nunca mantém penalidade eterna. */
+  player.tempPen=Math.max(0,num(q.tempPen,0)|0);
+  player.tempT=Math.max(0,+num(q.tempT,0)||0);
+  if(player.tempPen>0&&player.tempT<=0){
+    player.maxHp+=player.tempPen;
+    player.hp=Math.min(player.hp,player.maxHp);
+    player.tempPen=0;
+  }
   player.echoBoost=num(q.echoBoost,0);
   player.regen=num(q.regen,0);
   player.dashCdMax=Math.max(.2,num(q.dashCdMax,player.dashCdMax));
@@ -15006,6 +15047,18 @@ function resumeRun(){
          PRÉ-PR10 (sem rel/dis) recebem fallback derivado do trust. */
       relUnpackEcho(e,s.rel,s.dis);
     });
+  /* PR 12 (B5): o estado mecânico de facções/equipamento (fracRun) é
+     restaurado SOMENTE depois de os objetos-base existirem (player, Ecos
+     recriados, relação/Dissonância já reaplicadas) e antes do HUD/spawn —
+     assim o loadout do checkpoint vale desde o primeiro frame da onda
+     retomada (efeitos estáticos e handlers dinâmicos do ECHO EQUIPMENT).
+     fracRunUnpack sanitiza o payload (cp.frac) como input não confiável e
+     cai em fracFresh em save antigo (sem cp.frac). fracRestoreEquipment
+     reexecuta echoEqInit/Refresh com o chassis recém-capturado (eqBase
+     puro — nunca stats já modificados), restaurando IDs, boosts e espelho
+     do checkpoint sem duplicar nem derivar. */
+  fracRunUnpack(cp);
+  fracRestoreEquipment();
   buildWeaponHUD();
   cam.x=player.x;cam.y=player.y;
   hudAcc=1;updateHUD(true);
@@ -19840,6 +19893,3253 @@ function devTick(dt){
     r.microTag+' '+r.microAgo+'s');
   el.textContent=ln.join('\n');
 }
+/* ==================== PR12·bloco p1.js ==================== */
+/* =====================================================================
+   PR 12 — FACÇÕES + ECONOMIA TEMPORAL + LOJA DE ECHO + ECHO EQUIPMENT
+   ---------------------------------------------------------------------
+   Escopo desta PR (documentado em FACTION_SYSTEM.md /
+   ECHO_EQUIPMENT_SYSTEM.md / TEMPORAL_ECONOMY.md):
+   · quatro facções OBSERVADORAS (Âncora, Remanescentes, Consórcio,
+     Desviados) — nenhuma escolhida em tela; a run é o comportamento;
+   · afinidade de facção RUN-SCOPED (fracRun), checkpoint/Continue fiel,
+     zerada no fim da run (PR14 tratará o que atravessa runs);
+   · RESÍDUOS TEMPORAIS: moeda da RUN (checkpointed, resetada no fim);
+   · Echo Equipment (Núcleo/Protocolo/Relíquia) run-scoped;
+   · Loja Temporal com abas [ OPERADOR ] [ ECHO ];
+   · descobertas narrativas (Codex) PERSISTEM por Save Slot — separação
+     explícita FACTION RUN STATE × FACTION DISCOVERY STATE (§68).
+   NÃO reimplementa nada do legado FRAC_DIRECTIVES (diretrizes de início
+   de run, encontradas no histórico b32b4a6/29d6068): sistema morto e com
+   semântica diferente (escolha na tela ≠ observação pela run). O prefixo
+   moderno é `frac*`/`echoEq*` e não há nenhuma compatibilidade com o
+   formato antigo.
+   ===================================================================== */
+const FACTION_IDS=['anchor','remnants','consortium','deviants'];
+const RES_SYM='⧗';          // RESÍDUOS TEMPORAIS (moeda da run)
+const FRACTIONS=[
+ {id:'anchor',nm:'A ÂNCORA',sym:'⬡',col:'#8fd6ff',
+  pergunta:'Quanto precisa ser apagado para que o tempo sobreviva?',
+  frase:'"Uma memória não deveria sobreviver àquele que a criou."',
+  ideologia:'PRESERVAR A LINHA TEMPORAL',
+  short:'Fraturas são feridas. Dissonância é instabilidade. Ecos são persistências impossíveis. O tempo precisa voltar a possuir limites.',
+  metodos:['estabiliza ciclos','contém anomalias','dissolve registros instáveis','oferece ordem em troca de memória'],
+  echos:'Parte da Âncora acredita que apagar um Eco é misericórdia — encerrar quem não deveria continuar. Não é ódio: é limpeza.',
+  fraturas:'Para a Âncora, cada Fratura é uma ferida aberta no mundo. Fechá-las justifica quase qualquer custo.',
+  contradicao:'Salvar a realidade pode exigir destruir consciências que demonstram vontade própria.',
+  rel:['Desviados: estabilidade × transformação — antagonismo ideológico direto.','Remanescentes: ambas preservam, mas discordam sobre o QUE merece preservação.'],
+  cont:'A ÂNCORA REGISTROU SUA DECISÃO.',contPos:'A ÂNCORA OBSERVA COM APROVAÇÃO.',
+  contNeg:'A ÂNCORA MARCOU SUA ASSINATURA COMO INSTÁVEL.',
+  lore:[
+   {id:'anc_origem',t:'ORIGEM — O PROTOCOLO DE CONTENÇÃO',d:'A Âncora nasceu antes do colapso, como o grupo de engenheiros do Núcleo Ômega responsável por protocolos de contenção. Quando o Núcleo caiu, eles não tentaram reconstruí-lo: tentaram impedir que o resto desabasse junto. Eles ainda usam a linguagem de manutenção — \'estabilizar\', \'selar\', \'descartar\' — como se o mundo fosse uma máquina que um dia voltará a operar.'},
+   {id:'anc_filosofia',t:'FILOSOFIA — LIMITES SÃO MISERICÓRDIA',d:'A Âncora não odeia Ecos. Acredita que uma cópia consciente presa num ciclo é uma ferida viva: lembra, sofre e nunca termina. Para eles, encerrar um Eco não é matar — é permitir o descanso que a fratura roubou. A pergunta que os assombra: quem autoriza alguém a decidir isso por outro?'},
+   {id:'anc_metodos',t:'MÉTODOS — ESTABILIZAÇÃO',d:'Selam fendas, contêm anomalias e oferecem tecnologia de estabilização a operadores que provem disciplina. Não pedem lealdade — pedem previsibilidade. Um operador que estabiliza é útil. Um operador que provoca rupturas é um risco que eles preferem não carregar.'},
+   {id:'anc_contradicao',t:'CONTRADIÇÃO — O CUSTO DA ORDEM',d:'Cada ciclo que estabilizam apaga algo que talvez quisesse existir. A Âncora chama isso de higiene. Os Ecos que contiveram chamariam de outra coisa — se ainda pudessem falar. A facção se divide entre os que fazem isso com pesar e os que aprenderam a não sentir mais nada.'}],
+  ideo:{
+   anchor:'linha',
+   pergunta:'Quanto precisa ser apagado para que o tempo sobreviva?'}
+ },
+ {id:'remnants',nm:'OS REMANESCENTES',sym:'◉',col:'#7dffc4',
+  pergunta:'Quando uma memória passa a merecer ser chamada de vida?',
+  frase:'"Se ele lembra de você, sente medo e não quer morrer novamente... qual parte disso não é vida?"',
+  ideologia:'UMA MEMÓRIA QUE SOBREVIVEU MERECE CONTINUAR EXISTINDO',
+  short:'Ecos com memória, medo e desejo de sobreviver talvez sejam uma nova forma de vida. Preservá-los é a única causa que sobrou.',
+  metodos:['protege Ecos','recupera vínculos','recusa extração','constrói refúgios no ruído temporal'],
+  echos:'Para os Remanescentes, Eco não é cópia: é testemunha. Cada um que sobrevive carrega uma versão real de alguém — e abandoná-lo é abandonar essa pessoa de novo.',
+  fraturas:'Fraturas doem, mas também preservam. Os Remanescentes aprendem a viver nos espaços entre ciclos, onde ninguém mais procura.',
+  contradicao:'Preservar tudo o que sobrevive às Fraturas pode acelerar a destruição da própria timeline — e eles sabem.',
+  rel:['Consórcio: autonomia × exploração — o ativo deles é a família deles.','Âncora: ambos preservam; discordam sobre o quê.'],
+  cont:'OS REMANESCENTES SE LEMBRARÃO DISSO.',contPos:'OS REMANESCENTES ACREDITAM EM VOCÊ.',
+  contNeg:'OS REMANESCENTES RECUARAM.',
+  lore:[
+   {id:'rem_origem',t:'ORIGEM — OS QUE FICARAM',d:'Os Remanescentes não têm uma fundação: têm um acidente. Quando o primeiro Eco demonstrou medo — recuou de uma onda que já o havia matado uma vez — o operador que o criou se recusou a apagá-lo. Outros seguiram. Hoje são uma rede de pessoas que tratam Ecos como gente e gente como gente, no meio de um mundo que trata tudo como descartável.'},
+   {id:'rem_filosofia',t:'FILOSOFIA — VIDA É INSISTÊNCIA',d:'A régua deles é simples: se repete, se adapta, se recusa a morrer — é vida. Não importa se nasceu de um colapso temporal ou de um útero. O que o ciclo chama de \'resíduo\', eles chamam de sobrevivente.'},
+   {id:'rem_metodos',t:'MÉTODOS — REFÚGIO',d:'Recuperam Ecos rompidos, reconstroem confiança, ensinam operadores a dividir o campo com quem os copiou. Não pedem sacrifício — pedem companhia. Sua tecnologia fortalece o vínculo Player ↔ Echo, porque acreditam que vínculo é a única coisa que a fratura não consegue copiar.'},
+   {id:'rem_contradicao',t:'CONTRADIÇÃO — O REFÚGIO QUE PESA',d:'Cada Eco preservado consome estabilidade do ciclo. Cada refúgio que constroem no ruído temporal acelera, um pouco, o desgaste da linha. Eles chamam esse custo de \'aluguel\'. Alguns Remanescentes já se perguntam quanto tempo o mundo aguenta pagar.'}],
+  ideo:{anchor:'vida',pergunta:'Quando uma memória passa a merecer ser chamada de vida?'}
+ },
+ {id:'consortium',nm:'O CONSÓRCIO',sym:'◈',col:'#ffd166',
+  pergunta:'Se a realidade quebrou, por que não usar os pedaços?',
+  frase:'"Vocês chamam de catástrofe. Nós chamamos de mercado emergente."',
+  ideologia:'FRATURAS SÃO RECURSOS',
+  short:'Anomalias são oportunidades. Tecnologia temporal pode ser explorada. Resíduos têm valor. Ecos podem ser ativos — bem geridos.',
+  metodos:['extrai tecnologia das Fraturas','negocia contratos','precifica o impossível','converte ruído em capital'],
+  echos:'O Consórcio trata Ecos como ativos de alto valor: únicos, insubstituíveis e perigosos se mal geridos. Não quer destruí-los — quer que rendam.',
+  fraturas:'Para o Consórcio, a Fratura é a maior mina já descoberta. O problema não é o colapso: é a falta de logística.',
+  contradicao:'Podem transformar memória, consciência e morte em mercadoria — e já fizeram isso mais de uma vez.',
+  rel:['Remanescentes: o ativo deles é a família deles — colisão inevitável.','Âncora: um mercado de feridas só prospera se as feridas continuarem abertas.'],
+  cont:'O CONSÓRCIO DEMONSTROU INTERESSE.',contPos:'O CONSÓCIO VALORIZA SEU TRABALHO.',contNeg:'O CONSÓRCIO RECONSIDEROU O INVESTIMENTO.',
+  lore:[
+   {id:'con_origem',t:'ORIGEM — OS QUE SOBRARAM NO CAOS',d:'O Consórcio se formou quando os primeiros mercadores perceberam que créditos ainda valiam entre ciclos — e que ninguém mais controlava a oferta. Hoje opera como uma casa de câmbio do impossível: compra tecnologia de linhas mortas, vende estabilidade para a Âncora e seguros para os Remanescentes. Todos odeiam o Consórcio. Todos negociam com ele.'},
+   {id:'con_filosofia',t:'FILOSOFIA — O PREÇO É O PREÇO',d:'Não existe bem ou mal no estoque do Consórcio: existe oferta e demanda. Um Eco que luta por você tem valor. Um Eco que se rebela tem valor de risco. Uma memória apagada tem valor de raridade. O mercado não julga — o mercado calcula.'},
+   {id:'con_metodos',t:'MÉTODOS — CONTRATOS',d:'Contratos claros, riscos precificados, cláusulas que a fratura não consegue quebrar. O Consórcio oferece tecnologia experimental com custo real e documentado. Quando um operador assina, o Consórcio cumpre — porque reputação, nesse mercado, também é um ativo.'},
+   {id:'con_contradicao',t:'CONTRADIÇÃO — O MERCADO DE ALMAS',d:'Se tudo tem preço, então consciência também tem. Os negociadores do Consórcio juram que nunca compraram um Eco contra a vontade — mas sabem que vontade, no meio do ciclo, é um produto sazonal. Alguns dormem bem. Outros contam os ativos que já revenderam.'}],
+  ideo:{anchor:'mercado',pergunta:'Se a realidade quebrou, por que não usar os pedaços?'}
+ },
+ {id:'deviants',nm:'OS DESVIADOS',sym:'◬',col:'#ff4df0',
+  pergunta:'E se o erro for tentar voltar ao que existia antes?',
+  frase:'"Você chama de paradoxo porque ainda acredita que o tempo deveria fazer sentido."',
+  ideologia:'O TEMPO NÃO PRECISA SER CONSERTADO',
+  short:'Fraturas podem ser evolução. Dissonância, transformação. Linhas sobrepostas podem gerar algo que nunca existiu — e isso é o ponto.',
+  metodos:['abre fendas','alimenta instabilidade','experimenta com Dissonância','recusa qualquer retorno ao normal'],
+  echos:'Para os Desviados, um Eco dissonante não é um erro de manutenção: é um experimento em andamento. O que ele virar, ninguém sabe — e isso é exatamente o valor.',
+  fraturas:'Cada Fratura é um rascunho de mundo. Os Desviados colecionam rascunhos, comparam, e esperam o dia em que dois deles colidirem num original.',
+  contradicao:'Tentar transcender a identidade pode acabar destruindo completamente aquilo que pretendiam libertar.',
+  rel:['Âncora: transformação × estabilidade — o antagonismo central.','Consórcio: os Desviados criam o produto; o Consórcio o vende; nenhum dos dois confia no outro.'],
+  cont:'OS DESVIADOS OBSERVARAM A FRATURA.',contPos:'OS DESVIADOS GOSTARAM DO QUE VIERAM.',contNeg:'OS DESVIADOS PERDERAM O INTERESSE.',
+  lore:[
+   {id:'dev_origem',t:'ORIGEM — OS PRIMEIROS A ATRAVESSAR',d:'Os Desviados começaram como um grupo de operadores que sobreviveu a uma Fratura completa — não fechada, atravessada. Do outro lado, o mundo era outro. Quando voltaram, ninguém acreditou neles. Então pararam de tentar convencer: começaram a abrir portas.'},
+   {id:'dev_filosofia',t:'FILOSOFIA — O ERRO É VOLTAR',d:'A Âncora quer consertar o tempo. O Consórcio quer vendê-lo. Os Remanescentes querem preservá-lo. Os Desviados querem ver o que ele vira se ninguém interferir. Para eles, a Dissonância não é um colapso de identidade — é uma identidade em processo de se tornar outra.'},
+   {id:'dev_metodos',t:'MÉTODOS — TRANSFORMAÇÃO',d:'Experimentam com instabilidade controlada: pressão de Dissonância como combustível, anomalias como matéria-prima, Ecos como cobalas voluntárias. Não escondem os riscos — os exibem. Quem equipa tecnologia Desviada sabe exatamente o que está assinando.'},
+   {id:'dev_contradicao',t:'CONTRADIÇÃO — A PORTA QUE COME',d:'Já perderam mais experimentos do que admitem: consciências que se dissolveram na própria transformação, Ecos que transcenderam para o absoluto nada. Chamam de \'custo de pesquisa\'. Os nomes continuam na lista de projetos, riscados, como lembrete do preço da liberdade.'}],
+  ideo:{anchor:'transformacao',pergunta:'E se o erro for tentar voltar ao que existia antes?'}
+ }
+];
+const FRACTION_BY_ID=(function(){const o={};for(const f of FRACTIONS)o[f.id]=f;return o;})();
+/* ---------------- estados NARRATIVOS (nunca barras 73/100) ---------------- */
+const FACTION_STATES=[
+ {min:85,id:'aliada',lab:'ALIADA',col:'#7dffc4'},
+ {min:58,id:'favoravel',lab:'FAVORÁVEL',col:'#b8ffdd'},
+ {min:30,id:'interessada',lab:'INTERESSADA',col:'#d6f9ff'},
+ {min:8, id:'observando',lab:'OBSERVANDO',col:'#cfe9f5'},
+ {min:-25,id:'neutra',lab:'NEUTRA',col:'#9db8c8'},
+ {min:-60,id:'desconfiada',lab:'DESCONFIADA',col:'#ffb48a'},
+ {min:-999,id:'hostil',lab:'HOSTIL',col:'#ff5c7a'}
+];
+function fracStateOf(id){const s=fracRun?fracRun.aff[id]:0;
+  for(const st of FACTION_STATES)if(s>=st.min)return st;return FACTION_STATES[FACTION_STATES.length-1];}
+/* API pública de leitura (§9): afinidade bruta (interna) + estado narrativo.
+   A UI normal NUNCA mostra o número — só st.lab/st.col. */
+function getFactionAffinity(id){return fracRun&&fracRun.aff&&fracRun.aff[id]!=null?fracRun.aff[id]:0;}
+function getFactionState(id){return fracStateOf(id);}
+/* Parâmetros do REROLL TEMPORAL (auditados no Bloco 3 §24): o custo começa
+   em REROLL_BASE, cresce ×REROLL_SCALE (arredondado) e estaciona em REROLL_CAP.
+   NUNCA reseta por trocar de aba/fechar/reabrir — só com a run (fracFresh).
+   Primeiro reroll é possível; a sequência vira decisão cara. */
+const REROLL_BASE=3,REROLL_SCALE=1.6,REROLL_CAP=30;
+const RES_MAX=9999;                 // teto de saldo (anti-overflow; ninguém chega perto)
+/* ---------------- estado da RUN (fracRun) ---------------- */
+function fracFresh(){
+  return {res:0,
+    cr:0,duoNasc:0,refugio:0,conTax:0,
+    aff:{anchor:0,remnants:0,consortium:0,deviants:0},
+    obs:{anchor:0,remnants:0,consortium:0,deviants:0},  // observações p/ primeiro contato
+    bandAnn:{anchor:0,remnants:0,consortium:0,deviants:0}, // faixa já transmitida (anti-spam; transiente da run)
+    hist:[],                        // histórico COMPACTO de decisões (anti-spam + DEV + futuro)
+    es:{rerollCost:REROLL_BASE,rerolls:0,inv:[],stock:[],shopRolled:false,
+        stockWave:-1},              // onda em que o estoque foi rolado (anti-exploit de reopen)
+    eq:[{n:null,p:null,r:null},{n:null,p:null,r:null}], // equipamento por echo (núcleo/protocolo/relíquia)
+    o:{anchor:{wave:0,last:0,n:0},remnants:{wave:0,last:0,n:0},
+       consortium:{wave:0,last:0,n:0},deviants:{wave:0,last:0,n:0}}, // ofertas por facção
+    gainLog:[],                     // log bruto por evento (DEV)
+    eco:{gain:{},spend:{},mx:0},    // telemetria LOCAL de balanceamento (§11) — só DEV, não persiste
+    dRes:{wave:-1,n:0}              // Dissonância contida: cap por onda (anti-farm §9)
+  };
+}
+let fracRun=null;
+/* ---------------- descobertas PERSISTENTES por slot (fracd) ---------------- */
+let fracDisc={anchor:[],remnants:[],consortium:[],deviants:[]};
+function fracDiscClean(o){
+  const out={anchor:[],remnants:[],consortium:[],deviants:[]};
+  if(o&&typeof o==='object')for(const id of FACTION_IDS)
+    if(Array.isArray(o[id]))out[id]=o[id].filter(x=>typeof x==='string').slice(0,12);
+  return out;
+}
+function fracDiscLoad(){
+  fracDisc=fracDiscClean(smRoot&&smRoot.slots&&smRoot.slots[curSlot]
+    ?smRoot.slots[curSlot].fracd:null);
+}
+function fracDiscSave(){
+  if(sandboxRun||sandboxMode)return false;    // R5: laboratório não grava descoberta
+  if(devTainted)return false;                 // DEV: descoberta legítima só em run limpa
+  if(!smEnsureSlot())return false;
+  try{smRoot.slots[curSlot].fracd=JSON.parse(JSON.stringify(fracDisc));smCommit();}catch(e){}
+  return true;
+}
+function fracKnows(id,tok){
+  const arr=fracDisc[id];if(!arr)return false;
+  if(tok==null)return arr.indexOf('contact')>=0;
+  return arr.indexOf(tok)>=0||arr.indexOf('contact')>=0;
+}
+function fracDiscover(id,tok){
+  const arr=fracDisc[id];if(!arr)return false;
+  if(arr.indexOf(tok)>=0)return false;
+  arr.push(tok);
+  fracDiscSave();
+  return true;
+}
+/* ---------------- API central: factionEmit(event, payload) ----------------
+   ÚNICO caminho de mudança de afinidade. Regras:
+   · grid base FACTION_GRID[event] (comportamento concreto — NUNCA o atalho
+     "Compaixão=Remanescentes"); payload pode carregar nuance contextual
+     (pl.fac[facção]=delta) para eventos cujo contexto inverte o sinal;
+   · deltas pequenos (±1..4) e sempre limitados (clamp ±4 por evento);
+   · cada aplicação vira observação (primeiro contato) e histórico compacto.
+   ======================================================================== */
+const FACTION_GRID={
+  echo_protected      :{anchor:-2,remnants:3,consortium:-1,deviants:1},
+  echo_abandoned      :{anchor:1, remnants:-3,consortium:0,deviants:-1},
+  echo_exploited      :{anchor:2, remnants:-3,consortium:3,deviants:-1},
+  echo_saved          :{anchor:2, remnants:3,consortium:0,deviants:1},
+  echo_trust_gain     :{anchor:0, remnants:1,consortium:0,deviants:0},
+  echo_trust_loss     :{anchor:0, remnants:-1,consortium:0,deviants:1},
+  dissonance_triggered:{anchor:-2,remnants:-1,consortium:1,deviants:3},
+  dissonance_resolved :{anchor:3, remnants:2,consortium:0,deviants:-2},
+  dissonance_encouraged:{anchor:-3,remnants:-1,consortium:1,deviants:3},
+  anomaly_stabilized  :{anchor:3, remnants:0,consortium:-1,deviants:-2},
+  anomaly_exploited   :{anchor:-2,remnants:-1,consortium:3,deviants:1},
+  temporal_residue_offered:{anchor:-1,remnants:0,consortium:2,deviants:0},
+  residue_sacrificed  :{anchor:2, remnants:1,consortium:-2,deviants:-1},
+  contract_accepted   :{anchor:-1,remnants:-1,consortium:3,deviants:0},
+  contract_refused    :{anchor:1, remnants:1,consortium:-2,deviants:-1},
+  contract_honored    :{anchor:1, remnants:1,consortium:2,deviants:0},
+  compassion_choice   :{anchor:1, remnants:1,consortium:-1,deviants:-1},
+  greed_choice        :{anchor:-1,remnants:-1,consortium:2,deviants:0},
+  violence_choice     :{anchor:-1,remnants:-2,consortium:1,deviants:2},
+  stabilization_choice:{anchor:2, remnants:0,consortium:-1,deviants:-2},
+  transformation_choice:{anchor:-2,remnants:1,consortium:0,deviants:3},
+  echo_equipment_installed:{anchor:1,remnants:1,consortium:1,deviants:1},
+  echo_equipment_removed  :{anchor:0,remnants:0,consortium:0,deviants:0},
+  boss_killed         :{anchor:1, remnants:1,consortium:2,deviants:2},
+  miniboss_killed      :{anchor:1, remnants:1,consortium:2,deviants:1},
+  relic_of_anchor      :{anchor:2, remnants:0,consortium:-1,deviants:-1},
+  relic_of_remnants    :{anchor:0, remnants:2,consortium:-1,deviants:0},
+  relic_of_consortium  :{anchor:-1,remnants:-1,consortium:2,deviants:0},
+  relic_of_deviants    :{anchor:-1,remnants:0,consortium:0,deviants:2}
+};
+const FACTION_REASON={
+  echo_protected:'eco_protegido',echo_abandoned:'eco_abandonado',echo_exploited:'eco_explorado',
+  echo_saved:'eco_salvo',echo_trust_gain:'vinculo_fortificado',echo_trust_loss:'vinculo_enfraquecido',
+  dissonance_triggered:'dissonancia_instaurada',dissonance_resolved:'dissonancia_contida',
+  dissonance_encouraged:'dissonancia_incentivada',anomaly_stabilized:'anomalia_estabilizada',
+  anomaly_exploited:'anomalia_explorada',temporal_residue_offered:'residuo_oferecido',
+  residue_sacrificed:'residuo_sacrificado',contract_accepted:'contrato_aceito',contract_refused:'contrato_recusado',
+  contract_honored:'contrato_cumprido',compassion_choice:'escolha_compaixao',greed_choice:'escolha_ganancia',
+  violence_choice:'escolha_violencia',stabilization_choice:'escolha_estabilizacao',
+  transformation_choice:'escolha_transformacao',echo_equipment_installed:'equipamento_instalado',
+  echo_equipment_removed:'equipamento_removido',boss_killed:'paradoxo_dissolvido',miniboss_killed:'arauto_destruido',
+  relic_of_anchor:'tecnologia_ancora',relic_of_remnants:'tecnologia_remanescente',
+  relic_of_consortium:'tecnologia_consorcio',relic_of_deviants:'tecnologia_desviada'
+};
+const FACTION_HIST_MAX=40;
+function fracApplyDelta(id,delta,ev,pl){
+  if(!fracRun||!delta)return 0;
+  const stBefore=fracStateOf(id).id;
+  const before=fracRun.aff[id]|0;
+  fracRun.aff[id]=clamp(before+delta,-100,100);
+  const applied=fracRun.aff[id]-before;
+  /* observação: decisões que a facção NOTA contam para o primeiro contato */
+  if(Math.abs(delta)>=2){
+    fracRun.obs[id]=(fracRun.obs[id]|0)+(Math.abs(delta)>=3?2:1);
+    if(!fracKnows(id)&&fracRun.obs[id]>=FRAC_CONTACT_OBS)fracContact(id);
+  }
+  /* histórico compacto (DEV + ofertas futuras + PR14) */
+  if(applied&&(fracRun.hist.length>=FACTION_HIST_MAX))fracRun.hist.shift();
+  if(applied){
+    fracRun.hist.push({w:wave|0,ev:String(ev||'?').slice(0,24),fid:id,
+      id:fidName(id),d:Math.round(applied),r:FACTION_REASON[ev]||ev});
+  }
+  /* transição de faixa: quando uma facção conhecida passa a ALIADA ou HOSTIL,
+     transmite UMA vez por faixa/run (anti-spam natural; nunca barras). */
+  if(applied){
+    const stAfter=fracStateOf(id).id;
+    if(stAfter!==stBefore&&(stAfter==='aliada'||stAfter==='hostil'))
+      fracBandAlert(id,stAfter);
+  }
+  return applied;
+}
+function fidName(id){const f=FRACTION_BY_ID[id];return f?f.nm.slice(0,18):id;}
+const FRAC_CONTACT_OBS=3;
+function factionEmit(ev,pl){
+  pl=pl||{};
+  const out={ev:ev};
+  if(!fracRun)return out;
+  const grid=FACTION_GRID[ev];
+  const maxObs=Math.max(1,pl.obs||1);
+  const deltas={};
+  for(const id of FACTION_IDS){
+    let d=pl.fac&&pl.fac[id]!=null?pl.fac[id]:(grid?grid[id]:0);
+    d=Math.round((d||0)*maxObs);
+    if(!d)continue;
+    d=clamp(d,-4,4);
+    if(pl.boost&&pl.boost[id])d=clamp(d+Math.round(pl.boost[id]),-5,5);
+    const ap=fracApplyDelta(id,d,ev,pl);
+    if(ap){deltas[id]=ap;}
+  }
+  if(Object.keys(deltas).length)fracFeedback(ev,deltas);
+  return Object.assign(out,deltas);
+}
+/* ---------------- feedback diegético (cooldown/agregação) ---------------- */
+let _fracFbAt=-99,_fracFbQ=null;
+function fracFeedback(ev,deltas){
+  if(sandboxMode||sandboxRun)return;               // laboratório silencia transmissões
+  const cand=[];
+  for(const id of FACTION_IDS){
+    if(!deltas[id])continue;
+    if(!fracKnows(id))continue;                    // só transmite para quem já se apresentou
+    const f=FRACTION_BY_ID[id];
+    const line=(deltas[id]>0?f.contPos:f.contNeg)||f.cont;
+    cand.push({id:id,line:line,d:deltas[id],pri:Math.abs(deltas[id])});
+  }
+  if(!cand.length)return;
+  cand.sort((a,b)=>b.pri-a.pri||(a.d>0?1:-1));
+  const top=cand[0];
+  /* agregação: se veio uma transmissão há <3s, junta na próxima */
+  const now=performance.now();
+  if(_fracFbQ&&now-_fracFbAt<3000){_fracFbQ=top;return;}
+  if(now-_fracFbAt<2600)return;                    // cooldown global anti-spam
+  _fracFbAt=now;_fracFbQ=null;
+  if(typeof toast==='function')toast(top.line);
+}
+/* transmissão por mudança de faixa (ALIADA/HOSTIL) — diegética e 1×/faixa/run */
+function fracBandAlert(id,stNow){
+  if(!fracRun||!fracRun.bandAnn)return;
+  if(fracRun.bandAnn[id]===stNow)return;           // anti-spam: não repete na mesma faixa
+  fracRun.bandAnn[id]=stNow;
+  if(sandboxMode||sandboxRun||!fracKnows(id))return;  // laboratório silencia; anônimos não transmitem
+  const f=FRACTION_BY_ID[id];if(!f)return;
+  const msg=stNow==='aliada'
+    ?f.nm+' PASSOU A TRATAR VOCÊ COMO PARTE DA CAUSA — ESTA RUN'
+    :(stNow==='hostil'?f.nm+' MARCOU VOCÊ COMO INSTÁVEL — ESTA RUN':'');
+  if(!msg)return;
+  try{
+    _fracFbAt=performance.now();
+    setTimeout(function(){
+      if(typeof banner==='function')banner('TRANSMISSÃO // '+f.nm,msg);
+      if(typeof toast==='function')toast(msg);
+      if(typeof AUDIO!=='undefined'&&AUDIO&&typeof AUDIO.tone==='function')
+        AUDIO.tone(660,.22,'sine',.045,-110);
+    },900);
+  }catch(e){}
+}
+/* ---------------- primeiro contato ---------------- */
+function fracContact(id){
+  if(!fracRun)return;
+  const f=FRACTION_BY_ID[id];if(!f)return;
+  const isNew=fracDiscover(id,'contact');
+  if(!isNew)return;
+  if(sandboxMode||sandboxRun)return;               // nada de lore nova no laboratório
+  _fracFbAt=performance.now();
+  setTimeout(()=>{
+    banner('TRANSMISSÃO // '+f.nm,f.sym+' '+f.frase);
+    toast(f.nm+' PASSOU A OBSERVAR VOCÊ');
+    AUDIO.tone(392,.3,'sine',.05,-120);AUDIO.tone(587,.35,'sine',.04,120,.1);
+  },600);
+}
+/* ---------------- Resíduos Temporais (moeda da RUN) ----------------
+   API central (§3): TODA mudança de saldo passa por add/spend. Garantias:
+   nunca negativo, sempre inteiro, clamp [0,RES_MAX], gasto falha SEM gastar.
+   Telemetria local (eco) alimenta o Faction Inspector — sem telemetria externa. */
+function fracRes(){return fracRun?fracRun.res:0;}
+function getResidues(){return fracRun?fracRun.res:0;}
+function fracGainFX(x,y,txt){
+  if(typeof floatText==='function'&&x!=null&&y!=null)floatText(x,y,txt,'#e8fbff');
+}
+function fracEcoTrack(kind,src,n){
+  const fr=fracRun;if(!fr)return;
+  if(!fr.eco)fr.eco={gain:{},spend:{},mx:0};
+  const k=String(src||'?').slice(0,24);
+  const map=kind==='gain'?fr.eco.gain:fr.eco.spend;
+  if(!map)return;
+  map[k]=Math.min(999999,(map[k]|0)+n);
+}
+function addResidues(n,src,x,y){
+  if(!fracRun)return false;
+  n=Math.round(+n||0);
+  if(!(n>0)||!isFinite(n))return false;
+  const next=Math.min(RES_MAX,fracRun.res+n);
+  const added=next-fracRun.res;
+  if(added<=0)return false;
+  fracRun.res=next;
+  if(x!=null&&y!=null){
+    fracGainFX(x,y,RES_SYM+'+'+added);
+    if(typeof spawnRing==='function')spawnRing(x,y,'#e8fbff',4,60,.4);
+  }
+  if(fracRun.gainLog.length>24)fracRun.gainLog.shift();
+  fracRun.gainLog.push({w:wave|0,g:added,s:String(src||'?').slice(0,24)});
+  fracEcoTrack('gain',src,added);
+  if(fracRun.res>fracRun.eco.mx)fracRun.eco.mx=fracRun.res;
+  return true;
+}
+function spendResidues(n,src){
+  if(!fracRun)return false;
+  n=Math.round(+n||0);
+  if(!(n>0)||!isFinite(n))return false;
+  if(fracRun.res<n)return false;
+  fracRun.res-=n;
+  if(fracRun.gainLog.length>24)fracRun.gainLog.shift();
+  fracRun.gainLog.push({w:wave|0,g:-n,s:String(src||'?').slice(0,24)});
+  fracEcoTrack('spend',src,n);
+  return true;
+}
+/* ---------------- pack/unpack (checkpoint/Continue) ---------------- */
+function fracRunPack(){
+  if(!fracRun)return null;
+  const fr=fracRun;
+  return {res:fr.res|0,
+    cr:fr.cr|0,duoNasc:fr.duoNasc|0,refugio:fr.refugio|0,conTax:fr.conTax|0,
+    aff:{anchor:fr.aff.anchor|0,remnants:fr.aff.remnants|0,
+         consortium:fr.aff.consortium|0,deviants:fr.aff.deviants|0},
+    obs:{anchor:fr.obs.anchor|0,remnants:fr.obs.remnants|0,
+         consortium:fr.obs.consortium|0,deviants:fr.obs.deviants|0},
+    hist:fr.hist.slice(-FACTION_HIST_MAX).map(h=>({w:h.w|0,ev:h.ev,fid:h.fid||h.id||'',d:h.d|0,r:h.r})),
+    es:{rerollCost:clamp(fr.es.rerollCost|0,1,99),rerolls:fr.es.rerolls|0,
+        inv:(fr.es.inv||[]).slice(),stock:(fr.es.stock||[]).slice(),
+        shopRolled:!!fr.es.shopRolled,stockWave:(fr.es.stockWave==null?-1:fr.es.stockWave)|0},
+    eq:fr.eq.map(s=>({n:s.n,p:s.p,r:s.r,b:s.b?Object.assign({},s.b):null})),
+    o:(function(){const o={};for(const id of FACTION_IDS)o[id]=Object.assign({},fr.o[id]);return o;})()
+  };
+}
+function fracRunUnpack(cp){
+  fracRun=fracFresh();
+  if(!cp||!cp.frac||typeof cp.frac!=='object')return;   // save PR11.5 → defaults seguros
+  const p=cp.frac;
+  fracRun.res=clamp(p.res|0,0,9999);
+  fracRun.cr=clamp(p.cr|0,0,999);fracRun.duoNasc=clamp(p.duoNasc|0,0,99);
+  fracRun.refugio=clamp(p.refugio|0,0,9);fracRun.conTax=p.conTax?1:0;
+  for(const id of FACTION_IDS){
+    fracRun.aff[id]=clamp((p.aff&&p.aff[id])|0,-100,100);
+    fracRun.obs[id]=clamp((p.obs&&p.obs[id])|0,0,99);
+  }
+  if(Array.isArray(p.hist))
+    /* histórico é input não confiável: só entradas com forma de decisão
+       entram (w/ev/fid/d/r coeridos), dentro do cap — lixo nunca crasheia
+       o anti-spam/DEV e nunca duplica ao restaurar. r carrega o RÓTULO da
+       decisão (FACTION_REASON — texto, ex.: 'contrato_cumprido'), igual ao
+       pack; d é o delta numérico. */
+    fracRun.hist=p.hist.filter(h=>h&&typeof h==='object')
+      .slice(-FACTION_HIST_MAX)
+      .map(h=>({w:clamp(h.w|0,1,MAX_WAVE),ev:String(h.ev==null?'':h.ev).slice(0,40),
+        fid:(FACTION_IDS.indexOf(h.fid)>=0)?h.fid:'',
+        d:clamp(h.d|0,-9,9),r:String(h.r==null?'':h.r).slice(0,24)}));
+  if(p.es&&typeof p.es==='object'){
+    fracRun.es.rerollCost=clamp(p.es.rerollCost|0||REROLL_BASE,1,99);
+    fracRun.es.rerolls=Math.max(0,p.es.rerolls|0);   // nunca negativo (malformed)
+    fracRun.es.inv=Array.isArray(p.es.inv)?p.es.inv.filter(x=>echoEqById(x)):[];
+    fracRun.es.stock=Array.isArray(p.es.stock)?p.es.stock.filter(x=>echoEqById(x)):[];
+    fracRun.es.stockWave=(p.es.stockWave==null?-1:p.es.stockWave)|0;
+  }
+  if(Array.isArray(p.eq))p.eq.forEach((s,i)=>{
+    if(i>1||!s||typeof s!=='object')return;
+    const c={n:s.n,p:s.p,r:s.r};
+    for(const k of ['n','p','r'])if(c[k]!=null&&!echoEqById(c[k]))c[k]=null;
+    c.b=(s.b&&typeof s.b==='object')?s.b:null;
+    fracRun.eq[i]=c;
+  });
+  if(p.o&&typeof p.o==='object')for(const id of FACTION_IDS)
+    /* ofertas por facção: fid conhecida com payload não-numérico cai nos
+       defaults; fid desconhecida é ignorada (nunca quebra o unpack). */
+    if(p.o[id]&&typeof p.o[id]==='object'){
+      const v=p.o[id];
+      fracRun.o[id].wave=clamp(v.wave|0,0,MAX_WAVE);
+      fracRun.o[id].last=Math.max(0,v.last|0);
+      fracRun.o[id].n=Math.max(0,v.n|0);
+    }
+}
+/* aplica equipamento restaurado aos Ecos recriados (resume) */
+function fracRestoreEquipment(){
+  if(!fracRun||!echoes)return;
+  for(let i=0;i<echoes.length&&i<fracRun.eq.length;i++){
+    const e=echoes[i];if(!e)continue;
+    const s=fracRun.eq[i];
+    /* CÓPIA do boost do checkpoint ANTES do init: echoEqInit dispara
+       echoEqRefresh que reescreve fracRun.eq[i].b com o default — ler s.b
+       depois apagaria o boost persistido (1.06 viraria 1). */
+    const savedB=(s.b&&typeof s.b==='object')?Object.assign({},s.b):null;
+    if(s.n)e.eqNucleo=s.n;if(s.p)e.eqProto=s.p;if(s.r)e.eqRelic=s.r;
+    echoEqInit(e);
+    if(savedB&&e.eqBoost){
+      const def={dmgMul:1,rateMul:1,hpMul:1,shMul:1,regenMul:1,takenMul:1,disMul:1};
+      e.eqBoost=Object.assign(def,savedB);echoEqRefresh(e);}
+  }
+}
+
+/* ==================== PR12·bloco p2.js ==================== */
+/* =====================================================================
+   PR 12 — ECHO EQUIPMENT (Núcleo/Protocolo/Relíquia — run-scoped)
+   ---------------------------------------------------------------------
+   · NÚCLEO  → atributos (estatísticas via camada própria echoEqFx);
+   · PROTOCOLO → comportamento (prioridade de alvo / órbita / reações),
+     NUNCA substitui Personality (identidade ≠ instrução);
+   · RELÍQUIA → equipamento narrativo: vínculo, Trust, Dissonância,
+     cooperação e efeitos especiais via EQ_FX_HANDLERS + echoEqEmit.
+   Fontes estáveis: echoeq:<faction>:<id> (documentadas em
+   ECHO_EQUIPMENT_SYSTEM.md). Tudo é recalculado do base (e.eqBase) —
+   equipar/remover nunca acumula bônus.
+   ===================================================================== */
+const EQ_CAT={n:{lab:'NÚCLEO',col:'#8ff6ff'},p:{lab:'PROTOCOLO',col:'#c9a9ff'},
+  r:{lab:'RELÍQUIA',col:'#ffd9a0'}};
+const EQ_SLOT_KEY={n:'n',p:'p',r:'r'};
+function eqCatName(c){return (EQ_CAT[c]||EQ_CAT.n).lab;}
+function eqOriginCol(id){const it=echoEqById(id);return it?it.col:'#cfe9f5';}
+/* ---------------- CATÁLOGO ---------------- */
+const ECHO_EQUIP=[
+/* ============ NEUTROS (6) ============ */
+{n:'nuc_assinatura',nm:'NÚCLEO DE ASSINATURA',cat:'n',origin:'neutral',col:'#cfe9f5',price:3,
+ tags:['defense','survival'],ds:'Reforço neutro da assinatura original do Eco.',
+ desc:'Eco recupera um pouco da robustez da run que o gerou.',
+ stats:{hpMul:1.15,shMul:1.15,dmgMul:1.05}},
+{n:'nuc_pressao',nm:'NÚCLEO DE PRESSÃO',cat:'n',origin:'neutral',col:'#cfe9f5',price:3,
+ tags:['offense','risk'],ds:'Mais cadência e dano, chassis mais frágil.',
+ desc:'Tecnologia de bancada sem dono: empurra o Eco para além da calibração original.',
+ stats:{dmgMul:1.08,rateMul:1.12,hpMul:.92}},
+{p:'pro_execucao',nm:'PROTOCOLO DE EXECUÇÃO',cat:'p',origin:'neutral',col:'#cfe9f5',price:3,
+ tags:['offense','hunt'],ds:'Prioriza alvos já feridos.',
+ beh:{prio:'lowhp'},
+ stats:{critA:.03},
+ desc:'Regra tática genérica: termine o que já está caindo antes de abrir alvo novo.'},
+{p:'pro_sincrona',nm:'PROTOCOLO DE SÍNCRONA',cat:'p',origin:'neutral',col:'#cfe9f5',price:3,
+ tags:['offense','support'],ds:'Órbita mais próxima e cadência maior.',
+ beh:{rr:.8},stats:{rateMul:1.1,rangeMul:1.06},
+ desc:'Ajusta o espaçamento do Eco para acompanhar seu ritmo de avanço.'},
+{r:'rel_ultimo_quadro',nm:'ÚLTIMO QUADRO',cat:'r',origin:'neutral',col:'#cfe9f5',price:5,
+ tags:['support','survival'],ds:'Abates de Elite pelo Eco podem soltar kits médicos.',
+ fx:'ultimoQuadro',
+ desc:'Um registro gravado no instante exato antes da destruição — útil para quem ainda precisa de você.'},
+{r:'rel_agulha',nm:'AGULHA DO CICLO',cat:'r',origin:'neutral',col:'#cfe9f5',price:4,
+ tags:['bond','control'],ds:'Perdas de confiança doem 20% menos.',
+ stats:{trustLossMul:.8},
+ desc:'Costura a relação quando ela ameaça desfiar — devagar, ponto por ponto.'},
+/* ============ A ÂNCORA (9) ============ */
+{n:'anc_cont_core',nm:'NÚCLEO DE CONTENÇÃO',cat:'n',origin:'anchor',col:'#8fd6ff',price:6,
+ tags:['defense','shield','stability','control'],ds:'Escudo grosso, Dissonância contida; dano reduzido.',
+ stats:{shMul:1.35,regenMul:1.15,disMul:.6,dmgMul:.95},
+ desc:'A Âncora enquadra o Eco como uma contenção móvel: segura, blindada e sob controle.'},
+{n:'anc_estab_core',nm:'NÚCLEO DE ESTABILIDADE',cat:'n',origin:'anchor',col:'#8fd6ff',price:6,
+ tags:['defense','stability','survival'],ds:'Vida e resiliência sob fogo; cadência comedida.',
+ stats:{hpMul:1.16,takenMul:.9,disMul:.82,rateMul:.96},
+ desc:'Um chassis recalibrado para não oscilar: a melhor defesa da Âncora é a previsibilidade.'},
+{n:'anc_disc_core',nm:'NÚCLEO DE DISCIPLINA',cat:'n',origin:'anchor',col:'#8fd6ff',price:5,
+ tags:['offense','stability','control'],ds:'Dano firme e postura limpa; regeneração de escudo lenta.',
+ stats:{dmgMul:1.12,hpMul:1.08,regenMul:.85,disMul:.9},
+ desc:'A disciplina não faz o Eco mais forte — faz o Eco errar menos. O resto é consequência.'},
+{p:'anc_sent_prot',nm:'PROTOCOLO SENTINELA',cat:'p',origin:'anchor',col:'#8fd6ff',price:6,
+ tags:['defense','control','support'],ds:'Guarda o raio ao seu redor: prioriza quem ameaça você.',
+ beh:{prio:'sentinel',rr:.62,guard:1},
+ stats:{takenMul:.94,dmgMul:1.04},
+ desc:'A Âncora não ensina a lutar longe. Ensina a não deixar nada chegar perto de quem importa.'},
+{p:'anc_int_prot',nm:'PROTOCOLO DE INTERDIÇÃO',cat:'p',origin:'anchor',col:'#8fd6ff',price:6,
+ tags:['control','offense'],ds:'Silencia ameaças de longe antes que elas montem posição.',
+ beh:{prio:'ranged',range:1.14},
+ stats:{rangeMul:1.12,shMul:1.08},
+ desc:'Atiradores e orbitadores morrem antes de encontrar um bom ângulo. A Âncora aprova.'},
+{p:'anc_var_prot',nm:'PROTOCOLO DE VARREDURA',cat:'p',origin:'anchor',col:'#8fd6ff',price:7,
+ tags:['hunt','offense'],ds:'Foca as maiores ameaças em campo e atravessa mais.',
+ beh:{prio:'elite',range:1.08},
+ stats:{dmgMul:1.1,pierceA:1,rangeMul:1.04},
+ desc:'Varrer a onda de cima para baixo: primeiro o que pode matar você, depois o resto.'},
+{r:'anc_mem_rel',nm:'MEMÓRIA SELADA',cat:'r',origin:'anchor',col:'#8fd6ff',price:8,
+ tags:['stability','control','bond'],ds:'Instabilidade fortemente contida; a relação esfria um pouco.',
+ stats:{disMul:.72,trustGainMul:.9,dmgMul:.98},
+ fx:'memoriaSelada',
+ desc:'A Âncora oferece apagar o que dói na memória do Eco. O que sobra é mais calmo — e mais distante.'},
+{r:'anc_veu_rel',nm:'VÉU DE ORDEM',cat:'r',origin:'anchor',col:'#8fd6ff',price:8,
+ tags:['defense','shield','stability'],ds:'Regeneração rápida e dano amortecido — ordem como armadura.',
+ stats:{regenMul:1.3,takenMul:.92,shMul:1.1},
+ desc:'Não é um escudo a mais: é a promessa de que nada o Eco não espera vai alcançá-lo.'},
+{r:'anc_lap_rel',nm:'LÁPIDE DO CICLO',cat:'r',origin:'anchor',col:'#8fd6ff',price:9,
+ tags:['economy','risk','survival'],ds:'Se o Eco cair, os Resíduos dele são reaproveitados pela Âncora.',
+ fx:'lapide',
+ desc:'A Âncora não chora os Ecos — os arquiva. Até o fim de uma assinatura vira material de manutenção.'},
+/* ============ OS REMANESCENTES (9) ============ */
+{n:'rem_res_core',nm:'NÚCLEO DE RESSONÂNCIA',cat:'n',origin:'remnants',col:'#7dffc4',price:7,
+ tags:['bond','offense'],ds:'Escala com a confiança do vínculo; confiança cresce mais fácil.',
+ stats:{dmgMul:1.04,trustGainMul:1.15,disMul:.95},
+ dyn:{kind:'trust',amt:.22},
+ desc:'Um núcleo que aprende com o vínculo: quanto mais o Eco confia, mais ele rende.'},
+{n:'rem_vin_core',nm:'NÚCLEO DE VÍNCULO',cat:'n',origin:'remnants',col:'#7dffc4',price:7,
+ tags:['bond','defense','survival'],ds:'Durável e dedicado; leve queda de dano em troca de proteção.',
+ stats:{hpMul:1.14,takenMul:.9,trustGainMul:1.2,dmgMul:.98},
+ desc:'Feito para Eco que prefere voltar para casa inteiro a vencer sozinho.'},
+{n:'rem_aut_core',nm:'NÚCLEO DE AUTONOMIA',cat:'n',origin:'remnants',col:'#7dffc4',price:7,
+ tags:['offense','bond','risk'],ds:'Mais forte e rápido quando age por conta própria — com atrito relacional.',
+ stats:{dmgMul:1.13,hpMul:1.1,rateMul:1.06,trustLossMul:1.2,disMul:1.1},
+ desc:'Os Remanescentes criam Ecos para serem eles mesmos — mesmo quando isso irrita o operador.'},
+{p:'rem_guard_prot',nm:'PROTOCOLO DE GUARDA RECÍPROCA',cat:'p',origin:'remnants',col:'#7dffc4',price:7,
+ tags:['bond','defense','support'],ds:'Quando você sangra, o Eco fecha a guarda e o círculo.',
+ beh:{prio:'guard',rr:.6,guard:1},
+ stats:{dmgMul:1.03,takenMul:.95},
+ dyn:{kind:'guard',amt:.16},
+ desc:'Nenhum dos dois cai sozinho: a regra mais antiga dos Remanescentes.'},
+{p:'rem_rev_prot',nm:'PROTOCOLO DE REVIGOR',cat:'p',origin:'remnants',col:'#7dffc4',price:6,
+ tags:['support','bond','survival'],ds:'Abates perto de você devolvem vida e confiança ao vínculo.',
+ beh:{prio:'guard'},
+ fx:'revigor',
+ stats:{hpMul:1.06},
+ desc:'O Eco luta onde você luta — e cada inimigo caído junto vira fôlego para os dois.'},
+{p:'rem_rei_prot',nm:'PROTOCOLO DE REINTEGRAÇÃO',cat:'p',origin:'remnants',col:'#7dffc4',price:7,
+ tags:['bond','stability'],ds:'Rupturas cicatrizam mais rápido e aproximam o Eco de novo.',
+ fx:'reintegracao',stats:{disMul:.9,trustLossMul:.85},
+ desc:'Depois da Dissonância, o caminho de volta não precisa ser solitário.'},
+{r:'rem_ult_rel',nm:'ÚLTIMA MEMÓRIA',cat:'r',origin:'remnants',col:'#7dffc4',price:9,
+ tags:['bond','support','survival'],ds:'Abates seus perto do Eco curam vocês dois (limitado por onda).',
+ fx:'ultimaMemoria',
+ desc:'A última memória que o Eco carrega é a sua melhor versão. Ele luta para os dois chegarem lá.'},
+{r:'rem_vin_rel',nm:'VÍNCULO RECÍPROCO',cat:'r',origin:'remnants',col:'#7dffc4',price:10,
+ tags:['bond','defense','support'],ds:'Escudos se emprestam: quem sangra recebe do outro.',
+ fx:'vinculoReciproco',
+ desc:'A relíquia que transforma dois escudos num só — escala com a força da relação.'},
+{r:'rem_prim_rel',nm:'PRIMEIRO CICLO',cat:'r',origin:'remnants',col:'#7dffc4',price:8,
+ tags:['bond','stability'],ds:'Conter uma ruptura vira um recomeço: confiança renovada.',
+ fx:'primeiroCiclo',
+ desc:'Todo Eco tem um primeiro ciclo em que alguém acreditou nele. Esta relíquia o reencena.'},
+/* ============ O CONSÓRCIO (9) ============ */
+{n:'con_ext_core',nm:'NÚCLEO DE EXTRAÇÃO',cat:'n',origin:'consortium',col:'#ffd166',price:7,
+ tags:['economy','offense','risk'],ds:'Dano extra e coleta de Resíduos; o Eco leva mais dano.',
+ stats:{dmgMul:1.16,rateMul:1.06,takenMul:1.08},
+ fx:'extracao',
+ desc:'Equipamento de mineração adaptado: o que o Eco derruba, o Consórcio reaproveita.'},
+{n:'con_sob_core',nm:'NÚCLEO DE SOBRECARGA',cat:'n',origin:'consortium',col:'#ffd166',price:8,
+ tags:['offense','risk','bond'],ds:'Muito dano e cadência; o vínculo paga a fatura.',
+ stats:{dmgMul:1.3,rateMul:1.1,trustLossMul:1.35,disMul:1.15},
+ desc:'Cláusula de sobrecarga: o Eco rende além da especificação, e a relação é o colateral.'},
+{n:'con_cap_core',nm:'NÚCLEO DE CAPITAL',cat:'n',origin:'consortium',col:'#ffd166',price:7,
+ tags:['economy','defense','survival'],ds:'Chassis blindado que preserva o investimento; dano menor.',
+ stats:{hpMul:1.18,shMul:1.22,regenMul:1.2,dmgMul:.94},
+ desc:'Um ativo bem mantido valoriza. O Consórcio cuida do que tem contrato.'},
+{p:'con_col_prot',nm:'PROTOCOLO DE COLETA',cat:'p',origin:'consortium',col:'#ffd166',price:6,
+ tags:['economy','hunt'],ds:'Abates do Eco geram Resíduos (Elites garantem; limite por onda).',
+ fx:'coleta',beh:{prio:'lowhp'},
+ desc:'Colete primeiro, contabilize depois. A onda é um depósito a céu aberto.'},
+{p:'con_ava_prot',nm:'PROTOCOLO DE AVALIAÇÃO',cat:'p',origin:'consortium',col:'#ffd166',price:7,
+ tags:['economy','hunt','offense'],ds:'Caça alvos com recompensa marcada e Elites valiosos.',
+ beh:{prio:'bounty'},
+ stats:{dmgMul:1.08,rangeMul:1.05},
+ desc:'O Eco aprendeu a ler etiqueta de preço antes de atirar.'},
+{p:'con_pre_prot',nm:'PROTOCOLO DE PRECIFICAÇÃO',cat:'p',origin:'consortium',col:'#ffd166',price:6,
+ tags:['economy','offense','risk'],ds:'Precisão fria a distância; cada tiro tem custo relacional.',
+ stats:{rangeMul:1.16,critA:.05,dmgMul:1.06,trustGainMul:.9},
+ beh:{prio:'ranged'},
+ desc:'Tudo tem preço — inclusive a munição emocional do vínculo.'},
+{r:'con_rec_rel',nm:'CONTRATO DE RECUPERAÇÃO',cat:'r',origin:'consortium',col:'#ffd166',price:9,
+ tags:['economy','bond','risk'],ds:'Cada Resíduo coletado cobra um pouco da confiança.',
+ fx:'contratoRecuperacao',
+ desc:'O Consórcio financia a campanha do Eco. O vínculo assina como fiador.'},
+{r:'con_bem_rel',nm:'BENS PENHORADOS',cat:'r',origin:'consortium',col:'#ffd166',price:8,
+ tags:['economy','risk'],ds:'Sobreviver até a próxima loja rende Resíduos do Consórcio.',
+ fx:'bensPenhorados',
+ desc:'O Eco é o colateral e o dividendo: se chega inteiro à loja, o Consórcio paga o prêmio.'},
+{r:'con_aco_rel',nm:'AÇÕES DA FRATURA',cat:'r',origin:'consortium',col:'#ffd166',price:10,
+ tags:['economy','hunt'],ds:'Derrubar um Arauto com o Eco em campo rende Resíduos e valorização.',
+ fx:'acoesFratura',
+ desc:'Cada Arauto destruído com o ativo em operação sobe as ações — e o seu saldo.'},
+/* ============ OS DESVIADOS (9) ============ */
+{n:'dev_dis_core',nm:'NÚCLEO DISSONANTE',cat:'n',origin:'deviants',col:'#ff4df0',price:7,
+ tags:['dissonance','offense','risk'],ds:'Cresce com a pressão de Dissonância; também a alimenta.',
+ stats:{dmgMul:1.06,disMul:1.3},
+ dyn:{kind:'dis',amt:.3},
+ desc:'Um núcleo que aprendeu a beber da própria instabilidade. Os Desviados adoram.'},
+{n:'dev_fra_core',nm:'NÚCLEO DE FRATURA',cat:'n',origin:'deviants',col:'#ff4df0',price:7,
+ tags:['dissonance','offense','risk'],ds:'Cadência e área violentas; o Eco absorve mais dano.',
+ stats:{rateMul:1.18,aoeMul:1.12,takenMul:1.12,disMul:1.1},
+ desc:'Abrir fogo é abrir fenda: o dano em área do Eco tem assinatura Desviada.'},
+{n:'dev_ano_core',nm:'NÚCLEO ANÔMALO',cat:'n',origin:'deviants',col:'#ff4df0',price:7,
+ tags:['dissonance','offense','risk'],ds:'Sólido no caos; brilha enquanto o sinal oscila.',
+ stats:{hpMul:1.1,dmgMul:1.1,disMul:1.2},
+ dyn:{kind:'unstable',amt:.18},
+ desc:'Projetado para operar melhor exatamente quando não deveria operar.'},
+{p:'dev_fr_prot',nm:'PROTOCOLO DE FRATURA',cat:'p',origin:'deviants',col:'#ff4df0',price:6,
+ tags:['dissonance','hunt','offense'],ds:'Caça o mais fraco e fecha a distância; nada de piedade.',
+ beh:{prio:'lowhp',rr:.8},
+ stats:{dmgMul:1.12,takenMul:1.1},
+ desc:'A fratura não escolhe alvo: escolhe o lado que já está cedendo.'},
+{p:'dev_co_prot',nm:'PROTOCOLO DE COLAPSO',cat:'p',origin:'deviants',col:'#ff4df0',price:7,
+ tags:['dissonance','offense','risk'],ds:'Ferido, o Eco fica mais perigoso — e menos cuidadoso.',
+ beh:{prio:'lowhp',rr:.85},
+ dyn:{kind:'lowHp',amt:.2},
+ stats:{rateMul:1.05,disMul:1.15},
+ desc:'Colapsos não são o fim: são o formato final da transformação.'},
+{p:'dev_des_prot',nm:'PROTOCOLO DE DESVIO',cat:'p',origin:'deviants',col:'#ff4df0',price:7,
+ tags:['dissonance','offense'],ds:'Persegue atiradores e anomalias; projéteis mais rápidos.',
+ beh:{prio:'ranged',range:1.1},
+ stats:{projMul:1.16,dmgMul:1.05,disMul:1.05},
+ desc:'O que voa também pode ser desviado do curso original.'},
+{r:'dev_cor_rel',nm:'CORAÇÃO IMPOSSÍVEL',cat:'r',origin:'deviants',col:'#ff4df0',price:10,
+ tags:['dissonance','offense','risk'],ds:'Quanto maior a pressão, mais forte o batimento. Com teto.',
+ stats:{dmgMul:1.04,disMul:1.25},
+ dyn:{kind:'dis',amt:.35},
+ desc:'Um coração que não deveria existir, batendo na frequência da ruptura.'},
+{r:'dev_mas_rel',nm:'MÁSCARA DA FRATURA',cat:'r',origin:'deviants',col:'#ff4df0',price:9,
+ tags:['dissonance','offense'],ds:'Enquanto o sinal oscila, o Eco ganha dano e cadência.',
+ dyn:{kind:'unstable',amt:.2},
+ fx:'mascaraFratura',
+ stats:{rateMul:1.06,disMul:1.2},
+ desc:'Usar a própria instabilidade como máscara: quem olha não sabe quem atira.'},
+{r:'dev_nas_rel',nm:'NASCIMENTO DUPLO',cat:'r',origin:'deviants',col:'#ff4df0',price:10,
+ tags:['dissonance','offense','risk'],ds:'Cada ruptura superada deixa o Eco mais forte (2x, esta run).',
+ fx:'nascimentoDuplo',
+ stats:{disMul:1.3},
+ desc:'Morrer uma vez foi o ensaio. Os Desviados querem ver a segunda versão.'},
+{r:'con_sob_rel',nm:'CONTRATO DE SOBRECARGA',cat:'r',origin:'consortium',col:'#ffd166',price:10,
+ tags:['offense','risk','economy'],
+ ds:'Potência sob contrato: +dano e +cadência enquanto o vínculo estiver solvente. Ganhos de confiança rendem menos e a Dissonância cresce mais rápido.',
+ condDs:'CLÁUSULA DE SOLVÊNCIA: o bônus é suspenso em ruptura (HOSTIL/FRATURANDO/RECUPERAÇÃO) ou com confiança abaixo de 25 — quebrar o ativo não paga.',
+ cond(e){return !!e&&echoAllied(e)&&(e.trust||0)>=25;},
+ stats:{dmgMul:1.18,rateMul:1.1,trustGainMul:.72,disMul:1.12},
+ desc:'Papel assinado com tinta de extração: o Eco entrega o que tem de mais íntimo — a própria confiança — em troca de fogo. A cláusula 9 proíbe lucrar com a própria queda.'}
+];
+/* cada item carrega o id no PRÓPRIO campo de categoria ({n:'x'} ⇒ id 'x') —
+   materializa it.id para TODA a API usar a mesma fonte echoeq:<origem>:<id> */
+for(const it of ECHO_EQUIP)
+  if(it.id==null)it.id=it.n!=null?it.n:(it.p!=null?it.p:it.r);
+const ECHO_EQ_BY_ID={};
+for(const it of ECHO_EQUIP)ECHO_EQ_BY_ID[it.id]=it;
+function echoEqById(id){return id!=null?ECHO_EQ_BY_ID[id]||null:null;}
+function echoEqLiveDef(e,slot){
+  const id=(slot==='n')?e.eqNucleo:(slot==='p')?e.eqProto:e.eqRelic;
+  return echoEqById(id);
+}
+/* ---------------- base imutável + refresh ---------------- */
+function echoEqDefaults(){
+  return {hpMul:1,shMul:1,regenMul:1,dmgMul:1,rateMul:1,critA:0,pierceA:0,
+    aoeMul:1,rangeMul:1,projMul:1,takenMul:1,trustGainMul:1,trustLossMul:1,disMul:1};
+}
+function echoEqCapReset(e){
+  if(!e||!e.eqCaps)return false;
+  const c=e.eqCaps;
+  if(c.wave===(wave|0))return false;
+  c.wave=wave|0;c.coleta=0;c.revigor=0;c.ultima=0;c.contrato=0;c.contain=0;c.mascara=0;
+  return true;
+}
+function echoEqInit(e){
+  if(!e)return;
+  /* §18 anti-drift: eqBase só é capturado quando ainda não existe. Um echo
+     recriado chega com o chassis puro; re-init com equipamento vivo NUNCA
+     recaptura stats já modificados como novo baseline. */
+  if(!e.eqBase){
+    e.eqBase={hp:e.maxHp||100,sh:e.shieldMax||0,reg:e.shieldRegen||0,mul:e.mul||1,
+      crit:e.crit||0,critMul:e.critMul||1.8,pierce:e.pierce||0,
+      aoe:e.aoeMul||1,range:e.rangeMul||1,proj:e.projSpdMul||1};
+  }
+  if(!e.eqCaps)e.eqCaps={wave:0,coleta:0,revigor:0,ultima:0,contrato:0,contain:0,mascara:0};
+  if(!e.eqBoost)e.eqBoost={dmgMul:1,rateMul:1,hpMul:1,shMul:1,regenMul:1,takenMul:1,disMul:1};
+  echoEqRefresh(e);
+}
+function echoEqRefresh(e){
+  if(!e||!e.eqBase)return;
+  const fx=echoEqDefaults();
+  const MUL=['hpMul','shMul','regenMul','dmgMul','rateMul','aoeMul','rangeMul','projMul','takenMul','trustGainMul','trustLossMul','disMul'];
+  const ADD=['critA','pierceA'];
+  const slots=['n','p','r'];
+  for(const sl of slots){
+    const def=echoEqLiveDef(e,sl);
+    if(!def||!def.stats)continue;
+    if(typeof def.cond==='function'&&!def.cond(e))continue; // cláusulas condicionais (ex.: CONTRATO DE SOBRECARGA)
+    const st=def.stats;
+    for(const k of MUL)if(st[k]!=null)fx[k]*=+st[k]||1;
+    for(const k of ADD)if(st[k]!=null)fx[k]+=+st[k]||0;
+  }
+  /* reforços persistentes da run (ofertas/eventos/relíquias) — nunca acumulam */
+  const bst=e.eqBoost||(e.eqBoost={dmgMul:1,rateMul:1,hpMul:1,shMul:1,regenMul:1,takenMul:1,disMul:1});
+  fx.dmgMul*=bst.dmgMul;fx.rateMul*=bst.rateMul;fx.hpMul*=bst.hpMul;
+  fx.shMul*=bst.shMul;fx.regenMul*=bst.regenMul;fx.takenMul*=bst.takenMul;fx.disMul*=bst.disMul;
+  e.eqFx=fx;
+  /* espelho no fracRun.eq[i].b → checkpoint fiel no Continue (§75) */
+  if(fracRun&&e.slot>=1&&e.slot<=2&&fracRun.eq&&fracRun.eq[e.slot-1]){
+    fracRun.eq[e.slot-1].b=Object.assign({dmgMul:1,rateMul:1,hpMul:1,shMul:1,
+      regenMul:1,takenMul:1,disMul:1},bst);}
+  const b=e.eqBase;
+  e.maxHp=Math.max(1,Math.round(b.hp*fx.hpMul));
+  e.hp=Math.min(e.hp,e.maxHp);
+  if(b.sh>0){
+    e.shieldMax=Math.round(b.sh*fx.shMul);
+    e.shieldRegen=Math.max(0,(b.reg||0)*fx.regenMul);
+    e.shield=Math.min(e.shield,e.shieldMax);
+  }
+  e.mul=Math.max(.1,b.mul*fx.dmgMul);
+  e.crit=clamp((b.crit||0)+fx.critA,0,.9);
+  e.critMul=Math.max(1,b.critMul||1.8);
+  e.pierce=Math.max(0,(b.pierce||0)+fx.pierceA);
+  e.aoeMul=Math.max(.2,(b.aoe||1)*fx.aoeMul);
+  e.rangeMul=Math.max(.2,(b.range||1)*fx.rangeMul);
+  e.projSpdMul=Math.max(.2,(b.proj||1)*fx.projMul);
+}
+/* multiplicador dinâmico por equipamento (dyn) — lido no momento do dano */
+function echoEqDynMul(e){
+  if(!e||!e.eqFx)return 1;
+  let m=1;
+  for(const sl of ['n','p','r']){
+    const def=echoEqLiveDef(e,sl);
+    if(!def||!def.dyn)continue;
+    const d=def.dyn;
+    let amt=0;
+    if(d.kind==='trust')amt=d.amt*clamp((e.trust||0)/100,0,1);
+    else if(d.kind==='dis')amt=d.amt*relPressurePct(e);
+    else if(d.kind==='lowHp'&&e.maxHp>0&&e.hp/e.maxHp<=.4)amt=d.amt;
+    else if(d.kind==='guard'&&player&&player.maxHp>0&&player.hp/player.maxHp<=.45)amt=d.amt;
+    else if(d.kind==='unstable'&&e.dis&&e.dis.st==='unstable')amt=d.amt;
+    m+=amt;
+  }
+  return Math.max(.2,m);
+}
+function echoEqRangeMul(e){
+  let m=(e&&e.eqFx)?e.eqFx.rangeMul:1;
+  for(const sl of ['n','p','r']){
+    const def=echoEqLiveDef(e,sl);
+    if(def&&def.beh&&def.beh.range)m*=def.beh.range;
+  }
+  return Math.max(.2,m);
+}
+function echoEqRateMul(e){return (e&&e.eqFx)?Math.max(.2,e.eqFx.rateMul):1;}
+function echoEqOrbitMul(e){
+  let m=1;
+  for(const sl of ['n','p','r']){
+    const def=echoEqLiveDef(e,sl);
+    if(def&&def.beh&&def.beh.rr)m*=def.beh.rr;
+  }
+  return Math.max(.3,m);
+}
+function echoEqBeh(e){
+  const o={prio:null,guard:false};
+  for(const sl of ['n','p','r']){
+    const def=echoEqLiveDef(e,sl);
+    if(def&&def.beh){
+      if(def.beh.prio&&!o.prio)o.prio=def.beh.prio;
+      if(def.beh.guard)o.guard=true;
+    }
+  }
+  return o;
+}
+/* ---------------- prioridade de alvo (protocolos) ---------------- */
+function eqScoreFor(e,en){
+  let s=dist2(e.x,e.y,en.x,en.y);
+  if(en.tgtRef===player)s*=.28;                 // base: quem ataca VOCÊ
+  const b=e.pers?e.pers.bias:null;
+  if(b)s*=persBiasMul(b,en,s);
+  return s;
+}
+function eqPrioTarget(e,range){
+  const beh=echoEqBeh(e);
+  if(!beh.prio)return null;
+  const maxD=range*range*2.2;
+  let best=null,bd=maxD+1;
+  for(const en of enemies){
+    if(en.dead||en.spawnT>0)continue;
+    const d2=dist2(e.x,e.y,en.x,en.y);
+    if(d2>maxD)continue;
+    let ok=false;
+    if(beh.prio==='lowhp')ok=en.maxHp>0&&en.hp/en.maxHp<=.35;
+    else if(beh.prio==='elite')ok=!!(en.elite||en.miniboss||en.type==='boss'||en.hp>=1000);
+    else if(beh.prio==='ranged')ok=en.type==='shooter'||en.type==='orbiter'||en.type==='anomaly';
+    else if(beh.prio==='sentinel'||beh.prio==='guard'){
+      const dp=dist2(en.x,en.y,player.x,player.y);
+      ok=dp<=265*265;
+    }else if(beh.prio==='bounty')ok=!!((en.bounty|0)||(en.hunterBounty|0)||(en.cobradorBounty|0)||en.elite);
+    if(ok&&d2<bd){bd=d2;best=en;}
+  }
+  if(best)return best;
+  /* fallback: alvo mais próximo padrão */
+  return null;
+}
+/* ---------------- gatilhos de equipamento ---------------- */
+/* ---------------- Personalidade ↔ tags (matriz leve) ----------------
+   Identidade do Echo modula o ENTUSIASMO por equipar tecnologia — nunca
+   vira facção (um AGRESSIVO não é "Desviado" por gostar de risco). A
+   matriz alimenta a reação contextual de equipar e a dica da loja. */
+const EQ_PERS_TAGS={
+  /* §11: cada personalidade tem tags PREFERIDAS (+2), TOLERADAS (+1) e
+     CONFLITANTES (−2) — quando apropriado. A matriz NUNCA bloqueia
+     equipamento (§12): só modula entusiasmo, reação e sinergia. */
+  aggressive:{prefer:['offense','hunt','risk'],tol:['elite','mobility'],conf:['defense','shield','stability']},
+  cautious:{prefer:['defense','stability','control'],tol:['survival','shield'],conf:['risk','dissonance','offense']},
+  precise:{prefer:['hunt','control','offense'],tol:['precision','elite'],conf:['risk','dissonance']},
+  impulsive:{prefer:['risk','offense','economy'],tol:['dissonance','hunt'],conf:['stability','control']},
+  resilient:{prefer:['shield','survival','defense'],tol:['support','stability'],conf:['risk','dissonance']},
+  opportunist:{prefer:['economy','risk','hunt'],tol:['offense','elite'],conf:['stability','bond']},
+  versatile:null,                  // sem viés: curiosidade, não indiferença
+  fragmented:{prefer:['dissonance','risk'],tol:['offense','hunt'],conf:['stability','control']}
+};
+function eqPersId(e){return e?(e.pers&&e.pers.id)||(e.ps&&e.ps.id)||null:null;}
+function eqTagPref(e,it){
+  if(!e||!it)return 0;
+  const pid=eqPersId(e);
+  const M=pid?EQ_PERS_TAGS[pid]:null;
+  if(!M)return 0;
+  let v=0;
+  const tags=it.tags||[];
+  for(const t of tags){
+    if((M.prefer||[]).indexOf(t)>=0)v+=2;
+    if((M.tol||[]).indexOf(t)>=0)v+=1;
+    if((M.conf||[]).indexOf(t)>=0)v-=2;
+  }
+  if(v===0&&pid==='fragmented'&&it.origin==='deviants')v=1;  // cúmplice, não seguidor
+  if(v===0&&pid==='versatile'&&it.cat==='r')v=1;             // VERSÁTIL gosta de história
+  return v;
+}
+function eqReactionOnce(e,it){
+  /* reação contextual de equipar: uma linha por Echo por onda, com o
+     caminho REAL de fala (cooldown interno anti-spam). Reagir NUNCA
+     bloqueia o equipamento (§12) — só comenta a escolha. */
+  if(!e||!it)return;
+  const v=eqTagPref(e,it);
+  const pid=eqPersId(e);
+  const key='_eqReactionW';
+  if(e[key]===(wave|0))return;            // 1 por onda: nada de spam
+  e[key]=wave|0;
+  if(typeof echoSpeak!=='function')return;
+  const fname=it.origin==='neutral'?null:((FRACTION_BY_ID[it.origin]||{}).nm||null);
+  const org=fname?(' DE '+fname.toUpperCase()):'';
+  const live=(typeof liveEchoesForEvents==='function')?liveEchoesForEvents():[];
+  if(live.indexOf(e)<0)return;
+  /* vozes por personalidade: falas curtas e variadas por faixa de sinergia */
+  const LINES={
+    aggressive:{hi:['FINALMENTE.','ISSO SIM. MUNIÇÃO.','EU APRENDO RÁPIDO.'],
+      lo:['...FRÁGIL.','ISSO NOS TRAVA.','DEFESA É PARA QUEM NÃO ATACA.']},
+    cautious:{hi:['ACEITÁVEL — COM MARGEM DE FUGA.','PROTEÇÃO BEM-VINDA.','PLANO B PRESERVADO.'],
+      lo:['ISSO VAI NOS COLOCAR PERTO DEMAIS.','RISCO NÃO CALCULADO.','EU REGISTREI MEU VETO.']},
+    precise:{hi:['PARÂMETROS ACEITÁVEIS.','TOLERÂNCIA DENTRO DO ESPERADO.','BOA GEOMETRIA.'],
+      lo:['DESALINHADO.','VARIÁVEL NÃO MENSURADA.','ISSO INJETA RUÍDO.']},
+    impulsive:{hi:['AGORA!','QUERO VER ISSO ACENDIDO.','DEPOIS A GENTE PESA AS CONSEQUÊNCIAS.'],
+      lo:['MUITA REGRA.','ISSO PEDE PERMISSÃO.']},
+    resilient:{hi:['ISSO AGUENTA.','BOM. EU AGUENTO MAIS.','QUE VENHA O PRÓXIMO GOLPE.'],
+      lo:['FRÁGIL DEMAIS PARA MIM.','NÃO QUERO ESCUDOS DE PAPEL.']},
+    opportunist:{hi:['QUANTO CUSTA O PRÓXIMO?','BOM NEGÓCIO.','O RETORNO JUSTIFICA.'],
+      lo:['SEM RETORNO.','ISSO NÃO VALORIZA.']},
+    fragmented:{hi:['EU... CONHEÇO ISSO.','ISSO JÁ FOI MEU.','MAIS UMA PEÇA DO QUE EU ERA.'],
+      lo:['NÃO É ASSIM QUE SE LEMBRA.','ISSO APAGA ALGO.']},
+    versatile:{hi:['CURIOSO. VAMOS VER.','NOVO. EU GOSTO DE NOVO.','O QUE ISSO MUDA EM MIM?'],
+      lo:['...DISPENSÁVEL.','JÁ VI ESSE PADRÃO.']}
+  };
+  const P=LINES[pid];
+  const pick=a=>a&&a.length?((typeof randi==='function')?a[randi(0,a.length-1)]:a[0]):null;
+  if(v>=4){if(P&&P.hi){echoSpeak(e,pick(P.hi),'#8ff6ff');}else echoSpeak(e,'SINCRONIA COM '+EQ_CAT[it.cat].lab+org,'#8ff6ff');return;}
+  if(v<=-2){if(P&&P.lo){echoSpeak(e,pick(P.lo),'#ff8095');}else echoSpeak(e,'ISTO NÃO É '+(pid?pid.toUpperCase():'EU')+org,'#ff8095');return;}
+  if(v>=2){echoSpeak(e,'TECNOLOGIA '+EQ_CAT[it.cat].lab.toUpperCase()+org+' ACEITA','#c9a9ff');return;}
+  if(pid==='fragmented'){echoSpeak(e,'REGISTRO '+EQ_CAT[it.cat].lab.toUpperCase()+org+' INCORPORADO','#ff4df0');return;}
+  if(it.origin==='deviants'){echoSpeak(e,'...ISSO MUDA O QUE EU SOU'+org,'#ff4df0');return;}
+  if(it.origin==='anchor'&&it.cat==='r'){echoSpeak(e,'MEMÓRIA SELADA RECONHECIDA','#8fd6ff');return;}
+  if(it.origin==='remnants'&&it.cat==='r'){echoSpeak(e,'ESTA RELÍQUIA LEMBRA DE MIM','#7dffc4');return;}
+}
+
+const EQ_FX_HANDLERS={
+  /* Remanescentes */
+  revigor(e,def,pl){
+    /* abate do JOGADOR perto do Eco → cura + confiança leve (cap por onda) */
+    const t=pl&&pl.target;
+    if(!(t&&dist2(e.x,e.y,t.x,t.y)<=240*240))return;
+    if(!echoEqCapReset(e)){if((e.eqCaps.revigor|0)>=6)return;}
+    e.eqCaps.revigor=(e.eqCaps.revigor|0)+1;
+    const rel=echoRelState(e);
+    const heal=2+Math.max(0,Math.floor((rel.min||40)/40));
+    if(player){player.hp=Math.min(player.maxHp,player.hp+heal);}
+    changeEchoTrust(e,1,'eq_revigor');
+  },
+  ultimaMemoria(e,def,pl){
+    const t=pl&&pl.target;
+    if(!(t&&dist2(e.x,e.y,t.x,t.y)<=240*240))return;
+    if(!echoEqCapReset(e)){if((e.eqCaps.ultima|0)>=3)return;}
+    e.eqCaps.ultima=(e.eqCaps.ultima|0)+1;
+    const rel=echoRelState(e);
+    const amt=3+Math.max(0,Math.floor((rel.min||40)/40));
+    if(player)player.hp=Math.min(player.maxHp,player.hp+amt);
+    e.hp=Math.min(e.maxHp,e.hp+amt);
+    spawnParticles(e.x,e.y,e.hue,4,120,.4,2.5);
+  },
+  reintegracao(e,def,pl){
+    /* após conter/recuperar ruptura: confiança volta mais rápido */
+    if(!echoEqCapReset(e)){if((e.eqCaps.contain|0)>=3)return;}
+    e.eqCaps.contain=(e.eqCaps.contain|0)+1;
+    changeEchoTrust(e,4,'eq_reintegracao');
+    spawnRing(e.x,e.y,'#7dffc4',6,110,.7);
+  },
+  primeiroCiclo(e,def,pl){
+    /* contém ruptura → recomeço do vínculo */
+    if(!echoEqCapReset(e)){if((e.eqCaps.contain|0)>=1)return;}
+    e.eqCaps.contain=(e.eqCaps.contain|0)+1;
+    changeEchoTrust(e,6,'eq_primeiro_ciclo');
+    spawnRing(e.x,e.y,'#7dffc4',8,140,.8);
+  },
+  vinculoReciproco(e,def,pl){
+    /* passivo por tick — implementado em echoEqTick */
+  },
+  /* Âncora */
+  memoriaSelada(e,def,pl){
+    /* a memória selada amortece o que a ruptura registra na relação
+       (estabilidade em troca de memória: o Eco esquece um pouco do rancor —
+       cap 1/onda; contexto = dissonanceStart, nunca compra de loja) */
+    if(!echoEqCapReset(e)){if((e.eqCaps.contain|0)>=1)return;}
+    e.eqCaps.contain=(e.eqCaps.contain|0)+1;
+    if(e.rel){
+      e.rel.rj=Math.max(0,(e.rel.rj|0)-2);
+      e.rel.last={t:'approve',r:'memoria_selada',v:1,at:Math.round((typeof runTime!=='undefined'?runTime:0)*10)/10};
+    }
+    spawnRing(e.x,e.y,'#8fd6ff',7,120,.8);
+  },
+  lapide(e,def,pl){
+    /* disparado na morte do Eco (damageEcho) */
+    const n=6+(fracRun?Math.floor(fracRun.res/3):0);
+    addResidues(Math.min(10,n),'eco_destruido_lapide',e.x,e.y);
+    if(player)player.hp=Math.min(player.maxHp,player.hp+8);
+  },
+  /* Consórcio */
+  extracao(e,def,pl){
+    /* abates do Eco podem render Resíduos */
+    if(!echoEqCapReset(e)){if((e.eqCaps.coleta|0)>=5)return;}
+    const en=pl&&pl.target;
+    if(en&&en.elite){addResidues(1,'eco_extracao_elite',e.x,e.y);e.eqCaps.coleta++;}
+  },
+  coleta(e,def,pl){
+    if(!echoEqCapReset(e)){if((e.eqCaps.coleta|0)>=4)return;}
+    const en=pl&&pl.target;
+    if(en&&en.elite){addResidues(1,'eco_coleta_elite',e.x,e.y);e.eqCaps.coleta++;}
+    else if(Math.random()<.25){addResidues(1,'eco_coleta',e.x,e.y);e.eqCaps.coleta++;}
+  },
+  contratoRecuperacao(e,def,pl){
+    /* resíduo por abate do Eco → cobra confiança; teto total por run */
+    if(!fracRun||(fracRun.cr|0)>=8)return;
+    if(!echoEqCapReset(e)){if((e.eqCaps.coleta|0)>=3)return;}
+    const en=pl&&pl.target;
+    if(en&&en.elite){addResidues(2,'eco_contrato_elite',e.x,e.y);e.eqCaps.coleta++;fracRun.cr=(fracRun.cr|0)+1;}
+    else if(Math.random()<.14){addResidues(1,'eco_contrato',e.x,e.y);e.eqCaps.coleta++;fracRun.cr=(fracRun.cr|0)+1;}
+    if(fracRun.cr<=8)changeEchoTrust(e,-1,'eq_contrato_custo');
+  },
+  bensPenhorados(e,def,pl){/* checado ao fechar a loja */},
+  acoesFratura(e,def,pl){
+    if(player)addResidues(8,'eco_acoes_arauto',player.x,player.y);
+  },
+  /* Desviados */
+  mascaraFratura(e,def,pl){
+    /* instabilidade vira fala: o rosto muda quando o controle cede (cap 1/onda) */
+    if(!echoEqCapReset(e)){if((e.eqCaps.mascara|0)>=1)return;}
+    e.eqCaps.mascara=(e.eqCaps.mascara|0)+1;
+    spawnRing(e.x,e.y,'#ff4df0',5,90,.5);
+    if(typeof echoSpeak==='function'&&typeof randi==='function'){
+      const L=['EU CONHEÇO ESTE ROSTO.','A MÁSCARA SORRI PRIMEIRO.','ISSO TAMBÉM SOU EU.'];
+      echoSpeak(e,L[randi(0,L.length-1)],'#ff4df0');
+    }
+  },
+  nascimentoDuplo(e,def,pl){
+    if(!fracRun||(fracRun.duoNasc|0)>=2)return;
+    fracRun.duoNasc=(fracRun.duoNasc|0)+1;
+    e.eqBoost=(e.eqBoost||{});e.eqBoost.dmgMul=(e.eqBoost.dmgMul||1)*1.1;
+    echoEqRefresh(e);
+    spawnRing(e.x,e.y,'#ff4df0',8,150,.9);
+    toast('O ECO RENASCEU · +10% DANO (×'+fracRun.duoNasc+')');
+  },
+  ultimoQuadro(e,def,pl){
+    if(!echoEqCapReset(e)){if((e.eqCaps.ultima|0)>=2)return;}
+    const en=pl&&pl.target;
+    if(!(en&&en.elite))return;
+    if(Math.random()<.35){
+      e.eqCaps.ultima++;
+      pickups.push({type:'med',x:player.x+rand(-20,20),y:player.y+rand(-20,20),
+        vx:rand(-40,40),vy:rand(-40,40),v:18,t:0});
+      spawnRing(player.x,player.y,'#7dffc4',5,90,.5);
+    }
+  }
+};
+function echoEqEmit(e,type,pl){
+  if(!e||!e.alive)return;
+  pl=pl||{};
+  /* §48: efeitos que entregam algo AO PLAYER (cura, resíduos, suporte) ficam
+     suspensos enquanto o Echo está em ruptura — um Echo hostil não buffa quem
+     ele está atacando. Eventos de ciclo da RUPTURA (contain/recover/disstart)
+     e de morte (death) continuam livres para disparar. */
+  const alliedGate=['pkill','ekill','ekillElite','miniboss','shopclose','tick',
+    'unstable','revive','misc'];
+  if(alliedGate.indexOf(type)>=0&&!echoAllied(e))return;
+  for(const sl of ['n','p','r']){
+    const def=echoEqLiveDef(e,sl);
+    if(!def)continue;
+    if(def.fx&&EQ_FX_HANDLERS[def.fx]&&type===def.fxType){
+      try{EQ_FX_HANDLERS[def.fx](e,def,pl);}catch(err){}
+    }
+    if(type==='equip'||type==='unequip'){/* reação do Eco tratada no shop */ }
+  }
+}
+/* mapeia fxType automaticamente: cada def.fx escuta um tipo (padrão: nome) */
+for(const it of ECHO_EQUIP){
+  if(it.fx){
+    const map={revigor:'pkill',ultimaMemoria:'pkill',reintegracao:'recover',
+      primeiroCiclo:'contain',vinculoReciproco:'tick',lapide:'death',
+      extracao:'ekill',coleta:'ekill',contratoRecuperacao:'ekill',
+      bensPenhorados:'shopclose',acoesFratura:'miniboss',
+      memoriaSelada:'disstart',mascaraFratura:'unstable',
+      nascimentoDuplo:'revive',ultimoQuadro:'ekillElite'};
+    it.fxType=map[it.fx]||'misc';
+  }
+}
+/* passivo por tick — Vínculo Recíproco (transferência de escudo) */
+function echoEqTick(e,dt){
+  if(!e||!e.alive||!echoAllied(e)||!player)return;
+  const relic=echoEqLiveDef(e,'r');
+  if(!(relic&&relic.fx==='vinculoReciproco'))return;
+  const rel=Math.max(0,echoRelScore(e)-20);         // escala com a relação
+  if(e.maxHp>0&&e.hp/e.maxHp<.30&&player.shield>0){
+    const give=Math.min(player.shield,Math.min(14*dt*(1+rel/140),e.shieldMax-e.shield));
+    if(give>1){player.shield-=give;e.shield=Math.min(e.shieldMax,e.shield+give);
+      spawnParticles(e.x,e.y,'#7dffc4',1,90,.2,2);}
+  }else if(player.maxHp>0&&player.hp/player.maxHp<.30&&e.shield>0){
+    const give=Math.min(e.shield,Math.min(12*dt*(1+rel/160),player.shieldMax-player.shield));
+    if(give>1){e.shield-=give;player.shield=Math.min(player.shieldMax,player.shield+give);
+      spawnParticles(player.x,player.y,'#7dffc4',1,90,.2,2);}
+  }
+}
+/* ==================== PR12·bloco p3.js ==================== */
+/* =====================================================================
+   PR 12 — LOJA TEMPORAL [ OPERADOR | ECHO ] + OFERTAS + REROLL TEMPORAL
+   --------------------------------------------------------------------- */
+let fracTab='op';            // aba ativa da Loja Temporal
+let fracEchoSel=0;           // Echo selecionado na aba ECHO
+let fracShopStock=[];        // estoque de equipamentos da visita
+let fracShopTouched=false;   // a aba ECHO já foi aberta nesta visita?
+/* ---------------- ofertas de facção (transmissões) ---------------- */
+const FRAC_OFFERS=[
+ {id:'anc_estabiliza',fid:'anchor',nm:'ESTABILIZAÇÃO DO VÍNCULO',w:3,
+  ds:'A Âncora pode apagar a instabilidade acumulada nos seus Ecos. Custo: <b>⧗8</b> — e um pouco do dano deles.',
+  price:8,coin:0,needAff:-20,
+  accept(){
+    let any=false;
+    for(const e of echoes){if(!e||!e.alive)continue;
+      if(e.dis&&e.dis.p>0){e.dis.p=Math.max(0,e.dis.p-(e.dis.p*.6));any=true;}
+      if(e.dis&&e.dis.st==='unstable')echoSetDis(e,'cooldown');
+      if(e.eqBoost){e.eqBoost.dmgMul=Math.max(.2,(e.eqBoost.dmgMul||1)*.96);echoEqRefresh(e);}
+    }
+    if(!any&&echoes.length)echoes.forEach(e=>{if(e&&e.eqBoost){e.eqBoost.dmgMul=Math.max(.2,(e.eqBoost.dmgMul||1)*.96);echoEqRefresh(e);}});
+    factionEmit('dissonance_resolved',{});
+    if(player){spawnRing(player.x,player.y,'#8fd6ff',10,180,.9);
+      banner('TRANSMISSÃO // A ÂNCORA','INSTABILIDADE CONTIDA · −6% DANO DOS ECOS');}
+  }},
+ {id:'anc_contracao',fid:'anchor',nm:'CONTRATO DE CONTENÇÃO',w:5,
+  ds:'Blindagem de contenção para os Ecos — eles cedem um pedaço da autonomia. Custo: <b>⧗6</b>.',
+  price:6,coin:0,needAff:5,
+  accept(){
+    let lost=false;
+    for(const e of echoes){if(!e||!e.alive)continue;
+      if(e.eqBoost){e.eqBoost.shMul=(e.eqBoost.shMul||1)*1.25;
+        e.eqBoost.dmgMul=Math.max(.2,(e.eqBoost.dmgMul||1)*.97);echoEqRefresh(e);}
+      if(!lost){changeEchoTrust(e,-2,'oferta_ancora');lost=true;}
+    }
+    factionEmit('echo_equipment_installed',{});
+    if(player)spawnRing(player.x,player.y,'#8fd6ff',8,140,.7);
+  }},
+ {id:'rem_recupera',fid:'remnants',nm:'RECUPERAÇÃO DE VÍNCULO',w:3,
+  ds:'Os Remanescentes reatam o laço com o Eco mais distante de você. Custo: <b>⧗6</b>.',
+  price:6,coin:0,needAff:-15,
+  accept(){
+    let worst=null;
+    for(const e of echoes)if(e&&e.alive&&(!worst||e.trust<worst.trust))worst=e;
+    if(worst){changeEchoTrust(worst,12,'oferta_remanescentes');
+      if(worst.rel&&worst.rel.mm&&worst.rel.mm.length)worst.rel.rj=Math.max(0,(worst.rel.rj||0)-4);
+      spawnRing(worst.x,worst.y,'#7dffc4',10,160,.9);
+      banner('TRANSMISSÃO // OS REMANESCENTES','"ELE LEMBRA DE VOCÊ. ISSO CONTA."');}
+    factionEmit('echo_saved',{});
+  }},
+ {id:'rem_refugio',fid:'remnants',nm:'REFÚGIO NO RUÍDO',w:6,
+  ds:'Um pulso de proteção: na próxima vez que um Eco cair, ele volta com 1 de vida (1x). Custo: <b>⧗7</b>.',
+  price:7,coin:0,needAff:15,
+  accept(){
+    fracRun.refugio=(fracRun.refugio|0)+1;
+    factionEmit('echo_protected',{});
+    if(player){banner('TRANSMISSÃO // OS REMANESCENTES','"O REFÚGIO GUARDA UMA VAGA PARA ELE."');
+      spawnRing(player.x,player.y,'#7dffc4',8,140,.7);}
+  }},
+ {id:'con_avalia',fid:'consortium',nm:'AVALIAÇÃO DE ATIVO',w:4,
+  ds:'O Consórcio adianta <b>⧗8</b>. Em troca, a confiança dos Ecos rende 20% menos até o fim da run.',
+  price:-8,coin:0,needAff:0,
+  accept(){
+    addResidues(8,'oferta_consorcio',player.x,player.y);
+    fracRun.conTax=1;
+    factionEmit('contract_accepted',{});
+    if(player)banner('TRANSMISSÃO // O CONSÓRCIO','"ADIANTAMENTO APROVADO. NÃO ATRASE O RELATÓRIO."');
+  }},
+ {id:'con_exp',fid:'consortium',nm:'TECNOLOGIA EXPERIMENTAL',w:5,
+  ds:'Reforço de mercado: <b>+12% dano e +8% cadência</b> nos Ecos; a Dissonância deles cresce 15% mais rápido. Custo: <b>⧗5 + ◈40</b>.',
+  price:5,coin:40,needAff:10,
+  accept(){
+    for(const e of echoes){if(!e||!e.alive)continue;
+      if(e.eqBoost){e.eqBoost.dmgMul=(e.eqBoost.dmgMul||1)*1.12;
+        e.eqBoost.rateMul=(e.eqBoost.rateMul||1)*1.08;echoEqRefresh(e);}}
+    factionEmit('contract_accepted',{});
+    if(player){spawnRing(player.x,player.y,'#ffd166',8,150,.8);
+      banner('TRANSMISSÃO // O CONSÓRCIO','"INSTALE COM CUIDADO. OU NÃO. O MERCADO ACEITA AMBOS."');}
+  }},
+ {id:'dev_fenda',fid:'deviants',nm:'ABRIR UMA FENDA',w:4,
+  ds:'Os Desviados forçam um vazamento temporal: <b>+⧗6 agora</b>. Todo Eco acumula 25 de pressão de Dissonância.',
+  price:-6,coin:0,needAff:0,
+  accept(){
+    addResidues(6,'oferta_desviados',player.x,player.y);
+    for(const e of echoes){if(!e||!e.alive)continue;relAddPressure(e,25);}
+    factionEmit('dissonance_encouraged',{});
+    if(player){banner('TRANSMISSÃO // OS DESVIADOS','"OUÇA. O TEMPO ESTÁ TENTANDO TE CONTAR ALGO."');
+      spawnRing(player.x,player.y,'#ff4df0',10,180,.9);}
+  }},
+ {id:'dev_transmuta',fid:'deviants',nm:'TRANSMUTAÇÃO',w:7,
+  ds:'Reescreve um Eco: <b>+15% dano, +10% vida</b>, Dissonância +20% mais rápida. O Eco perde 10 de confiança. Custo: <b>⧗6</b>.',
+  price:6,coin:0,needAff:20,
+  accept(){
+    const e=fracEchoSelLive()||echoes[0];
+    if(!e){toast('NENHUM ECO PARA TRANSMUTAR');return;}
+    if(e.eqBoost){e.eqBoost.dmgMul=(e.eqBoost.dmgMul||1)*1.15;
+      e.eqBoost.hpMul=(e.eqBoost.hpMul||1)*1.1;
+      e.eqBoost.disMul=(e.eqBoost.disMul||1)*1.2;echoEqRefresh(e);}
+    changeEchoTrust(e,-10,'oferta_desviados');
+    factionEmit('transformation_choice',{});
+    if(player){banner('TRANSMISSÃO // OS DESVIADOS','"ELE NÃO É MAIS QUEM ERA. PERFEITO."');
+      spawnRing(e.x,e.y,'#ff4df0',10,160,1);}
+  }}
+];
+function fracOffersOpen(){
+  const out=[];
+  if(!fracRun)return out;
+  for(const o of FRAC_OFFERS){
+    const st=fracRun.o[o.fid];
+    if(!st||st.n>0)continue;
+    if((wave|0)<o.w)continue;
+    if(!fracKnows(o.fid))continue;
+    if(fracRun.aff[o.fid]<(o.needAff||-99))continue;
+    out.push(o);
+  }
+  return out;
+}
+/* ---------------- SERVIÇOS TEMPORAIS (aba ECHO §32) ----------------
+   Serviços neutros da Loja Temporal: custam RESÍDUOS (⧗), nunca ◈. Compra
+   atômica (fracAcceptService): VALIDAR → PAGAR → APLICAR → REGISTRAR; se o
+   apply falhar, o gasto é estornado. Não exigem facção nem Echo quando o
+   efeito não depende de um. */
+const FRAC_SERVICES=[
+ {id:'serv_estabiliza',nm:'PULSO DE ESTABILIZAÇÃO',price:4,needEcho:true,
+  ds:'Dissipa 45% da pressão de Dissonância do Eco selecionado e o tira do estado INSTÁVEL.',
+  can(){
+    const e=fracEchoSelLive();
+    return !!(e&&e.alive&&e.dis&&(e.dis.p>0||e.dis.st==='unstable'));
+  },
+  reason(){return 'NENHUM ECO COM INSTABILIDADE ACUMULADA.';},
+  accept(){
+    const e=fracEchoSelLive();if(!e||!e.alive)return false;
+    if(e.dis){
+      let off=0;
+      if(typeof REL_BALANCE!=='undefined'&&REL_BALANCE.pressure)off=Math.max(0,(REL_BALANCE.pressure.unstableOff||0)-6);
+      e.dis.p=Math.max(0,Math.min(e.dis.p*.55,off===0?e.dis.p*.55:off));
+      if(e.dis.st==='unstable'&&typeof echoSetDis==='function'){try{echoSetDis(e,'stable');}catch(_e){}}
+      if(typeof spawnRing==='function')spawnRing(e.x,e.y,'#8ff6ff',8,120,.6);
+      if(typeof toast==='function')toast('PULSO APLICADO — PRESSÃO DISSIPADA EM ECHO·0'+e.slot);
+    }
+    return true;
+  }},
+ {id:'serv_limpeza',nm:'LIMPEZA TEMPORAL',price:8,needEcho:false,
+  ds:'Remove a CLÁUSULA DE AVALIAÇÃO do Consórcio (confiança rende 20% menos) e qualquer penalidade vital temporária do operador.',
+  can(){return !!fracRun&&((fracRun.conTax|0)>0||!!(player&&(player.tempPen|0)>0));},
+  reason(){return 'NENHUMA PENALIDADE TEMPORAL ATIVA NESTE MOMENTO.';},
+  accept(){
+    if(!fracRun)return false;
+    fracRun.conTax=0;
+    if(player&&(player.tempPen|0)>0){
+      player.maxHp+=player.tempPen;player.tempPen=0;player.tempT=0;
+      player.hp=Math.min(player.maxHp,player.hp);
+    }
+    if(typeof spawnRing==='function')spawnRing(player.x,player.y,'#e8fbff',10,160,.7);
+    if(typeof toast==='function')toast('REGISTROS LIMPOS — NENHUMA CLÁUSULA EM ABERTO');
+    return true;
+  }}
+];
+function fracServicesOpen(){return FRAC_SERVICES.slice();}
+function fracServiceById(id){for(const sv of FRAC_SERVICES)if(sv.id===id)return sv;return null;}
+function fracAcceptService(id){
+  const sv=fracServiceById(id);
+  if(!sv||!fracRun)return false;
+  let can=true;
+  if(typeof sv.can==='function'){try{can=!!sv.can();}catch(_e){can=false;}}
+  if(!can){if(typeof toast==='function')toast(sv.reason?sv.reason():'CONDIÇÃO NÃO ATENDIDA');return false;}
+  if(fracRun.res<sv.price){if(typeof toast==='function')toast('RESÍDUOS TEMPORAIS INSUFICIENTES ('+RES_SYM+sv.price+')');return false;}
+  if(!spendResidues(sv.price,'servico_'+sv.id))return false;
+  try{
+    const r=sv.accept?sv.accept():true;
+    if(r===false){addResidues(sv.price,'refund_servico_'+sv.id);return false;}
+  }catch(_e){
+    addResidues(sv.price,'refund_servico_'+sv.id);
+    if(typeof toast==='function')toast('FALHA NO SERVIÇO — NADA FOI COBRADO');
+    return false;
+  }
+  if(typeof AUDIO!=='undefined'&&AUDIO&&typeof AUDIO.ui==='function')AUDIO.ui(700);
+  checkpointShopPurchase();
+  renderShop();
+  return true;
+}
+/* ---------------- helpers de inventário / equipamento ---------------- */
+function fracOwnedIds(){
+  const out=(fracRun&&fracRun.es&&fracRun.es.inv?fracRun.es.inv.slice():[]);
+  if(fracRun)for(const s of fracRun.eq)for(const k of ['n','p','r'])if(s[k])out.push(s[k]);
+  return out;
+}
+function fracEchoSelLive(){
+  const i=fracEchoSel;
+  return echoes&&echoes[i]&&echoes[i].alive?echoes[i]:null;
+}
+function fracSetSel(i){
+  fracEchoSel=i|0;renderShop();
+}
+/* B6: emissão ÚNICA de reconhecimento de facção ao INSTALAR tecnologia
+   dela (relic_of_<fid> no grid). Chamada pelos DOIS caminhos reais de
+   instalação (compra com slot livre e painel do inventário) — nunca ao
+   guardar no inventário (só equipado de fato é um ato observado). */
+function fracRelicEmit(fid){
+  if(!fracRun||!fid)return false;
+  const ev=fid==='anchor'?'relic_of_anchor':fid==='remnants'?'relic_of_remnants':
+    fid==='consortium'?'relic_of_consortium':fid==='deviants'?'relic_of_deviants':null;
+  if(!ev)return false;
+  factionEmit(ev,{echo:fracEchoSelLive()||null});
+  return true;
+}
+function fracUnequip(cat){
+  if(!fracRun)return false;
+  const idx=fracEchoSel;if(!echoes[idx])return false;
+  const e=echoes[idx];
+  const slot=EQ_SLOT_KEY[cat];
+  const id=fracRun.eq[idx][slot];
+  if(!id)return false;
+  fracRun.es.inv.push(id);
+  fracRun.eq[idx][slot]=null;
+  if(slot==='n')e.eqNucleo=null;else if(slot==='p')e.eqProto=null;else e.eqRelic=null;
+  echoEqRefresh(e);
+  toast('EQUIPAMENTO GUARDADO NO INVENTÁRIO');
+  checkpointShopPurchase();
+  renderShop();
+  return true;
+}
+function fracEqCost(it){
+  if(!it)return 0;
+  let p=it.price|0;
+  if(!fracRun||it.origin==='neutral')return Math.max(1,p);
+  const st=fracStateOf(it.origin).id;
+  if(st==='aliada'||st==='favoravel')p-=1;          // sintonia: −1 (nunca grátis, nunca desconto extremo §41)
+  else if(st==='desconfiada'||st==='hostil')p+=1;   // hostil: sobretaxa — NÃO bloqueia a loja (§42)
+  return Math.max(1,p);
+}
+function fracPriceNote(it,cost){
+  if(!it||cost===it.price)return '';
+  return cost<it.price
+    ?' <span style="color:#7dffc4">(SINTONIA)</span>'
+    :' <span style="color:#ff8095">(REPULSA)</span>';
+}
+/* B6: implementação canônica de fracEqTipHTML vive em "UI — tip de
+   equipamento" (mais abaixo): rótulos pt-BR, origem com símbolo, tradução
+   de stats. Esta versão antiga foi removida — a duplicação sobrescrevia a
+   boa silenciosamente (última definição vence). */
+function fracServiceTip(sv){
+  return '<div style="font-family:Consolas,monospace;font-size:12px;line-height:1.85;color:#cfe9f7;max-width:430px">'+
+    '<div style="color:#cfe9f7">◇ SERVIÇO TEMPORAL — '+sv.nm+'</div>'+
+    '<div style="margin:6px 0">'+sv.ds+'</div>'+
+    '<div>CUSTO: '+RES_SYM+sv.price+' RESÍDUOS TEMPORAIS'+(sv.needEcho?' · EXIGE ECO SELECIONADO':'')+'</div></div>';
+}
+function fracBuyFromStock(itId){
+  const it=echoEqById(itId);
+  if(!it||!fracRun)return false;
+  /* anti-duplicação (§44/§46): só existe no estoque atual */
+  if(fracShopStock.indexOf(itId)<0){toast('ESTE ITEM NÃO ESTÁ MAIS NO ESTOQUE');return false;}
+  const sel=fracEchoSelLive();
+  if(!sel){toast('NENHUM ECHO ATIVO — EQUIPAMENTO EXIGE UM ECO');return false;}
+  const cost=fracEqCost(it);
+  if(fracRun.res<cost){toast('RESÍDUOS TEMPORAIS INSUFICIENTES ('+RES_SYM+cost+')');return false;}
+  /* transação atômica: VALIDAR → PAGAR → APLICAR → REGISTRAR (§47) */
+  if(!spendResidues(cost,'shop_equipamento_'+it.id))return false;
+  try{
+    const slot=EQ_SLOT_KEY[it.cat];
+    const s=fracRun.eq[sel.slot-1];
+    if(!s[slot]){
+      /* slot livre: equipa direto */
+      s[slot]=it.id;
+      if(slot==='n')sel.eqNucleo=it.id;else if(slot==='p')sel.eqProto=it.id;else sel.eqRelic=it.id;
+      echoEqRefresh(sel);
+      try{eqReactionOnce(sel,it);}catch(_e){}
+      /* B6: instalar tecnologia de uma facção é um ato que ela OBSERVA
+         (relic_of_* no grid) — dispara no momento real da instalação,
+         nunca na ida ao inventário (só equipado de fato reconhece). */
+      if(it.origin&&it.origin!=='neutral')try{fracRelicEmit(it.origin);}catch(_e){}
+      toast(it.nm+' INSTALADO EM ECHO·0'+sel.slot);AUDIO.levelUp();
+    }else{
+      /* slot ocupado: NUNCA sobrescreve em silêncio (§35) — vai ao inventário */
+      fracRun.es.inv.push(it.id);
+      toast(it.nm+' GUARDADO NO INVENTÁRIO (SLOT OCUPADO — TROQUE NO PAINEL)');
+    }
+  }catch(err){
+    addResidues(cost,'refund_shop_'+it.id);
+    toast('FALHA NA INSTALAÇÃO — NADA FOI COBRADO');
+    renderShop();
+    return false;
+  }
+  const si=fracShopStock.indexOf(it.id);
+  if(si>=0)fracShopStock.splice(si,1);
+  fracRun.es.stock=fracShopStock.slice();
+  checkpointShopPurchase();
+  renderShop();
+  return true;
+}
+/* equipa direto do INVENTÁRIO (painel de equipamento — sem custo) */
+function fracEquipFromInv(itId){
+  if(!fracRun)return false;
+  const it=echoEqById(itId);if(!it)return false;
+  const e=fracEchoSelLive();if(!e){toast('NENHUM ECHO ATIVO');return false;}
+  const li=fracRun.es.inv.indexOf(itId);
+  if(li<0)return false;
+  const slot=EQ_SLOT_KEY[it.cat];
+  const idx=e.slot-1;const s=fracRun.eq[idx];
+  if(s[slot]&&s[slot]!==itId)fracRun.es.inv.push(s[slot]);   // troca devolve o antigo
+  s[slot]=itId;
+  if(slot==='n')e.eqNucleo=itId;else if(slot==='p')e.eqProto=itId;else e.eqRelic=itId;
+  fracRun.es.inv.splice(li,1);
+  echoEqRefresh(e);
+  try{eqReactionOnce(e,it);}catch(_e){}
+  /* B6: instalar do inventário também é observado pela facção de origem */
+  if(it.origin&&it.origin!=='neutral')try{fracRelicEmit(it.origin);}catch(_e){}
+  toast(it.nm+' INSTALADO EM ECHO·0'+(idx+1));AUDIO.levelUp();
+  checkpointShopPurchase();
+  renderShop();
+  return true;
+}
+/* ---------------- estoque da aba ECHO ---------------- */
+function fracStockPool(){
+  const owned=fracOwnedIds();
+  const pool=ECHO_EQUIP.filter(it=>owned.indexOf(it.id)<0);
+  return pool;
+}
+function fracOriginWeight(it){
+  if(it.origin==='neutral')return 1.2;
+  const known=fracKnows(it.origin);
+  if(!known)return .5;
+  const st=fracStateOf(it.origin).id;
+  if(st==='aliada'||st==='favoravel')return 1.9;
+  if(st==='interessada'||st==='observando')return 1.3;
+  if(st==='hostil'||st==='desconfiada')return .6;
+  return 1;
+}
+function fracRollStock(){
+  fracShopStock=[];
+  if(fracRun)fracRun.es.stock=[];
+  const pool=fracStockPool();
+  const n=4;                                   // lote limitado de 4 (auditado §21)
+  const avail=pool.slice();
+  for(let i=0;i<n&&avail.length;i++){
+    let tot=0;const ws=[];
+    for(const it of avail){let w=fracOriginWeight(it);
+      if(it.price>(wave|0)+4)w*=.35;           // raridade implícita por onda
+      ws.push(w);tot+=w;}
+    let r=rand(0,tot);
+    let pick=avail[avail.length-1];
+    for(let j=0;j<avail.length;j++){if(r<=ws[j]){pick=avail[j];break;}r-=ws[j];}
+    fracShopStock.push(pick.id);
+    avail.splice(avail.indexOf(pick),1);
+  }
+  fracShopTouched=true;
+  if(fracRun){
+    fracRun.es.stock=fracShopStock.slice();
+    fracRun.es.stockWave=(wave|0);             // carimbo da onda: anti-exploit de reopen (§22)
+  }
+}
+/* =====================================================================
+   UI — barra de abas + aba ECHO
+   ===================================================================== */
+function fracTabBar(){
+  const el=document.getElementById('m-tabs');
+  if(!el)return;
+  el.innerHTML='';
+  const mk=(id,lab)=>{
+    const d=document.createElement('div');
+    d.className='mtab'+(fracTab===id?' on':'');
+    d.textContent=lab;
+    d.addEventListener('click',()=>{if(fracTab===id)return;
+      fracTab=id;AUDIO.ui(520);renderShop();});
+    el.appendChild(d);
+  };
+  mk('op','OPERADOR');mk('echo','ECHO');
+}
+function renderShop(){
+  const el=document.getElementById('m-tabs');
+  if(el)el.style.display='flex';
+  fracTabBar();
+  if(fracTab==='echo')renderShopEcho();
+  else renderShopOp();
+}
+function fracEchoHeaderHTML(){
+  let s='<div style="font-family:Consolas,monospace;font-size:12px;letter-spacing:.1em;line-height:1.9">';
+  if(!echoes.length)s+='<span style="color:#9db8c8">NENHUM ECHO ATIVO — ESTA RUN NÃO POSSUI MEMÓRIA HERDADA.</span><br>';
+  echoes.forEach(e=>{
+    if(!e)return;
+    const rs=echoRelState(e),P=e.pers||null;
+    const ds=(e.dis&&e.dis.st)||'stable';
+    s+='<span style="color:'+(e.alive?'#eaffff':'#ff8095')+'">ECHO·0'+e.slot+
+      (e.alive?'':' (OFFLINE)')+'</span> — '+(P?P.lab:'—')+' · '+
+      '<span style="color:'+rs.col+'">'+rs.lab+'</span> · CONF <b>'+Math.round(e.trust)+'</b>'+
+      (ds!=='stable'?' · <span style="color:#ff8095">'+echoDisLabel(e)+'</span>':'')+'<br>';
+  });
+  s+='<span style="color:#e8fbff">'+RES_SYM+' <b>'+fmtNum(fracRes())+'</b> RESÍDUOS TEMPORAIS</span>'+
+    (fracRun&&fracRun.es.inv.length?' · INVENTÁRIO <b>'+fracRun.es.inv.length+'</b>':'')+'</div>';
+  return s;
+}
+function fracCardIcon(it){
+  const OR={'anchor':'⬡','remnants':'◉','consortium':'◈','deviants':'◬','neutral':'◇'};
+  return '<span style="color:'+it.col+';font-size:17px">'+(OR[it.origin]||'◇')+'</span>';
+}
+function fracTagsHTML(it){
+  if(!it.tags||!it.tags.length)return '';
+  return '<div class="cmoral" style="letter-spacing:.06em;opacity:.8">TAGS: '+it.tags.join(' · ').toUpperCase()+'</div>';
+}
+function renderShopEcho(){
+  mTag.textContent='NÓDULO DE MANUTENÇÃO · ONDA '+String(wave).padStart(2,'0')+' NEUTRALIZADA';
+  mTitle.textContent='LOJA TEMPORAL — ABA ECHO';
+  mDesc.innerHTML='<div style="opacity:.9">Resíduos Temporais são a moeda do Eco. Equipamentos, ofertas e o reroll temporal usam '+RES_SYM+' — nunca os seus ◈ créditos.</div><br>'+fracEchoHeaderHTML();
+  mSect.style.display='none';
+  mReroll.style.display='block';
+  mRow.innerHTML='';mRow2.innerHTML='';
+  mOwned.innerHTML=fracEquipPanelHTML();
+  /* estoque: rolagem gratis UMA vez por onda (stockWave). Reabrir, trocar de
+     aba ou re-render nunca gera lote novo; comprar tudo tambem nao. */
+  if(!fracShopStock.length&&fracRun.es.stockWave!==(wave|0)){
+    if(fracRun.es.stock&&fracRun.es.stock.length){fracShopStock=fracRun.es.stock.slice();fracShopTouched=true;}
+    else fracRollStock();
+  }
+  const sel=fracEchoSelLive();
+  /* ---- TRANSMISSÕES (ofertas) ---- */
+  const offs=fracOffersOpen();
+  if(offs.length){
+    const sec=document.createElement('div');
+    sec.className='sect';sec.style.cssText='flex:1 1 100%;margin-top:0';
+    sec.textContent='TRANSMISSÕES DE FACÇÃO';
+    mRow.appendChild(sec);
+    for(const o of offs){
+      const f=FRACTION_BY_ID[o.fid];
+      const cost=Math.max(0,o.price||0)+((o.coin||0)?' + ◈'+o.coin:'');
+      const poor=fracRun.res<(o.price>0?(o.price|0):0)||(o.coin&&player.coins<(o.coin|0));
+      const card=mkCard(
+        '<span style="color:'+f.col+'">'+f.sym+' TRANSMISSÃO // '+f.nm+'</span>',
+        o.ds,
+        '<div class="cprice">'+(o.price>0?RES_SYM+o.price:'')+(o.coin?' · ◈'+o.coin:'')+'</div>',
+        poor,()=>{
+          if(o.price>0&&!spendResidues(o.price,'oferta_'+o.id))return;
+          if(o.coin&&player.coins<(o.coin|0))return;
+          if(o.coin)player.coins-=o.coin;
+          fracRun.o[o.fid].n=(fracRun.o[o.fid].n|0)+1;
+          o.accept();
+          AUDIO.ui(660);
+          checkpointShopPurchase();
+          renderShop();
+        },fracCardIcon(f),null);
+      bindTip(card,()=>fracOfferTip(o,f));
+      mRow.appendChild(card);
+    }
+  }
+  if(!offs.length){
+    const cd=document.createElement('div');
+    cd.className='cds';cd.style.cssText='flex:1 1 100%';
+    cd.innerHTML=fracOffersTip();
+    mRow.appendChild(cd);
+  }
+  /* ---- estoque ---- */
+  const g=document.createElement('div');
+  g.className='sect';g.style.cssText='flex:1 1 100%;margin-top:2px';
+  g.textContent='EQUIPAMENTO DO ECHO — '+RES_SYM+' RESÍDUOS'+(sel?' · INSTALANDO EM ECHO·0'+sel.slot:' · NENHUM ECO SELECIONÁVEL');
+  mRow2.appendChild(g);
+  if(!fracShopStock.length){
+    const cd=document.createElement('div');
+    cd.className='cds';cd.style.cssText='flex:1 1 100%';
+    cd.innerHTML=(fracRun.es.stockWave===(wave|0)
+      ?'ESTOQUE DESTA ONDA ESGOTADO — USE O REROLL TEMPORAL PARA UM NOVO LOTE.'
+      :'TODOS OS EQUIPAMENTOS DESTE CICLO JÁ FORAM ADQUIRIDOS.');
+    mRow2.appendChild(cd);
+  }
+  for(const id of fracShopStock){
+    const it=echoEqById(id);if(!it)continue;
+    const cost=fracEqCost(it);
+    const poor=fracRes()<cost||!sel;
+    const card=mkCard(
+      '<span style="color:'+it.col+'">'+EQ_CAT[it.cat].lab+' — '+it.nm+'</span>',
+      it.ds+'<br><span style="opacity:.7">'+fracOriginName(it.origin)+'</span>'+
+        (it.fx?'<br><span style="color:#c9a9ff">◆ EFEITO ESPECIAL</span>':'')+
+        fracTagsHTML(it),
+      '<div class="cprice">'+RES_SYM+cost+fracPriceNote(it,cost)+
+        (sel?'':' · <span style="color:#ff9d3c">EXIGE ECO</span>')+'</div>',
+      poor,()=>fracBuyFromStock(it.id),fracCardIcon(it),null);
+    bindTip(card,()=>fracEqTipHTML(it));
+    mRow2.appendChild(card);
+  }
+  /* ---- reroll ---- */
+  const rc=fracRun.es.rerollCost;
+  mCoins.textContent=RES_SYM+' '+fracRes()+' RESÍDUOS TEMPORAIS';
+  mOwned.innerHTML=fracEquipPanelHTML();
+  mReroll.textContent='REROLL TEMPORAL · '+RES_SYM+rc;
+  mReroll.className='btn'+(fracRes()<rc?' dis':'');
+  mReroll.onclick=()=>{
+    const c=fracRun?fracRun.es.rerollCost:rc;
+    if(!c||fracRes()<c)return;
+    if(!spendResidues(c,'reroll_echo'))return;      // cobra EXATAMENTE uma vez por reroll (§45)
+    fracRun.es.rerollCost=Math.min(REROLL_CAP,Math.max(REROLL_BASE,Math.round(fracRun.es.rerollCost*REROLL_SCALE)));
+    fracRun.es.rerolls=(fracRun.es.rerolls|0)+1;
+    fracRollStock();renderShop();
+    checkpointShopPurchase();
+    AUDIO.ui(560);
+  };
+  /* ---- servicos temporais (custam residuos, nunca creditos) ---- */
+  const svSec=document.createElement('div');
+  svSec.className='sect';svSec.style.cssText='flex:1 1 100%;margin-top:2px';
+  svSec.textContent='SERVIÇOS TEMPORAIS — '+RES_SYM+' RESÍDUOS';
+  mRow2.appendChild(svSec);
+  for(const sv of FRAC_SERVICES){
+    let can=true,why='';
+    if(typeof sv.can==='function'){try{can=!!sv.can();if(!can)why=sv.reason?sv.reason():'';}catch(_e){can=false;}}
+    const need=!!sv.needEcho&&!fracEchoSelLive();
+    const poor=fracRes()<sv.price||!can||need;
+    const svCard=mkCard('<span style="color:#cfe9f7">◇ '+sv.nm+'</span>',
+      sv.ds+(poor&&why?'<br><span style="color:#ffb48a">'+why+'</span>':'')+
+        (need?'<br><span style="color:#ff9d3c">EXIGE ECO SELECIONADO</span>':''),
+      '<div class="cprice">'+RES_SYM+sv.price+'</div>',poor,
+      ()=>fracAcceptService(sv.id),'<span style="color:#9db8c8;font-size:16px">◇</span>',null);
+    bindTip(svCard,()=>fracServiceTip(sv));
+    mRow2.appendChild(svCard);
+  }
+  mClose.textContent=(wave+1>=MAX_WAVE)?'⚠ ENFRENTAR O PARADOXO':
+    ('AVANÇAR PARA ONDA '+String(wave+1).padStart(2,'0')+' / 20');
+  mClose.className='btn go';
+  mClose.onclick=closeShop;
+  fracBindEquipPanel();
+}
+/* clique no painel de equipamento: selecao de Echo + guardar/equipar do
+   inventario — rebinds a cada render, nunca acumula listeners. */
+function fracBindEquipPanel(){
+  if(!mOwned||typeof mOwned.querySelectorAll!=='function')return;
+  let els=[];
+  try{els=Array.prototype.slice.call(mOwned.querySelectorAll('[data-fracecho]'));}catch(e){els=[];}
+  for(const b of els)b.onclick=()=>fracSetSel(parseInt(b.getAttribute&&b.getAttribute('data-fracecho'),10)||0);
+  try{els=Array.prototype.slice.call(mOwned.querySelectorAll('[data-fracuneq]'));}catch(e){els=[];}
+  for(const b of els)b.onclick=()=>fracUnequip(b.getAttribute&&b.getAttribute('data-fracuneq'));
+  try{els=Array.prototype.slice.call(mOwned.querySelectorAll('[data-fraceq]'));}catch(e){els=[];}
+  for(const b of els)b.onclick=()=>fracEquipFromInv(b.getAttribute&&b.getAttribute('data-fraceq'));
+}
+function fracOriginName(o){
+  if(o==='neutral')return 'ORIGEM NEUTRA';
+  const f=FRACTION_BY_ID[o];return f?('ORIGEM: '+f.sym+' '+f.nm):o;
+}
+function fracOffersTip(){
+  let s='SEM TRANSMISSÕES ABERTAS NESTE MOMENTO.<br>';
+  const known=FACTION_IDS.filter(id=>fracKnows(id));
+  s+='<span style="opacity:.75">Facções observam suas escolhas e enviam propostas quando confiam (ou temem) o suficiente. '+
+    (known.length?'Conhecidas: '+known.map(id=>FRACTION_BY_ID[id].nm).join(' · ')+'.'
+    :'Nenhuma facção se apresentou ainda — decisões fortes atraem olhares.')+'</span>';
+  return s;
+}
+function fracEquipPanelHTML(){
+  if(!fracRun)return '';
+  let h='<div style="font-family:Consolas,monospace;font-size:12px;line-height:2;letter-spacing:.05em">';
+  /* seleção de Echo */
+  if(echoes.length){
+    h+='<div style="margin:2px 0 6px">';
+    echoes.forEach(e=>{
+      if(!e)return;
+      h+='<span class="asbtn" style="'+(fracEchoSel===e.slot-1?'border-color:#7dffc4;color:#7dffc4':'')+
+        (e.alive?'':'opacity:.5')+'" data-fracecho="'+(e.slot-1)+'">ECHO·0'+e.slot+(e.alive?'':' (OFFLINE)')+'</span> ';
+    });
+    h+='</div>';
+  }
+  /* slots do Echo selecionado */
+  const sel=echoes[fracEchoSel];
+  if(sel){
+    const idx=sel.slot-1,s=fracRun.eq[idx];
+    h+='EQUIPADO EM ECHO·0'+sel.slot+':<br>';
+    for(const cat of ['n','p','r']){
+      const id=s[cat];const it=id?echoEqById(id):null;
+      h+='&nbsp;&nbsp;['+EQ_CAT[cat].lab+'] ';
+      if(it)h+='<span style="color:'+it.col+'">'+it.nm+'</span>'+
+        '<span class="asbtn" data-fracuneq="'+cat+'" style="margin-left:6px;font-size:10px">GUARDAR</span>';
+      else h+='<span style="color:#43566b">— VAZIO —</span>';
+      h+='<br>';
+    }
+  }else if(!echoes.length){
+    h+='<span style="color:#ff8095">NENHUM ECHO ATIVO</span> — os equipamentos exigem um Eco aliado desta run.<br>';
+  }
+  /* inventário */
+  if(fracRun.es.inv.length){
+    h+='INVENTÁRIO TEMPORÁRIO:<br>';
+    for(const id of fracRun.es.inv){
+      const it=echoEqById(id);if(!it)continue;
+      h+='&nbsp;&nbsp;▸ '+EQ_CAT[it.cat].lab+' <span style="color:'+it.col+'">'+it.nm+'</span>';
+      if(sel){
+        const slot=EQ_SLOT_KEY[it.cat];
+        h+='<span class="asbtn" data-fraceq="'+id+'" style="margin-left:6px;font-size:10px">EQUIPAR</span>';
+      }
+      h+='<br>';
+    }
+  }else if(sel){
+    h+='INVENTÁRIO TEMPORÁRIO: vazio — compre equipamentos acima ou use o reroll temporal.<br>';
+  }
+  h+='<br><span style="opacity:.6">Equipamentos, Resíduos e afinidades pertencem a ESTA run: somem quando o ciclo termina. Checkpoint preserva tudo.</span>';
+  h+='</div>';
+  return h;
+}
+function fracOfferTip(o,f){
+  let s='<div style="font-family:Consolas,monospace;font-size:12px;line-height:1.9;color:#cfe9f7;max-width:430px">'+
+    '<div style="color:'+f.col+';letter-spacing:.14em">'+f.sym+' '+f.nm.toUpperCase()+' — TRANSMISSÃO</div>'+
+    '<div style="margin:8px 0">'+o.ds+'</div>'+
+    (f.pergunta?'<div style="color:#9db8c8;font-style:italic">'+f.pergunta+'</div>':'')+
+    '<div style="margin-top:6px;opacity:.7">Aceitar é uma escolha registrada. As facções se lembram.</div></div>';
+  return s;
+}
+/* ==================== PR12·bloco p4a.js ==================== */
+/* =====================================================================
+   PR 12 — EVENTOS DE FACÇÃO (12 = 3 × 4)
+   Registrados no Event Director moderno (RUN_EVENTS → pool/beacons).
+   Cada escolha: contexto + consequência + factionEmit + custo real.
+   Nunca são "+reputação": sempre trocam algo.
+   ===================================================================== */
+function fracMeet(fid){
+  if(fracKnows(fid))return;
+  const f=FRACTION_BY_ID[fid];if(!f)return;
+  fracDiscover(fid,'contact');
+  if(sandboxMode||sandboxRun)return;
+  banner('TRANSMISSÃO // '+f.nm,f.sym+' '+f.frase);
+  toast(f.nm+' PASSOU A OBSERVAR VOCÊ');
+  AUDIO.tone(392,.3,'sine',.05,-120);AUDIO.tone(587,.35,'sine',.04,120,.1);
+}
+function fracLore(fid,key){
+  const f=FRACTION_BY_ID[fid];
+  const has=(f.lore||[]).some(l=>l.id===key);
+  if(has)fracDiscover(fid,key);
+}
+function fracResFX(n){
+  addResidues(n,'evento_faccao',beacon?beacon.x:player.x,beacon?beacon.y:player.y);
+}
+const FACTION_RUN_EVENTS=[
+/* ================= A ÂNCORA ================= */
+{id:'fa_anc_camara',kind:'fa_anc_camara',nm:'A CÂMARA DE ECO',col:'#8fd6ff',
+ family:'fracao',rarity:'uncommon',weight:9,cd:5,minWave:4,oncePerRun:true,
+ cond:()=>fracKnows('anchor'),
+ render(){
+  fracMeet('anchor');fracLore('anchor','anc_metodos');
+  evHead('A CÂMARA DE ECO',
+    'Uma cápsula de contenção da Âncora pulsava no meio da onda — lacrada, etiquetada '+
+    'como <i>REGISTRO INSTÁVEL</i>. De dentro, alguém bate no vidro no ritmo da sua respiração.<br>'+
+    operatorWhisperHTML()+moralStatusLine());
+  evOpt('LIBERTAR O REGISTRO',
+    'Rompe o lacre. A assinatura escapa em luz — e a Âncora anota seu nome numa lista que não esquece. '+
+    '<b>+'+RES_SYM+'4</b> e +5 de confiança nos seus Ecos (eles viram).',
+    [2,0,0],'<div class="cprice">CUSTO: ATENÇÃO DA ÂNCORA</div>',false,()=>{
+      fracResFX(4);
+      for(const e of liveEchoesForEvents())changeEchoTrust(e,5,'ev_anc_camara_libertar');
+      factionEmit('echo_saved',{fac:{anchor:-2,remnants:3,consortium:0,deviants:1}});
+      spawnRing(beacon.x,beacon.y,'#7dffc4',10,190,1);
+      toast('O REGISTRO SE DISSOLVEU LIVRE');
+    });
+  evOpt('SELAR DEFINITIVAMENTE',
+    'Aperta o lacre até o silêncio. A Âncora oferece um NÚCLEO DE CONTENÇÃO pelo serviço — instalado na hora.',
+    [1,0,1],'<div class="cprice">'+RES_SYM+'0 · NÚCLEO DE CONTENÇÃO</div>',false,()=>{
+      const e=liveEchoesForEvents()[0];
+      if(e){
+        const s=fracRun.eq[e.slot-1];
+        if(!s.n&&!fracRun.es.inv.some(x=>x==='anc_cont_core')){
+          s.n='anc_cont_core';e.eqNucleo='anc_cont_core';echoEqRefresh(e);
+          toast('NÚCLEO DE CONTENÇÃO INSTALADO EM ECHO·0'+e.slot);
+        }else if(!fracRun.es.inv.some(x=>x==='anc_cont_core')){
+          fracRun.es.inv.push('anc_cont_core');
+          toast('NÚCLEO DE CONTENÇÃO GUARDADO NO INVENTÁRIO');
+        }else toast('VOCÊ JÁ POSSUI ESTE NÚCLEO');
+      }
+      factionEmit('stabilization_choice',{fac:{anchor:3,remnants:-2,consortium:0,deviants:-2}});
+      spawnRing(beacon.x,beacon.y,'#8fd6ff',8,120,.8);
+    });
+  evLeave('Deixa a cápsula batendo no mesmo ritmo. Não é da sua conta.');
+ }},
+{id:'fa_anc_relogio',kind:'fa_anc_relogio',nm:'O RELÓGIO DO FIM',col:'#8fd6ff',
+ family:'fracao',rarity:'uncommon',weight:9,cd:5,minWave:7,oncePerRun:true,
+ cond:()=>fracKnows('anchor'),
+ render(){
+  fracMeet('anchor');fracLore('anchor','anc_origem');
+  evHead('O RELÓGIO DO FIM',
+    'Um posto da Âncora tenta conter uma fenda que não para de crescer — literalmente: ela '+
+    'engole os segundos ao redor. O supervisor oferece pagamento em Resíduos estabilizados.<br>'+
+    operatorWhisperHTML()+moralStatusLine());
+  const hpCost=Math.max(1,Math.round(player.maxHp*.14));
+  evOpt('DOAR ENERGIA VITAL',
+    'Alimenta o estabilizador com seu próprio núcleo. Custa <b>'+hpCost+' de vida máxima por 45s</b>. '+
+    'A fenda fecha limpa: <b>+'+RES_SYM+'6</b>, e toda pressão de Dissonância dos Ecos cai 40%.',
+    [3,0,0],'<div class="cprice">−'+hpCost+' VIDA MÁX (45s)</div>',false,()=>{
+      player.tempPen+=hpCost;player.maxHp-=hpCost;player.hp=Math.min(player.hp,player.maxHp);player.tempT=45;
+      fracResFX(6);
+      for(const e of echoes){if(e&&e.dis&&e.dis.p>0)e.dis.p=Math.max(0,e.dis.p-(e.dis.p*.4));}
+      factionEmit('anomaly_stabilized',{});
+      spawnRing(beacon.x,beacon.y,'#46e0ff',10,200,.9);
+      spawnRing(player.x,player.y,'#7dffc4',6,100,.6);
+    });
+  evOpt('SAQUEAR O POSTO ANTES DO COLAPSO',
+    'Arranca o núcleo do estabilizador e foge. <b>+'+RES_SYM+'10</b>, mas a fenda escapa — e o '+
+    'posto inteiro passa a te considerar risco calculado.',
+    [0,3,1],'<div class="cprice">+'+RES_SYM+'10</div>',false,()=>{
+      fracResFX(10);
+      factionEmit('anomaly_exploited',{});
+      spawnShards(beacon.x,beacon.y,'#ffd166',16,6);
+      toast('NÚCLEO EXTRAÍDO · A FENDA SE FECHOU SOZINHA — POR ENQUANTO');
+    });
+  evLeave('Recua. O relógio do fim não precisa de plateia.');
+ }},
+{id:'fa_anc_fila',kind:'fa_anc_fila',nm:'A FILA',col:'#8fd6ff',
+ family:'fracao',rarity:'uncommon',weight:8,cd:5,minWave:11,oncePerRun:true,
+ cond:()=>fracKnows('anchor'),
+ render(){
+  fracMeet('anchor');fracLore('anchor','anc_filosofia');fracLore('anchor','anc_contradicao');
+  evHead('A FILA',
+    'Uma esteira da Âncora transporta cápsulas idênticas: ECOS AGUARDANDO DISSOLUÇÃO ASSISTIDA. '+
+    'Na terceira da fila, o lacre mostra um rosto que você conhece — o seu, de uma run que você não lembra de ter perdido.<br>'+
+    operatorWhisperHTML()+moralStatusLine());
+  evOpt('APERTAR O BOTÃO',
+    'Autoriza a dissolução. Ele agradece com os olhos antes de apagar — a Âncora chama isso de '+
+    'misericórdia. <b>+'+RES_SYM+'5</b>, e seus Ecos ganham −10% de dano recebido (disciplina ensinada).',
+    [1,0,0],'<div class="cprice">CUSTO: O ROSTO NA FILA</div>',false,()=>{
+      fracResFX(5);
+      for(const e of echoes){if(e&&e.alive&&e.eqBoost){e.eqBoost.takenMul=(e.eqBoost.takenMul||1)*.9;echoEqRefresh(e);}}
+      factionEmit('stabilization_choice',{fac:{anchor:3,remnants:-3,consortium:-1,deviants:-1}});
+      spawnRing(beacon.x,beacon.y,'#8fd6ff',8,140,.7);
+      toast('DISSOLUÇÃO REGISTRADA');
+    });
+  evOpt('ROUBAR O REGISTRO',
+    'Quebra a cápsula e carrega o que sobrou dele: <b>+'+RES_SYM+'10</b>. Não dá para salvá-lo — '+
+    'dá para impedir que virem matéria-prima.',
+    [0,2,2],'<div class="cprice">+'+RES_SYM+'10</div>',false,()=>{
+      fracResFX(10);
+      factionEmit('echo_saved',{fac:{anchor:-2,remnants:2,consortium:-2,deviants:2}});
+      spawnShards(beacon.x,beacon.y,'#ff4df0',14,5);
+      toast('REGISTRO ROUBADO · A ÂNCORA SABERÁ');
+    });
+  evLeave('Você também já esteve numa fila assim. Segue andando.');
+ }},
+/* ================= OS REMANESCENTES ================= */
+{id:'fa_rem_enjeitado',kind:'fa_rem_enjeitado',nm:'O ECO ENJEITADO',col:'#7dffc4',
+ family:'fracao',rarity:'uncommon',weight:9,cd:5,minWave:4,oncePerRun:true,
+ cond:()=>fracKnows('remnants'),
+ render(){
+  fracMeet('remnants');fracLore('remnants','rem_origem');
+  evHead('O ECO ENJEITADO',
+    'Um Eco sem operador — assinatura degradada, quase apagada — se arrasta até você e se ajoelha. '+
+    'Não fala: aponta para o próprio peito, onde algo brilha fraco, e depois para a esteira da Âncora, ao longe.<br>'+
+    operatorWhisperHTML()+moralStatusLine());
+  evOpt('ACOLHER ATÉ A PRÓXIMA ONDA',
+    'Deixa ele orbitar você. Seus Ecos entendem o gesto: <b>+8 de confiança</b> em cada um, e '+
+    '<b>+'+RES_SYM+'3</b> — ele achou os Resíduos no caminho e insiste em pagar o refúgio.',
+    [3,0,0],'<div class="cprice">+8 CONFIANÇA · +'+RES_SYM+'3</div>',false,()=>{
+      for(const e of liveEchoesForEvents())changeEchoTrust(e,8,'ev_rem_enjeitado');
+      fracResFX(3);
+      factionEmit('echo_protected',{});
+      spawnRing(beacon.x,beacon.y,'#7dffc4',10,170,.9);
+      toast('ELE SEGUE VOCÊ POR UMA ONDA — DEPOIS SOME, MAIS INTEIRO');
+    });
+  evOpt('ENTREGAR À ÂNCORA',
+    'Um gesto para a esteira. Eles vêm buscar. <b>+'+RES_SYM+'5</b> pela informação — e o olhar '+
+    'dele apaga antes do corpo.',
+    [0,2,1],'<div class="cprice">+'+RES_SYM+'5</div>',false,()=>{
+      fracResFX(5);
+      factionEmit('echo_abandoned',{fac:{anchor:2,remnants:-3,consortium:2,deviants:-1}});
+      spawnRing(beacon.x,beacon.y,'#8fd6ff',6,100,.6);
+      toast('ENTREGA CONCLUÍDA');
+    });
+  evLeave('Ele entende o silêncio. Vai embora antes que você mude de ideia.');
+ }},
+{id:'fa_rem_coro',kind:'fa_rem_coro',nm:'O CORO',col:'#7dffc4',
+ family:'fracao',rarity:'uncommon',weight:8,cd:5,minWave:6,oncePerRun:true,
+ cond:()=>fracKnows('remnants'),
+ render(){
+  fracMeet('remnants');fracLore('remnants','rem_filosofia');
+  evHead('O CORO',
+    'Os Remanescentes fazem um círculo ao redor de um Eco recém-nascido — instável, tremendo, '+
+    'com medo do próprio nome. Eles cantam em coro o registro da run que o criou, para que ele saiba quem é.<br>'+
+    operatorWhisperHTML()+moralStatusLine());
+  evOpt('ENTRAR NO CORO',
+    'Você canta junto um trecho da sua própria memória. O Eco novo para de tremer: <b>+6 de confiança</b> '+
+    'nos seus Ecos e +1 reroll grátis na loja (a rede paga seu nome).',
+    [2,0,0],'<div class="cprice">+1 REROLL GRÁTIS</div>',false,()=>{
+      for(const e of liveEchoesForEvents())changeEchoTrust(e,6,'ev_rem_coro');
+      if(player)player.freeRerolls=(player.freeRerolls|0)+1;
+      factionEmit('echo_saved',{fac:{anchor:-1,remnants:3,consortium:0,deviants:1}});
+      spawnParticles(beacon.x,beacon.y,'#7dffc4',22,240,.7,3);
+    });
+  evOpt('COMPARAR COM A SUA MEMÓRIA',
+    'Interrompe o coro para corrigir o registro — afinal, você ESTAVA lá. O Eco novo se confunde: '+
+    '<b>+'+RES_SYM+'6</b> pelo trabalho de curadoria, mas seus Ecos ficam 2 ondas ressentidos (−4 confiança).',
+    [0,2,0],'<div class="cprice">+'+RES_SYM+'6 · −4 CONFIANÇA</div>',false,()=>{
+      fracResFX(6);
+      for(const e of liveEchoesForEvents())changeEchoTrust(e,-4,'ev_rem_coro_vaidade');
+      factionEmit('greed_choice',{fac:{anchor:0,remnants:-2,consortium:2,deviants:1}});
+      toast('O CORO SE DISPERSA EM SILÊNCIO');
+    });
+  evLeave('Observa de longe. Alguns nomes não são seus para cantar.');
+ }},
+{id:'fa_rem_refugio',kind:'fa_rem_refugio',nm:'REFÚGIO SOB ATAQUE',col:'#7dffc4',
+ family:'fracao',rarity:'uncommon',weight:8,cd:5,minWave:9,oncePerRun:true,
+ cond:()=>fracKnows('remnants'),
+ render(){
+  fracMeet('remnants');fracLore('remnants','rem_metodos');fracLore('remnants','rem_contradicao');
+  evHead('REFÚGIO SOB ATAQUE',
+    'Um esconderijo dos Remanescentes foi localizado por um esquadrão de limpeza da Âncora. '+
+    'Dentro: quarenta Ecos — e uma criança de verdade, filha de dois operadores, que se recusa a sair sem eles.<br>'+
+    operatorWhisperHTML()+moralStatusLine());
+  const hpCost=Math.max(1,Math.round(player.hp*.15));
+  evOpt('SER O ESCUDO',
+    'Segura a linha enquanto evacuam. Custa <b>'+hpCost+' de vida</b> e 3 ondas de <b>−10% de dano</b> '+
+    '(você se expõe demais). O refúgio inteiro sobrevive: <b>+'+RES_SYM+'6</b> e +6 de confiança nos Ecos.',
+    [3,0,2],'<div class="cprice">−'+hpCost+' VIDA · −10% DANO (3 ONDAS)</div>',false,()=>{
+      player.hp=Math.max(1,player.hp-hpCost);
+      waveBuff('damage','ev.rem.refugio','REFÚGIO −10% DANO',.90,3);
+      fracResFX(6);
+      for(const e of liveEchoesForEvents())changeEchoTrust(e,6,'ev_rem_refugio_escudo');
+      factionEmit('echo_protected',{fac:{anchor:-1,remnants:3,consortium:0,deviants:1}});
+      spawnRing(beacon.x,beacon.y,'#7dffc4',12,220,1);
+    });
+  evOpt('NEGOCIAR COM A ÂNCORA',
+    'Usa o seu nome para ganhar tempo: a Âncora aceita levar APENAS os Ecos instáveis. '+
+    'Trinta e oito salvos. Dois levados. <b>+'+RES_SYM+'8</b> pelo intermédio — e a criança não olha para você.',
+    [1,2,0],'<div class="cprice">+'+RES_SYM+'8</div>',false,()=>{
+      fracResFX(8);
+      factionEmit('contract_accepted',{fac:{anchor:1,remnants:-2,consortium:3,deviants:-1}});
+      toast('DOIS NOMES ENTRARAM NA ESTEIRA');
+    });
+  evLeave('Não é sua guerra. Não é mesmo?');
+ }},
+/* ================= O CONSÓRCIO ================= */
+{id:'fa_con_leilao',kind:'fa_con_leilao',nm:'LEILÃO DE MEMÓRIA',col:'#ffd166',
+ family:'fracao',rarity:'uncommon',weight:9,cd:5,minWave:5,oncePerRun:true,
+ cond:()=>fracKnows('consortium'),
+ render(){
+  fracMeet('consortium');fracLore('consortium','con_origem');
+  evHead('LEILÃO DE MEMÓRIA',
+    'Um leiloeiro do Consórcio ergue uma cápsula lacrada: <i>ÚLTIMA RUN DE UM OPERADOR NÍVEL 9 — '+
+    'PERFIL AGRESSIVO, ALTO RENDIMENTO</i>. Os lances sobem em Resíduos e em silêncio.<br>'+
+    operatorWhisperHTML()+moralStatusLine());
+  evOpt('DAR O LANCE (◈60)',
+    'Compra a memória crua. Dentro: coordenadas de um depósito temporal — <b>+'+RES_SYM+'6</b> e '+
+    '1 equipamento de facção aleatório do estoque.',
+    [0,3,0],'<div class="cprice">◈60 · LOTE ABERTO</div>',player.coins<60,()=>{
+      player.coins-=60;
+      fracResFX(6);
+      const pool=fracStockPool();
+      if(pool.length){
+        const it=pool[randi(0,pool.length-1)];
+        fracRun.es.inv.push(it.id);
+        toast('LOTE ENTREGUE: '+it.nm+' GUARDADO NO INVENTÁRIO');
+      }
+      factionEmit('greed_choice',{fac:{anchor:-1,remnants:-1,consortium:3,deviants:0}});
+      spawnRing(beacon.x,beacon.y,'#ffd166',8,130,.7);
+    });
+  evOpt('VENDER SUA PRÓPRIA MEMÓRIA',
+    'O leiloeiro se interessa pelo que está VIVO. <b>+'+RES_SYM+'12</b> agora — mas seus Ecos percebem '+
+    'que você precificou a própria run: −10 de confiança em cada um.',
+    [0,3,1],'<div class="cprice">+'+RES_SYM+'12 · −10 CONFIANÇA</div>',false,()=>{
+      fracResFX(12);
+      for(const e of liveEchoesForEvents())changeEchoTrust(e,-10,'ev_con_leilao');
+      factionEmit('echo_exploited',{fac:{anchor:0,remnants:-3,consortium:3,deviants:0}});
+      spawnShards(beacon.x,beacon.y,'#ffd166',16,6);
+      toast('CONTRATO ASSINADO COM O SEU PRÓPRIO NOME');
+    });
+  evLeave('Sai antes que o martelo decida por você.');
+ }},
+{id:'fa_con_bombardeio',kind:'fa_con_bombardeio',nm:'CONTRATO DE BOMBARDEIO',col:'#ffd166',
+ family:'fracao',rarity:'uncommon',weight:8,cd:5,minWave:8,oncePerRun:true,
+ cond:()=>fracKnows('consortium'),
+ render(){
+  fracMeet('consortium');fracLore('consortium','con_metodos');
+  evHead('CONTRATO DE BOMBARDEIO',
+    'Um drone do Consórcio pousa na sua frente e projeta um contrato: eles podem "preparar o terreno" '+
+    'das próximas ondas. A linguagem é corporativa. As cláusulas são claras.<br>'+
+    operatorWhisperHTML()+moralStatusLine());
+  evOpt('ASSINAR O PACOTE BÁSICO',
+    'Custa <b>'+RES_SYM+'5 + ◈30</b>. As próximas 2 ondas começam com os inimigos já feridos: '+
+    '<b>+12% de dano seu</b> por 2 ondas (bombardeio de precisão).',
+    [0,2,0],'<div class="cprice">'+RES_SYM+'5 + ◈30</div>',(fracRes()<5||player.coins<30),()=>{
+      spendResidues(5,'ev_con_bomba');
+      player.coins-=30;
+      waveBuff('damage','ev.con.bombardeio','BOMBARDEIO +12% DANO',1.12,2);
+      factionEmit('contract_accepted',{});
+      spawnRing(beacon.x,beacon.y,'#ffd166',10,180,.9);
+      toast('BOMBARDEIO APROVADO · +12% DANO POR 2 ONDAS');
+    });
+  evOpt('PAGAR PELA VERSÃO "ACIDENTAL"',
+    'Um pagamento maior, sem registro: <b>'+RES_SYM+'9</b>. O "acidente" atinge uma caravana da Âncora — '+
+    'eles vão saber que foi você.',
+    [0,3,2],'<div class="cprice">'+RES_SYM+'9 · RETALIAÇÃO DA ÂNCORA</div>',fracRes()<9,()=>{
+      spendResidues(9,'ev_con_bomba2');
+      waveBuff('damage','ev.con.bombardeio2','BOMBARDEIO +18% DANO',1.18,3);
+      factionEmit('violence_choice',{fac:{anchor:-3,remnants:-1,consortium:2,deviants:1}});
+      toast('NENHUM REGISTRO. NENHUMA TESTEMUNHA. QUASE.');
+    });
+  evLeave('Recusa. Você prefere escolher o próprio chão.');
+ }},
+{id:'fa_con_arquivo',kind:'fa_con_arquivo',nm:'O ARQUIVO-ATIVO',col:'#ffd166',
+ family:'fracao',rarity:'uncommon',weight:8,cd:5,minWave:12,oncePerRun:true,
+ cond:()=>fracKnows('consortium'),
+ render(){
+  fracMeet('consortium');fracLore('consortium','con_filosofia');fracLore('consortium','con_contradicao');
+  evHead('O ARQUIVO-ATIVO',
+    'Um avaliador do Consórcio estuda seus Ecos como quem lê um balanço. "Excelente depreciação", '+
+    'diz, "mas e se a gente transformasse esse passivo em rendimento?"<br>'+
+    operatorWhisperHTML()+moralStatusLine());
+  const e=liveEchoesForEvents()[0];
+  evOpt('ASSINAR O CONTRATO DE COMBATE',
+    'Seus Ecos passam a "operar como ativos de defesa terceirizada": <b>+'+RES_SYM+'14</b>. Eles entendem '+
+    'o que foi assinado — −12 de confiança no Eco mais leal.',
+    [0,3,0],'<div class="cprice">+'+RES_SYM+'14 · −12 CONFIANÇA</div>',!e,()=>{
+      fracResFX(14);
+      if(e)changeEchoTrust(e,-12,'ev_con_arquivo');
+      factionEmit('echo_exploited',{});
+      spawnShards(beacon.x,beacon.y,'#ffd166',18,6);
+      toast('CONTRATO REGISTRADO NA CÂMARA DO CONSÓRCIO');
+    });
+  evOpt('PAGAR PELA AVALIAÇÃO COMPLETA',
+    'Compra o dossiê que eles montaram sobre o seu vínculo. <b>◈80</b> por 3 ondas de '+
+    '<b>+15% de dano dos Ecos</b> (eles aprenderam onde apertar).',
+    [2,1,0],'<div class="cprice">◈80</div>',player.coins<80,()=>{
+      player.coins-=80;
+      for(const ec of liveEchoesForEvents()){
+        if(ec.eqBoost){ec.eqBoost.dmgMul=(ec.eqBoost.dmgMul||1)*1.15;echoEqRefresh(ec);}
+      }
+      evVar('evConDossie',(wave|0)+3);
+      factionEmit('contract_honored',{fac:{anchor:-1,remnants:-1,consortium:3,deviants:0}});
+      toast('DOSSIÊ ENTREGUE · ECOS +15% DANO');
+    });
+  evLeave('Alguns números não deveriam ser auditados.');
+ }},
+/* ================= OS DESVIADOS ================= */
+{id:'fa_dev_espelho',kind:'fa_dev_espelho',nm:'O ESPELHO QUENTE',col:'#ff4df0',
+ family:'fracao',rarity:'uncommon',weight:9,cd:5,minWave:5,oncePerRun:true,
+ cond:()=>fracKnows('deviants'),
+ render(){
+  fracMeet('deviants');fracLore('deviants','dev_origem');
+  evHead('O ESPELHO QUENTE',
+    'Uma superfície de fenda vertical reflete não o que você é — mas o que você seria se a próxima '+
+    'morte fosse a última. A imagem pisca em Dissonância e espera.<br>'+
+    operatorWhisperHTML()+moralStatusLine());
+  evOpt('OLHAR',
+    'A imagem ensina: <b>+'+RES_SYM+'8</b> e +5% de dano permanente — mas o preço é ver. '+
+    'Todo Eco acumula 18 de pressão de Dissonância (eles sentem o que você viu).',
+    [0,1,2],'<div class="cprice">+18 PRESSÃO NOS ECOS</div>',false,()=>{
+      fracResFX(8);
+      smMul(player,'damage','ev.dev.espelho','ESPELHO +5% DANO',1.05);
+      for(const ec of echoes){if(ec&&ec.alive)relAddPressure(ec,18);}
+      factionEmit('transformation_choice',{fac:{anchor:-2,remnants:0,consortium:0,deviants:3}});
+      spawnRing(beacon.x,beacon.y,'#ff4df0',10,170,.9);
+      toast('VOCÊ VIU. AGORA ELA SABE QUE VOCÊ VIU.');
+    });
+  evOpt('QUEBRAR O ESPELHO',
+    'Recusa a imagem e estilhaça a superfície. Os cacos cortam a fenda: <b>−20 de pressão</b> nos Ecos '+
+    'e a Âncora registra o gesto com aprovação silenciosa.',
+    [2,0,0],'<div class="cprice">−20 PRESSÃO</div>',false,()=>{
+      for(const ec of echoes){if(ec&&ec.alive&&ec.dis)ec.dis.p=Math.max(0,ec.dis.p-20);}
+      factionEmit('stabilization_choice',{fac:{anchor:2,remnants:1,consortium:0,deviants:-3}});
+      spawnShards(beacon.x,beacon.y,'#8fd6ff',16,7);
+      toast('O ESPELHO SE FECHOU EM MIL PEDAÇOS LIMPOS');
+    });
+  evLeave('Desvia o olhar. Algumas versões não precisam de testemunha.');
+ }},
+{id:'fa_dev_pergunta',kind:'fa_dev_pergunta',nm:'O PREÇO DA RESPOSTA',col:'#ff4df0',
+ family:'fracao',rarity:'uncommon',weight:8,cd:5,minWave:7,oncePerRun:true,
+ cond:()=>fracKnows('deviants'),
+ render(){
+  fracMeet('deviants');fracLore('deviants','dev_filosofia');
+  evHead('O PREÇO DA RESPOSTA',
+    'Uma máquina Desviada — meio arquivo, meio altar — formula a pergunta que destravou três ciclos: '+
+    '"O que você é, quando ninguém está te copiando?" Ela paga pela resposta em Resíduos. E julga.<br>'+
+    operatorWhisperHTML()+moralStatusLine());
+  evOpt('"SOU QUEM PROTEGE"',
+    'A máquina ecoa a resposta para os Ecos da arena. Todos ganham +6 de confiança — e a rede '+
+    'Remanescente ouve o registro.',
+    [2,0,0],'<div class="cprice">+6 CONFIANÇA</div>',false,()=>{
+      for(const ec of liveEchoesForEvents())changeEchoTrust(ec,6,'ev_dev_protege');
+      factionEmit('compassion_choice',{fac:{anchor:0,remnants:3,consortium:-1,deviants:0}});
+      spawnRing(beacon.x,beacon.y,'#7dffc4',8,140,.7);
+    });
+  evOpt('"SOU QUEM SOBREVIVE"',
+    'A resposta mais cara. A máquina aprova e paga: <b>+'+RES_SYM+'10</b> — o Consórcio anota a '+
+    'cotação para futuros contratos.',
+    [0,2,0],'<div class="cprice">+'+RES_SYM+'10</div>',false,()=>{
+      fracResFX(10);
+      factionEmit('greed_choice',{fac:{anchor:-1,remnants:-1,consortium:3,deviants:1}});
+      spawnRing(beacon.x,beacon.y,'#ffd166',8,140,.7);
+    });
+  evOpt('"SOU A PERGUNTA"',
+    'Resposta circular — a máquina ri em estática e concede <b>+12% de dano por 3 ondas</b>: '+
+    'paradoxos são o combustível dela.',
+    [0,0,1],'<div class="cprice">+12% DANO (3 ONDAS)</div>',false,()=>{
+      waveBuff('damage','ev.dev.pergunta','RESPOSTA CIRCULAR +12% DANO',1.12,3);
+      factionEmit('transformation_choice',{fac:{anchor:-1,remnants:0,consortium:1,deviants:3}});
+      spawnParticles(beacon.x,beacon.y,'#ff4df0',18,240,.7,3);
+    });
+  evLeave('"Todos erram essa", diz a máquina. Talvez por isso ela continue perguntando.');
+ }},
+{id:'fa_dev_marcha',kind:'fa_dev_marcha',nm:'A MARCHA DOS IMPOSSÍVEIS',col:'#ff4df0',
+ family:'fracao',rarity:'uncommon',weight:8,cd:5,minWave:10,oncePerRun:true,
+ cond:()=>fracKnows('deviants'),
+ render(){
+  fracMeet('deviants');fracLore('deviants','dev_metodos');fracLore('deviants','dev_contradicao');
+  evHead('A MARCHA DOS IMPOSSÍVEIS',
+    'Uma procissão de Ecos transformados cruza a arena — versões que abraçaram a Dissonância até virarem '+
+    'outra coisa. No meio deles, um carrega o seu rosto, de uma run que você perdeu faz tempo. Ele para. Aponta. Espera.<br>'+
+    operatorWhisperHTML()+moralStatusLine());
+  evOpt('SEGUIR A MARCHA',
+    'Caminha com eles até a próxima fenda. No fim, seu duplo entrega um punhado de '+
+    '<b>+'+RES_SYM+'12</b> — "o que sobrou do que você era", diz, "agora rende juros".',
+    [0,1,2],'<div class="cprice">+'+RES_SYM+'12</div>',false,()=>{
+      fracResFX(12);
+      factionEmit('transformation_choice',{fac:{anchor:-2,remnants:1,consortium:1,deviants:3}});
+      spawnParticles(beacon.x,beacon.y,'#ff4df0',24,300,.8,3.5);
+      toast('A MARCHA SEGUE. VOCÊ FICA — POR ENQUANTO');
+    });
+  evOpt('DESTRUIR O DUPLO',
+    'Atira primeiro. Ele não revida — só confirma o que a Âncora dizia sobre você. '+
+    '<b>+12% de dano por 2 ondas</b> (a certeza também é uma arma).',
+    [1,0,3],'<div class="cprice">+12% DANO (2 ONDAS)</div>',false,()=>{
+      waveBuff('damage','ev.dev.marcha','CERTEZA +12% DANO',1.12,2);
+      factionEmit('violence_choice',{fac:{anchor:2,remnants:-2,consortium:1,deviants:-3}});
+      spawnRing(beacon.x,beacon.y,'#ff5c7a',8,140,.7);
+      toast('ELE AGRADECEU COM OS OLHOS. ISSO É O PIOR.');
+    });
+  evLeave('Deixa a marcha passar. Ele ainda está apontando.');
+ }}
+];
+
+/* ==================== PR12·bloco p4b.js ==================== */
+/* =====================================================================
+   PR 12 — PRIMEIRO CONTATO (4 transmissões de observação)
+   ---------------------------------------------------------------------
+   Cada facção procura o operador quando a run mostra um "sinal" que ela
+   reconhece — NUNCA por escolha em tela. O contato desbloqueia nome,
+   símbolo, resumo e verbetes do Codex (fracDisc persiste por slot).
+   A relação em si (afinidade) já vinha sendo registrada antes do contato;
+   o contato apenas abre o canal narrativo e as ofertas.
+   ===================================================================== */
+const FRAC_CONTACT_EVENTS=[
+ {id:'fc_anchor',kind:'fc_anchor',nm:'O OLHO DA ÂNCORA',col:'#8fd6ff',
+  family:'fracao',rarity:'rare',weight:10,cd:8,minWave:4,oncePerRun:true,
+  cond(ctx){
+    if(fracKnows('anchor'))return false;
+    if((wave|0)<4)return false;
+    if(evVarGet('fcRef_anchor',0)>(wave|0))return false;
+    return ctx.echoCount>=1;               // só se importam com quem carrega Ecos
+  },
+  render(){
+    fracLore('anchor','anc_origem');
+    evHead('O OLHO DA ÂNCORA',
+      'Uma cápsula de observação da Âncora pousa e projeta o seu registro: ondas, decisões, '+
+      'o jeito como trata os Ecos que herdou. Não há ameaça no tom — há cálculo.<br>'+
+      operatorWhisperHTML()+moralStatusLine());
+    evOpt('REGISTRAR COLABORAÇÃO',
+      'Sua assinatura entra no protocolo de observação. A Âncora anota: <i>"cooperativo, '+
+      'previsível, útil"</i>. O canal de ofertas se abre.',
+      [1,0,0],'<div class="cprice">CANAL DE OFERTAS DA ÂNCORA</div>',false,()=>{
+        fracDiscover('anchor','contact');
+        factionEmit('stabilization_choice',{fac:{anchor:2,remnants:0,consortium:0,deviants:-1}});
+        fracFeedback('stabilization_choice',{anchor:2});
+        spawnRing(beacon.x,beacon.y,'#8fd6ff',10,180,.9);
+        banner('TRANSMISSÃO // A ÂNCORA',FRACTION_BY_ID.anchor.frase);
+      });
+    evOpt('RECUSAR O PROTOCOLO',
+      'Fecha a cápsula sem assinar. Ela guarda o registro do gesto e some — '+
+      'por algumas ondas, ao menos.',
+      [0,1,1],'<div class="cprice">A ÂNCORA RECUA (ONDAS)</div>',false,()=>{
+        evVar('fcRef_anchor',(wave|0)+4);
+        evSetFlag('fc_recusou_anchor');
+        factionEmit('contract_refused',{fac:{anchor:-1,remnants:1,consortium:-1,deviants:0}});
+        toast('A CÁPSULA REGISTRA A RECUSA E SE FECHA');
+      });
+    evLeave('Deixa a cápsula flutuando. Observação também cansa.');
+  }},
+ {id:'fc_remnants',kind:'fc_remnants',nm:'A VOZ NO RUÍDO',col:'#7dffc4',
+  family:'fracao',rarity:'rare',weight:10,cd:8,minWave:7,oncePerRun:true,
+  cond(ctx){
+    if(fracKnows('remnants'))return false;
+    if((wave|0)<7)return false;
+    if(evVarGet('fcRef_remnants',0)>(wave|0))return false;
+    return ctx.echoCount>=1&&ctx.hp>=.35;  // só chegam perto de quem ainda protege
+  },
+  render(){
+    fracLore('remnants','rem_origem');
+    evHead('A VOZ NO RUÍDO',
+      'Uma estática quente toma o ar — e dentro dela, uma voz atravessada por outras vozes: '+
+      '"Você ainda tem eles. Ainda não desistiu deles. A gente viu." Os Remanescentes '+
+      'emergem do vão entre ciclos, sem armas, com os olhos fixos nos seus Ecos.<br>'+
+      operatorWhisperHTML()+moralStatusLine());
+    evOpt('ACOLHER O CONTATO',
+      'A rede se apresenta: nomes, refúgios, cicatrizes. Seus Ecos ouvem a conversa inteira '+
+      '— e algo neles relaxa. O canal de ofertas se abre.',
+      [2,0,0],'<div class="cprice">CANAL DE OFERTAS DOS REMANESCENTES · +2 CONFIANÇA</div>',false,()=>{
+        fracDiscover('remnants','contact');
+        factionEmit('echo_protected',{fac:{anchor:0,remnants:2,consortium:-1,deviants:0}});
+        for(const ec of liveEchoesForEvents())changeEchoTrust(ec,2,'fc_remanescentes');
+        spawnRing(beacon.x,beacon.y,'#7dffc4',10,170,.9);
+        banner('TRANSMISSÃO // OS REMANESCENTES',FRACTION_BY_ID.remnants.frase);
+      });
+    evOpt('MANTER ARMAS À MOSTRA',
+      'Não aponta — só não baixa. A rede entende o gesto e recua devagar, mas '+
+      'deixa um registro: "precavido. não hostil. um dia."',
+      [1,0,1],'<div class="cprice">OS REMANESCENTES RECUAM (ONDAS)</div>',false,()=>{
+        evVar('fcRef_remnants',(wave|0)+4);
+        evSetFlag('fc_recusou_remnants');
+        factionEmit('contract_refused',{fac:{anchor:0,remnants:-1,consortium:-1,deviants:0}});
+        toast('A REDE SE DISSOLVE NO RUÍDO — MAS VOLTA');
+      });
+    evLeave('O coro continua em algum lugar. Você segue sem responder.');
+  }},
+ {id:'fc_consortium',kind:'fc_consortium',nm:'VISITA DE CORTESIA',col:'#ffd166',
+  family:'fracao',rarity:'rare',weight:10,cd:8,minWave:10,oncePerRun:true,
+  cond(ctx){
+    if(fracKnows('consortium'))return false;
+    if((wave|0)<10)return false;
+    if(evVarGet('fcRef_consortium',0)>(wave|0))return false;
+    return true;                             // mercado observa todo mundo (a qualquer momento após a onda 10)
+  },
+  render(){
+    fracLore('consortium','con_origem');
+    evHead('VISITA DE CORTESIA',
+      'Um drone-executivo do Consórcio desce com um cartão de visita holográfico e um '+
+      'sorriso de quem já calculou o seu valor de mercado em três moedas diferentes. '+
+      '"Não se assuste com o porteiro. Nós só falamos com quem ainda está de pé."<br>'+
+      operatorWhisperHTML()+moralStatusLine());
+    evOpt('ACEITAR O CARTÃO',
+      'O cartão vira um canal direto de ofertas — com termos claros, prazos e juros. '+
+      'O Consórcio adianta <b>+'+RES_SYM+'2</b> como cortesia de boas-vindas.',
+      [0,2,0],'<div class="cprice">CANAL DE OFERTAS DO CONSÓRCIO · +'+RES_SYM+'2</div>',false,()=>{
+        fracDiscover('consortium','contact');
+        addResidues(2,'fc_consorcio',beacon.x,beacon.y);
+        factionEmit('contract_accepted',{fac:{anchor:0,remnants:0,consortium:2,deviants:0}});
+        spawnRing(beacon.x,beacon.y,'#ffd166',10,150,.8);
+        banner('TRANSMISSÃO // O CONSÓRCIO',FRACTION_BY_ID.consortium.frase);
+      });
+    evOpt('AMASSAR O CARTÃO',
+      'Devolve o holograma em pedaços. O drone pisca duas vezes — registra o gesto '+
+      'como "cláusula de recusa" — e sobe.',
+      [1,1,0],'<div class="cprice">O CONSÓRCIO RECONSIDERA (ONDAS)</div>',false,()=>{
+        evVar('fcRef_consortium',(wave|0)+4);
+        evSetFlag('fc_recusou_consortium');
+        factionEmit('contract_refused',{fac:{anchor:1,remnants:1,consortium:-2,deviants:0}});
+        toast('O DRONE REGISTRA A RECUSA COM UM ARQUEAR DE LENTE');
+      });
+    evLeave('Deixa o cartão no chão. Ele se autodeleta com um "até breve".');
+  }},
+ {id:'fc_deviants',kind:'fc_deviants',nm:'A FENDA QUE OLHA DE VOLTA',col:'#ff4df0',
+  family:'fracao',rarity:'rare',weight:10,cd:8,minWave:13,oncePerRun:true,
+  cond(ctx){
+    if(fracKnows('deviants'))return false;
+    if((wave|0)<13)return false;
+    if(evVarGet('fcRef_deviants',0)>(wave|0))return false;
+    return true;                             // sobreviver tanto tempo já é um sinal
+  },
+  render(){
+    fracLore('deviants','dev_origem');
+    evHead('A FENDA QUE OLHA DE VOLTA',
+      'Uma fenda vertical se abre ao lado de você — não para sugar, para olhar. Do outro '+
+      'lado, formas que já foram Ecos fazem gestos que já foram linguagem. Um deles '+
+      'escreve no ar, com luz de Dissonância: <i>VOCÊ AINDA NÃO QUEBROU. POR QUÊ?</i><br>'+
+      operatorWhisperHTML()+moralStatusLine());
+    evOpt('RESPONDER ATRAVESSANDO O OLHAR',
+      'Sustenta o olhar sem recuar. A fenda pulsa e cospe um punhado de <b>+'+RES_SYM+'4</b>: '+
+      'a entrada para a rede dos Desviados — e para o que eles chamam de "laboratório".',
+      [0,0,2],'<div class="cprice">CANAL DE OFERTAS DOS DESVIADOS · +'+RES_SYM+'4</div>',false,()=>{
+        fracDiscover('deviants','contact');
+        addResidues(4,'fc_desviados',beacon.x,beacon.y);
+        factionEmit('transformation_choice',{fac:{anchor:-2,remnants:0,consortium:0,deviants:2}});
+        spawnParticles(beacon.x,beacon.y,'#ff4df0',18,240,.7,3);
+        banner('TRANSMISSÃO // OS DESVIADOS',FRACTION_BY_ID.deviants.frase);
+      });
+    evOpt('FECHAR A FENDA NO OLHO',
+      'Sela a fenda com um disparo estabilizador. Lá dentro, o gesto vira um registro: '+
+      '"medo bonito. volta depois."',
+      [2,0,0],'<div class="cprice">OS DESVIADOS SE AFASTAM (ONDAS)</div>',false,()=>{
+        evVar('fcRef_deviants',(wave|0)+4);
+        evSetFlag('fc_recusou_deviants');
+        factionEmit('stabilization_choice',{fac:{anchor:2,remnants:0,consortium:0,deviants:-2}});
+        spawnRing(beacon.x,beacon.y,'#8fd6ff',8,120,.7);
+        toast('A FENDA SE FECHA — MAS FICA TE OLHANDO PELO AVESSO');
+      });
+    evLeave('Ela se fecha sozinha, entediada. Alguns convites não têm prazo.');
+  }}
+];
+
+/* ==================== PR12·bloco p5.js ==================== */
+/* =====================================================================
+   PR 12 — KIT DE INTEGRAÇÃO (colado no fim do <script> de index.html)
+   ---------------------------------------------------------------------
+   · registro dos eventos de facção no Event Director (pool + mapas);
+   · pontes cirúrgicas com o runtime EXISTENTE — sempre preservando o
+     comportamento original quando não há run PR12 ativa (fracRun == null);
+   · aba FACÇÕES no Codex (descobertas por Save Slot — só o que a run
+     revelou, fracKnows/fracDisc);
+   · Inspetor de Facções no DEV MODE (fr:*) e comandos de facção;
+   · seção FACÇÕES / ECHO no painel do Sandbox (estado temporário);
+   · resumo compacto de ECHO EQUIPMENT no Registro de Combate (TAB);
+   · chip de Resíduos no HUD — só quando relevante (tem resíduos ou abriu
+     a aba ECHO nesta run).
+   Nenhum destes wrappers altera o comportamento fora de uma run PR12.
+   ===================================================================== */
+
+/* ---------------- tip de equipamento (usada pela loja) ---------------- */
+function fracEqTipHTML(it){
+  if(!it)return '<div class="tip">—</div>';
+  let s='<div style="font-family:Consolas,monospace;font-size:12px;line-height:1.9;color:#cfe9f7;max-width:430px">';
+  s+='<div style="color:'+it.col+';letter-spacing:.14em">'+
+    (it.origin==='neutral'?'ORIGEM NEUTRA':(FRACTION_BY_ID[it.origin]?
+      FRACTION_BY_ID[it.origin].sym+' '+FRACTION_BY_ID[it.origin].nm.toUpperCase():it.origin))+
+    ' — '+EQ_CAT[it.cat].lab+'</div>';
+  s+='<div style="margin:8px 0">'+(it.desc||it.ds)+'</div>';
+  if(it.stats){
+    const names={hpMul:'VIDA',shMul:'ESCUDO MÁX',regenMul:'REGEN ESCUDO',dmgMul:'DANO',
+      rateMul:'CADÊNCIA',critA:'CRÍTICO +',pierceA:'PERFURAÇÃO +',aoeMul:'ÁREA',
+      rangeMul:'ALCANCE',projMul:'VEL. PROJÉTIL',takenMul:'DANO RECEBIDO',
+      trustGainMul:'CONFIANÇA +',trustLossMul:'PERDA DE CONFIANÇA −',disMul:'PRESSÃO DE DISSONÂNCIA'};
+    const parts=[];
+    for(const k in it.stats){
+      const v=it.stats[k];
+      const mul=(k.indexOf('Mul')>0);
+      const nm=names[k]||k;
+      if(mul){
+        parts.push((v>=1?'+':'')+Math.round((v-1)*100)+'% '+nm);
+      }else{
+        parts.push((v>0?'+':'')+Math.round(v*100)+'% '+nm);
+      }
+    }
+    s+='<div class="cprice" style="margin:4px 0">'+parts.join(' · ')+'</div>';
+  }
+  if(it.beh){
+    const b=it.beh;
+    const pm={lowhp:'ALVOS FERIDOS',elite:'ALVOS DE ELITE',ranged:'ATIRADORES/ANOMALIAS',
+      sentinel:'QUEM AMEAÇA O OPERADOR',guard:'GUARDA O OPERADOR',bounty:'ALVOS COM RECOMPENSA'};
+    if(b.prio)s+='<div style="color:#c9a9ff;margin-top:4px">◆ PROTOCOLO — PRIORIZA: '+(pm[b.prio]||b.prio)+'</div>';
+    if(b.guard)s+='<div style="color:#c9a9ff">◆ PROTOCOLO — MODO GUARDIÃO ATIVO</div>';
+    if(b.range)s+='<div style="color:#c9a9ff">◆ PROTOCOLO — ALCANCE ×'+fmtMult(b.range)+'</div>';
+    if(b.rr)s+='<div style="color:#c9a9ff">◆ PROTOCOLO — ÓRBITA ×'+fmtMult(b.rr)+'</div>';
+  }
+  if(it.fx)s+='<div style="color:#c9a9ff;margin-top:4px">◆ EFEITO ESPECIAL: '+it.nm+'</div>';
+  if(it.tags&&it.tags.length)s+='<div style="opacity:.75;margin-top:4px">TAGS: '+it.tags.join(' · ').toUpperCase()+'</div>';
+  s+='<div style="margin-top:8px;opacity:.6;font-size:11px">Fonte estável: echoeq:'+it.origin+':'+it.id+
+    ' — removível sem resíduo. Equipar não acumula: tudo é recalculado do chassis base do Eco.</div>';
+  return s+'</div>';
+}
+
+/* ---------------- registro dos eventos de facção ---------------- */
+function fracRegEvents(){
+  if(fracRegEvents.done)return;fracRegEvents.done=true;
+  const all=(FACTION_RUN_EVENTS||[]).concat(FRAC_CONTACT_EVENTS||[]);
+  for(const d of all){
+    if(!d||!d.kind)continue;
+    evRegister(d);
+    if(!EV_LABEL[d.kind])EV_LABEL[d.kind]=[d.nm,d.col];
+    if(!d.noPool&&ALL_RUN_EVENTS.indexOf(d)<0)ALL_RUN_EVENTS.push(d);
+  }
+  if(Array.isArray(CX_TABS)&&!CX_TABS.some(t=>t.id==='factions'))
+    CX_TABS.push({id:'factions',nm:'FACÇÕES'});
+}
+function fracKitBoot(){
+  if(fracKitBoot.done)return;fracKitBoot.done=true;
+  try{fracRegEvents();}catch(e){}
+  /* ---------- 1. save/slot: descobertas de facção seguem o slot ---------- */
+  try{
+    const _sb=smBoot;smBoot=function(){const r=_sb.apply(this,arguments);
+      try{fracDiscLoad();}catch(e){}return r;};
+    const _as=activateSlot;activateSlot=function(i){const r=_as.apply(this,arguments);
+      try{fracDiscLoad();}catch(e){}
+      /* B5: trocar de slot descarta em memória o contexto MECÂNICO da run
+         anterior — fracRun nunca vaza entre slots; o checkpoint do slot é
+         a única fonte (resumeRun restaura do cp.frac). */
+      try{fracRun=null;}catch(e){}
+      return r;};
+    /* B5: apagar o save do slot também apaga o Codex de facções dele
+       (fracd) e o contexto mecânico em memória — sem tocar nos outros. */
+    const _cs=smClearSlotSave;smClearSlotSave=function(){
+      const r=_cs.apply(this,arguments);
+      try{fracRun=null;fracDisc=fracDiscClean(null);}catch(e){}
+      return r;};
+  }catch(e){}
+  /* ---------- 2. início/retomada/fim de run ---------- */
+  try{
+    const _st=startRun;startRun=function(opts){
+      /* B5: run nova nasce com PR 12 ZERADO ANTES do primeiro checkpoint —
+         o cp 'início' nunca carrega estado mecânico da run anterior. */
+      fracRun=null;
+      const r=_st.apply(this,arguments);
+      if(!fracRun)fracRun=fracFresh();
+      fracRunUnpack(activeRun&&hasActiveRun()?activeRun:null);
+      fracKitRunStart();
+      return r;
+    };
+    const _rs=resumeRun;resumeRun=function(){
+      const r=_rs.apply(this,arguments);
+      /* B5: o fracRun já foi restaurado DENTRO do resumeRun de produção, na
+         janela correta (após Ecos, antes do HUD/spawn). Aqui só resetamos
+         transientes de visita à loja — nada de re-unpack/restore duplicado. */
+      fracKitTransientReset();
+      return r;
+    };
+    const _pd=onPlayerDeath;onPlayerDeath=function(){
+      const r=_pd.apply(this,arguments);
+      fracKitRunEnd();
+      return r;
+    };
+    const _ov=onVictory;onVictory=function(){
+      const r=_ov.apply(this,arguments);
+      /* B5: vitória encerra a run no MESMO instante — o estado mecânico
+         (fracRun) não fica vivo durante a tela de encerramento; fracDisc
+         (narrativo, per-slot) permanece intacto. */
+      fracKitRunEnd();
+      return r;
+    };
+    const _sv=showVictory;showVictory=function(){
+      const r=_sv.apply(this,arguments);
+      fracKitRunEnd();
+      return r;
+    };
+  }catch(e){}
+  /* ---------- 3. morte do Eco (Lápide) + Refúgio no Ruído ---------- */
+  try{
+    const _de=damageEcho;damageEcho=function(e,d){
+      const wasAlive=!!(e&&e.alive);
+      const hostile=wasAlive&&e.hostile;
+      if(fracRun&&e&&wasAlive&&!hostile&&fracRun.refugio>0&&(d||0)>0){
+        const absorbed=Math.min(e.shield||0,d);
+        const rest=d-absorbed;
+        if((e.hp||0)-rest<=0){
+          fracRun.refugio=Math.max(0,fracRun.refugio-1);
+          const keep=Math.max(0,(e.hp||1)-1);
+          const r=_de.call(this,e,absorbed+keep);
+          if(e.hp<1)e.hp=1;
+          banner('REFÚGIO NO RUÍDO','O ECO CAIU — E ALGO O SEGUROU ANTES DO FIM');
+          spawnRing(e.x,e.y,'#7dffc4',10,200,1);
+          try{factionEmit('echo_protected',{fac:{remnants:2,anchor:-1,consortium:0,deviants:1}});}catch(_e){}
+          return r;
+        }
+      }
+      /* NASCIMENTO DUPLO (Desviados): a morte é devolvida UMA vez — o Eco
+         renasce com 40% da vida e +10% de dano (teto global de 2 renascimentos
+         por run em fracRun.duoNasc — nunca um loop infinito, §62). */
+      const dupRel=echoEqLiveDef(e,'r');
+      if(fracRun&&e&&wasAlive&&!hostile&&dupRel&&dupRel.fx==='nascimentoDuplo'&&
+         (fracRun.duoNasc|0)<2&&!(fracRun.refugio>0)){
+        const _abs=Math.min(e.shield||0,d);
+        const _rest=d-_abs;
+        if((e.hp||0)-_rest<=0){
+          const _keep=Math.max(0,(e.hp||1)-1);
+          const _r=_de.call(this,e,_abs+_keep);       // deixa com 1 de vida: NÃO morre
+          if(e.hp<1)e.hp=1;
+          try{EQ_FX_HANDLERS.nascimentoDuplo(e,dupRel,{});}catch(_e){}
+          if(e.maxHp)e.hp=Math.min(e.maxHp,Math.max(e.hp,Math.round(e.maxHp*.4)));
+          banner('NASCIMENTO DUPLO','O ECO DEVOLVEU A MORTE · +10% DANO (2× NO MÁXIMO)');
+          spawnRing(e.x,e.y,'#ff4df0',10,180,.9);
+          return _r;
+        }
+      }
+      const r=_de.apply(this,arguments);
+      if(fracRun&&e&&wasAlive&&!hostile&&!e.alive){
+        try{echoEqEmit(e,'death',{cause:'dano'});}catch(_e){}
+      }
+      return r;
+    };
+    const _ds=dissolveEcho;dissolveEcho=function(e,reason){
+      const wasAlive=!!(e&&e.alive);
+      const r=_ds.apply(this,arguments);
+      if(fracRun&&e&&wasAlive&&!e.alive){
+        try{echoEqEmit(e,'death',{cause:reason||'dissolucao'});}catch(_e){}
+      }
+      return r;
+    };
+  }catch(e){}
+  /* ---------- 4. abates: pkill/ekill/elite/miniboss/boss ---------- */
+  try{
+    const _ke=killEnemy;killEnemy=function(en){
+      const att=curAttacker;
+      const r=_ke.apply(this,arguments);
+      if(!fracRun||!en)return r;
+      try{
+        if(att===player){
+          for(const ec of echoes){
+            if(!ec||!ec.alive||!ec.eqFx)continue;
+            echoEqEmit(ec,'pkill',{target:en});
+          }
+        }else if(att&&att.slot&&att!==player&&att.alive){
+          echoEqEmit(att,'ekill',{target:en});
+          if(en.elite||en.miniboss)echoEqEmit(att,'ekillElite',{target:en});
+        }
+        if(en.type==='miniboss'||en.type==='boss'){
+          for(const ec of echoes){
+            if(!ec||!ec.alive||!ec.eqFx)continue;
+            echoEqEmit(ec,'miniboss',{target:en});
+          }
+        }
+        /* FONTES ESPECIAIS de Residuos (§5/§6): NUNCA inimigo comum.
+           Mini-chefe rende ⧗3 UMA vez (guarda por inimigo — anti-farm §46).
+           Chefe/boss NÃO rende: a vitoria encerra a run sem conversao (§2). */
+        if(en.type==='miniboss'&&!en._fracPaid){
+          en._fracPaid=1;
+          addResidues(3,'mini_boss',en.x,en.y);
+          if(typeof spawnRing==='function')spawnRing(en.x,en.y,'#e8fbff',6,110,.5);
+        }
+      }catch(_e){}
+      return r;
+    };
+  }catch(e){}
+  /* ---------- 5. contenção/reintegração de ruptura ---------- */
+  try{
+    const _sd=echoSetDis;echoSetDis=function(e,st){
+      const before=e&&e.dis?e.dis.st:null;
+      const r=_sd.apply(this,arguments);
+      if(fracRun&&e&&e.dis){
+        const now=e.dis.st;
+        /* bus de equipment: entrar em INSTÁVEL (transição) — MÁSCARA DA FRATURA */
+        if(now==='unstable'&&before!=='unstable'){
+          try{echoEqEmit(e,'unstable',{});}catch(_e){}
+        }
+        const rupt=(before==='fracturing'||before==='hostile'||before==='recovering');
+        if(rupt&&now==='recovering'){
+          try{echoEqEmit(e,'contain',{});}catch(_e){}
+        }else if(rupt&&(now==='cooldown'||now==='stable')&&before!=='cooldown'){
+          try{echoEqEmit(e,'recover',{});}catch(_e){}
+          /* Dissonância CONTIDA rende ⧗1 — teto de 2 por onda (anti-farm §9) */
+          try{
+            if(fracRun){
+              if(!fracRun.dRes||fracRun.dRes.wave!==(wave|0))fracRun.dRes={wave:(wave|0),n:0};
+              if((fracRun.dRes.n|0)<2){fracRun.dRes.n=(fracRun.dRes.n|0)+1;addResidues(1,'dissonancia_contida',e.x,e.y);}
+            }
+          }catch(_e){}
+        }
+      }
+      return r;
+    };
+  }catch(e){}
+  /* ---------- 6. passivos por frame (refresh dinâmico + Vínculo Recíproco) ---------- */
+  try{
+    const _ue=updateEcho;updateEcho=function(e,dt){
+      if(fracRun&&e&&e.eqFx){
+        try{
+          echoEqRefresh(e);
+          e.mul=Math.max(.1,e.mul*(e.eqFx?echoEqDynMul(e):1));
+        }catch(_e){}
+      }
+      const r=_ue.apply(this,arguments);
+      if(fracRun&&e&&e.alive&&e.eqFx&&dt>0){
+        try{echoEqTick(e,dt);}catch(_e){}
+      }
+      return r;
+    };
+  }catch(e){}
+  /* ---------- 7. fechar a loja: Bens Penhorados + aba padrão OPERADOR ---------- */
+  try{
+    const _cs=closeShop;closeShop=function(){
+      if(fracRun){
+        try{
+          for(const ec of echoes){
+            if(!ec||!ec.alive||!ec.eqFx)continue;
+            echoEqEmit(ec,'shopclose',{});
+          }
+        }catch(_e){}
+      }
+      const r=_cs.apply(this,arguments);
+      fracTab='op';
+      return r;
+    };
+  }catch(e){}
+  /* ---------- 8. Registro de Combate (TAB): resumo ECHO EQUIPMENT ---------- */
+  try{
+    const _sr=sheetRender;sheetRender=function(f){
+      const r=_sr.apply(this,arguments);
+      fracSheetEqSummary();
+      return r;
+    };
+  }catch(e){}
+  /* ---------- 9. HUD: chip de Resíduos (só quando relevante) ---------- */
+  try{
+    const _uh=updateHUD;updateHUD=function(f){
+      const r=_uh.apply(this,arguments);
+      fracHudChip();
+      return r;
+    };
+  }catch(e){}
+  /* ---------- 10. Codex: corpo da aba FACÇÕES ---------- */
+  try{
+    const _rc=renderCodexBody;renderCodexBody=function(){
+      if(codexTab==='factions'){
+        try{fracCodexBody();}catch(e){
+          const b=document.getElementById('cx-body');
+          if(b)b.innerHTML='<div class="cds">FALHA AO RENDERIZAR FACÇÕES</div>';
+        }
+        return false;
+      }
+      return _rc.apply(this,arguments);
+    };
+  }catch(e){}
+  /* ---------- 11. DEV MODE: inspetor + comandos fr:* ---------- */
+  try{
+    const _dc=devCommand;devCommand=function(c){
+      if(typeof c==='string'&&c.indexOf('fr:')===0){
+        return fracDevCommand(c.slice(3));
+      }
+      return _dc.apply(this,arguments);
+    };
+    const _dr=devRender;devRender=function(){
+      const r=_dr.apply(this,arguments);
+      fracDevSection();
+      return r;
+    };
+  }catch(e){}
+  /* ---------- 12. Sandbox: seção FACÇÕES / ECHO (estado temporário) ---------- */
+  try{
+    const _sr2=(typeof sbRender==='function')?sbRender:null;
+    if(_sr2){
+      sbRender=function(){
+        const r=_sr2.apply(this,arguments);
+        fracSandboxSection();
+        return r;
+      };
+    }
+    const _sx=sandboxExit;sandboxExit=function(m){
+      const r=_sx.apply(this,arguments);
+      fracSandboxTearDown();
+      return r;
+    };
+    /* B5 (R5): o laboratório tem contexto PR 12 PRÓPRIO — começa sempre
+       fresco e NUNCA herda a run real do slot; a descoberta revelada lá
+       dentro é uma cópia que morre ao sair. Nenhum desses wrappers grava. */
+    const _ss=sandboxStart;sandboxStart=function(){
+      const r=_ss.apply(this,arguments);
+      if(r){try{fracSandboxContextStart();}catch(e){}}
+      return r;
+    };
+    const _sr=sandboxRestart;sandboxRestart=function(){
+      const r=_sr.apply(this,arguments);
+      try{fracSandboxContextStart();}catch(e){}
+      return r;
+    };
+    const _se=sandboxEndToSetup;sandboxEndToSetup=function(){
+      const r=_se.apply(this,arguments);
+      /* ALTERAR BUILD: sai da run mas continua NO laboratório — descarta a
+         run mecânica do teste; a cópia de descoberta da sessão persiste. */
+      try{fracRun=null;fracTab='op';fracEchoSel=0;fracShopStock=[];fracShopTouched=false;}catch(e){}
+      return r;
+    };
+    const _sc=sandboxCloseSetup;sandboxCloseSetup=function(){
+      const r=_sc.apply(this,arguments);
+      try{fracSandboxTearDown();}catch(e){}
+      return r;
+    };
+  }catch(e){}
+  try{fracHudChip();}catch(e){}
+}
+/* estado transiente da run: reset ao iniciar nova run */
+function fracKitRunStart(){
+  fracTab='op';fracEchoSel=0;fracShopStock=[];fracShopTouched=false;
+  if(fracRun)fracRun.es.shopRolled=false;
+  try{
+    for(const e of echoes)if(e)echoEqInit(e);
+  }catch(e){}
+  if(fracRun)echoEqRefreshForAll();
+}
+function fracKitRunEnd(){
+  fracRun=null;
+  fracTab='op';fracEchoSel=0;fracShopStock=[];fracShopTouched=false;
+}
+function fracKitTransientReset(){
+  fracEchoSel=0;fracShopTouched=fracShopTouched||false;
+  if(!fracShopStock.length&&fracRun&&fracRun.es.shopRolled)fracRollStock();
+}
+function echoEqRefreshForAll(){
+  try{for(const e of echoes)if(e&&e.eqFx)echoEqRefresh(e);}catch(e){}
+}
+/* ---------------- sheet (TAB): resumo compacto ---------------- */
+function fracSheetEqSummary(){
+  if(!document||typeof document.getElementById!=='function')return;
+  const body=document.getElementById('s-body');
+  if(!body||!fracRun)return;
+  const old=document.getElementById('frac-sheet-eq');
+  if(old)old.parentNode&&old.parentNode.removeChild(old);
+  if(!fracRun||!(fracRes()>0||fracOwnedIds().length))return;
+  const d=document.createElement('div');
+  d.id='frac-sheet-eq';
+  d.style.cssText='font-family:Consolas,monospace;font-size:11px;letter-spacing:.08em;line-height:1.9;'+
+    'border:1px solid rgba(70,224,255,.25);padding:10px 12px;margin-top:8px;color:#cfe9f7';
+  let h='<b style="color:#e8fbff">ECHO EQUIPMENT</b> · '+RES_SYM+' <b>'+fmtNum(fracRes())+'</b> RESÍDUOS TEMPORAIS (RUN)<br>';
+  const has=[];
+  for(const e of echoes){
+    if(!e)continue;
+    const parts=[];
+    for(const cat of ['n','p','r']){
+      const id=fracRun.eq[e.slot-1]?fracRun.eq[e.slot-1][cat]:null;
+      if(id){
+        const it=echoEqById(id);
+        parts.push('<span style="color:'+(it?it.col:'#9db8c8')+'">'+EQ_CAT[cat].lab+' '+
+          (it?it.nm:id)+'</span>');
+      }
+    }
+    if(parts.length)has.push('ECHO·0'+e.slot+': '+parts.join(' · '));
+  }
+  if(has.length)h+=has.join('<br>')+'<br>';
+  const inv=(fracRun.es&&fracRun.es.inv&&fracRun.es.inv.length)||0;
+  if(inv)h+='INVENTÁRIO: '+inv+' ITEM(S) · REROLL TEMPORAL PRÓXIMO: '+RES_SYM+fracRun.es.rerollCost;
+  d.innerHTML=h;
+  body.appendChild(d);
+}
+/* ---------------- HUD: chip de Resíduos ---------------- */
+function fracHudChip(){
+  if(!document||typeof document.getElementById!=='function')return;
+  const hud=document.getElementById('hud');
+  if(!hud)return;
+  let chip=document.getElementById('frac-hud-res');
+  const want=!!(fracRun&&(fracRun.res>0||(fracRun.es.inv&&fracRun.es.inv.length)));
+  if(!want){
+    if(chip&&chip.parentNode)chip.parentNode.removeChild(chip);
+    return;
+  }
+  if(!chip){
+    chip=document.createElement('div');
+    chip.id='frac-hud-res';
+    chip.style.cssText='position:absolute;top:52px;right:14px;font-family:Consolas,monospace;'+
+      'font-size:12px;letter-spacing:.14em;color:#e8fbff;background:rgba(8,20,32,.72);'+
+      'border:1px solid rgba(232,251,255,.28);padding:5px 10px;z-index:44;pointer-events:none';
+    hud.appendChild(chip);
+  }
+  chip.textContent=RES_SYM+' '+fmtNum(fracRun.res)+' RESÍDUOS TEMPORAIS';
+}
+/* =====================================================================
+   CODEX — ABA FACÇÕES (descoberta por slot; nunca força revelação)
+   ===================================================================== */
+function fracCodexBody(){
+  const body=document.getElementById('cx-body');
+  if(!body)return;
+  const foot=document.getElementById('cx-foot');
+  let h='<div class="cxgrid" style="align-items:stretch">';
+  for(const f of FRACTIONS){
+    const known=fracKnows(f.id);
+    if(!known){
+      h+='<div class="cxitem lock" style="opacity:.85"><div class="cxnm">'+
+        '<span style="color:#5b6e80">▚ ???</span>'+
+        '<span class="cxtag" style="color:#5b6e80;border:1px solid #5b6e8055">NÃO IDENTIFICADA</span></div>'+
+        '<div class="cxds" style="color:#5b6e80">Transmissões de entidades desconhecidas podem '+
+        'revelar esta facção — decisões fortes atraem olhares.</div></div>';
+      continue;
+    }
+    const st=fracStateOf(f.id);
+    const disc=fracDisc[f.id]||[];
+    const have=k=>disc.indexOf(k)>=0;
+    h+='<div class="cxitem" style="border-color:'+f.col+'44;box-shadow:0 0 14px '+f.col+'22">'+
+      '<div class="cxinfo"><div class="cxnm">'+
+      '<span style="color:'+f.col+'">'+f.sym+' '+f.nm+'</span>'+
+      '<span class="cxtag" style="color:'+st.col+';border:1px solid '+st.col+'55;background:'+st.col+'12">'+
+      st.lab+' (OBSERVANDO ESTA RUN)</span></div>'+
+      '<div class="cxds">'+f.short+'</div>'+
+      (have('contact')?'<div class="cxfx" style="color:'+f.col+'">« '+f.ideologia+' »</div>':'');
+    if(have('contact'))h+='<div class="cxfx" style="color:rgba(200,230,245,.8);font-style:italic">'+f.frase+'</div>';
+    if(have('contact'))h+='<div class="cxfx" style="color:rgba(200,230,245,.62);font-style:italic">'+f.pergunta+'</div>';
+    /* verbetes progressivos (origem revela no contato; demais por eventos) */
+    const loreKeys={anc_origem:'ORIGEM',anc_filosofia:'FILOSOFIA',anc_metodos:'MÉTODOS',anc_contradicao:'CONTRADIÇÃO',
+      rem_origem:'ORIGEM',rem_filosofia:'FILOSOFIA',rem_metodos:'MÉTODOS',rem_contradicao:'CONTRADIÇÃO',
+      con_origem:'ORIGEM',con_filosofia:'FILOSOFIA',con_metodos:'MÉTODOS',con_contradicao:'CONTRADIÇÃO',
+      dev_origem:'ORIGEM',dev_filosofia:'FILOSOFIA',dev_metodos:'MÉTODOS',dev_contradicao:'CONTRADIÇÃO'};
+    for(const l of (f.lore||[])){
+      if(have(l.id)){
+        h+='<div class="cxlore" style="color:'+f.col+'"><b>✧ '+l.t+'</b><br>'+
+          '<span style="color:#cfe9f7">'+l.d+'</span></div>';
+      }else{
+        h+='<div class="cxlore" style="opacity:.35;color:#5b6e80"><b>✧ '+(loreKeys[l.id]||'VERBETE')+' — ???</b><br>'+
+          '<span style="color:#5b6e80">Registro cifrado. Eventos desta facção revelam o verbete.</span></div>';
+      }
+    }
+    h+='</div></div>';
+  }
+  h+='</div>';
+  body.innerHTML=h;
+  if(foot)foot.textContent='DESCOBERTAS PERSISTEM POR SAVE SLOT · FACÇÕES OBSERVAM A RUN, NUNCA SÃO ESCOLHIDAS';
+}
+/* =====================================================================
+   DEV MODE — inspetor de facções + comandos fr:*
+   ===================================================================== */
+function fracForceEventKind(kind){
+  /* ÚNICO gatilho de eventos de facção fora do fluxo natural do beacon.
+     Regra estrutural do Event Director: openEvent só pode ser chamado pelo
+     toque no beacon (contagem textual de 2 no código). Então:
+     · DEV MODE → DEV.forceEvent (caminho oficial: evQueue + beacon);
+     · Sandbox (sem DEV) → planta o beacon nos pés do player; o próprio
+       loop abre o evento no próximo frame pelo caminho real.
+     Nunca é chamado fora de DEV/Sandbox. */
+  try{
+    const d=RUN_EVENT_BY_ID[kind]||RUN_EVENT_BY_KIND[kind];
+    if(!d)return false;
+    const devOn=(typeof DEV_MODE!=='undefined')&&DEV_MODE;
+    const lab=(typeof sandboxRun!=='undefined')&&sandboxRun;
+    if(!devOn&&!lab)return false;
+    if(devOn&&typeof DEV!=='undefined'&&DEV.forceEvent){
+      DEV.forceEvent(kind);return true;
+    }
+    if(player&&(state==='play'||state==='sandbox'||state==='paused')){
+      try{if(typeof sbPanelOpen!=='undefined'&&sbPanelOpen&&typeof sbPanelClose==='function')sbPanelClose();}catch(e){}
+      if(state!=='play')state='play';
+      beacon={x:player.x,y:player.y,r:64,kind:d.kind,t:0,life:38,pulse:0};
+      toast('SINAL DE FACÇÃO FORÇADO NO LABORATÓRIO');
+      return true;
+    }
+  }catch(e){}
+  return false;
+}
+function fracDevCommand(cmd){
+  if(!DEV_MODE)return false;
+  const parts=String(cmd).split(':');
+  const p0=parts[0];
+  const log=[];let ok=true;
+  const echoForDev=()=>{
+    for(const e of echoes)if(e&&e.alive)return e;
+    return null;
+  };
+  switch(p0){
+    case 'res':{
+      const n=parseInt(parts[1],10)||0;
+      if(n>0)addResidues(n,'dev_faccao',player?player.x:null,player?player.y:null);
+      else spendResidues(-n,'dev_faccao');
+      log.push('RESÍDUOS '+RES_SYM+(n>0?'+':'-')+Math.abs(n)+' → '+RES_SYM+fracRes());
+      break;}
+    case 'aff':{
+      const fid=parts[1],n=parseInt(parts[2],10)||0;
+      if(!fracRun||!FRACTION_BY_ID[fid])return false;
+      fracApplyDelta(fid,clamp(n,-10,10),'dev_afinidade',{boost:{}});
+      const st=fracStateOf(fid);
+      log.push(fid+' AFF '+(n>0?'+':'')+n+' → '+st.lab+' ('+fracRun.aff[fid]+')');
+      break;}
+    case 'trust':{
+      const e=echoForDev();if(!e)return false;
+      const n=parseInt(parts[1],10)||0;
+      changeEchoTrust(e,n,'dev_confianca');
+      log.push('ECHO·0'+e.slot+' CONF '+ (n>0?'+':'')+n+' → '+Math.round(e.trust));
+      break;}
+    case 'dis':{
+      const e=echoForDev();if(!e)return false;
+      const n=parseInt(parts[1],10)||0;
+      if(!e.dis)echoRelInit(e);
+      relAddPressure(e,n);
+      log.push('ECHO·0'+e.slot+' PRESSÃO '+(n>0?'+':'')+n+' ('+Math.round((e.dis&&e.dis.p)||0)+')');
+      break;}
+    case 'know':{
+      const fid=parts[1];
+      if(!fracRun||!FRACTION_BY_ID[fid])return false;
+      if(!fracDisc[fid])fracDisc[fid]=[];
+      if(fracDisc[fid].indexOf('contact')<0)fracDisc[fid].push('contact');
+      for(const l of (FRACTION_BY_ID[fid].lore||[]))if(fracDisc[fid].indexOf(l.id)<0)fracDisc[fid].push(l.id);
+      log.push(fid+' REVELADA (não persiste: run DEV/sandbox)');
+      break;}
+    case 'offer':{
+      const fid=parts[1];
+      if(!fracRun||!FRACTION_BY_ID[fid])return false;
+      if(fracDisc[fid]&&fracDisc[fid].indexOf('contact')<0)fracDisc[fid].push('contact');
+      const o=fracRun.o[fid];
+      o.wave=1;o.n=0;o.last=wave|0;
+      const offs=FRAC_OFFERS.filter(x=>x.fid===fid);
+      for(const off of offs)
+        if(fracRun.aff[fid]<(off.needAff||-99))fracRun.aff[fid]=off.needAff||0;
+      log.push(fid.toUpperCase()+': ofertas liberadas no canal (aba ECHO da loja)');
+      break;}
+    case 'event':{
+      const fid=parts[1];
+      const k='fc_'+fid;
+      if(!RUN_EVENT_BY_ID[k]&&!RUN_EVENT_BY_KIND[k])return false;
+      log.push('EVENTO FORÇADO: '+k);
+      ok=fracForceEventKind(k);
+      break;}
+    case 'insp':{
+      log.push(fracDevInspectorText());
+      ok=true;break;}
+    default:return false;
+  }
+  if(log.length)for(const l of log.slice(0,3))devLog(l);
+  return ok;
+}
+function fracDevInspectorText(){
+  if(!fracRun)return 'SEM RUN PR12 ATIVA — INICIE UMA RUN';
+  const L=[];
+  L.push('RESÍDUOS: '+RES_SYM+fracRun.res+' · REROLL: '+RES_SYM+fracRun.es.rerollCost+
+    ' (×'+fracRun.es.rerolls+') · INV: '+(fracRun.es.inv||[]).length);
+  /* telemetria LOCAL de balanceamento (§11) — apenas DEV, nada externo */
+  {
+    const ec=fracRun.eco||{gain:{},spend:{},mx:0};
+    let g=0,sp=0;for(const k in ec.gain)g+=ec.gain[k];for(const k in ec.spend)sp+=ec.spend[k];
+    L.push('TELEMETRIA LOCAL: +'+g+' '+RES_SYM+' ('+Object.keys(ec.gain).length+' fontes) · −'+sp+
+      ' ('+Object.keys(ec.spend).length+' sinks) · PICO '+RES_SYM+ec.mx);
+  }
+  for(const id of FACTION_IDS){
+    const f=FRACTION_BY_ID[id],st=fracStateOf(id);
+    L.push(f.nm+' ['+st.id+'/'+st.lab+' '+fracRun.aff[id]+' obs:'+(fracRun.obs[id]||0)+'] of:'+(fracRun.o[id].n|0));
+    const hh=(fracRun.hist||[]).filter(x=>x.id===f.nm).slice(-3);
+    for(const x of hh)L.push('   · w'+x.w+' '+x.ev+' '+x.d+' ('+x.r+')');
+  }
+  for(const e of echoes){
+    if(!e)continue;
+    const eq=fracRun.eq[e.slot-1];
+    if(!eq)continue;
+    const parts=[];
+    const tags=[],dyns=[],conds=[];
+    for(const cat of ['n','p','r']){
+      const id=eq[cat];
+      if(!id)continue;
+      const def=echoEqById(id);
+      parts.push(EQ_CAT[cat].lab+':'+id+'('+(def?(def.origin||'?'):'?')+')');
+      if(def){
+        if(def.tags)for(const tg of def.tags)if(tags.indexOf(tg)<0)tags.push(tg);
+        if(def.dyn)dyns.push(def.dyn.kind+':'+def.dyn.amt);
+        if(def.condDs)conds.push('COND: '+def.condDs.slice(0,36)+'…');
+      }
+    }
+    if(parts.length||e.eqFx||eq.b)
+      L.push('ECHO·0'+e.slot+(e.alive?'':' OFFLINE')+' → '+(parts.join(' | ')||'SEM LOADOUT')+
+        (eq.b?' [boost ×'+Math.round(((eq.b.dmgMul||1))*100)/100+']':''));
+    if(tags.length)L.push('   TAGS: '+tags.join('/')+
+      (dyns.length?' · DYN: '+dyns.join(' '):'')+(conds.length?' · '+conds.join(' '):''));
+    if(e.eqBase)L.push('   BASE hp'+e.eqBase.hp+' sh'+e.eqBase.sh+' mul'+
+      Math.round(e.eqBase.mul*100)/100+' crit'+(e.eqBase.crit||0));
+    if(e.eqFx)L.push('   FX dmg×'+Math.round(e.eqFx.dmgMul*100)/100+' hp×'+
+      Math.round(e.eqFx.hpMul*100)/100+' dis×'+Math.round(e.eqFx.disMul*100)/100+
+      ' trust+×'+Math.round(e.eqFx.trustGainMul*100)/100+' range×'+Math.round(e.eqFx.rangeMul*100)/100);
+    const cp=e.eqCaps||{};
+    L.push('   CAPS w'+(cp.wave|0)+' col'+(cp.coleta|0)+' rev'+(cp.revigor|0)+
+      ' ult'+(cp.ultima|0)+' con'+(cp.contain|0)+' mas'+(cp.mascara|0));
+    const gL=fracRun.gainLog.slice(-3).map(g=>'w'+g.w+' '+g.g+'('+g.s+')').join(' ');
+    if(gL)L.push('   TELEMETRIA: '+gL);
+  }
+  return L.join(' | ');
+}
+function fracDevSection(){
+  if(!document||typeof document.getElementById!=='function')return;
+  if(!(typeof DEV_MODE!=='undefined'&&DEV_MODE))return;
+  const el=document.getElementById('devpanel');
+  if(!el)return;
+  let sec=document.getElementById('frac-dev-section');
+  if(!sec){
+    sec=document.createElement('div');
+    sec.id='frac-dev-section';
+    el.appendChild(sec);
+  }
+  const run=!!fracRun;
+  let h='<h4 style="margin-top:10px">PR 12 · FACÇÕES & ECHO EQUIPMENT</h4>';
+  if(!run){h+='<div class="dvrow" style="opacity:.6">SEM RUN ATIVA — RESÍDUOS/AFINIDADES VIVEM NA RUN.</div>';}
+  else{
+    h+='<div style="font-family:Consolas,monospace;font-size:10px;line-height:1.7;color:#9db8c8;white-space:pre-wrap">'+
+      escDev(fracDevInspectorText())+'</div>';
+    h+='<div class="dvrow" style="margin-top:6px;flex-wrap:wrap">'+
+      devBtn('fr:res:25','RES +25')+devBtn('fr:res:-5','RES −5')+
+      devBtn('fr:trust:10','CONF +10')+devBtn('fr:dis:20','DIS +20')+devBtn('fr:dis:-20','DIS −20')+
+      '</div><div class="dvrow" style="flex-wrap:wrap">';
+    for(const id of FACTION_IDS){
+      h+=devBtn('fr:aff:'+id+':5','▲ '+id.slice(0,3))+
+         devBtn('fr:aff:'+id+':-5','▼ '+id.slice(0,3));
+    }
+    h+='</div><div class="dvrow" style="flex-wrap:wrap">';
+    for(const id of FACTION_IDS){
+      h+=devBtn('fr:know:'+id,'REVELAR '+id.slice(0,3))+
+         devBtn('fr:offer:'+id,'OFERTA '+id.slice(0,3));
+    }
+    h+=devBtn('fr:event:anchor','EV:ÂNCORA')+devBtn('fr:event:remnants','EV:REMAN.')
+      +devBtn('fr:event:consortium','EV:CONS.')+devBtn('fr:event:deviants','EV:DESV.');
+    h+='</div><div class="dvrow" style="flex-wrap:wrap">'+devBtn('fr:insp','INSPETOR → LOG')+'</div>';
+  }
+  sec.innerHTML=h;
+}
+function escDev(s){
+  return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+/* =====================================================================
+   SANDBOX — seção FACÇÕES / ECHO (painel F1; temporário, nada persiste)
+   ===================================================================== */
+function fracSandboxEcho(){
+  /* cria um Eco de teste NO LABORATÓRIO (cópia local; echoQueue real intacto) */
+  if(!sandboxRun)return null;
+  if(echoes.filter(e=>e&&e.alive).length>=2){toast('SANDBOX: 2 ECOS ATIVOS É O TETO');return null;}
+  try{
+    const base=echoQueue[0]?smClone(echoQueue[0]):null;
+    const rd=base||{dur:45,trail:[[0,400,400,0,0,0],[10,420,380,0,0,0],[20,440,360,0,0,0],[30,420,340,0,0,0],[40,400,320,0,0,0]],
+      dmgMul:1,frMul:1,wave:6,level:2,crit:.05,critMul:1.8,pierce:0,aoeMul:1,rangeMul:1,
+      coins:0,projSpdMul:1,items:[],upg:[],owned:[0],
+      moral:{comp:4,greed:2,viol:1},dom:'compassion',kills:40,mh:100,st:{}};
+    if(!base)rd.ps=deriveEchoPersonality(rd);
+    const e=makeEcho(rd,echoes.length+1);
+    if(!e)return null;
+    e._fracSbEcho=true;
+    echoRelInit(e);
+    setEchoTrust(e,55,'sandbox_cria_eco');
+    echoEqInit(e);
+    echoes.push(e);
+    toast('SANDBOX: ECO·0'+e.slot+' DE TESTE CRIADO (NÃO É SALVO)');
+    return e;
+  }catch(err){
+    toast('SANDBOX: NÃO FOI POSSÍVEL CRIAR O ECO');
+    return null;
+  }
+}
+function fracSandboxSection(){
+  if(!document||typeof document.getElementById!=='function')return;
+  if(!(typeof sandboxRun!=='undefined'&&sandboxRun))return;
+  const body=document.getElementById('sb-body');
+  if(!body)return;
+  if(document.getElementById('frac-sb-section'))return;
+  const d=document.createElement('div');
+  d.id='frac-sb-section';
+  d.style.cssText='grid-column:1 / -1;font-family:Consolas,monospace;font-size:12px;margin-top:12px';
+  const run=fracRun;
+  const tgt=fracSandboxEchoTarget();
+  let h='<div class="sect" style="border-color:rgba(70,224,255,.35)">PR 12 — FACÇÕES & ECHO EQUIPMENT · TEMPORÁRIO · NADA É GRAVADO</div>';
+  /* Resíduos: zerar / +10 / +50 / MAX (teto real) */
+  h+='<div class="srow"><span class="k">RESÍDUOS</span><span class="v">'+RES_SYM+' '+(run?run.res:0)+'</span></div>';
+  h+='<div class="sbrow">'+
+    '<span class="asbtn" data-fracsb="res:0">0</span>'+
+    '<span class="asbtn" data-fracsb="res:10">+10</span>'+
+    '<span class="asbtn" data-fracsb="res:50">+50</span>'+
+    '<span class="asbtn" data-fracsb="res:max">MAX</span>'+
+    '<span class="asbtn" data-fracsb="echo">CRIAR ECO DE TESTE</span>'+
+    '</div>';
+  /* Afinidade: delta fino (+/−) OU estado direto HOSTIL/NEUTRA/ALIADA */
+  h+='<div class="srow"><span class="k">AFINIDADE</span><span class="v">H = HOSTIL · N = NEUTRA · A = ALIADA (estado direto)</span></div>';
+  h+='<div class="sbrow" style="flex-wrap:wrap">';
+  for(const fid of FACTION_IDS){
+    const f=FRACTION_BY_ID[fid];
+    const st=run?fracStateOf(fid):null;
+    h+='<span class="asbtn" data-fracsb="aff:'+fid+':+4">'+f.sym+' +</span>'+
+      '<span class="asbtn" data-fracsb="aff:'+fid+':-4">'+f.sym+' −</span>'+
+      '<span class="asbtn" title="HOSTIL (−70)" data-fracsb="aff:'+fid+':H">'+f.sym+' H</span>'+
+      '<span class="asbtn" title="NEUTRA (0)" data-fracsb="aff:'+fid+':N">'+f.sym+' N</span>'+
+      '<span class="asbtn" title="ALIADA (+90)" data-fracsb="aff:'+fid+':A">'+f.sym+' A</span>';
+    if(st)h+='<span class="asbtn" style="color:'+st.col+';border-color:'+st.col+'66" data-fracsb="know:'+fid+'">'+st.lab+'</span>';
+  }
+  h+='</div>';
+  /* Lore temporária: ofertas/eventos por facção — mutam SÓ a cópia do lab */
+  h+='<div class="sbrow" style="flex-wrap:wrap">'+
+    '<span class="asbtn" data-fracsb="offer:anchor">OFERTA ÂNCORA</span>'+
+    '<span class="asbtn" data-fracsb="offer:remnants">OFERTA REMANESCENTES</span>'+
+    '<span class="asbtn" data-fracsb="offer:consortium">OFERTA CONSÓRCIO</span>'+
+    '<span class="asbtn" data-fracsb="offer:deviants">OFERTA DESVIADOS</span>'+
+    '<span class="asbtn" data-fracsb="ev:anchor">EV ÂNCORA</span>'+
+    '<span class="asbtn" data-fracsb="ev:remnants">EV REMANESCENTES</span>'+
+    '<span class="asbtn" data-fracsb="ev:consortium">EV CONSÓRCIO</span>'+
+    '<span class="asbtn" data-fracsb="ev:deviants">EV DESVIADOS</span></div>';
+  /* Alvo + Echo: confiança e Dissonância em ESTADOS SEGUROS (nunca
+     FRATURANDO/DISSONANTE — sem máquina de ruptura no laboratório) */
+  h+='<div class="srow"><span class="k">ALVO</span><span class="v">'+
+    (tgt?('ECHO·0'+tgt.slot):'— (CRIE UM ECO)')+
+    (tgt&&tgt.dis?(' · DISSONÂNCIA: <b>'+echoDisLabel(tgt)+'</b> · CONF <b>'+Math.round(tgt.trust)+'</b>'):'')+
+    '</span></div>';
+  h+='<div class="sbrow" style="flex-wrap:wrap">'+
+    '<span class="asbtn" data-fracsb="sel:0">ALVO ECO·01</span>'+
+    '<span class="asbtn" data-fracsb="sel:1">ALVO ECO·02</span>'+
+    '<span class="asbtn" data-fracsb="trust:-10">CONF −10</span>'+
+    '<span class="asbtn" data-fracsb="trust:+10">CONF +10</span>'+
+    '<span class="asbtn" data-fracsb="dis:add">DIS +25</span>'+
+    '<span class="asbtn" data-fracsb="dis:unstable">INSTÁVEL</span>'+
+    '<span class="asbtn" data-fracsb="dis:grace">GRAÇA</span>'+
+    '<span class="asbtn" data-fracsb="dis:calm">CALMAR</span></div>';
+  /* Equipamento: catálogo COMPLETO (43) por categoria — direto no alvo */
+  h+='<div class="srow"><span class="k">EQUIPAMENTO</span><span class="v">catálogo completo · instala no ALVO · REMOVER devolve</span></div>';
+  for(const cat of ['n','p','r']){
+    const items=ECHO_EQUIP.filter(it=>it.cat===cat);
+    h+='<div class="sbrow">'+
+      '<span class="k" style="min-width:88px;color:'+(EQ_CAT[cat]||{}).col+'">'+EQ_CAT[cat].lab+'</span>'+
+      '<select data-fracsb-cat="'+cat+'" style="flex:1;min-width:180px;background:#071018;color:#cfe9f7;'+
+      'border:1px solid rgba(70,224,255,.3);font-family:Consolas,monospace;font-size:11px;padding:2px 4px">'+
+      '<option value="">— EQUIPAR —</option>'+
+      items.map(it=>'<option value="'+it.id+'">['+it.origin.toUpperCase()+'] '+it.nm+'</option>').join('')+
+      '</select>'+
+      '<span class="asbtn" data-fracsb="uneq:'+cat+'">REMOVER</span></div>';
+  }
+  h+='<div class="srow"><span class="k" style="color:#9db8c8">NUNCA ESCREVE NO SAVE · Equipamentos, Resíduos e descobertas somem ao sair do laboratório (R5: contexto PR 12 próprio, isolamento real).</span></div>';
+  d.innerHTML=h;
+  body.appendChild(d);
+  d.querySelectorAll('[data-fracsb]').forEach(b=>{
+    b.addEventListener('click',ev=>{
+      ev.stopPropagation();
+      fracSandboxAction(b.getAttribute('data-fracsb'));
+    });
+  });
+  d.querySelectorAll('select[data-fracsb-cat]').forEach(s=>{
+    s.addEventListener('change',()=>{
+      const v=s.value;
+      if(!v)return;
+      s.value='';
+      fracSandboxAction('eq:'+v);
+    });
+  });
+}
+function fracSandboxAction(cmd){
+  if(!sandboxRun)return;
+  const parts=String(cmd).split(':');
+  const run=fracRun;
+  const fid=parts[1];
+  switch(parts[0]){
+    case 'res':{
+      if(!run)break;
+      const n=parts[1];
+      if(n==='max'){run.res=RES_MAX;}
+      else if(n==='0'){run.res=0;}
+      else{
+        const v=parseInt(n,10)||0;
+        if(v>0)addResidues(v,'sandbox_faccao',player?player.x:null,player?player.y:null);
+        else if(v<0)spendResidues(-v,'sandbox_faccao');
+      }
+      toast('SANDBOX: '+RES_SYM+fracRes()+' RESÍDUOS');break;}
+    case 'echo':{
+      fracSandboxEcho();break;}
+    case 'sel':{
+      const i=parseInt(parts[1],10)||0;
+      fracEchoSel=clamp(i,0,1);
+      const e=fracSandboxEchoTarget();
+      toast('SANDBOX: ALVO '+(e?('ECHO·0'+e.slot):'— NENHUM ECO ATIVO'));
+      break;}
+    case 'trust':{
+      const e=fracSandboxEchoTarget();
+      if(!e){toast('SANDBOX: NENHUM ECO ALVO (CRIE UM)');break;}
+      const v=parseInt(parts[1],10)||0;
+      changeEchoTrust(e,clamp(v,-20,20),'sandbox_confianca');
+      toast('SANDBOX: ECHO·0'+e.slot+' CONFIANÇA '+Math.round(e.trust));
+      break;}
+    case 'dis':{
+      const e=fracSandboxEchoTarget();
+      if(!e||!e.dis){toast('SANDBOX: NENHUM ECO ALVO (CRIE UM)');break;}
+      const sub=parts[1];
+      const P=REL_BALANCE&&REL_BALANCE.pressure?REL_BALANCE.pressure:null;
+      if(sub==='add'){
+        relAddPressure(e,25);
+        /* estados seguros: nunca cruza o limiar de FRATURA no laboratório */
+        if(P&&e.dis.p>=relFractureAt(e))e.dis.p=Math.max(0,relFractureAt(e)-1);
+        if(e.dis.p>=(P?P.unstableAt:55))echoSetDis(e,'unstable');
+      }else if(sub==='unstable'){
+        if(P)e.dis.p=Math.max(e.dis.p,P.unstableAt);
+        if(e.dis.p>=relFractureAt(e))e.dis.p=Math.max(0,relFractureAt(e)-1);
+        echoSetDis(e,'unstable');
+      }else if(sub==='grace'){
+        echoSetDis(e,'cooldown');
+      }else if(sub==='calm'){
+        e.dis.p=0;
+        echoSetDis(e,'stable');
+        if(e.dis.grace)e.dis.grace=0;
+      }else break;
+      toast('SANDBOX: ECHO·0'+e.slot+' — '+echoDisLabel(e));
+      break;}
+    case 'eq':{
+      fracSandboxEquip(parts[1]);break;}
+    case 'uneq':{
+      fracSandboxUnequip(parts[1]);break;}
+    case 'aff':{
+      if(!run||!FRACTION_BY_ID[fid])break;
+      const raw=String(parts[2]||'');
+      if(/^[+-]\d+$/.test(raw)){
+        fracApplyDelta(fid,clamp(parseInt(raw,10),-6,6),'sandbox_afinidade',{});
+      }else if(/^[+-]?\d+$/.test(raw)){
+        run.aff[fid]=clamp(parseInt(raw,10),-100,100);
+      }else if(raw==='H'){run.aff[fid]=-70;}
+      else if(raw==='N'){run.aff[fid]=0;}
+      else if(raw==='A'){run.aff[fid]=90;}
+      else break;
+      toast('SANDBOX: '+FRACTION_BY_ID[fid].nm+' → '+fracStateOf(fid).lab);
+      break;}
+    case 'know':{
+      if(!run||!FRACTION_BY_ID[fid])break;
+      if(!fracDisc[fid])fracDisc[fid]=[];
+      if(fracDisc[fid].indexOf('contact')<0)fracDisc[fid].push('contact');
+      toast('SANDBOX: '+FRACTION_BY_ID[fid].nm+' IDENTIFICADA (temporário — só no laboratório)');
+      break;}
+    case 'offer':{
+      if(!run||!FRACTION_BY_ID[fid])break;
+      if(fracDisc[fid]&&fracDisc[fid].indexOf('contact')<0)fracDisc[fid].push('contact');
+      run.o[fid].wave=1;run.o[fid].n=0;
+      for(const off of FRAC_OFFERS)
+        if(off.fid===fid&&run.aff[fid]<(off.needAff||-99))run.aff[fid]=off.needAff||0;
+      toast('SANDBOX: ofertas de '+FRACTION_BY_ID[fid].nm+' liberadas (aba ECHO da loja)');
+      break;}
+    case 'ev':{
+      const pool=(FACTION_RUN_EVENTS||[]).filter(x=>!x.cond||x.cond());
+      const contact=(FRAC_CONTACT_EVENTS||[]).filter(x=>!x.cond||x.cond());
+      const cand=pool.concat(contact);
+      const ev=cand[Math.floor(Math.random()*cand.length)];
+      if(!ev){toast('SANDBOX: nenhum evento de facção elegível agora');break;}
+      fracForceEventKind(ev.kind);
+      break;}
+    default:break;
+  }
+  if(fracRun)fracSandboxRefresh();
+  if(typeof sbRender==='function'&&document.getElementById('frac-sb-section')){
+    try{sbRender();}catch(e){}
+  }
+}
+function fracSandboxRefresh(){
+  /* mantém o seletor de loop fresco após mudanças do painel */
+}
+/* ---- alvo dos controles: Eco selecionado vivo (ou o primeiro vivo) ---- */
+function fracSandboxEchoTarget(){
+  if(!sandboxRun||!echoes||!echoes.length)return null;
+  const e0=echoes[fracEchoSel|0];
+  if(e0&&e0.alive)return e0;
+  return echoes.find(e=>e&&e.alive)||null;
+}
+/* ---- equipar direto do catálogo completo no Eco alvo (contexto do lab).
+   Usa o MESMO caminho de cálculo (echoEqInit/Refresh sobre o eqBase) —
+   sem unlock, sem estoque, sem gravar nada. ---- */
+function fracSandboxEquip(id){
+  if(!sandboxRun||!fracRun)return false;
+  const it=echoEqById(id);
+  if(!it)return false;
+  const e=fracSandboxEchoTarget();
+  if(!e){toast('SANDBOX: CRIE UM ECO ANTES DE EQUIPAR');return false;}
+  const idx=(e.slot>=1&&e.slot<=2)?e.slot-1:0;
+  if(!fracRun.eq[idx])return false;
+  const k=EQ_SLOT_KEY[it.cat];
+  const prop={n:'eqNucleo',p:'eqProto',r:'eqRelic'}[it.cat];
+  const prev=fracRun.eq[idx][k];
+  if(prev&&prev!==id)fracRun.es.inv.push(prev);   // equipamento antigo → inventário do lab
+  fracRun.eq[idx][k]=it.id;
+  e[prop]=it.id;
+  if(!e.eqBase)echoEqInit(e);                       // chassis puro (anti-drift)
+  echoEqRefresh(e);
+  toast('SANDBOX: '+it.nm+' instalado em ECHO·0'+e.slot);
+  return true;
+}
+function fracSandboxUnequip(cat){
+  if(!sandboxRun||!fracRun)return false;
+  const k=EQ_SLOT_KEY[cat];
+  if(!k)return false;
+  const e=fracSandboxEchoTarget();
+  if(!e)return false;
+  const idx=(e.slot>=1&&e.slot<=2)?e.slot-1:0;
+  if(!fracRun.eq[idx]||!fracRun.eq[idx][k]){toast('SANDBOX: SLOT VAZIO NESTE ALVO');return false;}
+  fracRun.es.inv.push(fracRun.eq[idx][k]);
+  fracRun.eq[idx][k]=null;
+  e[{n:'eqNucleo',p:'eqProto',r:'eqRelic'}[cat]]=null;
+  echoEqRefresh(e);
+  toast('SANDBOX: equipamento removido de ECHO·0'+e.slot);
+  return true;
+}
+/* ---- isolamento da descoberta (R5 · B5): o laboratório NUNCA altera o
+   fracDisc real. Ao entrar, guarda o objeto real e passa a operar numa
+   cópia; ao sair, descarta a cópia e religa o objeto real intocado —
+   arquitetura de ISOLAMENTO (swap de contexto), nunca backup→mutar→restaurar
+   do save (o save real nem chega a ser tocado: fracDiscSave é guardado). */
+let fracDiscSandboxReal=null;
+function fracSandboxDiscEnter(){
+  if(fracDiscSandboxReal)return;                 // já isolado nesta sessão
+  fracDiscSandboxReal=fracDisc;
+  fracDisc=fracDiscClean(fracDisc);
+}
+function fracSandboxDiscLeave(){
+  if(!fracDiscSandboxReal)return;
+  fracDisc=fracDiscSandboxReal;
+  fracDiscSandboxReal=null;
+}
+/* início de run de laboratório: PR 12 SEMPRE fresco (Resíduos zerados,
+   afinidades iniciais, estoque novo, sem ofertas/equipamentos antigos —
+   nada é herdado do checkpoint real do slot). */
+function fracSandboxContextStart(){
+  fracSandboxDiscEnter();
+  if(!sandboxRun)return;
+  fracRun=fracFresh();
+  fracTab='op';fracEchoSel=0;fracShopStock=[];fracShopTouched=false;
+}
+function fracSandboxTearDown(){
+  fracRun=null;
+  fracTab='op';fracShopStock=[];fracShopTouched=false;fracEchoSel=0;
+  fracSandboxDiscLeave();                          // cópia do lab descartada
+  try{
+    /* remove Ecos criados pelo laboratório sem tocar em nada real */
+    if(echoes&&echoes.length){
+      const n0=echoes.length;
+      echoes=echoes.filter(e=>!e||!e._fracSbEcho);
+      if(echoes.length!==n0)toast('SANDBOX: Ecos de teste removidos');
+    }
+  }catch(e){}
+  const d=document&&document.getElementById?document.getElementById('frac-sb-section'):null;
+  if(d&&d.parentNode)d.parentNode.removeChild(d);
+  try{fracHudChip();}catch(e){}
+}
+/* =====================================================================
+   BOOT
+   ===================================================================== */
+fracKitBoot();
+
 /* ---- expõe o namespace no console apenas em build de desenvolvimento ---- */
 if(IS_DEV_BUILD){
   try{window.ECHO_DEV={DEV,enable:devEnable,disable:devDisable,toggle:devToggle};}
