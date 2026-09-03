@@ -99,6 +99,8 @@ src+=';globalThis.__t={'+
   'fractureCodexBody,fractureB4InspectorLines,'+
   'fractureSandboxSimTransitionLines,FRACTURE_ANOMALY_SPIKE,'+
   'getB4:()=>(fractureRun&&fractureRun.b4)||null,'+
+  /* PR 10.5.2 — gerencia de dados do slot (herdado do merge da main) */
+  'smClearSlotEchoes,smClearSlotSave,refreshAfterSlotWipe,smDefaultSlot,'+
   /* acesso ao estado vivo */
   'getFx:()=>fractureRun,setFx:v=>{fractureRun=v;},'+
   /* jogo */
@@ -236,6 +238,30 @@ function ok(label,fn){
     (e&&e.stack||e).toString().split('\n').slice(0,4).join('\n    '));}
 }
 const J=x=>JSON.stringify(x);
+
+/* ---------------- delimitação do bloco PR13 (robusta a merges) ----------
+   Os testes de arquitetura precisam saber onde começa e onde termina o código
+   do Diretor de Fratura. A versão original usava o banner da seção BOOT como
+   fim — código legado, que um merge pode renomear ou mover. Quando isso
+   acontecia, o detector não falhava de forma legível: ele simplesmente passava
+   a considerar TODAS as escritas como "fora do bloco" e acusava a primeira
+   escrita legítima do próprio Diretor.
+
+   Agora o bloco é delimitado por dois marcadores que pertencem ao PR13
+   (PR13·bloco fx1.js … PR13·fim fx1.js), e a ausência de qualquer um deles é
+   um erro EXPLÍCITO — nunca um falso positivo silencioso. */
+const PR13_INI='/* ==================== PR13·bloco fx1.js ==================== */';
+const PR13_FIM='/* ==================== PR13·fim fx1.js ==================== */';
+function blocoPR13(){
+  const jogo=m[1];
+  const ini=jogo.indexOf(PR13_INI);
+  assert.ok(ini>=0,'marcador de início do bloco PR13 ausente do index.html');
+  const fim=jogo.indexOf(PR13_FIM,ini);
+  assert.ok(fim>ini,'marcador de fim do bloco PR13 ausente (ou antes do início)');
+  const dentro=i=>(i>=ini&&i<fim);
+  const linha=i=>jogo.slice(0,i).split('\n').length;
+  return {jogo,ini,fim,dentro,linha};
+}
 const THEMES=['collapse','siege','hunt','anomaly','resonance','scarcity'];
 function trail(len,w){
   const tr=[];
@@ -286,13 +312,9 @@ ok('fonte: não há mutação direta de Intensidade espalhada pelo jogo',()=>{
      `fractureIntensity += 5` em dezenas de funções. Verificação por
      OCORRÊNCIA (índice real), não pela primeira aparição do texto. */
   /* inspeção sobre o script ORIGINAL (m[1]) — a variável src desta suíte
-     tem o bloco de exports anexado no fim, que menciona fractureRun. */
-  const jogo=m[1];
-  const ini=jogo.indexOf('PR13·bloco fx1.js');
-  const fim=jogo.indexOf('\n   BOOT\n',ini);
-  assert.ok(ini>0&&fim>ini,'bloco PR13 presente e delimitado');
-  const dentro=i=>(i>=ini&&i<fim);
-  const linha=i=>jogo.slice(0,i).split('\n').length;
+     tem o bloco de exports anexado no fim, que menciona fractureRun.
+     Delimitação por marcadores semânticos do próprio PR13 (ver blocoPR13). */
+  const {jogo,dentro,linha}=blocoPR13();
   let writes=0,assigns=0;
   const re1=/fractureRun\s*\.\s*\w+\s*(\+=|-=|\*=|=[^=])/g;
   let hit;
@@ -623,7 +645,8 @@ ok('Intensidade NÃO é "inimigo com mais HP": nenhum multiplicador de combate r
   for(const fn of ['diffHp','diffDmg','diffSpd','eliteChance']){
     const i=src.indexOf('function '+fn+'(');
     assert.ok(i>0,'função '+fn+' presente');
-    const corpo=src.slice(i,i+500);
+    /* corpo inteiro, não janela fixa (ver B4-60) */
+    const corpo=src.slice(i,src.indexOf('\nfunction ',i+10));
     assert.ok(!/fracture/.test(corpo),
       fn+' não pode referenciar o Diretor de Fratura');
   }
@@ -1393,15 +1416,53 @@ ok('waveCompFit é total: budget 0 zera, budget enorme preserva, fracionário tr
   assert.strictEqual(total(t.waveCompFit(b,NaN)),0,'budget NaN ⇒ 0');
 });
 ok('onda 20 / chefe final ficam FORA do reshape',()=>{
-  /* O PARADOXO é despachado por spawnWave(20) por caminho próprio; waveComp
-     só é consultado para n<MAX_WAVE. Verificação por fonte + por clamp. */
-  const i=src.indexOf('function spawnWave(');
-  const corpo=src.slice(i,i+1400);
-  assert.ok(/MAX_WAVE|>=\s*20|===\s*20/.test(corpo),
-    'spawnWave trata a onda final por caminho próprio');
+  /* CONTRATO: a onda final é do PARADOXO. spawnWave(n) despacha n>=MAX_WAVE
+     para spawnBoss() ANTES de consultar waveComp, e waveComp por sua vez
+     devolve a base para n>=MAX_WAVE — o invariante vale na fonte, não por
+     acidente de chamador.
+
+     A versão anterior deste teste lia uma JANELA FIXA de 1400 caracteres a
+     partir de "function spawnWave(" e procurava MAX_WAVE ali dentro. Medido,
+     o token estava no offset 1390: folga de 10 caracteres. Qualquer merge que
+     inserisse uma linha no começo de spawnWave fazia o teste acusar uma
+     regressão inexistente. Agora a verificação é COMPORTAMENTAL. */
   assert.strictEqual(t.MAX_WAVE,20);
-  const c20=t.waveComp(20);
-  assert.ok(total(c20)<=t.ENEMY_BUDGET,'waveComp(20) ainda respeita o teto');
+
+  /* 1) fonte: o despacho do chefe vem ANTES da consulta à composição.
+        Comparação de posições relativas dentro da função inteira — sem
+        janela de tamanho fixo e sem número de linha. */
+  const ini=src.indexOf('function spawnWave(');
+  assert.ok(ini>=0,'spawnWave localizada');
+  const corpo=src.slice(ini,src.indexOf('\nfunction ',ini+10));
+  const pBoss=corpo.search(/n\s*>=\s*MAX_WAVE|n\s*>=\s*20|n\s*===\s*MAX_WAVE/);
+  const pComp=corpo.indexOf('waveComp(');
+  assert.ok(pBoss>=0,'spawnWave despacha a onda final para o chefe');
+  assert.ok(pComp>=0,'spawnWave consulta waveComp para as demais ondas');
+  assert.ok(pBoss<pComp,
+    'o despacho do chefe (offset '+pBoss+') precede waveComp (offset '+pComp+')');
+
+  /* 2) runtime: waveComp(20) é idêntico à base ajustada para TODOS os Temas,
+        mesmo com Intensidade máxima e assinatura forçada na onda 20. */
+  beginRun(t,1);
+  const fit20=t.waveCompFit(t.waveCompBase(20),t.ENEMY_BUDGET);
+  for(const th of THEMES){
+    t.fractureForceTheme(th,'teste');
+    t.fractureSetIntensity(100,'teste');              // RUPTURA
+    const b=t.fractureB4();
+    for(const sg of t.FRACTURE_SIGNATURES)
+      if(sg.theme===th)b.sig[20]=sg.id;               // força a assinatura
+    assert.strictEqual(J(t.waveComp(20)),J(fit20),
+      th+': waveComp(20) não sofre reshape temático nem de assinatura');
+  }
+  assert.ok(total(t.waveComp(20))<=t.ENEMY_BUDGET,'waveComp(20) respeita o teto');
+
+  /* 3) controle: a onda 19 AINDA é remodelada — a proteção não é um
+        desligamento global do Diretor. */
+  t.fractureForceTheme('collapse','teste');
+  t.fractureSetIntensity(100,'teste');
+  assert.notStrictEqual(J(t.waveComp(19)),
+    J(t.waveCompFit(t.waveCompBase(19),t.ENEMY_BUDGET)),
+    'controle: waveComp(19) continua sendo moldada pelo Tema');
 });
 ok('entidades DINÂMICAS (spawner/splitter) estão documentadas fora do teto',()=>{
   /* o budget conta o que nasce na onda. Filhotes de spawner e fragmentos de
@@ -1418,15 +1479,35 @@ ok('entidades DINÂMICAS (spawner/splitter) estão documentadas fora do teto',()
 /* ============ [13] B2.2 — COMPOSIÇÃO BASE PURA ============ */
 console.log('\n[13] B2.2 · waveCompBase É PURA E É O PONTO DE PARTIDA');
 ok('pipeline obrigatório: waveComp = fit(shape(base))',()=>{
+  /* Corpo INTEIRO da função, não uma janela de tamanho fixo: a versão
+     anterior lia 700 caracteres e bastava um comentário mais longo no começo
+     de waveComp para empurrar fractureShapeWave para fora e acusar uma
+     regressão inexistente. */
   const i=src.indexOf('function waveComp(');
-  const corpo=src.slice(i,i+700);
+  assert.ok(i>=0,'waveComp localizada');
+  const corpo=src.slice(i,src.indexOf('\nfunction ',i+10));
   assert.ok(/waveCompBase\s*\(/.test(corpo),'waveComp chama waveCompBase');
   assert.ok(/fractureShapeWave\s*\(/.test(corpo),'waveComp chama fractureShapeWave');
   assert.ok(/waveCompFit\s*\(/.test(corpo),'waveComp chama waveCompFit');
+
+  /* A ordem é verificada no CAMINHO REAL das ondas comuns, não pela primeira
+     ocorrência textual. waveComp tem um guard de onda final que também chama
+     waveCompFit (devolve a base para n>=MAX_WAVE); comparar primeiros índices
+     faria esse guard parecer "teto antes do shaping". */
+  const g=corpo.search(/if\s*\(\s*\(?\s*n\s*\|?\s*0?\)?\s*>=\s*MAX_WAVE/);
+  assert.ok(g>=0,'waveComp protege a onda final antes de moldar');
+  const caminho=corpo.slice(g);
+  assert.ok(caminho.indexOf('fractureShapeWave')>=0,'shaping presente no caminho');
+  assert.ok(caminho.indexOf('waveCompFit')>=0,'fit presente no caminho');
+  assert.ok(caminho.indexOf('fractureShapeWave')<caminho.lastIndexOf('waveCompFit'),
+    'no caminho real, o teto é aplicado DEPOIS do shaping');
   assert.ok(corpo.indexOf('waveCompBase')<corpo.indexOf('fractureShapeWave'),
     'a base vem ANTES do shaping');
-  assert.ok(corpo.indexOf('fractureShapeWave')<corpo.indexOf('waveCompFit'),
-    'o teto é aplicado DEPOIS do shaping');
+  /* a assinatura de encontro fica entre o shaping e o fit (B4.3) */
+  assert.ok(caminho.indexOf('fractureShapeWave')<caminho.indexOf('fractureApplySignature'),
+    'a assinatura entra depois do shaping do Tema');
+  assert.ok(caminho.indexOf('fractureApplySignature')<caminho.lastIndexOf('waveCompFit'),
+    'a assinatura entra antes do ajuste ao budget');
 });
 ok('waveCompBase é pura e não conhece o Diretor',()=>{
   const a=J(t.waveCompBase(10)),b=J(t.waveCompBase(10));
@@ -2372,7 +2453,9 @@ ok('HP/dano/velocidade de inimigo NÃO mudam por Tema',()=>{
   const jogo=m[1];
   for(const fn of ['diffHp','diffDmg','diffSpd']){
     const i=jogo.indexOf('function '+fn+'(');
-    assert.ok(!/fracture/.test(jogo.slice(i,i+400)),fn+' sem Diretor');
+    /* corpo inteiro, não janela fixa (ver B4-60) */
+    const corpo=jogo.slice(i,jogo.indexOf('\nfunction ',i+10));
+    assert.ok(!/fracture/.test(corpo),fn+' sem Diretor');
   }
   assert.ok(jogo.indexOf('hpMul*fracture')<0);
   assert.ok(jogo.indexOf('dmg*fractureGet')<0);
@@ -2439,11 +2522,7 @@ ok('SM_VERSION não mudou e o save antigo continua carregando',()=>{
   assert.ok(cp,'checkpoint atual válido');
 });
 ok('fonte: nenhuma mutação de waveProfile fora do bloco PR13',()=>{
-  const jogo=m[1];
-  const ini=jogo.indexOf('PR13·bloco fx1.js');
-  const fim=jogo.indexOf('\n   BOOT\n',ini);
-  const dentro=i=>(i>=ini&&i<fim);
-  const linha=i=>jogo.slice(0,i).split('\n').length;
+  const {jogo,dentro,linha}=blocoPR13();
   const re=/waveProfile\s*\.\s*(bias|pool)\s*(\[[^\]]*\]\s*)?=[^=]/g;
   let hit,n=0;
   while((hit=re.exec(jogo))){
@@ -3955,6 +4034,172 @@ ok('B4-58: Sandbox byte-a-byte e comandos DEV do B4 taintam a run',()=>{
   assert.strictEqual(tr[0].id,'latente','começa em LATENTE');
   assert.strictEqual(tr[4].id,'ruptura','termina em RUPTURA');
   assert.strictEqual(A.SM_VERSION,3,'SM_VERSION continua 3');
+});
+
+/* ============ [34] HARDENING PÓS-MERGE — robustez dos detectores ============ */
+console.log('\n[34] HARDENING · DETECTORES ESTRUTURAIS SOBREVIVEM A MERGES (59-66)');
+
+ok('B4-59: os marcadores do bloco PR13 existem, são únicos e estão em ordem',()=>{
+  const jogo=m[1];
+  assert.strictEqual(jogo.split(PR13_INI).length-1,1,
+    'exatamente um marcador de início');
+  assert.strictEqual(jogo.split(PR13_FIM).length-1,1,
+    'exatamente um marcador de fim');
+  const ini=jogo.indexOf(PR13_INI),fim=jogo.indexOf(PR13_FIM);
+  assert.ok(ini>=0&&fim>ini,'início antes do fim');
+  /* o bloco precisa ser substancial — senão o detector passaria no vazio */
+  assert.ok(fim-ini>50000,'bloco PR13 substancial ('+(fim-ini)+' chars)');
+  /* e precisa conter o núcleo do Diretor */
+  const bloco=jogo.slice(ini,fim);
+  for(const fn of ['function fractureEmit(','function fractureRunPack(',
+    'function fractureApplySignature(','function fractureSetWaveBias(',
+    'function fractureStageOf(','function fractureKitBoot('])
+    assert.ok(bloco.indexOf(fn)>=0,'bloco contém '+fn);
+  /* waveComp é função PRÉ-EXISTENTE do jogo: o Diretor a modifica, mas ela
+     mora fora do bloco. O que importa é que o corpo dela chama o Diretor. */
+  const iwc=jogo.indexOf('function waveComp(');
+  assert.ok(iwc>=0&&iwc<ini,'waveComp vive antes do bloco PR13');
+  const cwc=jogo.slice(iwc,jogo.indexOf('\nfunction ',iwc+10));
+  assert.ok(/fractureShapeWave\s*\(/.test(cwc),'waveComp integra o Diretor');
+});
+
+ok('B4-60: nenhum detector estrutural da PR13 usa janela de tamanho fixo',()=>{
+  /* Foi a causa raiz da falha "onda 20": uma janela fixa de 1400 caracteres
+     com o token no offset 1390 — folga de 10 caracteres. Este teste impede
+     que o padrão volte, em qualquer teste da suíte. */
+  const suite=fs.readFileSync(path.join(__dirname,'fracture-director.test.js'),'utf8');
+  const re=/\.slice\(\s*\w+\s*,\s*\w+\s*\+\s*(\d+)\s*\)/g;
+  let hit,achados=[];
+  while((hit=re.exec(suite)))achados.push(hit[0]+' (janela '+hit[1]+')');
+  assert.deepStrictEqual(achados,[],
+    'janelas de tamanho fixo encontradas: '+achados.join(', '));
+});
+
+ok('B4-61: detector de Intensidade sobrevive a código inserido no jogo',()=>{
+  /* REGRESSÃO REAL, simulada: injeta linhas antes de spawnWave (o que um merge
+     faz o tempo todo) e confirma que o detector continua achando os mesmos
+     limites e as mesmas escritas. A versão antiga dependia do banner BOOT. */
+  const jogo=m[1];
+  const ini=jogo.indexOf(PR13_INI),fim=jogo.indexOf(PR13_FIM);
+  const injecao='/* codigo novo de um merge qualquer */\n'.repeat(40)+
+    'function funcaoNovaDeUmMerge(){return 1;}\n';
+  const alvo=jogo.indexOf('function spawnWave(');
+  assert.ok(alvo>0,'spawnWave localizada para a injeção');
+  const mutado=jogo.slice(0,alvo)+injecao+jogo.slice(alvo);
+  const ini2=mutado.indexOf(PR13_INI),fim2=mutado.indexOf(PR13_FIM);
+  assert.ok(ini2>=0&&fim2>ini2,'marcadores continuam delimitando após a injeção');
+  const dentro=i=>(i>=ini2&&i<fim2);
+  const re=/fractureRun\s*\.\s*\w+\s*(\+=|-=|\*=|=[^=])/g;
+  let hit,fora=0,n=0;
+  while((hit=re.exec(mutado))){n++;if(!dentro(hit.index))fora++;}
+  assert.ok(n>=10,'escritas ainda são encontradas ('+n+')');
+  assert.strictEqual(fora,0,'nenhuma escrita vira falso positivo após a injeção');
+});
+
+ok('B4-62: detector de waveProfile sobrevive a código inserido no bloco',()=>{
+  const jogo=m[1];
+  /* injeção DENTRO do bloco PR13, antes da primeira escrita de waveProfile */
+  const primeira=/waveProfile\s*\.\s*bias\s*\[[^\]]*\]\s*=[^=]/.exec(jogo);
+  assert.ok(primeira,'escrita de waveProfile localizada');
+  const injecao='/* mais codigo do Diretor cresceu aqui */\n'.repeat(60);
+  const mutado=jogo.slice(0,primeira.index)+injecao+jogo.slice(primeira.index);
+  const ini=mutado.indexOf(PR13_INI),fim=mutado.indexOf(PR13_FIM);
+  const dentro=i=>(i>=ini&&i<fim);
+  const re=/waveProfile\s*\.\s*(bias|pool)\s*(\[[^\]]*\]\s*)?=[^=]/g;
+  let hit,n=0,fora=0;
+  while((hit=re.exec(mutado))){n++;if(!dentro(hit.index))fora++;}
+  assert.ok(n>0,'escritas encontradas ('+n+')');
+  assert.strictEqual(fora,0,
+    'crescimento do bloco não gera falso positivo de waveProfile');
+});
+
+ok('B4-63: marcador ausente produz erro EXPLÍCITO, nunca falso positivo',()=>{
+  /* O modo de falha antigo era silencioso: sem o delimitador de fim, tudo
+     passava a ser "fora do bloco" e o teste acusava a primeira escrita
+     legítima do próprio Diretor. blocoPR13() agora falha no marcador. */
+  const jogo=m[1];
+  const semFim=jogo.replace(PR13_FIM,'/* marcador removido por um merge */');
+  assert.strictEqual(semFim.indexOf(PR13_FIM),-1,'marcador de fim removido');
+  /* sem o fim, a delimitação precisa ser impossível de montar */
+  const ini=semFim.indexOf(PR13_INI);
+  const fim=semFim.indexOf(PR13_FIM,ini);
+  assert.ok(ini>=0&&fim<ini,'ausência detectável (fim='+fim+')');
+  /* e o detector antigo teria acusado a primeira escrita legítima:
+     reproduzimos o falso positivo para provar que o teste novo o evita */
+  const re=/waveProfile\s*\.\s*(bias|pool)\s*(\[[^\]]*\]\s*)?=[^=]/g;
+  const primeiro=re.exec(semFim);
+  assert.ok(primeiro,'existe escrita legítima que o detector antigo culparia');
+  const linhaAntiga=semFim.slice(0,primeiro.index).split('\n').length;
+  assert.ok(linhaAntiga>0,'linha calculável ('+linhaAntiga+')');
+});
+
+ok('B4-64: spawnWave continua despachando a onda final antes de waveComp',()=>{
+  /* Protege diretamente a causa raiz da falha 2: se alguém mover o despacho
+     do chefe para DEPOIS da consulta à composição, a onda do PARADOXO passa
+     a ser remodelada pelo Diretor. Verificação por posição relativa dentro da
+     função inteira — sem janela fixa. */
+  const ini=src.indexOf('function spawnWave(');
+  const corpo=src.slice(ini,src.indexOf('\nfunction ',ini+10));
+  const pBoss=corpo.search(/n\s*>=\s*MAX_WAVE|n\s*>=\s*20|n\s*===\s*MAX_WAVE/);
+  const pComp=corpo.indexOf('waveComp(');
+  assert.ok(pBoss>=0&&pComp>=0,'os dois caminhos existem');
+  assert.ok(pBoss<pComp,'despacho do chefe precede a composição');
+  /* o despacho precisa sair da função — senão a composição rodaria igual */
+  const ramo=corpo.slice(pBoss,corpo.indexOf('\n',pBoss));
+  assert.ok(/return/.test(ramo),'o despacho do chefe retorna (não continua)');
+});
+
+ok('B4-65: waveComp da onda final é imune a Tema, Intensidade e assinatura',()=>{
+  /* Reforço comportamental do invariante, varrendo o espaço inteiro:
+     6 Temas × 3 Intensidades × assinatura forçada e ausente. */
+  beginRun(t,1);
+  const fit20=t.waveCompFit(t.waveCompBase(20),t.ENEMY_BUDGET);
+  const b=t.fractureB4();
+  for(const th of THEMES){
+    t.fractureForceTheme(th,'teste');
+    for(const inten of [0,50,100]){
+      t.fractureSetIntensity(inten,'teste');
+      for(const comSig of [false,true]){
+        b.sig={};
+        if(comSig)for(const sg of t.FRACTURE_SIGNATURES)
+          if(sg.theme===th)b.sig[20]=sg.id;
+        assert.strictEqual(J(t.waveComp(20)),J(fit20),
+          th+' int'+inten+(comSig?' com assinatura':' sem assinatura')+
+          ': onda final intacta');
+      }
+    }
+  }
+  /* controle: as ondas vizinhas continuam sob o Diretor */
+  t.fractureForceTheme('hunt','teste');t.fractureSetIntensity(100,'teste');
+  b.sig={};
+  assert.notStrictEqual(J(t.waveComp(18)),
+    J(t.waveCompFit(t.waveCompBase(18),t.ENEMY_BUDGET)),
+    'controle: waveComp(18) continua moldada');
+});
+
+ok('B4-66: PR10.5.2 continua íntegra após a correção',()=>{
+  /* A correção pós-merge não pode ter tocado na PR10.5.2. As funções de
+     gerência de dados do slot precisam existir e funcionar. */
+  const jogo=m[1];
+  for(const fn of ['function smClearSlotEchoes(','function smClearSlotSave(',
+    'function refreshAfterSlotWipe('])
+    assert.ok(jogo.indexOf(fn)>=0,fn+' presente');
+  beginRun(t,1);
+  /* comportamento real: limpar os Ecos do slot */
+  t.setEchoQueue([echoData('versatile')]);
+  t.saveEchoes();
+  const slotAntes=t.getCurSlot();
+  assert.strictEqual(t.smClearSlotEchoes(),true,'smClearSlotEchoes executa');
+  assert.deepStrictEqual(J(t.getEchoQueue()),J([]),'Ecos do slot removidos');
+  assert.strictEqual(t.getCurSlot(),slotAntes,'slot ativo preservado');
+  /* e o save inteiro pode ser zerado sem quebrar o resto */
+  assert.strictEqual(t.smClearSlotSave(),true,'smClearSlotSave executa');
+  assert.strictEqual(t.getActiveRun(),null,'run ativa descartada');
+  /* o Diretor não escreve em nada disso */
+  const bloco=m[1].slice(m[1].indexOf(PR13_INI),m[1].indexOf(PR13_FIM));
+  for(const proibido of ['smClearSlotEchoes','smClearSlotSave'])
+    assert.ok(bloco.indexOf(proibido+'(')<0,
+      'bloco PR13 não chama '+proibido);
 });
 
 /* ---------------- resultado ---------------- */
