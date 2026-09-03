@@ -336,3 +336,34 @@ tela de vitória (INICIAR NOVO CICLO) e DEV.
    invalide a run inteira por campo benigno faltando).
 5. **Configuração global** (não é progressão) → `cfg`/`saveCfg()`
    (`echoCfg.v1`); não coloque em `echoSave.v3`.
+6. **Efeito temporário mecânico do player** → como no item 3, mas
+   persista o **tempo restante** (nunca timestamp absoluto; tempo com o
+   jogo fechado não consome duração). Exemplo implementado (PR 12):
+   penalidade vital `tempPen/tempT` — no resume, `tempPen>0` com
+   `tempT<=0` (dado corrompido) devolve a vida máxima imediatamente.
+
+---
+
+## 13. PR 12 — estado mecânico de facções/equipamento no checkpoint
+
+A PR 12 integra o estado **mecânico run-scoped** ao checkpoint real sem
+criar segundo sistema de save:
+
+- `smBuildCheckpoint()` grava `cp.frac = fracRunPack()` quando há run
+  ativa (`fracRun`). **Formato**: `{res, cr, duoNasc, refugio, conTax,
+  aff{4}, obs{4}, hist[], es{rerollCost, rerolls, inv[], stock[],
+  shopRolled, stockWave}, eq[{n,p,r,b}×2], o{4×{wave,last,n}}}`.
+- `resumeRun()` restaura PR 12 **somente depois** de player/Ecos/rel/dis
+  existirem e **antes** do HUD/spawn: `fracRunUnpack(cp)` (sanitiza o
+  payload como input não confiável) + `fracRestoreEquipment()` (reexecuta
+  `echoEqInit/echoEqRefresh` com o chassis puro; o boost persistido é
+  copiado antes do init).
+- **Save antigo sem `cp.frac` não é erro**: cai em `fracFresh()` e
+  preserva o restante do checkpoint. **`SM_VERSION` não mudou** — o campo
+  é opcional/aditivo e o slot ganhou `fracd` opcional.
+- **Discovery narrativa por slot** (`slots[n].fracd`): filtrada por
+  `fracDiscClean` no load; sobrevive a fim de run e a reload; nunca é
+  misturada ao `fracRun` (mecânico).
+- Detalhes de equipamento/caps/economia: ver `ECHO_EQUIPMENT_SYSTEM.md`,
+  `FACTION_SYSTEM.md` e `TEMPORAL_ECONOMY.md`.
+
