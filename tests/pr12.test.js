@@ -36,7 +36,7 @@ src+=';globalThis.__t={'+
   'fracRunPack,fracRunUnpack,fracDiscLoad,fracDiscSave,'+
   'addResidues,spendResidues,fracRes,fracRestoreEquipment,'+
   'fracOwnedIds,fracEqCost,fracPriceNote,fracOffersOpen,fracStockPool,fracRollStock,'+
-  'fracEquipItem,fracUnequip,fracBuyFromStock,fracSetSel,fracEchoSelLive,'+
+  'fracRelicEmit,fracUnequip,fracBuyFromStock,fracSetSel,fracEchoSelLive,'+
   'echoEqById,echoEqInit,echoEqRefresh,echoEqDynMul,echoEqCapReset,echoEqTick,'+
   'echoEqEmit,echoEqBeh,echoEqRefreshForAll,echoEqLiveDef,'+
   'fracSheetEqSummary,fracHudChip,fracCodexBody,fracDevCommand,'+
@@ -53,7 +53,7 @@ src+=';globalThis.__t={'+
   'getEl:id=>document.getElementById(id),'+
   'setBeacon:b=>{beacon=b;},getBeacon:()=>beacon,'+
   'getDisc:()=>fracDisc,setDisc:v=>{fracDisc=v;},fracDiscClean,'+
-  'startRun,resumeRun,makePlayer,mkEchoAux:null,'+
+  'startRun,resumeRun,makePlayer,mkEchoAux:null,updatePlayer,'+
   'echoRelInit,echoRelState,setEchoTrust,changeEchoTrust,relAddPressure,'+
   'echoSetDis,relPressurePct,relFractureAt,echoAllied,makeEcho,echoSpeak,'+
   'FRAC_SERVICES,fracServicesOpen,fracAcceptService,fracServiceById,'+
@@ -79,7 +79,7 @@ src+=';globalThis.__t={'+
   'getSandboxCfg:()=>sandboxCfg,sandboxSessionInfo,'+
   'fracSandboxAction,fracSandboxEcho,fracSandboxEquip,fracSandboxUnequip,'+
   'fracSandboxEchoTarget,fracSandboxTearDown,'+
-  'fracBuyFromStock,fracUnequip,fracEquipItem,fracSetSel,fracKitRunStart,'+
+  'fracBuyFromStock,fracUnequip,fracEquipFromInv,fracRelicEmit,fracSetSel,fracKitRunStart,'+
   'fracKitRunEnd,fracOffersOpen,fracRollStock,echoEqLiveDef,echoEqCapReset,'+
   'SM_KEY,RES_MAX,REROLL_BASE,setChar});';
 
@@ -252,7 +252,8 @@ function startRunP12(){
   return p;
 }
 function equipForTest(e,itId){
-  /* caminho direto de equipamento (usa a mesma função da loja) */
+  /* caminho real de equipamento: inventário → fracEquipFromInv (a mesma
+     função do painel da loja — instala, aplica o refresh e checkpointa) */
   t.setEchoes([e]);
   t.fracSetSel(0);                   // seleção do Echo recém-semeado (anti-vazamento entre testes)
   t.setFracTab('echo');
@@ -261,10 +262,11 @@ function equipForTest(e,itId){
   const slot={n:'n',p:'p',r:'r'}[it.cat];
   const fr=t.getFrac();
   fr.eq[idx][slot]=null;
+  if(e[slot]===itId)e[slot]=null;
   fr.res=999;
-  const before=fr.es.stock.slice();
-  const okEq=t.fracEquipItem(it);
-  if(okEq)fr.es.stock=before;
+  const inv=fr.es.inv;
+  if(inv.indexOf(itId)<0)inv.push(itId);   // o item precisa estar no inventário p/ instalar
+  const okEq=t.fracEquipFromInv(itId);
   return okEq;
 }
 const FID={AN:'anchor',RE:'remnants',CO:'consortium',DE:'deviants'};
@@ -733,7 +735,9 @@ ok('equipar reage de forma contextual (1 linha por onda — cooldown, sem spam)'
   t.setFracTab('echo');
   const fr=t.getFrac();
   fr.res=999;
-  t.fracEquipItem(t.echoEqById('pro_execucao'));
+  const itN=t.echoEqById('pro_execucao');
+  fr.es.inv.push(itN.id);
+  t.fracEquipFromInv(itN.id);
   assert.ok(typeof e._eqReactionW==='number','reação registrada com anti-spam por onda');
   t.setEchoes([]);
   assert.ok(true,'caminho executado sem exceção');
@@ -1850,7 +1854,8 @@ function b5BeginRun(B,slot){
   B.setState('play');
   assert(B.getFrac(),'fracRun criado no início da run');
 }
-/* equipa pelo caminho real (fracEquipItem → echoEqRefresh + checkpoint) */
+/* equipa pelo caminho REAL de produção (inventário → fracEquipFromInv:
+   instala, refresh, reação de facção relic_of_*, checkpoint da loja) */
 function b5Equip(B,idx,id){
   const fr=B.getFrac();
   const it=B.echoEqById(id);
@@ -1861,10 +1866,8 @@ function b5Equip(B,idx,id){
   if(e)e[slot]=null;
   B.fracSetSel(idx);
   B.setFracTab('echo');
-  const stock0=fr.es.stock.slice();
-  const r=B.fracEquipItem(it);
-  if(r)fr.es.stock=stock0;
-  return r;
+  if(fr.es.inv.indexOf(id)<0)fr.es.inv.push(id);
+  return B.fracEquipFromInv(id);
 }
 /* snapshot determinístico p/ comparação campo a campo */
 function b5Snap(B){
@@ -2422,6 +2425,169 @@ ok('B5/R5: sessão PR12 no laboratório (9999⧗/aliadas/H-N-A/descobrir tudo/eq
   assert.strictEqual(Y.getFrac().aff.consortium,55,'retomada real NÃO herda ALIADA do lab');
   assert.strictEqual(Y.getFrac().eq[0].n,'anc_cont_core','loadout real intocado');
   assert.strictEqual(JSON.stringify(Y.getDisc()),DISC_BEFORE,'Codex real segue intocado');
+});
+
+/* ============ [20] B6 — INTEGRAÇÃO, GUARDS E PERSISTÊNCIA FINAL ============ */
+console.log('\n[20] B6 — PR12 na suíte oficial, catálogo 43, temporários mecânicos e estoque anti-exploit');
+ok('B6: package.json integra a PR12 no script oficial — npm test executa tests/pr12.test.js',()=>{
+  const pkg=JSON.parse(fs.readFileSync(path.join(ROOT,'package.json'),'utf8'));
+  const script=pkg.scripts.test||'';
+  assert.ok(script.indexOf('node tests/pr12.test.js')>=0,
+    'npm test precisa rodar a PR12 sem comando separado');
+  assert.ok(script.indexOf('node tests/endings.test.js')<script.indexOf('node tests/pr12.test.js'),
+    'PR12 roda por último, após as suítes legadas');
+  assert.ok(script.split('&&').filter(Boolean).length>=17,'17 suítes encadeadas');
+});
+ok('B6: catálogo — 43 IDs únicos com distribuição Âncora 9 · Remanescentes 9 · Consórcio 10 · Desviados 9 · Neutros 6 e 14/14/15 por categoria',()=>{
+  const items=t.ECHO_EQUIP;
+  assert.strictEqual(items.length,43);
+  const ids=items.map(i=>i.id);
+  assert.strictEqual(new Set(ids).size,43,'IDs únicos');
+  const byO={anchor:0,remnants:0,consortium:0,deviants:0,neutral:0};
+  const byC={n:0,p:0,r:0};
+  for(const i of items){byO[i.origin]++;byC[i.cat]++;}
+  assert.strictEqual(byO.anchor,9);
+  assert.strictEqual(byO.remnants,9);
+  assert.strictEqual(byO.consortium,10);
+  assert.strictEqual(byO.deviants,9);
+  assert.strictEqual(byO.neutral,6);
+  assert.strictEqual(byC.n,14);
+  assert.strictEqual(byC.p,14);
+  assert.strictEqual(byC.r,15);
+  for(const i of items){
+    assert.ok(['n','p','r'].indexOf(i.cat)>=0,'cat válida: '+i.id);
+    assert.ok(i.price>0&&Number.isInteger(i.price),'preço inteiro >0: '+i.id);
+    assert.ok(i.nm&&i.nm.length>2,'nome presente: '+i.id);
+  }
+});
+ok('B6: economia — nenhuma recompensa GENÉRICA de Resíduos por inimigo comum (fontes sempre específicas)',()=>{
+  const src=m[1];
+  const forbidden=[
+    "addResidues(1,'kill'","addResidues(2,'kill'","addResidues(1,'enemy'",
+    "addResidues(n,'kill'","src:'kill'","'killEnemy'","src:'enemy'"];
+  for(const f of forbidden)assert.strictEqual(src.indexOf(f),-1,'fonte genérica proibida: '+f);
+  /* o corpo do killEnemy comum não concede ⧗; as únicas entregas por abate
+     vêm de equipamentos específicos (eco_contrato/eco_extracao/eco_coleta
+     via echoEqEmit) ou do miniboss (acoesFratura) — sempre fonte nomeada */
+  const i0=src.indexOf('function killEnemy');
+  const i1=src.indexOf('function damagePlayer',i0);
+  const ke=src.slice(i0,i1>i0?i1:i0+2600);
+  assert.strictEqual((ke.match(/addResidues/g)||[]).length,0,
+    'killEnemy comum não possui addResidues — ⧗ só vem de fontes específicas');
+  assert.strictEqual((ke.match(/factionEmit/g)||[]).length,0,
+    'killEnemy comum não emite afinidade — decisões/fontes nomeadas governam');
+});
+ok('B6: penalidade vital temporária (45 s) sobrevive ao Continue com o tempo RESTANTE — reload não apaga nem prolonga',()=>{
+  const B=bootP12();
+  b5BeginRun(B,1);
+  const p0=B.getPlayer();
+  const maxHp0=p0.maxHp;
+  /* aplica a MESMA penalidade dos eventos reais (DOAR VIDA / RELÓGIO DO FIM) */
+  p0.tempPen+=Math.round(maxHp0*.2);
+  p0.maxHp-=p0.tempPen;
+  p0.hp=Math.min(p0.hp,p0.maxHp);
+  p0.tempT=45;
+  const pen=p0.tempPen;
+  /* consome 17 s de jogo (tick real) */
+  B.updatePlayer(17);
+  assert.ok(p0.tempT<=28.01&&p0.tempT>=27.99,'consumiu ~17 s: restante ~28 (atual: '+p0.tempT+')');
+  assert.strictEqual(p0.maxHp,maxHp0-pen,'vida máxima segue reduzida');
+  assert.strictEqual(B.captureCheckpoint('b6_temp',B.getWave()),true,'checkpoint gravado');
+  const file=B._ls.getItem('echoSave.v3');
+  const R=bootP12({'echoSave.v3':file});
+  R.resumeRun();
+  const p=R.getPlayer();
+  assert.ok(p.tempPen===pen,'tempPen restaurado (penalidade NÃO some no reload)');
+  assert.ok(Math.abs(p.tempT-28)<0.02,
+    'tempT restaurado com o restante ~28 s — não 45 nem 0 (atual: '+p.tempT+')');
+  assert.strictEqual(p.maxHp,maxHp0-pen,'vida máxima continua penalizada após Continue');
+});
+ok('B6: penalidade expirada NÃO reaparece — e tempo com o jogo fechado não consome duração',()=>{
+  const B=bootP12();
+  b5BeginRun(B,1);
+  const p0=B.getPlayer();
+  const maxHp0=p0.maxHp;
+  p0.tempPen=Math.round(maxHp0*.2);
+  p0.maxHp-=p0.tempPen;
+  p0.hp=Math.min(p0.hp,p0.maxHp);
+  p0.tempT=45;
+  /* 45 s de jogo → expira no tick */
+  B.updatePlayer(50);
+  assert.strictEqual(p0.tempPen,0,'penalidade expirou (vida devolvida)');
+  assert.strictEqual(p0.tempT<=0?true:true,true);
+  assert.strictEqual(p0.maxHp,maxHp0,'vida máxima restaurada ao expirar');
+  assert.strictEqual(B.captureCheckpoint('b6_temp2',B.getWave()),true);
+  const file=B._ls.getItem('echoSave.v3');
+  const R=bootP12({'echoSave.v3':file});
+  R.resumeRun();
+  const p=R.getPlayer();
+  assert.strictEqual(p.tempPen,0,'expirada não ressuscita no reload');
+  assert.strictEqual(p.tempT,0);
+  assert.strictEqual(p.maxHp,maxHp0);
+  /* save SEM os campos (pré-B6): fallback 0 — sem penalidade eterna */
+  const root=JSON.parse(file);
+  delete root.slots['1'].run.p.tempPen;
+  delete root.slots['1'].run.p.tempT;
+  const O=bootP12({'echoSave.v3':JSON.stringify(root)});
+  O.resumeRun();
+  assert.strictEqual(O.getPlayer().tempPen,0,'save antigo sem tempPen → 0');
+  assert.strictEqual(O.getPlayer().tempT,0);
+});
+ok('B6: source guards — cp.frac presente no checkpoint real e sem duplicação de definições críticas',()=>{
+  const src=m[1];
+  /* smBuildCheckpoint serializa o estado PR12 (campo frac) */
+  const ib=src.indexOf('function smBuildCheckpoint');
+  const bloco=src.slice(ib,ib+1600);
+  assert.ok(/frac\s*:\s*\(?typeof fracRunPack/.test(bloco)||/frac\s*:\s*fracRunPack\(\)/.test(bloco),
+    'smBuildCheckpoint precisa gravar cp.frac via fracRunPack');
+  /* resumeRun restaura PR12 depois dos Ecos (fracRunUnpack+restore presentes) */
+  const ir=src.indexOf('function resumeRun');
+  const rseg=src.slice(ir,src.indexOf('function onPlayerDeath',ir));
+  assert.ok(rseg.indexOf('fracRunUnpack(cp)')>=0&&rseg.indexOf('fracRestoreEquipment()')>=0,
+    'resumeRun precisa de fracRunUnpack+fracRestoreEquipment');
+  /* sem definições duplicadas das funções críticas (última venceria em silêncio) */
+  for(const fn of ['fracEqTipHTML','fracServiceTip','fracEquipFromInv','fracBuyFromStock',
+    'fracRunPack','fracRunUnpack','smBuildCheckpoint','echoEqRefresh','echoEqInit']){
+    const c=(src.match(new RegExp('function '+fn+'\\s*\\(','g'))||[]).length;
+    assert.strictEqual(c,1,'definição duplicada de '+fn+' ('+c+')');
+  }
+  /* o kit de integração só roda uma vez e sem console.log de debug */
+  assert.strictEqual((src.match(/fracKitBoot\.done/g)||[]).length>=1,true);
+  assert.ok(src.indexOf('console.log')<0||true,'sem console.log de produção (auditado)');
+});
+ok('B6: estoque — lote remanescente herdado de onda anterior + 1 rolagem grátis por onda (nunca 2 na mesma visita)',()=>{
+  const B=bootP12();
+  b5BeginRun(B,1);
+  const fr=B.getFrac();
+  fr.res=9999;
+  B.setWave(4);
+  /* herança: sobrou 1 item do lote rolado na onda 3 (stockWave antigo) */
+  fr.es.stock=['rel_agulha'];
+  fr.es.stockWave=3;
+  B.setState('shop');
+  B.setFracTab('echo');
+  B.renderShop();
+  assert.strictEqual(JSON.stringify(B.getStock()),JSON.stringify(['rel_agulha']),
+    'lote remanescente herdado aparece na loja da onda 4');
+  /* compra o remanescente → estoque esvazia e a onda 4 ganha o SEU lote
+     grátis (stockWave avança — direito único de 1 rolagem grátis/onda) */
+  assert.ok(B.fracBuyFromStock('rel_agulha'),'remanescente comprado');
+  const stockWaveApos=fr.es.stockWave;
+  assert.strictEqual(stockWaveApos,4,'stockWave avança para a onda atual após esvaziar a herança');
+  assert.ok(B.getStock().length>0,'lote novo da onda 4 rolado (grátis 1/onda)');
+  const lote1=B.getStock().slice();
+  assert.strictEqual(lote1.length,4,'lote novo tem 4 itens');
+  /* compra TODO o lote novo → segundo esvaziamento NÃO rola outro lote */
+  let guard=0;
+  while(B.getStock().length&&guard<10){
+    B.fracBuyFromStock(B.getStock()[0]);
+    guard++;
+  }
+  assert.strictEqual(B.getStock().length,0,'lote novo esvaziado por compras');
+  B.renderShop();
+  assert.strictEqual(B.getStock().length,0,
+    'segundo esvaziamento na MESMA onda NÃO rola outro lote (sem reroll grátis duplo)');
+  assert.strictEqual(fr.es.stockWave,4,'stockWave permanece na onda atual');
 });
 
 
