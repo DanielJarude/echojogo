@@ -1512,26 +1512,71 @@ function shopWeaponPool(){
   return out;
 }
 const priceWeapon=i=>Math.max(1,Math.round(WEAPONS[i].price*mEff.shopMul));
+/* PR 13 (B2.3) — TAGS SEMÂNTICAS DOS ARQUÉTIPOS
+   ---------------------------------------------------------------------
+   `tags` é APENAS METADADO. Nenhum comportamento de combate lê isto:
+   updateEnemy continua decidindo por `e.type`, exatamente como antes.
+   Quem consome as tags é o Diretor de Fratura, para casar o Tema da run
+   com a composição da onda (fractureShapeWave) sem espalhar
+   `if(theme==='hunt')` pelo código.
+   O vocabulário é COMPARTILHADO com FRACTURE_THEMES[].tags — é isso que
+   permite o casamento sem tabela Tema→inimigo hardcoded. */
+const ENEMY_TAG_DEFS={
+  CACADOR    :'perseguem o operador e fecham distância',
+  PRESSAO    :'existem em número e forçam movimento constante',
+  DISTANCIA  :'atacam de longe e punem ficar parado',
+  SUSTENTACAO:'dano contínuo e previsível ao longo do tempo',
+  PESADO     :'lentos, grandes, caros de derrubar',
+  RESISTENTE :'absorvem muito dano antes de cair',
+  CONTENCAO  :'negam espaço e travam o avanço',
+  DEFESA     :'protegidos por blindagem/escudo frontal',
+  INVOCADOR  :'produzem entidades adicionais durante o combate',
+  ENXAME     :'unidades frágeis em bando',
+  MOVEL      :'alta velocidade e reposicionamento constante',
+  FRAGMENTACAO:'dividem-se ou se multiplicam ao serem destruídos',
+  EVASIVO    :'ficam intangíveis/inalvejáveis em ciclos',
+  ANOMALIA   :'comportamento fora das regras normais da arena',
+  DISTORCAO  :'distorcem o espaço/tempo ao redor'
+};
+const ENEMY_TAGS=Object.keys(ENEMY_TAG_DEFS);
 const EDEFS={
-  chaser :{hp:26, spd:238, r:13, dmg:10, xp:5,  color:'#ff4d6d'},
-  shooter:{hp:36, spd:150, r:15, dmg:8,  xp:7,  color:'#ffd166'},
-  tank   :{hp:180,spd:66,  r:27, dmg:32, xp:15, color:'#ff2f5e'},
-  spawner:{hp:210,spd:34,  r:24, dmg:12, xp:18, color:'#39d98a'},
-  anomaly:{hp:44, spd:186, r:14, dmg:18, xp:12, color:'#c56bff'},
+  chaser :{hp:26, spd:238, r:13, dmg:10, xp:5,  color:'#ff4d6d',
+    tags:['CACADOR','PRESSAO']},
+  shooter:{hp:36, spd:150, r:15, dmg:8,  xp:7,  color:'#ffd166',
+    tags:['DISTANCIA','SUSTENTACAO']},
+  tank   :{hp:180,spd:66,  r:27, dmg:32, xp:15, color:'#ff2f5e',
+    tags:['PESADO','RESISTENTE','CONTENCAO']},
+  spawner:{hp:210,spd:34,  r:24, dmg:12, xp:18, color:'#39d98a',
+    tags:['INVOCADOR','PRESSAO']},
+  anomaly:{hp:44, spd:186, r:14, dmg:18, xp:12, color:'#c56bff',
+    tags:['ANOMALIA','DISTORCAO']},
   /* ---- INIMIGOS RESTAURADOS DO ARQUÉTIPO HISTÓRICO (adaptados ao sistema moderno) ---- */
   // ENXAME: frágil e velocíssimo, vem em bando e força movimentação constante
-  swarm  :{hp:12, spd:322, r:9,  dmg:6,  xp:3,  color:'#ff8df5'},
+  swarm  :{hp:12, spd:322, r:9,  dmg:6,  xp:3,  color:'#ff8df5',
+    tags:['ENXAME','PRESSAO','MOVEL']},
   // ORBITADOR: circula o alvo mantendo raio fixo, dispara rajadas — obriga mira preditiva
-  orbiter:{hp:34, spd:205, r:12, dmg:9,  xp:6,  color:'#8ff6ff'},
+  orbiter:{hp:34, spd:205, r:12, dmg:9,  xp:6,  color:'#8ff6ff',
+    tags:['MOVEL','CACADOR','DISTANCIA']},
   // BLINDADO: lento com escudo frontal — precisa ser flanqueado ou atingido pelas costas
-  bulwark:{hp:78, spd:112, r:18, dmg:16, xp:9,  color:'#c9a9ff'},
+  bulwark:{hp:78, spd:112, r:18, dmg:16, xp:9,  color:'#c9a9ff',
+    tags:['DEFESA','CONTENCAO','PESADO','RESISTENTE']},
   // CISÃO: ao morrer, divide-se em dois fragmentos menores e mais rápidos
-  splitter:{hp:62, spd:168, r:16, dmg:13, xp:11, color:'#ff9d3c'},
+  splitter:{hp:62, spd:168, r:16, dmg:13, xp:11, color:'#ff9d3c',
+    tags:['FRAGMENTACAO','PRESSAO']},
   // LEVIANO: alterna entre fases — intangível e mais rápido em ciclos, imune em fase fantasma
-  phantom :{hp:52, spd:212, r:13, dmg:15, xp:14, color:'#bffbff'},
+  phantom :{hp:52, spd:212, r:13, dmg:15, xp:14, color:'#bffbff',
+    tags:['CACADOR','MOVEL','EVASIVO']},
   // SINGULAR: poço gravitacional que puxa o jogador e reflete parte do dano direto
-  singular:{hp:190,spd:96,  r:24, dmg:24, xp:30, color:'#ff4df0'}
+  singular:{hp:190,spd:96,  r:24, dmg:24, xp:30, color:'#ff4df0',
+    tags:['ANOMALIA','DISTORCAO','PESADO']}
 };
+/* leitura segura das tags de um arquétipo (metadado puro, nunca null) */
+function enemyTags(type){
+  const d=(typeof type==='string'&&
+    Object.prototype.hasOwnProperty.call(EDEFS,type))?EDEFS[type]:null;
+  return (d&&Array.isArray(d.tags))?d.tags.slice():[];
+}
+/* arquétipos reais de spawn (elite NÃO entra: é promoção, não tipo) */
 /* ---- BALANCEAMENTO DOS ECOS ----
    Os Ecos são APOIO, não substitutos. Dano muito reduzido, cadência
    penalizada e alcance menor: eles limpam sobras e distraem, mas quem
@@ -22578,6 +22623,7 @@ function fracKitBoot(){
       sbRender=function(){
         const r=_sr2.apply(this,arguments);
         fracSandboxSection();
+        try{fractureSandboxSection();}catch(e){}
         return r;
       };
     }
@@ -23287,24 +23333,32 @@ const FRACTURE_THEMES=[
   identidade:['pressão numérica','instabilidade','hordas','fragmentação'],
   tags:['COLAPSO','ENXAME','FRAGMENTACAO','DENSIDADE'],
   tendencias:['Swarm','Splitter','maior densidade de inimigos','ondas mais caóticas'],
+  waveBias:{force:1,density:1.12,tags:{ENXAME:.55,FRAGMENTACAO:.50,PRESSAO:.35,INVOCADOR:.40,MOVEL:.15},
+    arch:{tank:-.45,bulwark:-.40,singular:-.15},capShare:.42,minKinds:5},
   bias:{},pool:[]},
  {id:'siege',nm:'CERCO',sym:'⬢',col:'#c9a9ff',
   desc:'A Fratura não avança: ela se entrincheira. Cada sala precisa ser tomada, e o tempo corre contra você.',
   identidade:['resistência','contenção','pressão sustentada'],
   tags:['CERCO','CONTENCAO','RESISTENCIA','SUSTENTACAO'],
   tendencias:['Bulwark','inimigos resistentes','arenas mais demoradas','formações defensivas'],
+  waveBias:{force:1,density:1.05,tags:{DEFESA:.55,CONTENCAO:.50,RESISTENTE:.45,PESADO:.30,SUSTENTACAO:.30,DISTANCIA:.20},
+    arch:{spawner:.10,swarm:-.50,phantom:-.45,chaser:-.20},capShare:.34,minKinds:5},
   bias:{},pool:[]},
  {id:'hunt',nm:'CAÇADA',sym:'➤',col:'#ff3d68',
   desc:'A Fratura escolheu um alvo. Ela não espera você chegar — ela vem até você, e rápido.',
   identidade:['perseguição','mobilidade','pressão direta sobre o jogador'],
   tags:['CACADA','PERSEGUICAO','MOBILIDADE','PRESSAO'],
   tendencias:['Phantom','Orbiter','inimigos rápidos e agressivos','composições de perseguição'],
+  waveBias:{force:1,density:1.05,tags:{CACADOR:.60,MOVEL:.50,EVASIVO:.40,PRESSAO:.20,DISTANCIA:.15},
+    arch:{tank:-.50,bulwark:-.45,spawner:-.20},capShare:.34,minKinds:5},
   bias:{},pool:[]},
  {id:'anomaly',nm:'ANOMALIA',sym:'✷',col:'#c56bff',
   desc:'As regras locais deixaram de valer. A Fratura improvisa, e o improviso dela raramente é gentil.',
   identidade:['realidade quebrada','distorções','comportamento imprevisível'],
   tags:['ANOMALIA','DISTORCAO','TEMPORAL','IMPREVISIVEL'],
   tendencias:['Singular','eventos temporais','anomalias','combinações incomuns'],
+  waveBias:{force:1,density:1.00,tags:{ANOMALIA:.65,DISTORCAO:.55,FRAGMENTACAO:.40,EVASIVO:.25},
+    arch:{singular:.35,shooter:-.15,bulwark:-.20},capShare:.36,minKinds:4},
   bias:{},pool:[]},
  {id:'resonance',nm:'RESSONÂNCIA',sym:'∿',col:'#8ff6ff',
   desc:'A Fratura lembra. Ela responde aos Ecos que você carrega — e cobra o que o vínculo deixou pendurado.',
@@ -23312,6 +23366,10 @@ const FRACTURE_THEMES=[
   tags:['RESSONANCIA','MEMORIA','VINCULO','DISSONANCIA'],
   tendencias:['eventos ligados ao Echo','Trust','Relationship','Dissonância',
     'Remanescentes e outras facções podem REAGIR, mas nunca controlam o tema'],
+  /* B2: RESSONÂNCIA é deliberadamente SUTIL na composição — sua identidade
+     vem de eventos/Echo/Dissonância nos Blocos 3/4, não de buff artificial. */
+  waveBias:{force:.50,density:1.00,tags:{ANOMALIA:.20,DISTORCAO:.18,DISTANCIA:.15,EVASIVO:.12},
+    arch:{},capShare:.32,minKinds:5},
   bias:{},pool:[]},
  {id:'scarcity',nm:'ESCASSEZ',sym:'◇',col:'#ffd166',
   desc:'A Fratura não dá nada de graça. Cada crédito, cada relíquia e cada escolha custa mais do que deveria.',
@@ -23319,6 +23377,12 @@ const FRACTURE_THEMES=[
   tags:['ESCASSEZ','RECURSO','RISCO','CONTRATO'],
   tendencias:['economia mais apertada','eventos econômicos','contratos',
     'interação com Créditos e Resíduos Temporais'],
+  /* B2: ESCASSEZ também é sutil — a identidade futura é econômica. Aqui ela
+     só desloca o mix para alvos de maior valor (menos horda, mais pressão
+     estratégica) SEM reduzir o total e SEM buff de HP/dano. */
+  waveBias:{force:.55,density:.94,tags:{DISTANCIA:.25,INVOCADOR:.20,PESADO:.18,RESISTENTE:.15,
+    FRAGMENTACAO:-.15,ENXAME:-.25},
+    arch:{},capShare:.32,minKinds:5},
   bias:{},pool:[]}
 ];
 const FRACTURE_THEME_IDS=FRACTURE_THEMES.map(t=>t.id);
@@ -23460,6 +23524,17 @@ function fractureSnapshot(){
     sandbox:(typeof sandboxRun!=='undefined')?!!sandboxRun:false};
 }
 
+/* seed explícita — SOMENTE Sandbox/testes. Uma run real nunca troca de
+   seed depois de criada (é isso que torna o Continue fiel). */
+function fractureSetSeed(n){
+  if(!fractureRun)return false;
+  const v=Math.floor(Number(n));
+  if(!Number.isFinite(v))return false;
+  fractureRun.seed=(v>>>0)||1;
+  fractureRun.theme=null;
+  fractureHistPush({t:'seed_set',w:wave|0,d:0,s:String(fractureRun.seed)});
+  return fractureEnsureTheme(wave|0);
+}
 /* ---------------- seleção de Tema (UMA vez por run) ----------------
    Retorna false se o Tema já estava definido: é isto que garante
    "somente uma seleção por run" mesmo se algo chamar de novo. */
@@ -23574,6 +23649,357 @@ function fractureOnWaveStart(n){
   return out;
 }
 
+/* =====================================================================
+   BLOCO 2 — SHAPING DE COMPOSIÇÃO (Tema → ondas)
+   ---------------------------------------------------------------------
+   Pipeline:
+     waveCompBase(n)            intenção original do jogo
+        ↓ fractureShapeWave     Tema dá a DIREÇÃO, Intensidade/Stage o QUANTO
+        ↓ waveCompFit           teto de entidades (ENEMY_BUDGET)
+     waveComp(n)                composição final
+
+   REGRAS DE SEGURANÇA (todas cobertas por teste):
+   · IDENTIDADE quando não há Diretor, não há Tema, o Tema não tem perfil
+     ou a Intensidade é 0 — waveComp volta a ser a base corrigida;
+   · THRESHOLDS intocados: o shaping só escala arquétipos com base[k]>0.
+     Nenhum Tema desbloqueia inimigo antes da hora (Singular continua
+     sendo wave 13+, Phantom 8+, Spawner 7+...);
+   · NENHUM hard replacement: só multiplicadores derivados de tags;
+   · determinismo por (seed, wave) — Continue/reload/loja/menu nunca
+     rerrolam a composição;
+   · teto de participação por arquétipo + mínimo de arquétipos distintos
+     (diversidade interna);
+   · elite NÃO é tocado aqui (B2.12: makeElite/eliteChance preservados);
+   · nenhum HP/dano é alterado por Tema.
+   ===================================================================== */
+const FRACTURE_BIAS_UP=.9;      // teto de bônus por arquétipo
+const FRACTURE_BIAS_DOWN=-.75;  // piso de penalidade por arquétipo
+const FRACTURE_CAP_SHARE=.34;   // participação máxima de 1 arquétipo (default)
+const FRACTURE_MIN_KINDS=4;     // mínimo de arquétipos distintos (default)
+const FRACTURE_CAP_MIN=2;       // piso do teto de participação por arquétipo
+/* Stage modula a FORÇA da identidade — é consequência da Intensidade,
+   nunca uma segunda progressão paralela. */
+const FRACTURE_STAGE_MUL={latente:.80,instavel:.90,propagando:1,critica:1.05,ruptura:1.10};
+/* viés extra por arquétipo vindo do save/checkpoint (waveProfile.bias) */
+const FRACTURE_RUN_BIAS_MAX=.6;
+const FRACTURE_RUN_POOL_MAX=6;
+
+/* RNG determinístico da composição: mesma (seed, wave) ⇒ mesma sequência.
+   Continua/reload NÃO rerrola porque a seed da run é persistida. */
+function fractureWaveRng(seed,n){
+  const s=fractureHash32((((seed>>>0)||1)^(Math.imul(((n|0)+1),0x9E3779B1)))>>>0);
+  return fractureRng(s);
+}
+/* contexto de shaping — pode ser injetado (simulação) ou lido da run viva */
+function fractureWaveCtx(){
+  if(!fractureRun)return null;
+  if(!fractureThemeById(fractureRun.theme))return null;
+  return {theme:fractureRun.theme,seed:fractureRun.seed>>>0,
+    intensity:fractureRun.intensity|0,stage:fractureRun.stage,
+    bias:fractureRun.waveProfile?fractureRun.waveProfile.bias:null,
+    pool:fractureRun.waveProfile?fractureRun.waveProfile.pool:null};
+}
+/* o QUANTO: 0 (sem identidade) → 1 (Tema plenamente evidente) */
+function fractureThemeWeight(ctx){
+  ctx=ctx||fractureWaveCtx();
+  if(!ctx)return 0;
+  const i=clamp((Number(ctx.intensity)||0)/100,0,1);
+  const sm=FRACTURE_STAGE_MUL[ctx.stage];
+  return clamp(i*(sm==null?1:sm),0,1);
+}
+/* bônus/penalidade de um arquétipo para um Tema = soma das tags + ajuste fino.
+   Tags vêm de EDEFS[type].tags (metadado) — nenhuma tabela Tema→inimigo. */
+function fractureArchBias(wb,arch){
+  if(!wb)return 0;
+  let b=0;
+  const tg=wb.tags||{};
+  for(const tag of enemyTags(arch)){
+    if(!Object.prototype.hasOwnProperty.call(tg,tag))continue;
+    const v=Number(tg[tag]);
+    if(Number.isFinite(v))b+=v;
+  }
+  const ar=wb.arch||{};
+  if(Object.prototype.hasOwnProperty.call(ar,arch)){
+    const v=Number(ar[arch]);
+    if(Number.isFinite(v))b+=v;
+  }
+  return clamp(b,FRACTURE_BIAS_DOWN,FRACTURE_BIAS_UP);
+}
+/* resumo legível do viés (DEV/inspetor/testes) — não é usado no cálculo */
+function fractureBiasReport(ctx){
+  ctx=ctx||fractureWaveCtx();
+  const out={theme:null,weight:0,arch:{},up:[],down:[]};
+  if(!ctx)return out;
+  const th=fractureThemeById(ctx.theme);
+  out.theme=ctx.theme;
+  out.weight=Math.round(fractureThemeWeight(ctx)*1000)/1000;
+  if(!th||!th.waveBias)return out;
+  for(const k of WAVE_ARCHETYPES){
+    const b=fractureArchBias(th.waveBias,k);
+    out.arch[k]=Math.round(b*1000)/1000;
+    if(b>0)out.up.push(k);
+    else if(b<0)out.down.push(k);
+  }
+  return out;
+}
+/* ---------------- SHAPE ---------------- */
+function fractureShapeWave(base,n,ctx){
+  const out={},ord=waveKeyOrder(base);
+  for(const k of ord)out[k]=Math.max(0,Math.floor(Number(base&&base[k])||0));
+  ctx=(ctx===undefined)?fractureWaveCtx():ctx;
+  if(!ctx)return out;                                     // sem Diretor → identidade
+  const th=fractureThemeById(ctx.theme);
+  if(!th||!th.waveBias)return out;                        // Tema sem perfil → identidade
+  const w=fractureThemeWeight(ctx);
+  if(!(w>0))return out;                                   // Intensidade 0 → base pura
+  const wb=th.waveBias;
+  const force=clamp(Number(wb.force==null?1:wb.force),0,1.5);
+  const rnd=fractureWaveRng(ctx.seed,n);
+  const runBias=(ctx.bias&&typeof ctx.bias==='object')?ctx.bias:null;
+  const pool=Array.isArray(ctx.pool)?ctx.pool:[];
+  const scaled={};
+  let baseArchTot=0;
+  for(const k of WAVE_ARCHETYPES)baseArchTot+=out[k];
+  /* 1) escala proporcional + arredondamento estocástico DETERMINÍSTICO
+        (a fração decide o +1 pela sequência da seed da onda — duas waves
+        vizinhas não ficam clones, e o reload reproduz exatamente). */
+  for(const k of WAVE_ARCHETYPES){
+    if(out[k]<=0){scaled[k]=0;continue;}   // THRESHOLD: nunca cria arquétipo bloqueado
+    let b=fractureArchBias(wb,k);
+    if(runBias&&Object.prototype.hasOwnProperty.call(runBias,k)){
+      const v=Number(runBias[k]);
+      if(Number.isFinite(v))b+=clamp(v,-FRACTURE_RUN_BIAS_MAX,FRACTURE_RUN_BIAS_MAX);
+    }
+    b=clamp(b,FRACTURE_BIAS_DOWN,FRACTURE_BIAS_UP);
+    const raw=out[k]*(1+clamp(w,-1,1)*force*b);
+    const fl=Math.floor(raw);
+    scaled[k]=fl+(rnd()<(raw-fl)?1:0);
+  }
+  /* 2) pool ativa (waveProfile.pool): garante presença de arquétipos
+        escolhidos pela run — sempre respeitando o threshold. */
+  for(const k of pool){
+    if(WAVE_ARCHETYPES.indexOf(k)<0)continue;
+    if(out[k]<=0)continue;
+    scaled[k]+=1;
+  }
+  /* 3) DENSIDADE — o Tema controla o VOLUME explicitamente, para que a
+        curva de dificuldade NÃO derive da soma dos vieses. O mix (passo 1)
+        e o total (aqui) são coisas separadas: dois Temas podem ter a mesma
+        quantidade de inimigos com cara completamente diferente.
+        density 1 = mesmo volume da base; a Intensidade dosa o quanto do
+        fator é aplicado (Intensidade 0 ⇒ 1.0 ⇒ base pura). */
+  const dens=clamp(Number(wb.density==null?1:wb.density),.5,1.5);
+  const alvo=Math.max(1,Math.round(baseArchTot*(1+(dens-1)*clamp(w,-1,1)*force)));
+  let sTot=0;
+  for(const k of WAVE_ARCHETYPES)sTot+=scaled[k];
+  if(sTot>0&&sTot!==alvo){
+    const ks=WAVE_ARCHETYPES.filter(k=>scaled[k]>0);
+    const q=ks.map(k=>({k,x:scaled[k]*alvo/sTot,b:0}));
+    let u=0;
+    for(const x of q){x.b=Math.floor(x.x);u+=x.b;}
+    let left=Math.max(0,alvo-u);
+    q.sort((a,b)=>((b.x-b.b)-(a.x-a.b))||
+      (WAVE_ARCHETYPES.indexOf(a.k)-WAVE_ARCHETYPES.indexOf(b.k)));
+    for(let i=0,g=0;left>0&&q.length&&g<600;g++,i=(i+1)%q.length){q[i].b++;left--;}
+    for(const x of q)scaled[x.k]=x.b;
+  }
+  /* 4) DIVERSIDADE — teto de participação por arquétipo, com o excedente
+        redistribuído aos menores (nunca cria arquétipo bloqueado). */
+  let tot=0,kindN=0;
+  for(const k of WAVE_ARCHETYPES){tot+=scaled[k];if(scaled[k]>0)kindN++;}
+  const capShare=clamp(Number(wb.capShare==null?FRACTURE_CAP_SHARE:wb.capShare),.15,.7);
+  /* piso 2: com cap 1 toda onda pequena viraria "1 de cada" e o resto seria
+     jogado fora — o teto de participação só faz sentido quando cabe. */
+  const cap=Math.max(FRACTURE_CAP_MIN,Math.floor(tot*capShare));
+  /* se o teto não tem como ser honrado (poucos arquétipos para o volume da
+     onda), ele é IGNORADO — diversidade nunca pode custar entidade. */
+  if(kindN>0&&cap*kindN>=tot){
+    let excesso=0;
+    for(const k of WAVE_ARCHETYPES)
+      if(scaled[k]>cap){excesso+=scaled[k]-cap;scaled[k]=cap;}
+    if(excesso>0){
+      const recv=WAVE_ARCHETYPES.filter(k=>out[k]>0&&scaled[k]<cap)
+        .sort((a,b)=>(scaled[a]-scaled[b])||
+          (WAVE_ARCHETYPES.indexOf(a)-WAVE_ARCHETYPES.indexOf(b)));
+      for(let i=0,g=0;excesso>0&&recv.length&&g<600;g++,i=(i+1)%recv.length){
+        const k=recv[i];
+        if(scaled[k]<cap){scaled[k]++;excesso--;}
+      }
+      /* garantia de total: se ainda assim não coube, o excedente volta ao
+         maior arquétipo desbloqueado — o shaping NUNCA perde entidade
+         (quem impõe o teto real é waveCompFit, depois). */
+      if(excesso>0){
+        let big=null;
+        for(const k of WAVE_ARCHETYPES)
+          if(out[k]>0&&(!big||scaled[k]>scaled[big]))big=k;
+        if(big)scaled[big]+=excesso;
+      }
+    }
+  }
+  /* 5) DIVERSIDADE — mínimo de arquétipos distintos quando a onda comportar
+        (só entre desbloqueados; tira do maior, nunca zera o doador). */
+  const kinds=WAVE_ARCHETYPES.filter(k=>out[k]>0);
+  const minK=Math.min(clamp(Number(wb.minKinds==null?FRACTURE_MIN_KINDS:wb.minKinds)|0,1,12),
+    kinds.length);
+  let ativos=kinds.filter(k=>scaled[k]>0).length;
+  if(ativos<minK){
+    const ausentes=kinds.filter(k=>scaled[k]<=0)
+      .sort((a,b)=>(out[b]-out[a])||
+        (WAVE_ARCHETYPES.indexOf(a)-WAVE_ARCHETYPES.indexOf(b)));
+    for(const k of ausentes){
+      if(ativos>=minK)break;
+      let doar=null;
+      for(const x of kinds){
+        if(scaled[x]<=1)continue;
+        if(!doar||scaled[x]>scaled[doar]||
+          (scaled[x]===scaled[doar]&&WAVE_ARCHETYPES.indexOf(x)<WAVE_ARCHETYPES.indexOf(doar)))
+          doar=x;
+      }
+      if(doar){scaled[doar]--;scaled[k]=1;}
+      else scaled[k]=1;              // waveCompFit reabsorve qualquer excesso
+      ativos++;
+    }
+  }
+  /* 6) elite preservado: o Diretor não mexe em elites no B2 (B2.12) */
+  const res={};
+  for(const k of ord)
+    res[k]=(k==='elite')?Math.max(0,out.elite|0):Math.max(0,scaled[k]|0);
+  for(const k of WAVE_ARCHETYPES)
+    if(!Object.prototype.hasOwnProperty.call(res,k))res[k]=Math.max(0,scaled[k]|0);
+  if(!Object.prototype.hasOwnProperty.call(res,'elite'))
+    res.elite=Math.max(0,out.elite|0);
+  return res;
+}
+/* ---------------- sanitização de waveProfile (B2.11) ----------------
+   bias/pool vêm do save, ou seja, são INPUT NÃO CONFIÁVEL. Só passam:
+   arquétipos que existem em EDEFS (nada de '__proto__'/'constructor'),
+   números finitos clampados, sem duplicata e dentro dos tetos. */
+function fractureCleanBias(b){
+  const out={};
+  if(!b||typeof b!=='object')return out;
+  for(const k of WAVE_ARCHETYPES){
+    if(!Object.prototype.hasOwnProperty.call(b,k))continue;
+    /* typeof estrito: Number('3') seria 3, e um save adulterado com strings
+       não pode virar viés silenciosamente. */
+    if(typeof b[k]!=='number')continue;
+    const v=b[k];
+    if(!Number.isFinite(v))continue;
+    if(v===0)continue;
+    out[k]=clamp(v,-FRACTURE_RUN_BIAS_MAX,FRACTURE_RUN_BIAS_MAX);
+  }
+  return out;
+}
+function fractureCleanPool(list){
+  const out=[];
+  if(!Array.isArray(list))return out;
+  for(const x of list){
+    if(typeof x!=='string')continue;
+    if(WAVE_ARCHETYPES.indexOf(x)<0)continue;   // tipo inexistente → rejeitado
+    if(out.indexOf(x)>=0)continue;              // duplicata → ignorada
+    out.push(x);
+    if(out.length>=FRACTURE_RUN_POOL_MAX)break;
+  }
+  return out;
+}
+/* ---------------- API de waveProfile (única porta de escrita) ----------
+   waveProfile.bias/pool deixam de ser contrato morto: influenciam de
+   verdade o shaping acima. Sanitização dura — só arquétipos conhecidos,
+   só números finitos, sem prototype pollution. */
+function fractureSetWaveBias(arch,value){
+  if(!fractureRun)return false;
+  if(WAVE_ARCHETYPES.indexOf(arch)<0)return false;
+  const v=Number(value);
+  if(!Number.isFinite(v))return false;
+  if(v===0)delete fractureRun.waveProfile.bias[arch];
+  else fractureRun.waveProfile.bias[arch]=
+    clamp(v,-FRACTURE_RUN_BIAS_MAX,FRACTURE_RUN_BIAS_MAX);
+  fractureHistPush({t:'wave_bias',w:wave|0,d:0,s:arch+':'+
+    (fractureRun.waveProfile.bias[arch]||0)});
+  return true;
+}
+function fractureSetWavePool(list){
+  if(!fractureRun)return false;
+  const arr=Array.isArray(list)?list:[list];
+  const out=[];
+  for(const x of arr){
+    if(WAVE_ARCHETYPES.indexOf(x)<0)continue;
+    if(out.indexOf(x)>=0)continue;
+    out.push(x);
+    if(out.length>=FRACTURE_RUN_POOL_MAX)break;
+  }
+  fractureRun.waveProfile.pool=out;
+  fractureHistPush({t:'wave_pool',w:wave|0,d:0,s:out.join('/')||'vazio'});
+  return true;
+}
+function fractureClearWaveProfile(){
+  if(!fractureRun)return false;
+  fractureRun.waveProfile.bias={};
+  fractureRun.waveProfile.pool=[];
+  return true;
+}
+/* ---------------- SIMULAÇÃO DE BALANCEAMENTO (B2.19) ----------------
+   Pura: não toca em fractureRun nem em estado de jogo. Serve para medir
+   se os Temas estão fortes ou fracos demais antes de mexer nos números. */
+function fractureSimulate(opts){
+  opts=opts||{};
+  const themes=Array.isArray(opts.themes)&&opts.themes.length
+    ?opts.themes.filter(x=>fractureThemeById(x)):FRACTURE_THEME_IDS;
+  const wMin=clamp(Number(opts.waveMin)||1,1,MAX_WAVE);
+  const wMax=clamp(Number(opts.waveMax)||19,wMin,MAX_WAVE);
+  const seeds=clamp(Number(opts.seeds)||120,1,2000);
+  const intensity=clamp(Number(opts.intensity==null?100:opts.intensity)||0,0,100);
+  const stage=fractureStageOf(intensity).id;
+  const budget=Number.isFinite(Number(opts.budget))
+    ?Math.max(0,Math.floor(Number(opts.budget))):ENEMY_BUDGET;
+  const per={};
+  for(const th of themes){
+    const rec={theme:th,themeNm:(fractureThemeById(th)||{}).nm,entitySum:0,entityN:0,
+      entityMax:0,budgetHits:0,budgetOver:0,arch:{},kinds:{},extremes:0,
+      violations:0,share:{},baseEntitySum:0,baseFitEntitySum:0};
+    for(const k of WAVE_ARCHETYPES)rec.arch[k]=0;
+    for(let s=1;s<=seeds;s++){
+      const ctx={theme:th,seed:fractureHash32(s*7919),intensity,stage,bias:null,pool:null};
+      for(let n=wMin;n<=wMax;n++){
+        const base=waveCompBase(n);
+        const final=waveCompFit(fractureShapeWave(base,n,ctx),budget);
+        let tot=0,kindN=0,mx=0;
+        for(const k of WAVE_ARCHETYPES){
+          const v=final[k]|0;
+          tot+=v;rec.arch[k]+=v;
+          if(v>0)kindN++;
+          if(v>mx)mx=v;
+        }
+        const all=tot+(final.elite|0);
+        rec.entitySum+=all;rec.entityN++;
+        /* duas referências: a base CRUA (intenção) e a base CORRIGIDA pelo
+           budget — é contra a corrigida que o Tema deve ser comparado,
+           porque sem Tema o pipeline devolve exatamente ela. */
+        rec.baseEntitySum+=waveCompTotal(base);
+        rec.baseFitEntitySum+=waveCompTotal(waveCompFit(base,budget));
+        if(all>rec.entityMax)rec.entityMax=all;
+        if(all>=budget)rec.budgetHits++;
+        if(all>budget)rec.budgetOver++;
+        rec.kinds[kindN]=(rec.kinds[kindN]||0)+1;
+        /* threshold: arquétipo presente sem estar na base = violação */
+        for(const k of WAVE_ARCHETYPES)
+          if((final[k]|0)>0&&(base[k]|0)<=0)rec.violations++;
+        /* monocultura: um arquétipo dominando a onda inteira */
+        if(tot>0&&mx/tot>.60)rec.extremes++;
+      }
+    }
+    for(const k of WAVE_ARCHETYPES)
+      rec.share[k]=rec.entitySum?rec.arch[k]/rec.entitySum:0;
+    rec.entityAvg=rec.entityN?rec.entitySum/rec.entityN:0;
+    rec.baseEntityAvg=rec.entityN?rec.baseEntitySum/rec.entityN:0;
+    rec.baseFitEntityAvg=rec.entityN?rec.baseFitEntitySum/rec.entityN:0;
+    rec.kindAvg=rec.entityN?(function(){
+      let s=0;for(const k in rec.kinds)s+=(+k)*rec.kinds[k];return s/rec.entityN;})():0;
+    per[th]=rec;
+  }
+  return {themes:themes,waveMin:wMin,waveMax:wMax,seeds:seeds,
+    intensity:intensity,stage:stage,budget:budget,per:per};
+}
+
 /* ---------------- ciclo de vida da run ---------------- */
 function fractureBeginRun(){
   fractureRun=fractureFresh(fractureMakeSeed());
@@ -23600,8 +24026,8 @@ function fractureRunPack(){
     seed:f.seed>>>0,
     intensity:clamp(Math.round(f.intensity)||0,FRACTURE_INT_MIN,FRACTURE_INT_MAX),
     wave:{wave:f.waveProfile.wave|0,last:f.waveProfile.last|0,
-      bias:Object.assign({},f.waveProfile.bias||{}),
-      pool:(f.waveProfile.pool||[]).filter(x=>typeof x==='string').slice(0,12)},
+      bias:fractureCleanBias(f.waveProfile.bias),
+      pool:fractureCleanPool(f.waveProfile.pool)},
     hist:f.history.slice(-FRACTURE_HIST_MAX).map(h=>({t:h.t,w:h.w|0,d:h.d|0,s:h.s})),
     last:f.last?{t:String(f.last.t).slice(0,32),w:f.last.w|0,d:f.last.d|0}:null};
 }
@@ -23630,17 +24056,12 @@ function fractureRunUnpack(cp){
     fractureRun.waveProfile.last=clamp(Math.round(Number(p.wave.last))||0,0,MAX_WAVE);
     if(fractureRun.waveProfile.last>fractureRun.waveProfile.wave)
       fractureRun.waveProfile.wave=fractureRun.waveProfile.last;
-    if(p.wave.bias&&typeof p.wave.bias==='object'){
-      const b={};
-      for(const k in p.wave.bias){
-        const v=Number(p.wave.bias[k]);
-        if(Number.isFinite(v))b[String(k).slice(0,24)]=clamp(v,0,10);
-      }
-      fractureRun.waveProfile.bias=b;
-    }
-    if(Array.isArray(p.wave.pool))
-      fractureRun.waveProfile.pool=p.wave.pool.filter(x=>typeof x==='string')
-        .map(x=>x.slice(0,24)).slice(0,12);
+    /* B2.11: bias/pool deixaram de ser contrato morto — são lidos pelo
+       fractureShapeWave. Por isso a sanitização é DURA: só arquétipos que
+       existem em EDEFS, só números finitos, clampados, sem chave herdada
+       do protótipo (hasOwnProperty) e sem duplicata. */
+    fractureRun.waveProfile.bias=fractureCleanBias(p.wave.bias);
+    fractureRun.waveProfile.pool=fractureCleanPool(p.wave.pool);
   }
   if(Array.isArray(p.hist))
     fractureRun.history=p.hist.filter(h=>h&&typeof h==='object')
@@ -23667,8 +24088,145 @@ function fractureSandboxContextStart(){
   fractureEmit('run_start',{wave:1,source:'sandbox'});
   return true;
 }
-function fractureSandboxTearDown(){fractureRun=null;return true;}
+function fractureSandboxTearDown(){
+  fractureRun=null;
+  const d=(document&&document.getElementById)
+    ?document.getElementById('frac2-sb-section'):null;
+  if(d&&d.parentNode)d.parentNode.removeChild(d);
+  return true;
+}
 
+/* ---------------- relatório de composição (DEV + testes) ----------------
+   Devolve BASE (intenção original) e FINAL (após Tema + budget) lado a
+   lado, para que o Inspector mostre o que o Diretor realmente fez. Puro:
+   não muta nada. */
+function fractureCompReport(n,ctx){
+  n=clamp(n|0,1,MAX_WAVE);
+  ctx=(ctx===undefined)?fractureWaveCtx():ctx;
+  const base=waveCompBase(n);
+  const shaped=fractureShapeWave(base,n,ctx);
+  const final=waveCompFit(shaped,ENEMY_BUDGET);
+  const line=c=>WAVE_ARCHETYPES.filter(k=>c[k]>0)
+    .map(k=>k+' '+c[k]).join(' ')+(c.elite>0?' · elite '+c.elite:'');
+  return {wave:n,base:base,shaped:shaped,final:final,
+    baseTxt:line(base),finalTxt:line(final),
+    baseTotal:waveCompTotal(base),finalTotal:waveCompTotal(final),
+    budget:ENEMY_BUDGET,budgetUsed:waveCompTotal(final),
+    budgetLeft:ENEMY_BUDGET-waveCompTotal(final),
+    kinds:WAVE_ARCHETYPES.filter(k=>final[k]>0).length,
+    baseKinds:WAVE_ARCHETYPES.filter(k=>base[k]>0).length,
+    identical:line(base)===line(final)};
+}
+/* ---------------- SANDBOX: laboratório do Diretor (B2.17) ----------------
+   Roda dentro do Sandbox já existente, então herda o isolamento dele:
+   captureCheckpoint/clearActiveRun/fracDiscSave/saveProg já retornam cedo
+   quando sandboxRun é true, e o teste byte-for-byte de saves continua
+   passando. Nada aqui escreve em localStorage. */
+function fractureSandboxSection(){
+  if(!document||typeof document.getElementById!=='function')return;
+  if(!(typeof sandboxRun!=='undefined'&&sandboxRun))return;
+  const body=document.getElementById('sb-body');
+  if(!body)return;
+  if(document.getElementById('frac2-sb-section'))return;
+  const d=document.createElement('div');
+  d.id='frac2-sb-section';
+  d.style.cssText='grid-column:1 / -1;font-family:Consolas,monospace;font-size:12px;margin-top:12px';
+  const run=fractureRun;
+  const cur=clamp((typeof wave!=='undefined'?(wave|0):1)||1,1,MAX_WAVE);
+  const rep=run?fractureCompReport(cur):null;
+  const br=run?fractureBiasReport():null;
+  let h='<div class="sect" style="border-color:rgba(255,107,77,.4)">PR 13 — DIRETOR DE FRATURA · '+
+    'TEMA → COMPOSIÇÃO · TEMPORÁRIO · NADA É GRAVADO</div>';
+  if(!run){
+    h+='<div class="srow"><span class="k">SEM fractureRun</span><span class="v">reinicie o teste</span></div>';
+    d.innerHTML=h;body.appendChild(d);return;
+  }
+  h+='<div class="srow"><span class="k">TEMA / SEED</span><span class="v">'+
+    ((fractureThemeById(run.theme)||{}).nm||'—')+' · seed '+run.seed+
+    ' · INT '+run.intensity+' · '+fractureStageOf(run.intensity).lab+
+    ' · peso do tema '+(br?Math.round(br.weight*100):0)+'%</span></div>';
+  h+='<div class="sbrow" style="flex-wrap:wrap">';
+  for(const id of FRACTURE_THEME_IDS){
+    const th=fractureThemeById(id);
+    h+='<span class="asbtn" data-f2sb="theme:'+id+'"'+
+      (run.theme===id?' style="color:'+th.col+';border-color:'+th.col+'"':'')+'>'+
+      th.sym+' '+th.nm+'</span>';
+  }
+  h+='</div>';
+  h+='<div class="sbrow" style="flex-wrap:wrap">'+
+    '<span class="asbtn" data-f2sb="int:0">INT 0</span>'+
+    '<span class="asbtn" data-f2sb="int:25">INT 25</span>'+
+    '<span class="asbtn" data-f2sb="int:50">INT 50</span>'+
+    '<span class="asbtn" data-f2sb="int:75">INT 75</span>'+
+    '<span class="asbtn" data-f2sb="int:100">INT 100</span>'+
+    '<span class="asbtn" data-f2sb="reroll">RE-SORTEAR SEED</span></div>';
+  h+='<div class="srow"><span class="k">SEED PRÓPRIA</span><span class="v">'+
+    '<input data-f2sb-seed type="number" min="1" value="'+run.seed+'" '+
+    'style="width:130px;background:#071018;color:#cfe9f7;border:1px solid rgba(70,224,255,.3);'+
+    'font-family:Consolas,monospace;font-size:11px;padding:2px 4px">'+
+    ' · mesma seed + tema + intensidade ⇒ MESMA composição</span></div>';
+  h+='<div class="sbrow" style="flex-wrap:wrap">';
+  for(const w of SB_WAVES)h+='<span class="asbtn" data-f2sb="wave:'+w+'">ONDA '+w+'</span>';
+  h+='<span class="asbtn" data-f2sb="wave:13">ONDA 13</span>'+
+     '<span class="asbtn" data-f2sb="wave:19">ONDA 19</span></div>';
+  if(rep){
+    h+='<div class="srow"><span class="k">WAVE '+String(cur).padStart(2,'0')+
+      ' BASE ('+rep.baseTotal+')</span><span class="v">'+rep.baseTxt+'</span></div>';
+    h+='<div class="srow"><span class="k" style="color:#ff6b4d">WAVE '+String(cur).padStart(2,'0')+
+      ' FINAL ('+rep.finalTotal+'/'+rep.budget+')</span><span class="v">'+rep.finalTxt+
+      ' · '+rep.kinds+' tipos · sobra '+rep.budgetLeft+
+      (rep.identical?' · <b>IGUAL À BASE</b>':'')+'</span></div>';
+    if(br&&(br.up.length||br.down.length)){
+      h+='<div class="srow"><span class="k">VIÉS</span><span class="v">'+
+        (br.up.length?'+'+br.up.map(k=>k+' '+br.arch[k]).join(' '):'')+
+        (br.up.length&&br.down.length?' · ':'')+
+        (br.down.length?br.down.map(k=>k+' '+br.arch[k]).join(' '):'')+'</span></div>';
+    }
+  }
+  h+='<div class="srow"><span class="k" style="color:#9db8c8">A composição muda de '+
+    'verdade aqui: o Tema só redistribui arquétipos já desbloqueados, nunca altera HP/dano '+
+    'e nunca estoura o teto de '+ENEMY_BUDGET+' entidades.</span></div>';
+  d.innerHTML=h;
+  body.appendChild(d);
+  d.querySelectorAll('[data-f2sb]').forEach(b=>{
+    b.addEventListener('click',ev=>{
+      ev.stopPropagation();
+      fractureSandboxAction(b.getAttribute('data-f2sb'));
+    });
+  });
+  const si=d.querySelector('[data-f2sb-seed]');
+  if(si)si.addEventListener('change',()=>{fractureSandboxAction('seed:'+si.value);});
+}
+function fractureSandboxAction(cmd){
+  if(!(typeof sandboxRun!=='undefined'&&sandboxRun))return false;
+  if(!fractureRun)return false;
+  cmd=String(cmd||'');
+  let ok=false,msg='';
+  if(cmd.indexOf('theme:')===0){
+    ok=fractureForceTheme(cmd.slice(6),'sandbox');
+    msg='Tema → '+((fractureThemeById(fractureRun.theme)||{}).nm||fractureRun.theme);
+  }else if(cmd.indexOf('int:')===0){
+    ok=fractureSetIntensity(cmd.slice(4),'sandbox')>=0;
+    msg='Intensidade → '+fractureRun.intensity+' ('+fractureStageOf(fractureRun.intensity).lab+')';
+  }else if(cmd.indexOf('seed:')===0){
+    ok=fractureSetSeed(cmd.slice(5));
+    msg='Seed → '+fractureRun.seed+' · Tema '+fractureRun.theme;
+  }else if(cmd==='reroll'){
+    ok=fractureRerollTheme('sandbox');
+    msg='Seed '+fractureRun.seed+' · Tema '+fractureRun.theme;
+  }else if(cmd.indexOf('wave:')===0){
+    const n=clamp(Math.round(Number(cmd.slice(5)))||1,1,MAX_WAVE);
+    if(typeof player!=='undefined'&&player){sandboxJumpTo(n);ok=true;msg='Onda → '+n;}
+  }
+  if(!ok)return false;
+  try{toast('DIRETOR: '+msg);}catch(e){}
+  try{
+    const d=document.getElementById('frac2-sb-section');
+    if(d&&d.parentNode)d.parentNode.removeChild(d);
+    fractureSandboxSection();
+  }catch(e){}
+  return true;
+}
 /* ---------------- DEV: inspetor + comandos fx:* ---------------- */
 function fractureInspectorText(){
   if(!fractureRun)return 'SEM RUN ATIVA — O DIRETOR DE FRATURA VIVE NA RUN';
@@ -23680,12 +24238,32 @@ function fractureInspectorText(){
     ' ('+st.id+')');
   L.push('IDENTIDADE: '+(th?th.identidade.join('/'):'—'));
   L.push('TAGS: '+(th?th.tags.join('/'):'—'));
-  L.push('ONDAS: conhecida '+f.waveProfile.wave+' · fronteira '+f.waveProfile.last);
+  L.push('ONDAS: conhecida '+f.waveProfile.wave+' · fronteira '+f.waveProfile.last+
+    ' · WAVE ATUAL: '+(typeof wave!=='undefined'?(wave|0):'?'));
   const bk=Object.keys(f.waveProfile.bias||{});
-  L.push('PESOS: '+(bk.length?bk.map(k=>k+'×'+f.waveProfile.bias[k]).join(' ')
-    :'NEUTROS (B1 — nenhum viés ativo)'));
-  L.push('POOLS: '+((f.waveProfile.pool||[]).length?f.waveProfile.pool.join('/')
-    :'PADRÃO (B1 — waveComp/pickMiniBoss inalterados)'));
+  L.push('PESOS DE RUN: '+(bk.length?bk.map(k=>k+'×'+f.waveProfile.bias[k]).join(' ')
+    :'NEUTROS'));
+  L.push('POOL DE RUN: '+((f.waveProfile.pool||[]).length?f.waveProfile.pool.join('/')
+    :'PADRÃO'));
+  /* ---- B2.16: Tema → composição, com BASE × FINAL lado a lado ---- */
+  const br=fractureBiasReport();
+  L.push('PESO DO TEMA: '+Math.round(br.weight*100)+'% (Intensidade '+f.intensity+
+    ' × estágio '+st.id+' '+Math.round((FRACTURE_STAGE_MUL[st.id]||1)*100)/100+'×)'+
+    (th&&th.waveBias?' · força '+((th.waveBias.force==null?1:th.waveBias.force))+
+      ' · densidade '+((th.waveBias.density==null?1:th.waveBias.density))+
+      ' · teto '+Math.round((th.waveBias.capShare==null?FRACTURE_CAP_SHARE:th.waveBias.capShare)*100)+
+      '% · mín. '+((th.waveBias.minKinds==null?FRACTURE_MIN_KINDS:th.waveBias.minKinds))+' tipos':''));
+  if(br.up.length)L.push('  FAVORECIDOS: '+br.up.map(k=>k+'+'+br.arch[k]).join(' '));
+  if(br.down.length)L.push('  REDUZIDOS: '+br.down.map(k=>k+br.arch[k]).join(' '));
+  if(!br.up.length&&!br.down.length)L.push('  VIÉS: NEUTRO (Tema sem perfil de onda)');
+  const cw=(typeof wave!=='undefined'?(wave|0):1)||1;
+  for(const wn of [cw,cw===10?11:10]){
+    const cr=fractureCompReport(wn);
+    L.push('WAVE '+String(wn).padStart(2,'0')+' BASE   ('+cr.baseTotal+'): '+cr.baseTxt);
+    L.push('WAVE '+String(wn).padStart(2,'0')+' FINAL  ('+cr.finalTotal+'/'+cr.budget+
+      ' · sobra '+cr.budgetLeft+' · '+cr.kinds+'/'+cr.baseKinds+' tipos'+
+      (cr.identical?' · IGUAL À BASE':'')+'): '+cr.finalTxt);
+  }
   L.push('ÚLTIMO EVENTO: '+(f.last?f.last.t+' @w'+f.last.w+(f.last.d?' Δ'+f.last.d:''):'—'));
   const hh=f.history.slice(-6).map(x=>'w'+x.w+' '+x.t+(x.d?' Δ'+x.d:'')+(x.s?'('+x.s+')':''));
   L.push('HISTÓRICO('+f.history.length+'/'+FRACTURE_HIST_MAX+'): '+(hh.join(' · ')||'—'));
@@ -23711,6 +24289,12 @@ function fractureDevSection(){
     h+='<div class="dvrow" style="margin-top:6px;flex-wrap:wrap">'+
       devBtn('fx:int:+5','INT +5')+devBtn('fx:int:-5','INT −5')+
       devBtn('fx:reroll','RE-SORTEAR TEMA')+devBtn('fx:insp','INSPETOR → LOG')+'</div>';
+    h+='<div class="dvrow" style="margin-top:4px;flex-wrap:wrap">'+
+      devBtn('fx:comp','COMP WAVE ATUAL')+devBtn('fx:comp:1','COMP W1')+
+      devBtn('fx:comp:5','COMP W5')+devBtn('fx:comp:10','COMP W10')+
+      devBtn('fx:comp:15','COMP W15')+devBtn('fx:comp:19','COMP W19')+
+      devBtn('fx:wave:10','IR W10')+devBtn('fx:sim','SIMULAR BALANCE')+
+      devBtn('fx:bias:off','ZERAR PESOS')+devBtn('fx:pool:off','ZERAR POOL')+'</div>';
     h+='<div class="dvrow" style="flex-wrap:wrap">';
     for(const id of FRACTURE_THEME_IDS){
       const th=fractureThemeById(id);
@@ -23746,6 +24330,66 @@ function fractureDevCommand(c){
     devTaint();
     devLog('FX EMIT '+r.ev+(r.ok?(' Δ'+r.delta+' → '+r.after):(' RECUSADO ('+r.reason+')')));
     return r.ok;
+  }
+  /* ---- B2: composição. fx:comp é LEITURA (não tainta): mostra BASE × FINAL
+        da onda pedida sem tocar em nada. ---- */
+  if(c==='comp'||c.indexOf('comp:')===0){
+    const n=c.indexOf('comp:')===0
+      ?clamp(Math.round(Number(c.slice(5)))||1,1,MAX_WAVE)
+      :clamp((typeof wave!=='undefined'?(wave|0):1)||1,1,MAX_WAVE);
+    const r=fractureCompReport(n);
+    devLog('FX COMP w'+String(n).padStart(2,'0')+' BASE   ('+r.baseTotal+'): '+r.baseTxt);
+    devLog('FX COMP w'+String(n).padStart(2,'0')+' FINAL  ('+r.finalTotal+'/'+r.budget+
+      ' · '+r.kinds+' tipos'+(r.identical?' · IGUAL À BASE':'')+'): '+r.finalTxt);
+    return true;
+  }
+  /* fx:wave:<n> — no Sandbox SALTA de verdade (isolado, nada é gravado);
+     fora dele é só prévia de composição, porque pular onda na run real
+     mexeria no loop e no checkpoint. */
+  if(c.indexOf('wave:')===0){
+    const n=clamp(Math.round(Number(c.slice(5)))||1,1,MAX_WAVE);
+    if(typeof sandboxRun!=='undefined'&&sandboxRun&&typeof player!=='undefined'&&player){
+      sandboxJumpTo(n);devTaint();
+      devLog('FX WAVE → '+n+' (SANDBOX: onda saltada de verdade)');
+      return true;
+    }
+    const r=fractureCompReport(n);
+    devLog('FX WAVE '+n+' (prévia — use o Sandbox F1 para saltar de verdade)');
+    devLog('  BASE  ('+r.baseTotal+'): '+r.baseTxt);
+    devLog('  FINAL ('+r.finalTotal+'/'+r.budget+'): '+r.finalTxt);
+    return true;
+  }
+  if(c.indexOf('bias:')===0){
+    const raw=c.slice(5).split(':');
+    if(raw[0]==='off'){fractureClearWaveProfile();devTaint();
+      devLog('FX PESOS DE RUN LIMPOS');return true;}
+    if(!fractureSetWaveBias(raw[0],raw[1])){devLog('FX BIAS INVÁLIDO: '+raw.join(':'));return false;}
+    devTaint();
+    devLog('FX PESO '+raw[0]+' → '+fractureRun.waveProfile.bias[raw[0]]);
+    return true;
+  }
+  if(c.indexOf('pool:')===0){
+    const raw=c.slice(5);
+    if(raw==='off'){fractureSetWavePool([]);devTaint();
+      devLog('FX POOL DE RUN VAZIA');return true;}
+    const list=raw.split(/[\/ ]+/).filter(Boolean);
+    if(!fractureSetWavePool(list)){devLog('FX POOL INVÁLIDA: '+raw);return false;}
+    devTaint();
+    devLog('FX POOL → '+(fractureRun.waveProfile.pool.join('/')||'vazia'));
+    return true;
+  }
+  if(c==='sim'||c.indexOf('sim:')===0){
+    const it=c.indexOf('sim:')===0?(Math.round(Number(c.slice(4)))||0):100;
+    const r=fractureSimulate({intensity:it,seeds:40});
+    devLog('FX SIM int'+it+' · '+r.seeds+' seeds · waves '+r.waveMin+'-'+r.waveMax);
+    for(const t of r.themes){
+      const q=r.per[t];
+      devLog('  '+String(q.themeNm||t).padEnd(11)+' ent '+q.entityAvg.toFixed(1)+
+        ' (base '+q.baseFitEntityAvg.toFixed(1)+') · máx '+q.entityMax+
+        ' · tipos '+q.kindAvg.toFixed(2)+' · estouro '+q.budgetOver+
+        ' · violação '+q.violations);
+    }
+    return true;
   }
   if(c==='reroll'){fractureRerollTheme('dev');devTaint();
     devLog('FX TEMA RE-SORTEADO → '+fractureGetThemeId());return true;}
