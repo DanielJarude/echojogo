@@ -24412,6 +24412,59 @@ function fractureShapeWave(base,n,ctx){
     res.elite=Math.max(0,out.elite|0);
   return res;
 }
+/* ---------------- B3.18: inspetor do Bloco 3 ----------------
+   Só LEITURA. Nada aqui muda estado, emite evento ou tainta a run. */
+function fractureTopEventBias(n){
+  const out=[];
+  if(!fractureRun)return out;
+  let ctx=null;
+  try{ctx=fractureEvCtx(fractureWaveCtx());}catch(e){}
+  const scored=[];
+  for(const d of ALL_RUN_EVENTS){
+    let m=1;
+    try{m=fractureEventBiasMul(d,ctx);}catch(e){m=1;}
+    if(m!==1)scored.push({id:d.id,m:m,t:fractureEventTags(d)});
+  }
+  scored.sort((a,b)=>Math.abs(b.m-1)-Math.abs(a.m-1));
+  return scored.slice(0,n||5);
+}
+function fractureB3InspectorLines(){
+  const L=[];
+  const b=fractureB3();
+  /* --- EVENTOS --- */
+  const top=fractureTopEventBias(3);
+  const prof=FRACTURE_EVENT_BIAS[fractureRun.theme]||{};
+  L.push('EVENTOS['+fractureRun.theme+']: favorece '+
+    (Object.keys(prof.tags||{}).join('/')||'—')+
+    ' · reduz '+(Object.keys(prof.red||{}).join('/')||'—')+
+    ' · teto ×'+prof.up+' piso ×'+prof.down);
+  L.push('  TOP VIÉS: '+(top.length?top.map(x=>x.id+'×'+x.m.toFixed(2)).join(' '):'neutro'));
+  L.push('  ÚLTIMO: '+(b&&b.lastEv?(b.lastEv.id+' @w'+b.lastEv.wave+
+    ' ['+b.lastEv.rarity+'] '+b.lastEv.tags.join('/')):'—')+
+    ' · int de evento '+((b?b.evRG:0)|0)+'/'+FRACTURE_EV_INT_PER_RUN_MAX+
+    ' (onda '+((b?b.evWG:0)|0)+'/'+FRACTURE_EV_INT_PER_WAVE_MAX+')');
+  /* --- MINIBOSS --- */
+  const rep=fractureMiniReport(clamp((typeof wave!=='undefined'?(wave|0):1)||1,1,MAX_WAVE));
+  if(rep&&rep.pool&&rep.pool.length){
+    L.push('MINIBOSS w'+rep.wave+': pool '+rep.pool.length+' elegíveis · pesos '+
+      rep.pool.map(x=>x.id+' '+x.w.toFixed(2)).join(' '));
+    L.push('  ESCOLHIDO: '+(rep.picked||'—')+(rep.reason?(' · '+rep.reason):''));
+  }else L.push('MINIBOSS w'+(rep?rep.wave:'?')+': sem pool elegível');
+  /* --- RESSONÂNCIA (só o que foi LIDO) --- */
+  const r=fractureResoRead();
+  L.push('RESSONÂNCIA (lido, nunca escrito): Ecos='+r.count+' aliados='+r.allied+
+    ' hostile='+r.hostile+' · rel='+(r.rel||'—')+' trust='+(r.trust==null?'—':r.trust)+
+    ' dis='+(r.disSt||'—')+' pressão='+r.pressure);
+  /* --- ESCASSEZ (estado econômico) --- */
+  let res=0;try{res=getResidues();}catch(e){}
+  /* o base do reroll da loja é 10 (hardcoded em openShop); REROLL_BASE é a
+     moeda de resíduo da PR12 e não tem nada a ver com isso. */
+  L.push('ESCASSEZ: coinMul(evento)='+fractureCoinMul('fracture_event').toFixed(3)+
+    ' · resíduo='+res+' · reroll da loja '+fractureShopRerollCost(10)+'/10'+
+    (fractureRun.theme==='scarcity'?'':' (Tema neutro: economia intacta)'));
+  return L;
+}
+
 /* ---------------- B3.13: emissão de abertura de loja ----------------
    shop_open tem delta 0 na grade do B1: existe só para histórico e DEV.
    Uma chamada por visita; delta 0 significa que abrir loja não pode ser
@@ -24694,8 +24747,8 @@ function fractureOnMiniKill(def,n){
    BLOCO 3 — RESSONÂNCIA: identidade via Echo (B3.9)
    ---------------------------------------------------------------------
    REGRA CRÍTICA: o Diretor LÊ os sistemas de Echo e NÃO escreve neles.
-   Nada aqui chama echoSetDis, echoRelResonance, smFlat ou qualquer mutador
-   de trust/relationship/dissonância/personality. A identidade vem de:
+   Nenhum mutador de trust, relationship, dissonância ou personality é chamado
+   aqui — o teste B3-26 varre este bloco procurando por eles. A identidade vem de:
      · pesar eventos de memória/vínculo (ou de distorção, se o Echo está
        ruptured/hostile) — só pesos;
      · poucas falas contextuais do Echo via echoReact (que já tem cooldown
@@ -25050,12 +25103,20 @@ function fractureCleanMiniMap(m,validIds){
 }
 function fractureCleanLastEv(e){
   if(!e||typeof e!=='object')return null;
-  const id=typeof e.id==='string'?e.id.slice(0,32):'';
+  const id=(typeof e.id==='string')?e.id.slice(0,32):'';
   if(!id)return null;
-  return {id:id,wave:clamp(e.wave|0,0,MAX_WAVE),
-    family:typeof e.family==='string'?e.family.slice(0,24):'',
-    rarity:typeof e.rarity==='string'?e.rarity.slice(0,16):'',
-    tags:Array.isArray(e.tags)?e.tags.filter(t=>FRACTURE_EVENT_TAGS.indexOf(t)>=0).slice(0,6):[]};
+  /* o id precisa EXISTIR no registro. Sem isso um save editado injetaria
+     qualquer string no histórico e no inspetor do DEV. Tem que ser consulta
+     própria (hasOwnProperty) para não resolver __proto__/constructor. */
+  if(!Object.prototype.hasOwnProperty.call(RUN_EVENT_BY_ID,id))return null;
+  const def=RUN_EVENT_BY_ID[id];
+  const tags=Array.isArray(e.tags)
+    ?e.tags.filter(t=>FRACTURE_EVENT_TAGS.indexOf(t)>=0).slice(0,6):[];
+  /* family/rarity saem do registro, não do save — não há o que confiar ali */
+  return {id:id,wave:clamp(Math.round(Number(e.wave))||0,0,MAX_WAVE),
+    family:String(def.family||'').slice(0,24),
+    rarity:String(def.rarity||'').slice(0,16),
+    tags:tags};
 }
 /* ---------------- contexto do Diretor para eventos ----------------
    fractureWaveCtx() dá seed/tema/intensidade/stage. Aqui acrescentamos o
@@ -25360,6 +25421,17 @@ function fractureSandboxSection(){
         (br.down.length?br.down.map(k=>k+' '+br.arch[k]).join(' '):'')+'</span></div>';
     }
   }
+  /* ---- B3.17: eventos / minibosses / ressonância / escassez no laboratório ----
+     Mesma regra da seção: nada é gravado, tudo sai de leitura pura. */
+  h+='<div class="sect" style="border-color:rgba(143,246,255,.35);margin-top:10px">'+
+    'PR 13 BLOCO 3 — EVENTOS · MINIBOSSES · RESSONÂNCIA · ESCASSEZ</div>';
+  for(const ln of fractureB3InspectorLines()){
+    h+='<div class="srow"><span class="v" style="white-space:pre-wrap">'+escDev(ln)+'</span></div>';
+  }
+  h+='<div class="srow"><span class="k" style="color:#9db8c8">Trocar Tema/Intensidade acima '+
+    'remonta estes números na hora. O Diretor só LÊ o Echo — nada aqui escreve em trust, '+
+    'relationship, dissonância ou personality, e o byte-a-byte dos Save 1/2/3 não é tocado.'+
+    '</span></div>';
   h+='<div class="srow"><span class="k" style="color:#9db8c8">A composição muda de '+
     'verdade aqui: o Tema só redistribui arquétipos já desbloqueados, nunca altera HP/dano '+
     'e nunca estoura o teto de '+ENEMY_BUDGET+' entidades.</span></div>';
@@ -25442,6 +25514,10 @@ function fractureInspectorText(){
       (cr.identical?' · IGUAL À BASE':'')+'): '+cr.finalTxt);
   }
   L.push('ÚLTIMO EVENTO: '+(f.last?f.last.t+' @w'+f.last.w+(f.last.d?' Δ'+f.last.d:''):'—'));
+  /* ---- B3.18: EVENTOS / MINIBOSS / RESSONÂNCIA / ESCASSEZ ----
+     Quatro blocos curtos. Cada um responde UMA pergunta e para aí —
+     o inspetor não vira painel ilegível. */
+  L.push(fractureB3InspectorLines().join(' | '));
   const hh=f.history.slice(-6).map(x=>'w'+x.w+' '+x.t+(x.d?' Δ'+x.d:'')+(x.s?'('+x.s+')':''));
   L.push('HISTÓRICO('+f.history.length+'/'+FRACTURE_HIST_MAX+'): '+(hh.join(' · ')||'—'));
   return L.join(' | ');

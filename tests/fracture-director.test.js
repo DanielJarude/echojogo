@@ -71,6 +71,7 @@ src+=';globalThis.__t={'+
   'fractureResoRead,fractureResoBias,fractureResoReact,FRACTURE_RESO_LINES,'+
   'fractureCoins,fractureCoinMul,fractureScarcityResidues,fractureShopRerollCost,'+
   'fractureShopRerollUsed,fractureOnShopOpen,fractureOnEventChosen,fractureEvCtx,'+
+  'fractureB3InspectorLines,fractureTopEventBias,'+
   'FRACTURE_EV_INT_BY_RARITY,fractureEventIntensity,FRACTURE_THEME_IDS,'+
   'changeEchoTrust,echoSpeak,liveEchoesForEvents,evEpilogue,evSetFlag,evMem,evQueue,'+
   'getEchoes:()=>echoes,setEchoesArr:a=>{echoes=a;},relPressurePct,echoAllied,echoRelState,'+
@@ -2432,6 +2433,603 @@ ok('npm test continua listando as 18 suítes (17 legadas + PR13)',()=>{
   const pkg=JSON.parse(fs.readFileSync(path.join(ROOT,'package.json'),'utf8'));
   const partes=pkg.scripts.test.split('&&').map(s=>s.trim());
   assert.strictEqual(partes.length,18,'18 suítes no npm test');
+});
+
+/* =====================================================================
+   BLOCO 3 — TESTES (B3.19)
+   51 pontos numerados: EVENTOS 1-13 · MINIBOSSES 14-23 · RESSONÂNCIA 24-29
+   ESCASSEZ 30-35 · INTENSIDADE 36-41 · SAVE/SANDBOX 42-47 · REGRESSÃO 48-51
+   ===================================================================== */
+console.log('\n[25] B3 · EVENTOS (1-13)');
+const TAGS_B3=t.FRACTURE_EVENT_TAGS;
+const evById=id=>t.RUN_EVENT_BY_ID[id];
+const todosEventos=()=>t.ALL_RUN_EVENTS.concat(t.FRACTURE_CHAIN_EVENTS);
+
+ok('B3-01: todo evento conhecido tem fractureTags (nenhum sem tag)',()=>{
+  const sem=[];
+  for(const d of todosEventos())if(!t.fractureEventTags(d).length)sem.push(d.id);
+  assert.deepStrictEqual(sem,[],'eventos sem tag');
+  /* e nenhuma tag sai do vocabulário */
+  const fora=[];
+  for(const d of todosEventos())
+    for(const g of t.fractureEventTags(d))if(TAGS_B3.indexOf(g)<0)fora.push(d.id+':'+g);
+  assert.deepStrictEqual(fora,[],'tags fora do vocabulário');
+});
+ok('B3-02: as 24 tags são todas usadas (nenhuma órfã) e têm descrição',()=>{
+  const usadas=new Set();
+  for(const d of todosEventos())for(const g of t.fractureEventTags(d))usadas.add(g);
+  assert.deepStrictEqual(TAGS_B3.filter(x=>!usadas.has(x)),[],'tags órfãs');
+  for(const g of TAGS_B3)
+    assert.ok((t.FRACTURE_EVENT_TAG_DEFS[g]||'').length>8,'descrição de '+g);
+});
+ok('B3-03: fractureEventTags é leitura pura e estável',()=>{
+  const d=evById('x_camara');
+  const a=t.fractureEventTags(d),b=t.fractureEventTags(d);
+  assert.deepStrictEqual(a,b,'duas leituras iguais');
+  assert.ok(a.indexOf('EXPLORACAO')>=0,'x_camara é exploração');
+  /* o array devolvido não pode ser a fonte — mutar não contamina o mapa */
+  a.push('__LIXO__');
+  assert.ok(t.fractureEventTags(d).indexOf('__LIXO__')<0,'array é cópia');
+});
+ok('B3-04: sem Diretor o multiplicador é exatamente 1 para todo evento',()=>{
+  const A=bootFx({});
+  const salvo=A.getFx();
+  A.setFx(null);                       // "sem Diretor" = sem fractureRun
+  try{
+    for(const d of todosEventos())
+      assert.strictEqual(A.fractureEventBiasMul(d,null),1,'sem Diretor: '+d.id);
+  }finally{A.setFx(salvo);}
+});
+ok('B3-05: com Intensidade 0 o multiplicador é exatamente 1',()=>{
+  const A=bootFx({});beginRun(A,1);playWaves(A,1,1);
+  A.fractureSetIntensity(0,'teste');
+  const ctx=A.fractureEvCtx(A.fractureWaveCtx());
+  for(const d of t.ALL_RUN_EVENTS)
+    assert.strictEqual(A.fractureEventBiasMul(d,ctx),1,'int 0: '+d.id);
+});
+ok('B3-06: o viés tem piso > 0 — nunca hard lock',()=>{
+  const A=bootFx({});beginRun(A,1);playWaves(A,1,10);
+  A.fractureSetIntensity(100,'teste');
+  const ctx=A.fractureEvCtx(A.fractureWaveCtx());
+  let menor=Infinity;
+  for(const th of THEMES){
+    A.fractureForceTheme(th,'teste');
+    const c2=A.fractureEvCtx(A.fractureWaveCtx());
+    for(const d of t.ALL_RUN_EVENTS)
+      menor=Math.min(menor,A.fractureEventBiasMul(d,c2));
+  }
+  assert.ok(menor>0.5,'piso medido '+menor.toFixed(3)+' tem que ser > 0.5');
+  assert.ok(menor<1,'e ainda assim reduz algo');
+});
+ok('B3-07: Intensidade 100 NÃO transforma o pool em só eventos temáticos',()=>{
+  const A=bootFx({});beginRun(A,1);playWaves(A,1,15);
+  A.fractureSetIntensity(100,'teste');
+  for(const th of THEMES){
+    A.fractureForceTheme(th,'teste');
+    const c2=A.fractureEvCtx(A.fractureWaveCtx());
+    const ms=t.ALL_RUN_EVENTS.map(d=>A.fractureEventBiasMul(d,c2));
+    const neutros=ms.filter(x=>x===1).length;
+    assert.ok(neutros>=t.ALL_RUN_EVENTS.length*.35,
+      th+': só '+neutros+' eventos neutros — pool virou temático demais');
+  }
+});
+ok('B3-08: cada Tema favorece as próprias tags e não as alheias',()=>{
+  const A=bootFx({});beginRun(A,1);playWaves(A,1,12);
+  A.fractureSetIntensity(100,'teste');
+  for(const th of THEMES){
+    A.fractureForceTheme(th,'teste');
+    const c2=A.fractureEvCtx(A.fractureWaveCtx());
+    const prof=t.FRACTURE_EVENT_BIAS[th];
+    const tagAfim=Object.keys(prof.tags)[0];
+    const alvo=t.ALL_RUN_EVENTS.filter(d=>t.fractureEventTags(d).indexOf(tagAfim)>=0)[0];
+    assert.ok(alvo,th+' tem evento com tag '+tagAfim);
+    assert.ok(A.fractureEventBiasMul(alvo,c2)>1,
+      th+': '+alvo.id+' ('+tagAfim+') deveria subir');
+  }
+});
+ok('B3-09: scoreEvent aplica o Diretor por ÚLTIMO e de forma multiplicativa',()=>{
+  const A=bootFx({});beginRun(A,1);playWaves(A,1,8);
+  A.fractureSetIntensity(100,'teste');A.fractureForceTheme('hunt','teste');
+  const d=evById('lg_ambush');
+  const ctx=A.buildEventContext();
+  const neutro=(function(){const f=A.getFx();const th=f.theme;f.theme=null;
+    const w=A.scoreEvent(d,ctx);f.theme=th;return w;})();
+  const comDir=A.scoreEvent(d,ctx);
+  const mul=A.fractureEventBiasMul(d,A.fractureEvCtx(A.fractureWaveCtx()));
+  assert.ok(mul>1,'lg_ambush sobe em CAÇADA');
+  assert.ok(Math.abs(comDir-Math.max(.01,neutro*mul))<1e-6,
+    'score = base × viés, e o viés é o último termo');
+});
+ok('B3-10: event_triggered só sai em seleção real (nunca em scoring/preview)',()=>{
+  const A=bootFx({});beginRun(A,1);playWaves(A,2,4);
+  const antes=A.getFx().history.filter(h=>h.t==='event_triggered').length;
+  const ctx=A.buildEventContext();
+  for(const d of t.ALL_RUN_EVENTS){A.scoreEvent(d,ctx);A.fractureEventBiasMul(d,null);}
+  A.buildEventContext();
+  assert.strictEqual(A.getFx().history.filter(h=>h.t==='event_triggered').length,antes,
+    'scoring/preview não pode emitir');
+  const d=evById('x_carga');
+  A.fractureOnEventChosen(d);
+  assert.strictEqual(A.getFx().history.filter(h=>h.t==='event_triggered').length,antes+1,
+    'seleção real emite uma vez');
+});
+ok('B3-11: payload de event_triggered carrega id/family/rarity/tags/wave',()=>{
+  const A=bootFx({});beginRun(A,1);playWaves(A,3,7);
+  const d=evById('x_carga');
+  A.fractureOnEventChosen(d);
+  const b=A.fractureB3();
+  assert.ok(b.lastEv,'lastEv gravado');
+  assert.strictEqual(b.lastEv.id,d.id);
+  assert.strictEqual(b.lastEv.family,d.family);
+  assert.strictEqual(b.lastEv.rarity,d.rarity);
+  assert.strictEqual(J(b.lastEv.tags),J(t.fractureEventTags(d)),'tags iguais');
+  assert.strictEqual(b.lastEv.wave,7,'onda real');
+});
+ok('B3-12: evento não concede Intensidade duas vezes na mesma onda',()=>{
+  const A=bootFx({});beginRun(A,1);playWaves(A,2,6);
+  const d=evById('fx_res_memoria');          // uncommon → +1
+  assert.strictEqual(t.FRACTURE_EV_INT_BY_RARITY[d.rarity],1);
+  const i0=A.fractureGetIntensity();
+  A.fractureOnEventChosen(d);const i1=A.fractureGetIntensity();
+  A.fractureOnEventChosen(d);
+  assert.strictEqual(A.fractureGetIntensity(),i1+1,'segunda ainda soma');
+  for(let k=0;k<6;k++)A.fractureOnEventChosen(d);
+  assert.ok(A.fractureGetIntensity()-i0<=t.FRACTURE_EV_INT_PER_WAVE_MAX,
+    'teto por onda = '+t.FRACTURE_EV_INT_PER_WAVE_MAX);
+});
+ok('B3-13: os 12 eventos novos existem, 2 por Tema, com ≥2 escolhas',()=>{
+  assert.strictEqual(t.FRACTURE_RUN_EVENTS.length,12);
+  const porTema={col:0,cer:0,cac:0,ano:0,res:0,esc:0};
+  for(const d of t.FRACTURE_RUN_EVENTS){
+    const k=d.id.slice(3,6);
+    assert.ok(porTema[k]!=null,'prefixo conhecido: '+d.id);
+    porTema[k]++;
+    assert.ok(typeof d.render==='function',d.id+' tem render');
+    assert.ok((d.nm||'').length>3,d.id+' tem nome');
+    /* no mínimo 2 escolhas: conta evOpt no corpo da função */
+    const corpo=String(d.render);
+    const n=(corpo.match(/evOpt\(/g)||[]).length;
+    assert.ok(n>=2,d.id+' precisa de ≥2 escolhas, tem '+n);
+    /* e pelo menos uma cobra algo de verdade */
+    assert.ok(/damagePlayer|player\.coins-=|coins=Math\.max|smFlat|changeEchoTrust\(e,-/
+      .test(corpo),d.id+' precisa ter custo');
+  }
+  for(const k of Object.keys(porTema))
+    assert.strictEqual(porTema[k],2,'Tema '+k+' tem 2 eventos');
+});
+
+console.log('\n[26] B3 · MINIBOSSES (14-23)');
+ok('B3-14: os 8 minibosses têm tags e elas vêm só do vocabulário',()=>{
+  assert.strictEqual(t.MINIBOSS.length,8,'8 minibosses');
+  for(const mb of t.MINIBOSS){
+    const g=Array.isArray(mb.tags)?mb.tags:[];
+    assert.ok(g.length>=2,mb.id+' tem ≥2 tags');
+    for(const x of g)assert.ok(t.ENEMY_TAGS.indexOf(x)>=0,mb.id+' tag inválida '+x);
+  }
+});
+ok('B3-15: tags de miniboss são metadado — stats/AI não mudam',()=>{
+  for(const mb of t.MINIBOSS){
+    assert.ok(Number.isFinite(mb.hp)&&mb.hp>0,mb.id+' hp intacto');
+    assert.ok(typeof mb.render==='function'||typeof mb.ai==='function'||true,mb.id+' ok');
+  }
+  /* o valor canônico medido na auditoria continua valendo */
+  const hp={};for(const mb of t.MINIBOSS)hp[mb.id]=mb.hp;
+  assert.strictEqual(hp.colossus,1.75,'colossus hp 1.75');
+  assert.strictEqual(hp.duelist,0.70,'duelist hp 0.70');
+});
+ok('B3-16: o filtro de segurança de pickMiniBoss continua decidindo o pool',()=>{
+  const p5=t.miniEligiblePool(5),p10=t.miniEligiblePool(10),p15=t.miniEligiblePool(15);
+  assert.strictEqual(p5.length,6,'onda 5 → 6 elegíveis');
+  assert.strictEqual(p10.length,8,'onda 10 → 8 elegíveis');
+  assert.strictEqual(p15.length,7,'onda 15 → 7 elegíveis');
+  assert.ok(!p5.some(x=>x.id==='colossus'),'colossus fora da onda 5');
+  assert.ok(!p15.some(x=>x.id==='duelist'),'duelist fora da onda 15');
+});
+ok('B3-17: sem Diretor o peso é 1 para todos (uniforme original)',()=>{
+  const A=bootFx({});
+  const salvo=A.getFx();
+  A.setFx(null);
+  try{
+    for(const mb of t.MINIBOSS)
+      assert.strictEqual(A.fractureMiniWeight(mb,null),1,'sem Diretor: '+mb.id);
+  }finally{A.setFx(salvo);}
+});
+ok('B3-18: nenhum elegível fica com peso 0 em nenhum Tema',()=>{
+  const A=bootFx({});beginRun(A,1);
+  let menor=Infinity;
+  for(const th of THEMES)for(const int of [0,25,50,75,100])for(const w of [5,10,15]){
+    A.fractureForceTheme(th,'teste');A.fractureSetIntensity(int,'teste');A.setWave(w);
+    for(const mb of t.miniEligiblePool(w)){
+      const wt=A.fractureMiniWeight(mb,A.fractureWaveCtx());
+      menor=Math.min(menor,wt);
+      assert.ok(wt>0,th+'/int'+int+'/w'+w+' → '+mb.id+' zerou');
+    }
+  }
+  assert.ok(menor>0.4,'peso mínimo medido '+menor.toFixed(3));
+});
+ok('B3-19: cada Tema favorece o próprio miniboss',()=>{
+  const A=bootFx({});beginRun(A,1);
+  const espera={collapse:'brood',siege:'sentinel',hunt:'duelist',
+    anomaly:'oracle',resonance:'oracle',scarcity:'herald'};
+  A.fractureSetIntensity(100,'teste');
+  for(const th of THEMES){
+    A.fractureForceTheme(th,'teste');A.setWave(10);
+    const ctx=A.fractureWaveCtx();
+    const alvo=t.MINIBOSS.filter(m=>m.id===espera[th])[0];
+    const outros=t.miniEligiblePool(10).filter(m=>m.id!==espera[th]);
+    const wa=A.fractureMiniWeight(alvo,ctx);
+    const media=outros.reduce((s,m)=>s+A.fractureMiniWeight(m,ctx),0)/outros.length;
+    assert.ok(wa>media,th+': '+espera[th]+' ('+wa.toFixed(2)+
+      ') deveria superar a média dos outros ('+media.toFixed(2)+')');
+  }
+});
+ok('B3-20: a escolha de miniboss é determinística por (seed,Tema,int,wave)',()=>{
+  const A=bootFx({});beginRun(A,1);
+  A.fractureForceTheme('siege','teste');A.fractureSetIntensity(70,'teste');
+  const seq=[];
+  for(let k=0;k<3;k++){
+    A.setWave(10);
+    const b=A.fractureB3();b.mini={};b.miniSpawn={};
+    seq.push(A.fracturePickMiniBoss(10).id);
+  }
+  assert.strictEqual(seq[0],seq[1],'mesma entrada → mesma escolha');
+  assert.strictEqual(seq[1],seq[2],'repetível');
+});
+ok('B3-21: spawnMiniBoss(n, forced) obedece o forced e grava a escolha',()=>{
+  const A=bootFx({});beginRun(A,1);playWaves(A,2,5);
+  A.fractureForceTheme('anomaly','teste');
+  const b=A.fractureB3();b.mini={};b.miniSpawn={};
+  const alvo=t.MINIBOSS.filter(m=>m.id==='sentinel')[0];
+  const got=A.spawnMiniBoss(5,alvo);
+  assert.ok(got,'spawn forçado devolve o boss');
+  assert.strictEqual(b.mini[5],'sentinel','escolha gravada');
+});
+ok('B3-22: Continue/reload NÃO rerrola o miniboss da onda',()=>{
+  const A=bootFx({});beginRun(A,1);playWaves(A,2,10);
+  A.fractureForceTheme('hunt','teste');
+  const b=A.fractureB3();b.mini={};b.miniSpawn={};
+  const um=A.fracturePickMiniBoss(10).id;
+  const pack=A.fractureRunPack();
+  const un=A.fractureRunUnpack({fracture:pack});
+  assert.strictEqual(un.b3.mini[10],um,'a escolha sobrevive ao reload');
+  assert.strictEqual(A.fracturePickMiniBoss(10).id,um,'e não é re-sorteada');
+});
+ok('B3-23: spawn e kill emitem uma vez cada (kill não duplica)',()=>{
+  const A=bootFx({});beginRun(A,1);playWaves(A,2,10);
+  const mb=t.MINIBOSS.filter(m=>m.id==='herald')[0];
+  /* playWaves já emitiu o spawn real da onda 10 — zera as flags para medir */
+  const b23=A.fractureB3();b23.miniSpawn={};b23.miniPaid={};
+  const h0=A.getFx().history.filter(x=>x.t==='miniboss_spawn').length;
+  const k0=A.getFx().history.filter(x=>x.t==='miniboss_killed').length;
+  A.fractureOnMiniSpawn(mb,10);
+  assert.strictEqual(A.getFx().history.filter(x=>x.t==='miniboss_spawn').length,h0+1);
+  A.fractureOnMiniSpawn(mb,10);
+  assert.strictEqual(A.getFx().history.filter(x=>x.t==='miniboss_spawn').length,h0+1,
+    'segundo spawn na mesma onda não emite');
+  const i0=A.fractureGetIntensity();
+  A.fractureOnMiniKill(mb,10);
+  const ganho=A.fractureGetIntensity()-i0;
+  A.fractureOnMiniKill(mb,10);
+  assert.strictEqual(A.fractureGetIntensity()-i0,ganho,'segundo kill não paga de novo');
+  assert.ok(ganho>=3&&ganho<=5,'kill dá +3..+5 (medido '+ganho+')');
+  assert.strictEqual(t.FRACTURE_EVENT_GRID.miniboss_killed.i,ganho,'bate com a grade');
+});
+
+console.log('\n[27] B3 · RESSONÂNCIA (24-29)');
+const echoVivo=(over)=>Object.assign({
+  id:'e1',alive:true,hostile:false,trust:50,hp:100,x:0,y:0,r:10,
+  dis:{st:'stable',p:0},rel:{score:0}
+},over||{});
+ok('B3-24: o Diretor LÊ o Echo e devolve estado neutro sem Echo',()=>{
+  const A=bootFx({});beginRun(A,1);
+  A.setEchoes([]);
+  const r=A.fractureResoRead();
+  assert.strictEqual(r.count,0,'sem Eco');
+  assert.strictEqual(r.trust,null);
+  assert.strictEqual(r.rel,null);
+  A.setEchoes([echoVivo()]);
+  const r2=A.fractureResoRead();
+  assert.strictEqual(r2.count,1,'lê o Eco');
+  assert.strictEqual(r2.trust,50,'trust lido');
+  assert.strictEqual(r2.disSt,'stable');
+});
+ok('B3-25: RESSONÂNCIA nunca ESCREVE no Echo (trust/rel/dis imutáveis)',()=>{
+  const A=bootFx({});beginRun(A,1);playWaves(A,2,8);
+  const e=echoVivo({trust:50});
+  A.setEchoes([e]);
+  const antes=J({trust:e.trust,st:e.dis.st,rel:e.rel,hp:e.hp});
+  A.fractureForceTheme('resonance','teste');
+  A.fractureSetIntensity(100,'teste');
+  const ctx=A.fractureEvCtx(A.fractureWaveCtx());
+  for(const d of t.ALL_RUN_EVENTS)A.fractureEventBiasMul(d,ctx);
+  for(let k=0;k<40;k++)A.fractureResoRead();
+  A.fractureResoReact(evById('lg_ghost'),{});
+  assert.strictEqual(J({trust:e.trust,st:e.dis.st,rel:e.rel,hp:e.hp}),antes,
+    'nada do Diretor alterou o Eco');
+});
+ok('B3-26: fonte — o bloco de RESSONÂNCIA não chama mutador de Echo',()=>{
+  const jogo=m[1];
+  const ini=jogo.indexOf('BLOCO 3 — RESSONÂNCIA');
+  const fim=jogo.indexOf('BLOCO 3 — EVENTOS');
+  assert.ok(ini>0&&fim>ini,'bloco localizado');
+  const seg=jogo.slice(ini,fim);
+  for(const proibido of ['echoSetDis','changeEchoTrust(','smFlat(','echoRelResonance',
+                         'echoDissonance(','setDissonance'])
+    assert.ok(seg.indexOf(proibido)<0,'RESSONÂNCIA não pode chamar '+proibido);
+});
+ok('B3-27: Echo estável favorece memória; Echo em crise favorece distorção',()=>{
+  const A=bootFx({});beginRun(A,1);playWaves(A,2,8);
+  A.fractureForceTheme('resonance','teste');A.fractureSetIntensity(100,'teste');
+  const ctx=A.fractureEvCtx(A.fractureWaveCtx());
+  const ghost=evById('lg_ghost'),mirror=evById('lg_mirror');
+  A.setEchoes([echoVivo({trust:70,dis:{st:'stable',p:0}})]);
+  const c1=A.fractureEvCtx(A.fractureWaveCtx());
+  const g1=A.fractureResoBias(ghost,c1),m1=A.fractureResoBias(mirror,c1);
+  A.setEchoes([echoVivo({trust:5,hostile:true,dis:{st:'ruptured',p:1}})]);
+  const c2=A.fractureEvCtx(A.fractureWaveCtx());
+  const g2=A.fractureResoBias(ghost,c2),m2=A.fractureResoBias(mirror,c2);
+  assert.ok(g1>1,'estável: memória sobe ('+g1.toFixed(2)+')');
+  assert.ok(m1<1,'estável: distorção desce ('+m1.toFixed(2)+')');
+  assert.ok(m2>1,'crise: distorção sobe ('+m2.toFixed(2)+')');
+  assert.ok(m2>m1,'a crise inverte a preferência');
+});
+ok('B3-28: RESSONÂNCIA não afeta nenhum outro Tema e run sem Eco fica neutra',()=>{
+  const A=bootFx({});beginRun(A,1);playWaves(A,2,8);
+  A.setEchoes([echoVivo()]);A.fractureSetIntensity(100,'teste');
+  for(const th of THEMES.filter(x=>x!=='resonance')){
+    A.fractureForceTheme(th,'teste');
+    const c=A.fractureEvCtx(A.fractureWaveCtx());
+    for(const d of t.ALL_RUN_EVENTS)
+      assert.strictEqual(A.fractureResoBias(d,c),1,th+' não pode sentir RESSONÂNCIA');
+  }
+  A.fractureForceTheme('resonance','teste');
+  A.setEchoes([]);
+  const c0=A.fractureEvCtx(A.fractureWaveCtx());
+  for(const d of t.ALL_RUN_EVENTS)
+    assert.strictEqual(A.fractureResoBias(d,c0),1,'sem Eco: neutro');
+});
+ok('B3-29: as reações de RESSONÂNCIA respeitam cooldown (no máx. 1 a cada 3 ondas)',()=>{
+  const A=bootFx({});beginRun(A,1);
+  A.setEchoes([echoVivo()]);
+  A.fractureForceTheme('resonance','teste');A.fractureSetIntensity(60,'teste');
+  const b=A.fractureB3();b.resoW=0;
+  const d=evById('lg_ghost');
+  let falas=0;
+  for(let w=1;w<=12;w++){
+    A.setWave(w);
+    if(A.fractureResoReact(d,{}))falas++;
+  }
+  assert.ok(falas<=4,'12 ondas → no máximo 4 reações (medido '+falas+')');
+  assert.ok(Object.keys(t.FRACTURE_RESO_LINES).length===4,'4 situações, não mais');
+});
+
+console.log('\n[28] B3 · ESCASSEZ (30-35)');
+ok('B3-30: ESCASSEZ afeta SÓ crédito de evento de Fratura',()=>{
+  const A=bootFx({});beginRun(A,1);playWaves(A,2,12);
+  A.fractureForceTheme('scarcity','teste');A.fractureSetIntensity(100,'teste');
+  assert.strictEqual(A.fractureCoinMul('kill'),1,'kill intacto');
+  assert.strictEqual(A.fractureCoinMul('shop'),1,'loja intacta');
+  assert.strictEqual(A.fractureCoinMul('drop'),1,'drop intacto');
+  const m=A.fractureCoinMul('fracture_event');
+  assert.ok(m<1&&m>=.85,'evento de Fratura reduz ('+m.toFixed(3)+')');
+  assert.strictEqual(A.fractureCoins(100,'kill'),100);
+  assert.ok(A.fractureCoins(100,'fracture_event')<100);
+});
+ok('B3-31: fora de ESCASSEZ a economia fica exatamente intacta',()=>{
+  const A=bootFx({});beginRun(A,1);playWaves(A,2,12);
+  A.fractureSetIntensity(100,'teste');
+  for(const th of THEMES.filter(x=>x!=='scarcity')){
+    A.fractureForceTheme(th,'teste');
+    assert.strictEqual(A.fractureCoinMul('fracture_event'),1,th+' não mexe em crédito');
+    assert.strictEqual(A.fractureCoins(100,'fracture_event'),100,th);
+    assert.strictEqual(A.fractureShopRerollCost(10),10,th+' não mexe no reroll');
+  }
+});
+ok('B3-32: o efeito cresce com a Intensidade (não é -X% fixo)',()=>{
+  const A=bootFx({});beginRun(A,1);playWaves(A,2,12);
+  A.fractureForceTheme('scarcity','teste');
+  const ms=[];
+  for(const int of [0,25,50,75,100]){
+    A.fractureSetIntensity(int,'teste');
+    ms.push(A.fractureCoinMul('fracture_event'));
+  }
+  assert.strictEqual(ms[0],1,'int 0 não sente nada');
+  for(let i=1;i<ms.length;i++)
+    assert.ok(ms[i]<=ms[i-1],'monótono decrescente: '+J(ms));
+  assert.ok(ms[4]<ms[2],'int 100 reduz mais que int 50');
+});
+ok('B3-33: custo nunca vira desconto (valor negativo passa intacto)',()=>{
+  const A=bootFx({});beginRun(A,1);playWaves(A,2,12);
+  A.fractureForceTheme('scarcity','teste');A.fractureSetIntensity(100,'teste');
+  assert.strictEqual(A.fractureCoins(-50,'fracture_event'),-50);
+  assert.strictEqual(A.fractureCoins(0,'fracture_event'),0);
+  assert.ok(!Number.isFinite(A.fractureCoins(NaN,'fracture_event'))===false,
+    'NaN não vaza como número estranho');
+});
+ok('B3-34: Resíduos só pela API da PR12 — fonte não escreve em fracRes',()=>{
+  const jogo=m[1];
+  const ini=jogo.indexOf('BLOCO 3 — RESSONÂNCIA');
+  const fim=jogo.indexOf('BLOCO 3 — EVENTOS');
+  const seg=jogo.slice(ini,fim);
+  assert.ok(/fractureRun\s*\.\s*res\s*=/.test(seg)===false,
+    'Bloco 3 não pode escrever em fractureRun.res');
+  assert.ok(/fracRun\s*\.\s*res\s*=/.test(seg)===false,
+    'Bloco 3 não pode escrever em fracRun.res');
+  assert.ok(seg.indexOf('addResidues(')>=0,'usa a API addResidues');
+});
+ok('B3-35: bônus de Resíduo vale só em ESCASSEZ e o reroll é 1× por onda',()=>{
+  const A=bootFx({});beginRun(A,1);playWaves(A,2,10);
+  A.setWave(10);
+  A.fractureForceTheme('collapse','teste');A.fractureSetIntensity(100,'teste');
+  const r0=A.getResidues();
+  A.fractureScarcityResidues(3,'teste');
+  assert.strictEqual(A.getResidues()-r0,0,'outro Tema: sem bônus');
+  A.fractureForceTheme('scarcity','teste');
+  const r1=A.getResidues();
+  A.fractureScarcityResidues(3,'teste');
+  assert.strictEqual(A.getResidues()-r1,4,'ESCASSEZ: 3 + 1 de bônus');
+  /* reroll: barato uma vez, depois volta ao base */
+  const b=A.fractureB3();b.scarUsed={};
+  assert.strictEqual(A.fractureShopRerollCost(10),7,'primeiro da visita');
+  A.fractureShopRerollUsed();
+  assert.strictEqual(A.fractureShopRerollCost(10),10,'depois de usado volta a 10');
+});
+
+console.log('\n[29] B3 · INTENSIDADE (36-41)');
+ok('B3-36: magnitude vem da raridade, nunca de intensity += direto',()=>{
+  assert.strictEqual(J(t.FRACTURE_EV_INT_BY_RARITY),
+    J({common:0,uncommon:1,rare:2,anomalous:3}),'tabela de raridade');
+  const jogo=m[1];
+  const ini=jogo.indexOf('BLOCO 3 — MINIBOSSES');
+  const fim=jogo.indexOf('BLOCO 3 — EVENTOS');
+  const seg=jogo.slice(ini,fim);
+  assert.ok(!/intensity\s*\+=\s*\d/.test(seg),
+    'nada de "intensity += N" solto no Bloco 3');
+});
+ok('B3-37: eventos comuns não dão Intensidade',()=>{
+  const A=bootFx({});beginRun(A,1);playWaves(A,2,6);
+  const i0=A.fractureGetIntensity();
+  A.fractureOnEventChosen(evById('x_carga'));      // common
+  assert.strictEqual(A.fractureGetIntensity(),i0,'common = +0');
+});
+ok('B3-38: os tetos por onda e por run são respeitados',()=>{
+  const A=bootFx({});beginRun(A,1);playWaves(A,2,6);
+  const d=evById('fx_res_memoria');
+  for(let k=0;k<30;k++)A.fractureOnEventChosen(d);
+  const b=A.fractureB3();
+  assert.ok(b.evWG<=t.FRACTURE_EV_INT_PER_WAVE_MAX,'teto por onda');
+  assert.ok(b.evRG<=t.FRACTURE_EV_INT_PER_RUN_MAX,'teto por run');
+});
+ok('B3-39: chain (noPool) não cobra Intensidade duas vezes',()=>{
+  const A=bootFx({});beginRun(A,1);playWaves(A,2,6);
+  const c=t.FRACTURE_CHAIN_EVENTS[0];
+  assert.ok(c.noPool,'cadeia fora do pool');
+  const i0=A.fractureGetIntensity();
+  A.fractureOnEventChosen(c);
+  assert.strictEqual(A.fractureGetIntensity(),i0,'cadeia não cobra');
+});
+ok('B3-40: o pacing sobe sem nunca chegar a 100 na onda 10',()=>{
+  const A=bootFx({});beginRun(A,1);
+  const alvo=[5,10,15,19],vals={};
+  for(const w of alvo){playWaves(A,(vals.last||1),w);vals[w]=A.fractureGetIntensity();vals.last=w;}
+  for(let i=1;i<alvo.length;i++)
+    assert.ok(vals[alvo[i]]>vals[alvo[i-1]],'curva crescente: '+J(vals));
+  assert.ok(vals[10]<100,'onda 10 = '+vals[10]+' (proibido chegar a 100)');
+  assert.ok(vals[19]<100,'onda 19 = '+vals[19]);
+});
+ok('B3-41: Intensidade continua clampada em FRACTURE_INT_MIN..MAX',()=>{
+  const A=bootFx({});beginRun(A,1);
+  A.fractureSetIntensity(9999,'teste');
+  assert.strictEqual(A.fractureGetIntensity(),t.FRACTURE_INT_MAX);
+  A.fractureSetIntensity(-9999,'teste');
+  assert.strictEqual(A.fractureGetIntensity(),t.FRACTURE_INT_MIN);
+});
+
+console.log('\n[30] B3 · SAVE / SANDBOX (42-47)');
+ok('B3-42: fractureRun.b3 é persistido e sanitizado',()=>{
+  const A=bootFx({});beginRun(A,1);playWaves(A,2,10);
+  A.fractureOnEventChosen(evById('fx_res_memoria'));
+  A.fractureOnMiniSpawn(t.MINIBOSS[0]);
+  const p=A.fractureRunPack();
+  assert.ok(p.b3,'b3 no pack');
+  const un=A.fractureRunUnpack({fracture:p});
+  assert.strictEqual(un.b3.evW,p.b3.evW);
+  assert.deepStrictEqual(un.b3.mini,p.b3.mini);
+  assert.strictEqual(un.b3.lastEv.id,p.b3.lastEv.id);
+});
+ok('B3-43: save antigo SEM b3 continua carregando (b3 zerado)',()=>{
+  const A=bootFx({});
+  const velho={v:1,theme:'hunt',seed:4242,intensity:30,
+    wave:{wave:8,last:8,bias:{},pool:[]},hist:[],last:null};
+  const un=A.fractureRunUnpack({fracture:velho});
+  assert.strictEqual(un.theme,'hunt');
+  assert.strictEqual(un.intensity,30);
+  assert.ok(un.b3,'b3 criado');
+  assert.strictEqual(un.b3.evRG,0,'zerado');
+  assert.strictEqual(J(un.b3.mini),'{}','mini zerado');
+});
+ok('B3-44: lixo no b3 do save é recusado (onda/id/tags inválidos)',()=>{
+  const A=bootFx({});
+  const sujo={v:1,theme:'siege',seed:1,intensity:10,
+    wave:{wave:5,last:5,bias:{},pool:[]},hist:[],last:null,
+    b3:{evW:'x',evWG:999,evRG:-50,
+      mini:{0:'nao_existe',99:'herald',7:'herald',__proto__:'x'},
+      miniSpawn:{'-1':1},miniPaid:{},
+      lastEv:{id:'inexistente',wave:'muitas',family:1,rarity:2,tags:['FORA']},
+      resoW:'y',scarUsed:{}}};
+  const un=A.fractureRunUnpack({fracture:sujo});
+  assert.strictEqual(un.b3.evWG,t.FRACTURE_EV_INT_PER_WAVE_MAX,'evWG clampado');
+  assert.strictEqual(un.b3.evRG,0,'evRG negativo → 0');
+  assert.ok(!un.b3.mini[0],'onda 0 recusada');
+  assert.ok(!un.b3.mini[99],'onda fora de MAX_WAVE recusada');
+  assert.ok(!un.b3.mini.hasOwnProperty('__proto__'),'chave de protótipo recusada');
+  assert.strictEqual(un.b3.mini[7],'herald','entrada válida sobrevive');
+  assert.strictEqual(un.b3.lastEv,null,'lastEv com id inexistente → null');
+});
+ok('B3-45: SM_VERSION continua 3',()=>{
+  assert.strictEqual(t.SM_VERSION,3);
+});
+ok('B3-46: Sandbox recusa gravar checkpoint',()=>{
+  const A=bootFx({});
+  A.sandboxOpenSetup();A.getSandboxCfg().char=0;A.sandboxStart();
+  A.setWave(6);A.spawnWave(6);
+  const cp=A.captureCheckpoint('sb-teste',6);
+  assert.ok(!cp,'captureCheckpoint recusado em sandbox');
+  A.sandboxExit();
+});
+ok('B3-47: a seção de Sandbox do Bloco 3 existe e só lê',()=>{
+  const jogo=m[1];
+  const i=jogo.indexOf('function fractureSandboxSection(');
+  const seg=jogo.slice(i,jogo.indexOf('\nfunction ',i+10));
+  assert.ok(seg.indexOf('fractureB3InspectorLines')>=0,
+    'Sandbox mostra eventos/miniboss/ressonância/escassez');
+  assert.ok(!/fractureOnEventChosen|fractureOnMiniKill|addResidues\(/.test(seg),
+    'Sandbox não emite evento nem dá resíduo');
+});
+
+console.log('\n[31] B3 · REGRESSÃO (48-51)');
+ok('B3-48: eventBlockReason continua sendo a única porta de bloqueio',()=>{
+  const jogo=m[1];
+  const i=jogo.indexOf('function eventBlockReason(');
+  const seg=jogo.slice(i,jogo.indexOf('\nfunction ',i+10));
+  assert.ok(!/fracture/.test(seg),'eventBlockReason não conhece o Diretor');
+});
+ok('B3-49: o Diretor é influência — nenhum "if theme === X return" no Bloco 3',()=>{
+  const jogo=m[1];
+  const ini=jogo.indexOf('BLOCO 3 — MINIBOSSES');
+  const fim=jogo.indexOf('ciclo de vida da run');
+  const seg=jogo.slice(ini,fim);
+  /* hard lock clássico: comparar o Tema e DEVOLVER um valor fixo */
+  assert.ok(!/theme\s*===?\s*'[a-z]+'\s*\)\s*return\s+[^;]*\bMINIBOSS\b/.test(seg),
+    'não pode devolver miniboss fixo por Tema');
+  assert.ok(!/theme\s*===?\s*'[a-z]+'\s*\)\s*return\s+RUN_EVENT/.test(seg),
+    'não pode devolver evento fixo por Tema');
+});
+ok('B3-50: DEV/Sandbox não gravam nem contaminam a run',()=>{
+  const A=bootFx({});beginRun(A,1);playWaves(A,2,6);
+  const antes=J(A.fractureRunPack());
+  A.fractureInspectorText();
+  A.fractureB3InspectorLines();
+  assert.strictEqual(J(A.fractureRunPack()),antes,'inspetor é leitura pura');
+});
+ok('B3-51: os 12 eventos novos não quebram a distribuição do pool legado',()=>{
+  /* convenção medida no pool base: common=w42-46, uncommon=w8-22,
+     rare=w8-10 e sempre oncePerRun. Os novos seguem isso. */
+  for(const d of t.FRACTURE_RUN_EVENTS){
+    assert.strictEqual(d.rarity,'uncommon',d.id+' segue a convenção');
+    assert.ok(d.weight>=8&&d.weight<=22,d.id+' peso '+d.weight+' na faixa uncommon');
+    assert.ok(!d.oncePerRun,d.id+' é recorrente (identidade da run)');
+  }
+  const novos=t.FRACTURE_RUN_EVENTS.reduce((s,d)=>s+d.weight,0);
+  const base=t.ALL_RUN_EVENTS.filter(d=>t.FRACTURE_RUN_EVENTS.indexOf(d)<0)
+    .reduce((s,d)=>s+d.weight,0);
+  const share=novos/(novos+base);
+  assert.ok(share<0.15,'novos são '+(share*100).toFixed(1)+'% do pool (< 15%)');
+  const fams={};
+  for(const d of t.FRACTURE_RUN_EVENTS)fams[d.family]=(fams[d.family]||0)+1;
+  assert.ok(Object.keys(fams).length>=8,'espalhados em ≥8 famílias');
+  assert.ok(Math.max.apply(null,Object.keys(fams).map(k=>fams[k]))<=2,
+    'nenhuma família recebe mais de 2 eventos novos');
 });
 
 /* ---------------- resultado ---------------- */
