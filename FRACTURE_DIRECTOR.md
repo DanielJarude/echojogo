@@ -886,3 +886,509 @@ Dois testes do Bloco 1 foram **atualizados de propósito**, e o motivo está esc
    segunda é a que precisa valer para sempre.
 2. O clamp de `waveProfile.bias` mudou de `[0,10]` para `±0.60`, porque o campo passou a
    alimentar o shaping.
+
+---
+
+## 14. BLOCO 3 — Eventos, minibosses e identidade temática
+
+O Bloco 1 criou o estado e o barramento. O Bloco 2 ligou o Tema à composição
+de onda. O Bloco 3 liga o Tema **ao que acontece entre as ondas**: quais
+eventos aparecem, qual mini-chefe chega, o que o Eco diz e o que a economia
+faz.
+
+A regra continua sendo a mesma e é a mais importante desta seção:
+
+> O Diretor é um **sistema de influência**. Ele muda pesos e oportunidades.
+> Ele nunca decide o resultado, nunca tranca conteúdo e nunca vira roteiro.
+
+Concretamente: `if(theme==='hunt') return X` **não existe** em nenhum caminho
+deste bloco. O teste `B3-49` varre a fonte procurando por isso.
+
+---
+
+### 14.1 `fractureTags` — vocabulário compartilhado
+
+Os 67 eventos registrados antes do Bloco 3 (20 legados `lg_*` + 25
+`RUN_EVENTS` + 12 de facção + 4 de contato + 6 de cadeia) foram lidos **um a
+um** e classificados pelo que acontece neles, não pela família. Depois os 13
+novos entraram no mesmo mapa.
+
+Hoje `RUN_EVENT_BY_ID` tem **80 eventos: 0 sem tag e 0 tag órfã** (as 24 tags
+do vocabulário são todas usadas). O pool sorteável (`ALL_RUN_EVENTS`) foi de
+61 para **73**.
+
+O vocabulário tem **24 tags** em `FRACTURE_EVENT_TAG_DEFS`:
+
+| origem | tags |
+|---|---|
+| reuso do B2 (mesmo sentido) | `PRESSAO` `CONTENCAO` `DEFESA` `ANOMALIA` `DISTORCAO` `CACADOR` `MOVEL` `FRAGMENTACAO` `EVASIVO` `INVOCADOR` `SUSTENTACAO` |
+| próprias de evento | `RECURSO` `ECONOMIA` `ESCASSEZ` `MEMORIA` `ECHO` `RESSONANCIA` `VINCULO` `MORAL` `EXPLORACAO` `FACCAO` `INSTABILIDADE` `RISCO` `SACRIFICIO` |
+
+Reusar as tags do B2 foi deliberado: `CACADOR` significa a mesma coisa num
+inimigo e num evento, e manter um vocabulário só evita dois dicionários que
+divergem. As 13 novas existem porque "economia", "memória" e "sacrifício" não
+descrevem nenhum inimigo.
+
+`fractureEventTags(d)` devolve **cópia**, então mutar o resultado não
+contamina o mapa (teste `B3-03`).
+
+---
+
+### 14.2 Como o viés entra no `scoreEvent`
+
+`scoreEvent` ganhou **um termo, o último**:
+
+```
+w = d.weight
+  → família anterior ×0.30
+  → fadiga de família  w /= (1 + .30·fr)
+  → saturação          w *= 1/(1 + .07·seen)
+  → novidade           seen===0 → ×1.25
+  → MORAL_BALANCE.eventBias
+  → condições (coins<35, hp<.35, echoCount>0, disRuptured)
+  → w *= fractureEventBiasMul(d, ctx)      ← BLOCO 3
+  → return Math.max(.01, w)
+```
+
+Tudo que existia continua existindo e continua decidindo sozinho quando não há
+Diretor. O teste `B3-09` afirma numericamente que
+`score === max(.01, base × viés)` — ou seja, o viés é multiplicativo e vem por
+último.
+
+Dentro de `fractureEventBiasMul`:
+
+```js
+b = Σ (peso da tag no perfil do Tema)     // prof.tags[tag] ou prof.red[tag]
+b = b / sqrt(nº de tags do evento)        // normalização
+mul = 1 + clamp(pesoDoTema,-1,1) · prof.force · b
+mul *= fractureResoBias(d, ctx)           // só em RESSONÂNCIA (14.4)
+return clamp(mul, prof.down, prof.up)     // piso > 0: nunca hard lock
+```
+
+A normalização por `sqrt(n)` impede que um evento com 3 tags afins leve
+vantagem tripla sobre um com 1.
+
+**Limites por Tema** (`FRACTURE_EVENT_BIAS`):
+
+| Tema | favorece | reduz | teto | piso |
+|---|---|---|---|---|
+| `collapse` | INSTABILIDADE .75 · FRAGMENTACAO .65 · PRESSAO .55 · RISCO .50 · EXPLORACAO .35 · ANOMALIA .30 | — | ×1.55 | ×0.72 |
+| `siege` | CONTENCAO .80 · DEFESA .70 · SUSTENTACAO .45 · FACCAO .30 · MORAL .20 | — | ×1.55 | ×0.72 |
+| `hunt` | CACADOR .85 · MOVEL .60 · PRESSAO .55 · RISCO .50 · EVASIVO .45 | — | ×1.60 | ×0.70 |
+| `anomaly` | ANOMALIA .90 · DISTORCAO .80 · INSTABILIDADE .60 · MEMORIA .25 | — | ×1.65 | ×0.70 |
+| `resonance` | ECHO .95 · RESSONANCIA .90 · MEMORIA .70 · VINCULO .55 · SACRIFICIO .25 | RISCO −.20 · PRESSAO −.15 | ×1.70 | ×0.80 |
+| `scarcity` | ESCASSEZ .95 · ECONOMIA .85 · RECURSO .65 · MORAL .35 · SACRIFICIO .30 | ANOMALIA · DISTORCAO | ×1.70 | ×0.80 |
+
+O piso é **estritamente positivo** em todos os Temas. Medido em 6 Temas ×
+todos os eventos: menor multiplicador **0.70**. Nada é excluído — só fica mais
+raro.
+
+Sem `fractureRun`, ou com Intensidade 0, o multiplicador devolve **exatamente
+1** para todo evento (testes `B3-04`, `B3-05`).
+
+**Por que Intensidade 100 não vira pool temático:** o peso do Tema entra
+multiplicado por `clamp(pesoDoTema,-1,1)`, e o `b` normalizado raramente passa
+de ~0.8. Na Intensidade 100, **pelo menos 35% do pool continua com
+multiplicador exatamente 1** em qualquer Tema (teste `B3-07`).
+
+---
+
+### 14.3 `event_triggered` — emissão real
+
+`evSelectFinal(d, opts)` é o **ponto único** de "este evento foi escolhido de
+verdade". As quatro saídas reais de `pickRunEvent` passam por ele:
+
+1. fila de cadeia (`evQueue`)
+2. sorteio ponderado
+3. fallback `pickEventKind()`
+4. caminho legado
+
+O que **não** emite: `scoreEvent`, `fractureEventBiasMul`, `buildEventContext`,
+`getEligibleEvents`, `eventBlockReason`, render, evento bloqueado/rejeitado, e
+a simulação do DEV (`pickRunEvent(ctx, rnd, {silent:true})`).
+
+O teste `B3-10` chama todos os caminhos de leitura e conta as emissões antes e
+depois: zero.
+
+**Intensidade por evento** — não existe "todo evento = +X". A magnitude vem da
+raridade que o sistema antigo já define:
+
+| raridade | Intensidade |
+|---|---|
+| `common` | +0 |
+| `uncommon` | +1 |
+| `rare` | +2 |
+| `anomalous` | +3 |
+
+Cadeias (`noPool`) não cobram — já foram pagas pelo evento que as enfileirou.
+
+**Tetos** (guardados em `fractureRun.b3`, portanto sobrevivem ao reload):
+
+- `FRACTURE_EV_INT_PER_WAVE_MAX = 3` por onda
+- `FRACTURE_EV_INT_PER_RUN_MAX = 26` por run
+
+Sem isso, ficar parado numa área com vários beacons viraria farm de
+Intensidade.
+
+---
+
+### 14.4 RESSONÂNCIA — o Diretor **lê** o Eco
+
+> **Regra dura:** o Diretor pode LER Trust, Relationship, Dissonância e
+> Personality. Ele **nunca escreve** em nenhum deles.
+
+`fractureResoRead()` é a única porta de leitura e devolve objeto neutro quando
+não há Eco (run sem Eco continua 100% jogável):
+
+```js
+{count, allied, hostile, ruptured, trust, rel, disSt, pressure}
+```
+
+Nenhum caminho do bloco chama `echoSetDis`, `changeEchoTrust`, `smFlat` ou
+qualquer mutador. O teste `B3-25` tira um snapshot JSON do Eco antes e depois
+de varrer todos os eventos e disparar reações — byte a byte igual. O teste
+`B3-26` varre o **texto-fonte** do bloco procurando os nomes dos mutadores.
+
+**A identidade vem de duas coisas, nenhuma delas mutação:**
+
+1. **Peso.** `fractureResoBias(d, ctx)` só age quando o Tema é `resonance`:
+
+   | estado do Eco | memória/ressonância/vínculo | distorção/anomalia |
+   |---|---|---|
+   | estável | **+0.45** | −0.20 |
+   | em crise (`ruptured`/`fracturing`/`hostile`) | −0.15 | **+0.45** |
+
+   Medido: com Eco estável `lg_ghost` 1.318 e `lg_mirror` 0.750; com Eco em
+   crise `lg_mirror` 1.450 e `lg_ghost` 1.000. O clamp é `[0.75, 1.45]` — mais
+   apertado que o viés geral, porque aqui o ajuste é contextual e não pode
+   competir com ele.
+
+2. **Fala.** `FRACTURE_RESO_LINES` tem **4 situações** (`signature`,
+   `highStage`, `ruptured`, `memory`), 3 frases cada. `fractureResoReact`
+   escolhe **uma** por vez, na ordem de prioridade, e entrega por `echoSpeak`
+   — que já tem `_echoSpeakCd` próprio e chance anti-spam. Por cima disso há
+   um cooldown do Diretor: no máximo **1 reação a cada 3 ondas**.
+
+**O Tema RESSONÂNCIA não causa Dissonância.** `echoSetDis` não aparece no
+bloco, e Dissonância influencia apenas **pesos** (via `disSt` lido), nunca é
+gerada.
+
+---
+
+### 14.5 ESCASSEZ — identidade por economia
+
+Não é "-30% de tudo". São quatro efeitos pequenos e mensuráveis:
+
+**1. Crédito de evento de Fratura.** `fractureCoinMul(source)` devolve 1 para
+qualquer `source` que não seja `'fracture_event'`. Kill, drop, loja e qualquer
+outra fonte ficam **intactos**.
+
+```
+mul = 1 - (1 - 0.88) · clamp(pesoDoTema, 0, 1)
+```
+
+Medido: 100 créditos de evento → **88** na Intensidade 100, **99** na
+Intensidade 10. Interpolado pela Intensidade de propósito: no começo da run
+quase não se sente.
+
+`fractureCoins(n, source)` aplica o multiplicador e **nunca toca custo**:
+`fractureCoins(-50, ...) === -50` (teste `B3-33`).
+
+**2. Resíduos Temporais.** Só pela API da PR12 — `addResidues`. O bloco nunca
+escreve em `fractureRun.res` nem em `fracRun.res` (teste `B3-34` varre a fonte).
+`fractureScarcityResidues(n, src)` dá `+1` em run de ESCASSEZ e `0` nos outros
+Temas: medido 3 → 4 e 3 → 0.
+
+**3. Reroll da loja.** O primeiro reroll da visita sai por **7** em vez de 10,
+uma vez por onda, e volta a 10 depois de usado (medido). Preços de oferta,
+item e arma não são tocados — não é rework de loja.
+
+**4. Peso de evento econômico.** Já vem das tags: `ESCASSEZ` .95 e
+`ECONOMIA` .85.
+
+**Impacto medido** (200 runs × 8 recompensas de 50 créditos):
+
+| Tema | créditos | resíduos |
+|---|---|---|
+| `scarcity` | **74.600** (−6,75%) | 200 |
+| `collapse` | 80.000 (referência) | 0 |
+
+---
+
+### 14.6 Minibosses — peso temático
+
+`pickMiniBoss` era *filtro de HP + sorteio uniforme*. Agora é:
+
+```
+filtro de segurança (INTACTO)  →  pool elegível  →  peso temático  →  sorteio determinístico
+```
+
+O filtro de HP não foi tocado e continua decidindo sozinho quem pode aparecer.
+Pools medidos: **onda ≤5 → 6**, **6–10 → 8**, **≥11 → 7**.
+
+`fractureMiniWeight(m, ctx)` usa as **tags** do miniboss (metadado puro —
+nenhum HP, dano, velocidade ou AI foi alterado; teste `B3-15`):
+
+```js
+b = Σ prof.tags[tag] + prof.red[tag]
+b = b / sqrt(nº de tags)
+return clamp(1 + pesoDoTema · b, prof.down, prof.up)
+```
+
+Sem `fractureRun` devolve 1 para todos (uniforme original).
+
+**Tags dos 8 minibosses:**
+
+| miniboss | HP | tags |
+|---|---|---|
+| `herald` | 1.00 | PRESSAO · INVOCADOR |
+| `furnace` | 1.25 | PRESSAO · DISTORCAO |
+| `sentinel` | 1.05 | DEFESA · CONTENCAO · RESISTENTE |
+| `brood` | 1.15 | ENXAME · INVOCADOR · FRAGMENTACAO |
+| `duelist` | 0.70 | CACADOR · MOVEL · EVASIVO |
+| `colossus` | 1.75 | PESADO · RESISTENTE · CONTENCAO |
+| `oracle` | 0.90 | ANOMALIA · DISTORCAO · DISTANCIA |
+| `leech` | 1.00 | SUSTENTACAO · DISTANCIA · ANOMALIA |
+
+**Pesos na Intensidade 100** (onda 10, pool de 8):
+
+| miniboss | collapse | siege | hunt | anomaly | resonance | scarcity |
+|---|---|---|---|---|---|---|
+| herald | 1.92 | 1.21 | 1.21 | 1.00 | 1.18 | **1.81** |
+| furnace | 1.64 | 1.21 | 1.21 | 1.64 | 1.39 | 1.49 |
+| sentinel | 0.62 | **2.20** | 0.83 | 0.83 | 1.00 | 1.00 |
+| brood | **2.20** | 1.00 | 1.00 | 1.17 | 1.14 | 1.26 |
+| duelist | 1.00 | 0.62 | **2.30** | 1.00 | 1.00 | 0.86 |
+| colossus | 0.83 | **2.20** | 0.60 | 1.00 | 0.86 | 1.17 |
+| oracle | 1.20 | 1.00 | 1.00 | **2.30** | 1.87 | 1.32 |
+| leech | 1.00 | 1.00 | 1.23 | 1.78 | 1.84 | 1.69 |
+
+O piso é **0.596** — nenhum elegível é excluído.
+
+**Continue/reload não rerrola.** A escolha fica em `fractureRun.b3.mini[wave]`
+e o `unpack` a revalida contra a lista de ids reais. `spawnMiniBoss(n, forced)`
+continua obedecendo o `forced` e grava o id escolhido.
+
+**Emissão.** `fractureOnMiniSpawn(def, n)` e `fractureOnMiniKill(def, n)`
+emitem **uma vez por onda**, com flags em `b3.miniSpawn` / `b3.miniPaid`. O
+kill paga **+4** (`FRACTURE_EVENT_GRID.miniboss_killed.i`), dentro da faixa
++3..+5 pedida — medido antes de decidir, não chutado.
+
+---
+
+### 14.7 Os 12 eventos novos
+
+Dois por Tema, mais uma cadeia da CAÇADA. Todos com **no mínimo 2 escolhas** e
+custo real em pelo menos uma (vida, escudo máximo permanente, créditos,
+resíduo, confiança de Eco, dano permanente ou moral). Nenhum dá recompensa de
+graça, e todo crédito passa por `fractureCoins(..., 'fracture_event')` para que
+ESCASSEZ seja sentida dentro deles.
+
+| Tema | evento | família | o que cobra |
+|---|---|---|---|
+| COLAPSO | `fx_col_secao` — A SEÇÃO QUE SE MULTIPLICA | ruptura | 16% da vida, ou uma entidade extra na próxima onda |
+| COLAPSO | `fx_col_alicerce` — O ALICERCE QUE RESTA | exploracao | escudo máximo permanente, ou 34 créditos |
+| CERCO | `fx_cer_rotas` — AS ROTAS QUE FECHAM | ambiente | 40 créditos, ou −12 de confiança de todos os Ecos |
+| CERCO | `fx_cer_choke` — O ÚLTIMO CORREDOR | sobreviventes | vida + escudo máximo permanente |
+| CAÇADA | `fx_cac_assinatura` — A ASSINATURA | risco | dano permanente, ou enfileira a cadeia |
+| CAÇADA | `fx_cac_isca` — A ISCA | moral | 18% da vida, ou −22 de confiança dos Ecos |
+| ANOMALIA | `fx_ano_duas` — DUAS VERSÕES INCOMPATÍVEIS | anomalias | 12% da vida, ou um inimigo duplicado |
+| ANOMALIA | `fx_ano_testemunha` — A TESTEMUNHA QUE NÃO EXISTE | memoria | −10 de confiança, ou 30 créditos |
+| RESSONÂNCIA | `fx_res_memoria` — MEMÓRIA DE FORA | memoria | dissonância acumulada, ou −8 de confiança |
+| RESSONÂNCIA | `fx_res_coro` — O CORO DESALINHADO | echo | 10% da vida, ou −20 de confiança |
+| ESCASSEZ | `fx_esc_tempo` — O TEMPO DISPUTADO | recursos | nada sobra para vender, ou −14 de escudo máximo |
+| ESCASSEZ | `fx_esc_mercado` — O MERCADO QUE NÃO VOLTA | fracao | 60 créditos, ou −18 de confiança e −1 de dano |
+| (cadeia) | `fx_cac_assinatura2` — ELE CHEGOU | risco | dano + escudo máximo, ou 35 créditos e −1 de dano |
+
+**Rebalanceamento medido.** A primeira versão nasceu com peso 30–46 e 5 eventos
+`rare`. Isso quebrou 4 checks legados de `tests/events.test.js`. A causa raiz
+não foi o peso: dois eventos usavam `aff:'violence'`, e o eixo moral real é
+`'viol'` — `scoreEvent` devolvia **NaN**, que corrompia o sorteio ponderado
+inteiro (`fx_esc_tempo` chegou a 16,8% de todas as seleções).
+
+Depois de corrigir o `aff`, os 12 foram ajustados à **convenção real do pool**
+(medida: `common`=42–46, `uncommon`=8–22, `rare`=8–10 e sempre `oncePerRun`).
+Como são eventos recorrentes de identidade, todos são `uncommon` com peso
+15–18, somando **10,6%** do pool e espalhados em 11 famílias.
+
+| métrica (400 runs, seed 777) | antes dos 12 | com os 12 |
+|---|---|---|
+| avg `common` | 3,2333 | 2,8630 |
+| avg `uncommon` | 0,4773 | 0,6176 |
+| avg `rare` | 0,1889 | 0,1444 |
+| evento mais frequente | 3,80% | 3,50% |
+| família no topo | recursos 21,2% | recursos 20,1% |
+| `x_no` | 2,60% | 2,80% |
+
+A escala de raridade continua monotônica e a suíte legada volta a **82/0 sem
+nenhuma alteração nos testes legados**.
+
+**Pico temático:** os 12 atingem o maior multiplicador no próprio Tema (12/12).
+
+---
+
+### 14.8 Facções
+
+`factionEmit` aparece só onde a escolha é **semanticamente** ligada a uma
+ideologia — nunca por tabela fixa, e nunca atrelada ao Tema:
+
+| escolha | Âncora | Remanescentes | Consórcio | Desviados |
+|---|---|---|---|---|
+| `route_sealed` (selar rotas de fuga) | +3 | −3 | +1 | −1 |
+| `line_held` (segurar o corredor) | +2 | +1 | 0 | −2 |
+| `line_sold` (vender a barricada) | −3 | −1 | +3 | +1 |
+| `echo_marked` (marcar um Eco como isca) | −1 | −4 | +2 | +3 |
+| `signal_cut` (cortar a transmissão) | +3 | −3 | +1 | −1 |
+| `record_erased` (apagar o registro) | +2 | +2 | −2 | 0 |
+| `time_drained` (drenar o bolsão) | −2 | −1 | +3 | +1 |
+| `trail_sold` (vender o próprio rastro) | −2 | −3 | +4 | +1 |
+
+Tema **não** determina afinidade de facção e facção **não** determina o Tema.
+
+---
+
+### 14.9 `shop_open`
+
+`fractureOnShopOpen()` é chamado **uma vez por abertura real** da loja:
+
+- **depois** do early-return do voto de pobreza (loja pulada não abre);
+- **não** em `renderShop`, que roda de novo a cada compra e a cada reroll.
+
+`shop_open` tem `delta 0` na grade do B1: medido **0 e 0** em duas aberturas
+seguidas. Abrir e fechar loja não pode farmar Intensidade.
+
+---
+
+### 14.10 Estado persistido
+
+`fractureRun.b3` guarda só o que impede exploit ou duplicidade:
+
+```js
+{evW, evWG, evRG, mini, miniSpawn, miniPaid, lastEv, resoW, scarUsed}
+```
+
+`evW` é a onda, `evWG`/`evRG` os contadores de teto, `mini`/`miniSpawn`/
+`miniPaid`/`scarUsed` são mapas `onda → valor`, `lastEv` é o último evento
+disparado e `resoW` a onda da última reação de RESSONÂNCIA.
+
+**Sanitização** (`fractureRunPack` / `fractureRunUnpack`):
+
+- mapas validados contra `1..MAX_WAVE`;
+- ids de miniboss validados contra `MINIBOSS`;
+- `lastEv.id` precisa **existir** em `RUN_EVENT_BY_ID`, e `family`/`rarity`
+  saem do **registro**, não do save;
+- tags filtradas pelo vocabulário, no máximo 6;
+- consultas com `hasOwnProperty` para não resolver `__proto__`/`constructor`.
+
+O teste `B3-44` injeta lixo deliberado (onda 0 e 99, id inexistente,
+`__proto__`, texto em campo numérico, contadores negativos) e verifica que tudo
+é recusado ou clampado.
+
+**Save antigo sem `b3` carrega normalmente**, com `b3` zerado. `SM_VERSION`
+continua **3**.
+
+---
+
+### 14.11 Anti-exploit
+
+| vetor | proteção | teste |
+|---|---|---|
+| reload duplica Intensidade | caps em `b3.evWG`/`b3.evRG`, persistidos | B3-12, B3-38, B3-42 |
+| Continue duplica kill de miniboss | `b3.miniPaid[wave]` | B3-23 |
+| Continue rerrola miniboss | `b3.mini[wave]` revalidado no unpack | B3-22 |
+| abrir loja gera ganho | `shop_open` delta 0 | B3-10, medição direta |
+| evento concede 2× | teto por onda | B3-12 |
+| cadeia dispara 2× por restore | `noPool` + não cobra Intensidade | B3-39 |
+| reroll de ESCASSEZ vira farm | `b3.scarUsed['rr'+wave]`, 1× por onda | B3-35 |
+| DEV/Sandbox gravam | `captureCheckpoint` recusa em sandbox | B3-46 |
+| inspetor contamina a run | leitura pura (pack idêntico antes/depois) | B3-50 |
+
+---
+
+### 14.12 Simulações
+
+**Eventos — 3000 seleções por Tema, Intensidade 100:**
+
+| Tema | eventos distintos | mais frequente | família no topo |
+|---|---|---|---|
+| collapse | 52/73 | `lg_reactor` 4,0% | recursos 21,9% |
+| siege | 52/73 | `lg_forge` 5,5% | recursos 26,3% |
+| hunt | 52/73 | `lg_ambush` 4,1% | recursos 22,1% |
+| anomaly | 52/73 | `lg_rift` 4,6% | recursos 17,8% |
+| resonance | 52/73 | `lg_shrine` 4,6% | recursos 21,8% |
+| scarcity | 52/73 | `lg_vault` 5,5% | recursos **32,0%** |
+
+52 dos 73 eventos aparecem em cada Tema, e nenhum evento passa de 5,5%.
+`recursos` lidera em todos os Temas porque `scoreEvent` já tem um multiplicador
+de estado para `coins < 35` — isso é anterior ao Diretor. O que o Diretor faz é
+visível na diferença: 32,0% em ESCASSEZ contra 17,8% em ANOMALIA, e o evento
+mais frequente muda de Tema para Tema.
+
+**Minibosses — 4000 sorteios por Tema/onda, Intensidade 100:**
+
+| Tema | w5 | w10 | w15 | prob. mínima de qualquer elegível |
+|---|---|---|---|---|
+| collapse | brood 28,9% | brood 20,7% | brood 23,6% | 6,00% |
+| siege | sentinel 32,4% | colossus 22,2% | sentinel 22,8% | 5,98% |
+| hunt | duelist 31,1% | duelist 24,5% | furnace 18,0%¹ | 6,35% |
+| anomaly | oracle 28,2% | oracle 22,6% | oracle 23,6% | 7,72% |
+| resonance | leech 22,8% | oracle 19,3% | oracle 19,9% | 8,33% |
+| scarcity | herald 22,3% | herald 17,1% | herald 18,8% | 8,07% |
+
+¹ Na onda 15 o `duelist` **não é elegível** (filtro de HP), então o topo é de
+outro — o filtro de segurança continua mandando.
+
+Nenhum elegível cai abaixo de **5,98%** de probabilidade.
+
+**Intensidade — 200 runs completas** (20 ondas, ~0,6 decisão/onda + 3
+minibosses):
+
+| onda | média | mín | máx | estágio |
+|---|---|---|---|---|
+| 5 | 12,7 | 12 | 16 | latente |
+| 10 | 28,1 | 26 | 35 | instável |
+| 15 | 43,5 | 40 | 50 | propagando |
+| 19 | 52,5 | 48 | 61 | propagando |
+
+**0 de 200 runs chegaram a 100.** Máximo absoluto 61. O "wave 10 → 100
+automático" não acontece.
+
+---
+
+### 14.13 DEV e Sandbox
+
+**DEV Inspector** — `fractureB3InspectorLines()` devolve quatro blocos curtos,
+anexados ao texto existente do Bloco 1/2:
+
+```
+EVENTOS[resonance]: favorece ECHO/RESSONANCIA/MEMORIA/VINCULO/SACRIFICIO
+  · reduz RISCO/PRESSAO · teto ×1.7 piso ×0.8
+  TOP VIÉS: lg_altar×1.70 lg_ghost×1.70 lg_child×1.70
+  ÚLTIMO: fx_res_memoria @w6 [uncommon] MEMORIA/RESSONANCIA/ECHO/VINCULO
+  · int de evento 1/26 (onda 1/3)
+MINIBOSS w10: pool 8 elegíveis · pesos herald 1.18 furnace 1.39 ... oracle 1.86
+  ESCOLHIDO: oracle
+RESSONÂNCIA (lido, nunca escrito): Ecos=1 aliados=1 hostile=false
+  · rel=aliado trust=62 dis=stable pressão=0.24
+ESCASSEZ: coinMul(evento)=1.000 · resíduo=7 · reroll da loja 10/10
+  (Tema neutro: economia intacta)
+```
+
+O bloco de RESSONÂNCIA mostra explicitamente o que foi **lido** — é a forma de
+conferir no olho que o Diretor não escreveu nada.
+
+**Sandbox** — a mesma leitura aparece na seção do Diretor, remontada a cada
+troca de Tema/Intensidade. Nada ali emite evento, dá resíduo ou grava; o
+byte-a-byte dos Save 1/2/3 continua intacto (92/0 em `tests/sandbox.test.js`).
+
+---
+
+### 14.14 O que mudou em relação ao que o Bloco 2 afirmava
+
+Nenhuma afirmação do Bloco 2 foi invalidada. O que mudou é escopo:
+
+1. *"o pool tem 61 eventos"* → *"o pool tem 73 eventos (61 + 12 de Fratura)"*.
+   O teste correspondente foi atualizado com o motivo escrito nele.
+2. `fractureCleanLastEv` era permissivo demais: aceitava qualquer string como
+   id de evento. Agora o id precisa existir no registro, e `family`/`rarity`
+   saem do registro em vez de saírem do save.
