@@ -12936,6 +12936,15 @@ function waveCompFit(c,budget){
 /* ---- COMPOSIÇÃO FINAL ---- */
 function waveComp(n){
   const base=waveCompBase(n);
+  /* A ONDA FINAL É DO CHEFE — nunca do Diretor.
+     spawnWave(n) já despacha n>=MAX_WAVE para spawnBoss() ANTES de consultar
+     a composição, então este ramo não muda nada no que o jogador enfrenta.
+     Ele existe para que o invariante seja verdadeiro NA FONTE e não por
+     acidente de chamador: sem ele, waveComp(20) devolve uma onda remodelada
+     pelo Tema e por Encounter Signatures, e qualquer chamador novo (relatório
+     de DEV, inspetor, ferramenta de balance) mostraria — ou um dia spawnaria —
+     uma composição temática para a onda do PARADOXO. */
+  if((n|0)>=MAX_WAVE)return waveCompFit(base,ENEMY_BUDGET);
   let shaped=base;
   try{shaped=fractureShapeWave(base,n);}catch(e){shaped=base;}  // fallback: base
   /* B4.3: assinatura de encontro. Entra DEPOIS do shaping do Tema e ANTES do
