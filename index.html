@@ -7487,6 +7487,10 @@ function openShop(){
   rerollCost=10;rollShop();renderShop();
   modalEl.classList.add('on');
   sfx(523,.14,'sine',.04,0);setTimeout(()=>sfx(784,.2,'sine',.04,0),110);
+  /* B3.13: emissão uma vez por ABERTURA REAL da loja — delta 0, sem farm.
+     Fica DEPOIS do early-return do voto de pobreza (loja pulada não abre)
+     e NÃO em renderShop (que roda de novo a cada compra e a cada reroll). */
+  fractureOnShopOpen();
 }
 function renderShopOp(){
   mTag.textContent='NÓDULO DE MANUTENÇÃO · ONDA '+String(wave).padStart(2,'0')+' NEUTRALIZADA';
@@ -7618,13 +7622,17 @@ function renderShopOp(){
   mOwned.innerHTML=ownedLine();
   mCoins.textContent='◈ '+player.coins+' CRÉDITOS';
   const freeR=player.freeRerolls>0;
-  mReroll.textContent=freeR?('REROLL GRÁTIS ×'+player.freeRerolls):('REROLL · ◈ '+rerollCost);
-  mReroll.className='btn'+((!freeR&&player.coins<rerollCost)?' dis':'');
+  /* B3.10: em ESCASSEZ o primeiro reroll da visita é mais barato. É só esse
+     preço — preços de oferta, itens e armas não são tocados. */
+  const rCost=fractureShopRerollCost(rerollCost);
+  mReroll.textContent=freeR?('REROLL GRÁTIS ×'+player.freeRerolls):('REROLL · ◈ '+rCost);
+  mReroll.className='btn'+((!freeR&&player.coins<rCost)?' dis':'');
   mReroll.onclick=()=>{
     if(freeR)player.freeRerolls--;
     else{
-      if(player.coins<rerollCost)return;
-      player.coins-=rerollCost;
+      if(player.coins<rCost)return;
+      player.coins-=rCost;
+      if(rCost<rerollCost)fractureShopRerollUsed();   // desconto vale uma vez
       rerollCost=Math.round(rerollCost*1.6*mEff.rerollMul);  // Ganância pune
     }
     rollShop();renderShop();AUDIO.ui(560);
@@ -10032,6 +10040,473 @@ const RUN_CHAIN_EVENTS=[
   }}
 ];
 
+/* =====================================================================
+   BLOCO 3 — 12 EVENTOS DE FRATURA (B3.11): 2 por Tema
+   ---------------------------------------------------------------------
+   Regras seguidas em TODOS:
+     · no mínimo 2 escolhas reais, com custo em pelo menos uma delas;
+     · nada de recompensa gratuita — o ganho vem de gastar algo
+       (vida, escudo, créditos, resíduo, moral, confiança, tempo);
+     · recompensa de crédito passa por fractureCoins(...,'fracture_event')
+       para que ESCASSEZ seja sentida;
+     · facção só em escolha semanticamente ligada a uma ideologia
+       (B3.12) — facção não escolhe o Tema nem o Tema escolhe facção;
+     · o Diretor só PESOU estes eventos para chegar aqui; o efeito deles é
+       o mesmo em qualquer Tema.
+   ===================================================================== */
+const FRACTURE_RUN_EVENTS=[
+
+/* ---------------- COLAPSO ---------------- */
+{id:'fx_col_secao',kind:'fx_col_secao',nm:'A SEÇÃO QUE SE MULTIPLICA',col:'#ff6b4d',
+  family:'ruptura',rarity:'uncommon',weight:18,cd:5,minWave:3,
+  aff:null,
+  render(){
+    const hpCost=Math.max(2,Math.round(player.hp*.16));
+    evHead('A SEÇÃO QUE SE MULTIPLICA',
+      'Um corredor de serviço se repete: a mesma porta, o mesmo aviso, o mesmo '+
+      'operador morto na mesma posição. Não é reflexo — cada cópia respira em '+
+      'descompasso.<br>'+moralStatusLine());
+    evOpt('QUEIMAR A ORIGEM',
+      'Há um terminal no meio da repetição. Desligá-lo custa <b>'+hpCost+
+      ' de dano</b> (a descarga passa por você), mas a seção para de se copiar '+
+      'e o que sobra é recuperável: <b>+'+fractureCoins(46,'fracture_event')+' créditos</b>.',
+      [1,1,0],'',false,()=>{
+        player.invT=0;damagePlayer(hpCost);
+        player.coins+=fractureCoins(46,'fracture_event');
+        spawnShards(beacon.x,beacon.y,'#ff6b4d',20,6);
+        toast('REPETIÇÃO INTERROMPIDA · A SEÇÃO FICA SÓ UMA');
+      });
+    evOpt('DEIXAR MULTIPLICAR E COLHER',
+      'Cada cópia carrega o mesmo crachá com os mesmos créditos. Você espera três '+
+      'ciclos e colhe: <b>+'+fractureCoins(78,'fracture_event')+' créditos</b>, mas '+
+      '<b>a próxima onda vem com uma entidade extra</b> — você alimentou a cópia.',
+      [0,2,2],'',false,()=>{
+        player.coins+=fractureCoins(78,'fracture_event');
+        evVar('fracturaExtraSpawn',wave+1);
+        evSetFlag('col_multiplicou');
+        spawnRing(beacon.x,beacon.y,'#ff6b4d',12,170,.8);
+        toast('VOCÊ COLHEU A CÓPIA · ELA CONTINUOU COPIANDO');
+      });
+    evLeave('Você segue. Atrás, o corredor começa de novo — sem você nele.');
+  }},
+
+{id:'fx_col_alicerce',kind:'fx_col_alicerce',nm:'O ALICERCE QUE RESTA',col:'#ff8f6b',
+  family:'exploracao',rarity:'uncommon',weight:17,cd:5,minWave:2,
+  aff:null,
+  render(){
+    const shieldCost=Math.max(4,Math.round(player.shieldMax*.18));
+    evHead('O ALICERCE QUE RESTA',
+      'A viga principal deste setor ainda segura. Está marcada com tinta de '+
+      'inventário — alguém já calculou que ela vale mais desmontada do que em pé.<br>'+
+      moralStatusLine());
+    evOpt('DESMONTAR PARA VENDER',
+      'Corta a viga. <b>-'+shieldCost+' de escudo máximo</b> permanente (você perde a '+
+      'proteção deste lugar) em troca de <b>+'+fractureCoins(58,'fracture_event')+
+      ' créditos</b> e <b>+2 resíduos temporais</b>.',
+      [0,3,0],'',false,()=>{
+        smFlat(player,'shieldMax','event.col.alicerce.shieldMax','ALICERCE REMOVIDO',-shieldCost);
+        player.shield=Math.min(player.shield,player.shieldMax);
+        player.coins+=fractureCoins(58,'fracture_event');
+        fractureScarcityResidues(2,'alicerce');
+        evSetFlag('col_sem_alicerce');
+        toast('ESTRUTURA VENDIDA · O TETO AGORA É PROBLEMA SEU');
+      });
+    evOpt('REFORÇAR E FICAR',
+      'Você gasta <b>'+fractureCoins(34,'fracture_event')+' créditos</b> em solda e segura '+
+      'o setor. Nada é vendido, mas <b>+14 de escudo máximo</b> fica permanente enquanto '+
+      'o setor existir.',
+      [2,0,0],'',false,()=>{
+        const c=fractureCoins(34,'fracture_event');
+        player.coins=Math.max(0,player.coins-c);
+        smFlat(player,'shieldMax','event.col.alicerce.reforco','SETOR REFORÇADO +14',14);
+        player.shield=Math.min(player.shieldMax,player.shield+14);
+        spawnRing(beacon.x,beacon.y,'#8fd6ff',10,140,.6);
+        toast('SETOR REFORÇADO · ALGO AINDA SEGURA AQUI');
+      });
+    evLeave('A viga range. Você escolheu o lado dela.');
+  }},
+
+/* ---------------- CERCO ---------------- */
+{id:'fx_cer_rotas',kind:'fx_cer_rotas',nm:'AS ROTAS QUE FECHAM',col:'#c9a9ff',
+  family:'ambiente',rarity:'uncommon',weight:16,cd:5,minWave:3,
+  aff:null,
+  render(){
+    evHead('AS ROTAS QUE FECHAM',
+      'Três saídas deste nível. Um painel de contenção está selando as portas em '+
+      'sequência, devagar, de propósito — a ordem sugere que alguém quer que você '+
+      'escolha com pressa.<br>'+moralStatusLine());
+    evOpt('TRAVAR O PAINEL',
+      'Custa <b>40 créditos</b> e o painel para. As rotas continuam abertas e você '+
+      'ganha <b>+8% de velocidade por 2 ondas</b>. Ninguém é deixado para trás.',
+      [3,0,0],'',false,()=>{
+        const c=Math.round(40);
+        player.coins=Math.max(0,player.coins-c);
+        waveBuff('speed','x.cer.rotas','ROTAS ABERTAS +8% VEL',1.08,2);
+        evSetFlag('cer_rotas_abertas');
+        toast('PAINEL TRAVADO · AS SAÍDAS CONTINUAM ABERTAS');
+      });
+    evOpt('DEIXAR FECHAR E BLOQUEAR O INIMIGO',
+      'As portas selam com quem estiver dentro — inclusive parte da onda. '+
+      '<b>Próximas 2 ondas chegam menores</b>, mas <b>-12 de confiança de todos os Ecos</b>: '+
+      'eles veem você lacrar rotas de fuga.',
+      [0,0,3],'',false,()=>{
+        evVar('cercoPortas',wave+2);
+        for(const e of liveEchoesForEvents())changeEchoTrust(e,-12,'event_cerco_portas');
+        factionEmit('route_sealed',{fac:{anchor:3,remnants:-3,consortium:1,deviants:-1},obs:1});
+        evSetFlag('cer_rotas_seladas');
+        toast('ROTAS SELADAS · ALGUÉM FICOU DO OUTRO LADO');
+      });
+    evLeave('O painel termina a sequência. Você já escolheu.');
+  }},
+
+{id:'fx_cer_choke',kind:'fx_cer_choke',nm:'O ÚLTIMO CORREDOR',col:'#b79cff',
+  family:'sobreviventes',rarity:'uncommon',weight:15,cd:6,minWave:5,
+  aff:'viol',
+  render(){
+    const hpCost=Math.max(3,Math.round(player.hp*.2));
+    evHead('O ÚLTIMO CORREDOR',
+      'Um vão estreito onde só passa um de cada vez. Se você ficar, tudo que vier '+
+      'por esta onda passa por você — e por mais ninguém.<br>'+moralStatusLine());
+    evOpt('SEGURAR O CORREDOR',
+      '<b>-'+hpCost+' de vida</b> e <b>-10 de escudo máximo</b> permanente. Em troca '+
+      '<b>+18% de dano por 2 ondas</b> e <b>+'+fractureCoins(40,'fracture_event')+
+      ' créditos</b> do equipamento dos que não passaram.',
+      [0,0,3],'',false,()=>{
+        player.invT=0;damagePlayer(hpCost);
+        smFlat(player,'shieldMax','event.cer.choke.shieldMax','CORREDOR SEGURO -10',-10);
+        player.shield=Math.min(player.shield,player.shieldMax);
+        waveBuff('dmg','x.cer.choke','CORREDOR SEGURO +18% DANO',1.18,2);
+        player.coins+=fractureCoins(40,'fracture_event');
+        factionEmit('line_held',{fac:{anchor:2,remnants:1,consortium:0,deviants:-2},obs:1});
+        toast('VOCÊ SEGUROU O CORREDOR · NINGUÉM PASSOU POR VOCÊ');
+      });
+    evOpt('DESMONTAR E VENDER A BARREIRA',
+      'A barricada vale mais como sucata: <b>+'+fractureCoins(62,'fracture_event')+
+      ' créditos</b> e <b>+3 resíduos</b>. O corredor deixa de existir como obstáculo — '+
+      '<b>+6% de dano recebido por 2 ondas</b>.',
+      [0,3,1],'',false,()=>{
+        player.coins+=fractureCoins(62,'fracture_event');
+        fractureScarcityResidues(3,'barreira');
+        waveBuff('dmgTaken','x.cer.choke','SEM BARREIRA +6% DANO RECEBIDO',1.06,2);
+        factionEmit('line_sold',{fac:{anchor:-3,remnants:-1,consortium:3,deviants:1},obs:1});
+        toast('BARREIRA VENDIDA · O CAMINHO FICOU LIVRE');
+      });
+    evLeave('O corredor continua estreito. Só mudou quem o atravessa.');
+  }},
+
+/* ---------------- CAÇADA ---------------- */
+{id:'fx_cac_assinatura',kind:'fx_cac_assinatura',nm:'A ASSINATURA',col:'#ff3d68',
+  family:'risco',rarity:'uncommon',weight:16,cd:6,minWave:4,
+  aff:null,
+  render(){
+    evHead('A ASSINATURA',
+      'Algo está seguindo o seu rastro de dano. Não te vê — te mede. Enquanto você '+
+      'atacar do mesmo jeito, ele vai chegar mais perto a cada onda.<br>'+
+      operatorWhisperHTML()+moralStatusLine());
+    evOpt('QUEBRAR O PADRÃO',
+      'Você muda tudo: ritmo, arma, posição. <b>-25 créditos</b> em munição errada e '+
+      '<b>-1 de dano permanente</b> enquanto reaprende. A assinatura te perde — '+
+      'e não volta.',
+      [2,0,0],'',false,()=>{
+        player.coins=Math.max(0,player.coins-25);
+        smFlat(player,'dmg','event.cac.assinatura.dmg','PADRÃO QUEBRADO',-1);
+        evSetFlag('cac_padrao_quebrado');
+        evEpilogue('ep_assinatura');
+        toast('PADRÃO QUEBRADO · A ASSINATURA FICOU SEM REFERÊNCIA');
+      });
+    evOpt('DEIXAR CHEGAR E ENFRENTAR',
+      'Você continua igual de propósito. Ele vem. <b>Na próxima onda chega uma '+
+      'entidade que te caça pelo nome</b> — e se você sobreviver, <b>+90 créditos</b> '+
+      'e <b>+4 resíduos</b> do que sobrar.',
+      [0,0,3],'',false,()=>{
+        evQueue.push('fx_cac_assinatura2');
+        evSetFlag('cac_assinatura_vem');
+        spawnRing(beacon.x,beacon.y,'#ff3d68',14,180,.9);
+        toast('VOCÊ CONTINUOU IGUAL · ELE JÁ SABE O SEU NOME');
+      });
+    evLeave('O medidor continua contando. Ele não tem pressa.');
+  }},
+
+{id:'fx_cac_isca',kind:'fx_cac_isca',nm:'A ISCA',col:'#ff6b8a',
+  family:'moral',rarity:'uncommon',weight:15,cd:5,minWave:3,
+  aff:'viol',
+  render(){
+    evHead('A ISCA',
+      'O caçador segue calor. Existe uma forma barata de dar a ele um alvo melhor — '+
+      'e ela está ao seu lado, respirando.<br>'+moralStatusLine());
+    evOpt('USAR-SE COMO ISCA',
+      'Você fica parado, à vista. <b>-'+Math.max(3,Math.round(player.hp*.18))+
+      ' de vida</b> e <b>-6 de confiança dos Ecos</b> (eles veem o risco e não a '+
+      'coragem). Em troca <b>+14% de dano por 2 ondas</b>.',
+      [3,0,1],'',false,()=>{
+        const c=Math.max(3,Math.round(player.hp*.18));
+        player.invT=0;damagePlayer(c);
+        for(const e of liveEchoesForEvents())changeEchoTrust(e,-6,'event_isca_operador');
+        waveBuff('dmg','x.cac.isca','ALVO TROCADO +14% DANO',1.14,2);
+        toast('VOCÊ FICOU À VISTA · ELE VEIO EM VOCÊ');
+      });
+    evOpt('MARCAR UM ECO',
+      'Um sinal de calor no lugar errado. <b>-22 de confiança de todos os Ecos</b> '+
+      'e nenhum deles esquece. <b>+95 créditos</b> e <b>+3 resíduos</b> — o caçador '+
+      'paga bem por um alvo que não era o seu.',
+      [0,0,4],'',false,()=>{
+        for(const e of liveEchoesForEvents())changeEchoTrust(e,-22,'event_isca_echo');
+        player.coins+=fractureCoins(95,'fracture_event');
+        fractureScarcityResidues(3,'isca');
+        factionEmit('echo_marked',{fac:{anchor:-1,remnants:-4,consortium:2,deviants:3},obs:1});
+        evSetFlag('cac_echo_marcado');
+        toast('UM ECO FOI MARCADO · ELE NÃO VAI ESQUECER ISSO');
+      });
+    evLeave('Alguém ficou no lugar do alvo. Você sabe quem.');
+  }},
+
+/* ---------------- ANOMALIA ---------------- */
+{id:'fx_ano_duas',kind:'fx_ano_duas',nm:'DUAS VERSÕES INCOMPATÍVEIS',col:'#c56bff',
+  family:'anomalias',rarity:'uncommon',weight:16,cd:6,minWave:5,
+  aff:null,
+  render(){
+    evHead('DUAS VERSÕES INCOMPATÍVEIS',
+      'A mesma porta existe duas vezes, e as duas são verdadeiras. Numa, ela está '+
+      'trancada há anos. Na outra, você acabou de abri-la. As medições não batem '+
+      'e o painel se recusa a escolher.<br>'+moralStatusLine());
+    evOpt('FECHAR UMA DAS VERSÕES',
+      'Você força o colapso de uma delas. <b>-'+Math.max(2,Math.round(player.hp*.12))+
+      ' de vida</b> (o corpo paga a diferença) e o setor fica consistente: '+
+      '<b>+10 de escudo máximo permanente</b> e <b>+2 resíduos</b>.',
+      [2,0,0],'',false,()=>{
+        player.invT=0;damagePlayer(Math.max(2,Math.round(player.hp*.12)));
+        smFlat(player,'shieldMax','event.ano.duas.shieldMax','VERSÃO FECHADA +10',10);
+        player.shield=Math.min(player.shieldMax,player.shield+10);
+        fractureScarcityResidues(2,'porta_dupla');
+        toast('UMA VERSÃO FECHOU · O SETOR VOLTOU A FAZER SENTIDO');
+      });
+    evOpt('PASSAR PELAS DUAS AO MESMO TEMPO',
+      'Você entra sem escolher. <b>+1 upgrade aleatório</b> e <b>+'+
+      fractureCoins(64,'fracture_event')+' créditos</b> — e <b>a próxima onda chega '+
+      'com um inimigo duplicado</b>, porque você também entrou duas vezes.',
+      [0,1,2],'',false,()=>{
+        const pool=UPGRADES.filter(u=>sandboxRun||isUpgUnlocked(u.id));
+        if(pool.length){
+          const u=pool[randi(0,pool.length-1)];
+          u.apply(player);player.upgLog.push(u.nm);
+          floatText(player.x,player.y-30,u.nm,'#e3b6ff');
+        }
+        player.coins+=fractureCoins(64,'fracture_event');
+        evVar('fracturaExtraSpawn',wave+1);
+        evSetFlag('ano_entradas_duas');
+        toast('VOCÊ ENTROU DUAS VEZES · ALGO TAMBÉM ENTROU');
+      });
+    evLeave('A porta continua sendo duas. Só parou de ser problema seu.');
+  }},
+
+{id:'fx_ano_testemunha',kind:'fx_ano_testemunha',nm:'A TESTEMUNHA QUE NÃO EXISTE',col:'#d48bff',
+  family:'memoria',rarity:'uncommon',weight:15,cd:5,minWave:4,
+  aff:null,
+  render(){
+    evHead('A TESTEMUNHA QUE NÃO EXISTE',
+      'Um registro de ocorrência assinado por você, datado de três ondas atrás, '+
+      'descrevendo uma decisão que você não tomou. A caligrafia é sua. O registro '+
+      'está correto.<br>'+moralStatusLine());
+    evOpt('ASSINAR COMO SE FOSSE SEU',
+      'Você assume o que não fez. <b>-10 de confiança dos Ecos</b> (eles sabem), '+
+      'mas o registro libera <b>+'+fractureCoins(70,'fracture_event')+' créditos</b> '+
+      'de uma indenização que agora é legalmente sua.',
+      [0,3,1],'',false,()=>{
+        for(const e of liveEchoesForEvents())changeEchoTrust(e,-10,'event_testemunha_assina');
+        player.coins+=fractureCoins(70,'fracture_event');
+        evSetFlag('ano_testemunha_assinada');
+        toast('REGISTRO ASSINADO · NINGUÉM VAI CONFERIR');
+      });
+    evOpt('APAGAR O REGISTRO',
+      'Você destrói a prova. <b>-30 créditos</b> na queima segura e nenhum ganho — '+
+      'mas <b>+12 de confiança de todos os Ecos</b>: você recusou um você que nunca existiu.',
+      [3,0,0],'',false,()=>{
+        player.coins=Math.max(0,player.coins-30);
+        for(const e of liveEchoesForEvents())changeEchoTrust(e,12,'event_testemunha_apagada');
+        factionEmit('record_erased',{fac:{anchor:2,remnants:2,consortium:-2,deviants:0},obs:1});
+        evEpilogue('ep_testemunha');
+        toast('REGISTRO APAGADO · VOCÊ FICOU SÓ COM O QUE FEZ');
+      });
+    evLeave('O papel queima igual a qualquer outro.');
+  }},
+
+/* ---------------- RESSONÂNCIA ---------------- */
+{id:'fx_res_memoria',kind:'fx_res_memoria',nm:'MEMÓRIA DE FORA',col:'#8ff6ff',
+  family:'memoria',rarity:'uncommon',weight:17,cd:6,minWave:4,
+  aff:null,
+  render(){
+    evHead('MEMÓRIA DE FORA',
+      'Um Eco descreve uma sala que não existe nesta arena: cheiro de café, uma '+
+      'cadeira torta, alguém esperando. Ele tem certeza de que viveu isso. '+
+      'O registro da run diz que não.<br>'+moralStatusLine());
+    evOpt('CONFIRMAR A MEMÓRIA',
+      'Você diz que lembra também. <b>+18 de confiança de todos os Ecos</b> e '+
+      '<b>+1 de dissonância acumulada</b> — uma mentira dita com carinho ainda '+
+      'é uma fratura.',
+      [2,1,0],'',false,()=>{
+        for(const e of liveEchoesForEvents())changeEchoTrust(e,18,'event_memoria_confirmada');
+        evSetFlag('res_memoria_confirmada');
+        evEpilogue('ep_memoria');
+        spawnRing(beacon.x,beacon.y,'#8ff6ff',12,160,.7);
+        toast('VOCÊ CONFIRMOU · ELE PAROU DE PERGUNTAR');
+      });
+    evOpt('DIZER QUE NÃO SABE',
+      'Você não mente. <b>-8 de confiança de todos os Ecos</b> agora, mas '+
+      '<b>+10 de escudo máximo permanente</b>: a dúvida dita em voz alta para de '+
+      'ecoar dentro de você.',
+      [3,0,0],'',false,()=>{
+        for(const e of liveEchoesForEvents())changeEchoTrust(e,-8,'event_memoria_negada');
+        smFlat(player,'shieldMax','event.res.memoria.shieldMax','DÚVIDA DITA +10',10);
+        player.shield=Math.min(player.shieldMax,player.shield+10);
+        factionEmit('memory_denied',{fac:{anchor:2,remnants:-1,consortium:0,deviants:1},obs:1});
+        toast('VOCÊ DISSE A VERDADE · ELE VAI CONTINUAR PERGUNTANDO');
+      });
+    evLeave('A sala continua lá, do lado de fora do registro.');
+  }},
+
+{id:'fx_res_coro',kind:'fx_res_coro',nm:'O CORO DESALINHADO',col:'#7de8ff',
+  family:'echo',rarity:'uncommon',weight:16,cd:5,minWave:3,
+  aff:null,
+  render(){
+    evHead('O CORO DESALINHADO',
+      'Todos os Ecos começam a repetir a mesma frase ao mesmo tempo, com meio '+
+      'segundo de atraso entre eles. Não é transmissão — é ensaio. Alguém está '+
+      'ensinando eles a dizer algo juntos.<br>'+moralStatusLine());
+    evOpt('SINCRONIZAR VOCÊ MESMO',
+      'Você entra no coro e vira o ponto de referência. <b>-'+
+      Math.max(2,Math.round(player.hp*.1))+' de vida</b> e <b>+15 de confiança</b> '+
+      'de todos os Ecos. Por 2 ondas <b>+10% de dano</b> — eles lutam no seu ritmo.',
+      [2,1,0],'',false,()=>{
+        player.invT=0;damagePlayer(Math.max(2,Math.round(player.hp*.1)));
+        for(const e of liveEchoesForEvents())changeEchoTrust(e,15,'event_coro_sincronizado');
+        waveBuff('dmg','x.res.coro','CORO SINCRONIZADO +10% DANO',1.10,2);
+        evSetFlag('res_coro_sincronizado');
+        toast('VOCÊ VIROU A REFERÊNCIA · O ATRASO ACABOU');
+      });
+    evOpt('CORTAR A TRANSMISSÃO',
+      'Você derruba o sinal. <b>-20 de confiança de todos os Ecos</b> — para eles '+
+      'soou como censura. Em troca <b>+'+fractureCoins(52,'fracture_event')+
+      ' créditos</b> e <b>+2 resíduos</b> da fonte que você encontrou.',
+      [0,1,2],'',false,()=>{
+        for(const e of liveEchoesForEvents())changeEchoTrust(e,-20,'event_coro_cortado');
+        player.coins+=fractureCoins(52,'fracture_event');
+        fractureScarcityResidues(2,'transmissao');
+        factionEmit('signal_cut',{fac:{anchor:3,remnants:-3,consortium:1,deviants:-1},obs:1});
+        toast('TRANSMISSÃO CORTADA · O SILÊNCIO TAMBÉM É UMA RESPOSTA');
+      });
+    evLeave('A frase continua sendo ensaiada em algum lugar sem você.');
+  }},
+
+/* ---------------- ESCASSEZ ---------------- */
+{id:'fx_esc_tempo',kind:'fx_esc_tempo',nm:'O TEMPO DISPUTADO',col:'#ffd166',
+  family:'recursos',rarity:'uncommon',weight:17,cd:5,minWave:2,
+  aff:'greed',
+  render(){
+    evHead('O TEMPO DISPUTADO',
+      'Um bolsão de tempo lento, do tamanho de uma sala. Dá para atravessar devagar '+
+      'e sair com tudo que couber — ou drená-lo agora e vender o que sobrar. '+
+      'Só uma das duas coisas. O bolsão não espera.<br>'+moralStatusLine());
+    evOpt('ATRAVESSAR DEVAGAR',
+      'Você gasta o bolsão em você: <b>+16 de escudo máximo permanente</b> e '+
+      '<b>+6% de velocidade por 3 ondas</b>. Nada sobra para vender.',
+      [2,0,0],'',false,()=>{
+        smFlat(player,'shieldMax','event.esc.tempo.shieldMax','TEMPO LENTO +16',16);
+        player.shield=Math.min(player.shieldMax,player.shield+16);
+        waveBuff('speed','x.esc.tempo','TEMPO LENTO +6% VEL',1.06,3);
+        evSetFlag('esc_tempo_usado');
+        toast('VOCÊ ATRAVESSOU DEVAGAR · O BOLSÃO SE FECHOU');
+      });
+    evOpt('DRENAR E VENDER',
+      '<b>+'+fractureCoins(66,'fracture_event')+' créditos</b> e <b>+'+
+      fractureScarcityResidues(4,'tempo_drenado')+' resíduos temporais</b>. Custo real: '+
+      '<b>-14 de escudo máximo permanente</b> — tempo drenado não volta para ninguém.',
+      [0,3,1],'',false,()=>{
+        player.coins+=fractureCoins(66,'fracture_event');
+        fractureScarcityResidues(4,'tempo_drenado');
+        smFlat(player,'shieldMax','event.esc.tempo.dreno','TEMPO DRENADO -14',-14);
+        player.shield=Math.min(player.shield,player.shieldMax);
+        factionEmit('time_drained',{fac:{anchor:-2,remnants:-1,consortium:3,deviants:1},obs:1});
+        evSetFlag('esc_tempo_drenado');
+        toast('BOLSÃO DRENADO · O TEMPO AQUI FICOU MAIS CURTO');
+      });
+    evLeave('O bolsão fecha. Ninguém mais vai atravessar por ele.');
+  }},
+
+{id:'fx_esc_mercado',kind:'fx_esc_mercado',nm:'O MERCADO QUE NÃO VOLTA',col:'#ffb84d',
+  family:'fracao',rarity:'uncommon',weight:15,cd:6,minWave:4,
+  aff:'greed',
+  render(){
+    const need=60;
+    evHead('O MERCADO QUE NÃO VOLTA',
+      'Um terminal de troca abre por um ciclo e fecha para sempre. Ele aceita '+
+      'créditos, aceita resíduos e não aceita desculpa. O preço desta visita é '+
+      '<b>'+need+' créditos</b>.<br>'+moralStatusLine());
+    evOpt('PAGAR E COMPRAR A GARANTIA',
+      'Custa <b>'+need+' créditos</b>. Você recebe <b>+22 de escudo máximo '+
+      'permanente</b> e <b>um kit médico</b> — o terminal não vende duas vezes.',
+      [1,1,0],'',false,()=>{
+        player.coins=Math.max(0,player.coins-need);
+        smFlat(player,'shieldMax','event.esc.mercado.shieldMax','GARANTIA COMPRADA +22',22);
+        player.shield=Math.min(player.shieldMax,player.shield+22);
+        pickups.push({type:'med',x:beacon.x+rand(-50,50),y:beacon.y+rand(-50,50),
+          vx:0,vy:0,v:18,t:0});
+        evSetFlag('esc_mercado_pago');
+        toast('COMPRA FEITA · O TERMINAL FECHOU PARA SEMPRE');
+      });
+    evOpt('VENDER SEU PRÓPRIO RASTRO',
+      'O terminal compra dados de operador. <b>-18 de confiança de todos os Ecos</b> '+
+      'e <b>-1 de dano permanente</b> (parte do que você era foi entregue). Em troca '+
+      '<b>+'+fractureCoins(84,'fracture_event')+' créditos</b> e <b>+5 resíduos</b>.',
+      [0,4,0],'',false,()=>{
+        for(const e of liveEchoesForEvents())changeEchoTrust(e,-18,'event_mercado_rastro');
+        smFlat(player,'dmg','event.esc.mercado.dmg','RASTRO VENDIDO',-1);
+        player.coins+=fractureCoins(84,'fracture_event');
+        fractureScarcityResidues(5,'rastro');
+        factionEmit('trail_sold',{fac:{anchor:-2,remnants:-3,consortium:4,deviants:1},obs:1});
+        evSetFlag('esc_rastro_vendido');
+        toast('SEU RASTRO FOI VENDIDO · ALGUÉM VAI LER VOCÊ');
+      });
+    evLeave('O terminal escurece. Não vai ter próxima vez.');
+  }},
+];
+
+/* a cadeia da CAÇADA: a assinatura chega de verdade na onda seguinte */
+const FRACTURE_CHAIN_EVENTS=[
+{id:'fx_cac_assinatura2',kind:'fx_cac_assinatura2',nm:'ELE CHEGOU',col:'#ff2f5e',
+  family:'risco',rarity:'rare',weight:0,cd:0,chain:true,minWave:4,
+  render(){
+    const dmg=Math.max(6,Math.round(10+wave*1.2));
+    evHead('ELE CHEGOU',
+      'A assinatura te alcançou. Ele não negocia e não explica: está aqui porque '+
+      'você continuou fazendo exatamente o que sempre fez.<br>'+moralStatusLine());
+    evOpt('PAGAR O QUE DEVE',
+      'Você recebe <b>'+dmg+' de dano</b> e <b>-8 de escudo máximo permanente</b>. '+
+      'A caçada termina — e o que ele carregava é seu: <b>+'+
+      fractureCoins(90,'fracture_event')+' créditos</b> e <b>+4 resíduos</b>.',
+      [1,0,1],'',false,()=>{
+        player.invT=0;damagePlayer(dmg);
+        smFlat(player,'shieldMax','event.cac.sinal.shieldMax','CAÇADA ENCERRADA -8',-8);
+        player.shield=Math.min(player.shield,player.shieldMax);
+        player.coins+=fractureCoins(90,'fracture_event');
+        fractureScarcityResidues(4,'assinatura');
+        evEpilogue('ep_assinatura');
+        evSetFlag('cac_assinatura_paga');
+        toast('A CAÇADA TERMINOU · ELE LEVOU O QUE VEIO BUSCAR');
+      });
+    evOpt('QUEBRAR O PADRÃO AGORA',
+      'Tarde, mas funciona: <b>-1 de dano permanente</b> e <b>-35 créditos</b> em '+
+      'munição improvisada. Ele perde a referência e vai embora sem cobrar.',
+      [2,0,0],'',false,()=>{
+        player.coins=Math.max(0,player.coins-35);
+        smFlat(player,'dmg','event.cac.sinal.dmg','TARDE DEMAIS',-1);
+        evEpilogue('ep_assinatura');
+        evSetFlag('cac_assinatura_perdida');
+        toast('PADRÃO QUEBRADO NO FIM · ELE FOI EMBORA');
+      });
+    evLeave('Ele já sabia como terminava. Você não.');
+  }},
+];
+
 /* índices derivados */
 const RUN_EVENT_BY_ID={},RUN_EVENT_BY_KIND={};
 function evRegister(d){
@@ -10039,12 +10514,18 @@ function evRegister(d){
 }
 for(const d of RUN_EVENTS)evRegister(d);
 for(const d of RUN_CHAIN_EVENTS){d.noPool=true;evRegister(d);}
+/* B3.11: 12 eventos de Fratura + 1 cadeia. Entram pelo MESMO registro,
+   para que RUN_EVENT_BY_ID, EV_LABEL e o pool os vejam como qualquer outro. */
+for(const d of FRACTURE_RUN_EVENTS)evRegister(d);
+for(const d of FRACTURE_CHAIN_EVENTS){d.noPool=true;evRegister(d);}
 for(const k of EV_KINDS)evRegister(legacyEventDef(k));
 /* rótulos de beacon para os eventos novos (sprite genérico + banner) */
 Object.assign(EV_LABEL,(function(){
   const o={};
   for(const d of RUN_EVENTS)if(!o[d.kind])o[d.kind]=[d.nm,d.col];
   for(const d of RUN_CHAIN_EVENTS)if(!o[d.kind])o[d.kind]=[d.nm,d.col];
+  for(const d of FRACTURE_RUN_EVENTS)if(!o[d.kind])o[d.kind]=[d.nm,d.col];
+  for(const d of FRACTURE_CHAIN_EVENTS)if(!o[d.kind])o[d.kind]=[d.nm,d.col];
   return o;
 })());
 /* pool principal = legados + novos não-chain */
@@ -10052,6 +10533,7 @@ const ALL_RUN_EVENTS=(function(){
   const arr=[];
   for(const k of EV_KINDS)arr.push(RUN_EVENT_BY_ID['lg_'+k]);
   for(const d of RUN_EVENTS)if(!d.noPool)arr.push(d);
+  for(const d of FRACTURE_RUN_EVENTS)if(!d.noPool)arr.push(d);
   return arr;
 })();
 
@@ -23930,6 +24412,150 @@ function fractureShapeWave(base,n,ctx){
     res.elite=Math.max(0,out.elite|0);
   return res;
 }
+/* ---------------- B3.13: emissão de abertura de loja ----------------
+   shop_open tem delta 0 na grade do B1: existe só para histórico e DEV.
+   Uma chamada por visita; delta 0 significa que abrir loja não pode ser
+   usado para farmar Intensidade. */
+function fractureOnShopOpen(){
+  if(!fractureRun)return;
+  try{
+    fractureEmit('shop_open',{
+      wave:(typeof wave!=='undefined')?(wave|0):0,
+      coins:(typeof player!=='undefined'&&(player&&Number.isFinite(player.coins)))
+        ?Math.round(player.coins):0});
+  }catch(e){}
+}
+
+/* ---------------- sanitização de waveProfile (B2.11) ----------------
+   bias/pool vêm do save, ou seja, são INPUT NÃO CONFIÁVEL. Só passam:
+   arquétipos que existem em EDEFS (nada de '__proto__'/'constructor'),
+   números finitos clampados, sem duplicata e dentro dos tetos. */
+function fractureCleanBias(b){
+  const out={};
+  if(!b||typeof b!=='object')return out;
+  for(const k of WAVE_ARCHETYPES){
+    if(!Object.prototype.hasOwnProperty.call(b,k))continue;
+    /* typeof estrito: Number('3') seria 3, e um save adulterado com strings
+       não pode virar viés silenciosamente. */
+    if(typeof b[k]!=='number')continue;
+    const v=b[k];
+    if(!Number.isFinite(v))continue;
+    if(v===0)continue;
+    out[k]=clamp(v,-FRACTURE_RUN_BIAS_MAX,FRACTURE_RUN_BIAS_MAX);
+  }
+  return out;
+}
+function fractureCleanPool(list){
+  const out=[];
+  if(!Array.isArray(list))return out;
+  for(const x of list){
+    if(typeof x!=='string')continue;
+    if(WAVE_ARCHETYPES.indexOf(x)<0)continue;   // tipo inexistente → rejeitado
+    if(out.indexOf(x)>=0)continue;              // duplicata → ignorada
+    out.push(x);
+    if(out.length>=FRACTURE_RUN_POOL_MAX)break;
+  }
+  return out;
+}
+/* ---------------- API de waveProfile (única porta de escrita) ----------
+   waveProfile.bias/pool deixam de ser contrato morto: influenciam de
+   verdade o shaping acima. Sanitização dura — só arquétipos conhecidos,
+   só números finitos, sem prototype pollution. */
+function fractureSetWaveBias(arch,value){
+  if(!fractureRun)return false;
+  if(WAVE_ARCHETYPES.indexOf(arch)<0)return false;
+  const v=Number(value);
+  if(!Number.isFinite(v))return false;
+  if(v===0)delete fractureRun.waveProfile.bias[arch];
+  else fractureRun.waveProfile.bias[arch]=
+    clamp(v,-FRACTURE_RUN_BIAS_MAX,FRACTURE_RUN_BIAS_MAX);
+  fractureHistPush({t:'wave_bias',w:wave|0,d:0,s:arch+':'+
+    (fractureRun.waveProfile.bias[arch]||0)});
+  return true;
+}
+function fractureSetWavePool(list){
+  if(!fractureRun)return false;
+  const arr=Array.isArray(list)?list:[list];
+  const out=[];
+  for(const x of arr){
+    if(WAVE_ARCHETYPES.indexOf(x)<0)continue;
+    if(out.indexOf(x)>=0)continue;
+    out.push(x);
+    if(out.length>=FRACTURE_RUN_POOL_MAX)break;
+  }
+  fractureRun.waveProfile.pool=out;
+  fractureHistPush({t:'wave_pool',w:wave|0,d:0,s:out.join('/')||'vazio'});
+  return true;
+}
+function fractureClearWaveProfile(){
+  if(!fractureRun)return false;
+  fractureRun.waveProfile.bias={};
+  fractureRun.waveProfile.pool=[];
+  return true;
+}
+/* ---------------- SIMULAÇÃO DE BALANCEAMENTO (B2.19) ----------------
+   Pura: não toca em fractureRun nem em estado de jogo. Serve para medir
+   se os Temas estão fortes ou fracos demais antes de mexer nos números. */
+function fractureSimulate(opts){
+  opts=opts||{};
+  const themes=Array.isArray(opts.themes)&&opts.themes.length
+    ?opts.themes.filter(x=>fractureThemeById(x)):FRACTURE_THEME_IDS;
+  const wMin=clamp(Number(opts.waveMin)||1,1,MAX_WAVE);
+  const wMax=clamp(Number(opts.waveMax)||19,wMin,MAX_WAVE);
+  const seeds=clamp(Number(opts.seeds)||120,1,2000);
+  const intensity=clamp(Number(opts.intensity==null?100:opts.intensity)||0,0,100);
+  const stage=fractureStageOf(intensity).id;
+  const budget=Number.isFinite(Number(opts.budget))
+    ?Math.max(0,Math.floor(Number(opts.budget))):ENEMY_BUDGET;
+  const per={};
+  for(const th of themes){
+    const rec={theme:th,themeNm:(fractureThemeById(th)||{}).nm,entitySum:0,entityN:0,
+      entityMax:0,budgetHits:0,budgetOver:0,arch:{},kinds:{},extremes:0,
+      violations:0,share:{},baseEntitySum:0,baseFitEntitySum:0};
+    for(const k of WAVE_ARCHETYPES)rec.arch[k]=0;
+    for(let s=1;s<=seeds;s++){
+      const ctx={theme:th,seed:fractureHash32(s*7919),intensity,stage,bias:null,pool:null};
+      for(let n=wMin;n<=wMax;n++){
+        const base=waveCompBase(n);
+        const final=waveCompFit(fractureShapeWave(base,n,ctx),budget);
+        let tot=0,kindN=0,mx=0;
+        for(const k of WAVE_ARCHETYPES){
+          const v=final[k]|0;
+          tot+=v;rec.arch[k]+=v;
+          if(v>0)kindN++;
+          if(v>mx)mx=v;
+        }
+        const all=tot+(final.elite|0);
+        rec.entitySum+=all;rec.entityN++;
+        /* duas referências: a base CRUA (intenção) e a base CORRIGIDA pelo
+           budget — é contra a corrigida que o Tema deve ser comparado,
+           porque sem Tema o pipeline devolve exatamente ela. */
+        rec.baseEntitySum+=waveCompTotal(base);
+        rec.baseFitEntitySum+=waveCompTotal(waveCompFit(base,budget));
+        if(all>rec.entityMax)rec.entityMax=all;
+        if(all>=budget)rec.budgetHits++;
+        if(all>budget)rec.budgetOver++;
+        rec.kinds[kindN]=(rec.kinds[kindN]||0)+1;
+        /* threshold: arquétipo presente sem estar na base = violação */
+        for(const k of WAVE_ARCHETYPES)
+          if((final[k]|0)>0&&(base[k]|0)<=0)rec.violations++;
+        /* monocultura: um arquétipo dominando a onda inteira */
+        if(tot>0&&mx/tot>.60)rec.extremes++;
+      }
+    }
+    for(const k of WAVE_ARCHETYPES)
+      rec.share[k]=rec.entitySum?rec.arch[k]/rec.entitySum:0;
+    rec.entityAvg=rec.entityN?rec.entitySum/rec.entityN:0;
+    rec.baseEntityAvg=rec.entityN?rec.baseEntitySum/rec.entityN:0;
+    rec.baseFitEntityAvg=rec.entityN?rec.baseFitEntitySum/rec.entityN:0;
+    rec.kindAvg=rec.entityN?(function(){
+      let s=0;for(const k in rec.kinds)s+=(+k)*rec.kinds[k];return s/rec.entityN;})():0;
+    per[th]=rec;
+  }
+  return {themes:themes,waveMin:wMin,waveMax:wMax,seeds:seeds,
+    intensity:intensity,stage:stage,budget:budget,per:per};
+}
+
 /* =====================================================================
    BLOCO 3 — MINIBOSSES: PESO TEMÁTICO + DETERMINISMO
    ---------------------------------------------------------------------
@@ -24064,134 +24690,183 @@ function fractureOnMiniKill(def,n){
     miniId:String(def&&def.id||'').slice(0,24)});
 }
 
-/* ---------------- sanitização de waveProfile (B2.11) ----------------
-   bias/pool vêm do save, ou seja, são INPUT NÃO CONFIÁVEL. Só passam:
-   arquétipos que existem em EDEFS (nada de '__proto__'/'constructor'),
-   números finitos clampados, sem duplicata e dentro dos tetos. */
-function fractureCleanBias(b){
-  const out={};
-  if(!b||typeof b!=='object')return out;
-  for(const k of WAVE_ARCHETYPES){
-    if(!Object.prototype.hasOwnProperty.call(b,k))continue;
-    /* typeof estrito: Number('3') seria 3, e um save adulterado com strings
-       não pode virar viés silenciosamente. */
-    if(typeof b[k]!=='number')continue;
-    const v=b[k];
-    if(!Number.isFinite(v))continue;
-    if(v===0)continue;
-    out[k]=clamp(v,-FRACTURE_RUN_BIAS_MAX,FRACTURE_RUN_BIAS_MAX);
-  }
-  return out;
-}
-function fractureCleanPool(list){
-  const out=[];
-  if(!Array.isArray(list))return out;
-  for(const x of list){
-    if(typeof x!=='string')continue;
-    if(WAVE_ARCHETYPES.indexOf(x)<0)continue;   // tipo inexistente → rejeitado
-    if(out.indexOf(x)>=0)continue;              // duplicata → ignorada
-    out.push(x);
-    if(out.length>=FRACTURE_RUN_POOL_MAX)break;
-  }
-  return out;
-}
-/* ---------------- API de waveProfile (única porta de escrita) ----------
-   waveProfile.bias/pool deixam de ser contrato morto: influenciam de
-   verdade o shaping acima. Sanitização dura — só arquétipos conhecidos,
-   só números finitos, sem prototype pollution. */
-function fractureSetWaveBias(arch,value){
-  if(!fractureRun)return false;
-  if(WAVE_ARCHETYPES.indexOf(arch)<0)return false;
-  const v=Number(value);
-  if(!Number.isFinite(v))return false;
-  if(v===0)delete fractureRun.waveProfile.bias[arch];
-  else fractureRun.waveProfile.bias[arch]=
-    clamp(v,-FRACTURE_RUN_BIAS_MAX,FRACTURE_RUN_BIAS_MAX);
-  fractureHistPush({t:'wave_bias',w:wave|0,d:0,s:arch+':'+
-    (fractureRun.waveProfile.bias[arch]||0)});
-  return true;
-}
-function fractureSetWavePool(list){
-  if(!fractureRun)return false;
-  const arr=Array.isArray(list)?list:[list];
-  const out=[];
-  for(const x of arr){
-    if(WAVE_ARCHETYPES.indexOf(x)<0)continue;
-    if(out.indexOf(x)>=0)continue;
-    out.push(x);
-    if(out.length>=FRACTURE_RUN_POOL_MAX)break;
-  }
-  fractureRun.waveProfile.pool=out;
-  fractureHistPush({t:'wave_pool',w:wave|0,d:0,s:out.join('/')||'vazio'});
-  return true;
-}
-function fractureClearWaveProfile(){
-  if(!fractureRun)return false;
-  fractureRun.waveProfile.bias={};
-  fractureRun.waveProfile.pool=[];
-  return true;
-}
-/* ---------------- SIMULAÇÃO DE BALANCEAMENTO (B2.19) ----------------
-   Pura: não toca em fractureRun nem em estado de jogo. Serve para medir
-   se os Temas estão fortes ou fracos demais antes de mexer nos números. */
-function fractureSimulate(opts){
-  opts=opts||{};
-  const themes=Array.isArray(opts.themes)&&opts.themes.length
-    ?opts.themes.filter(x=>fractureThemeById(x)):FRACTURE_THEME_IDS;
-  const wMin=clamp(Number(opts.waveMin)||1,1,MAX_WAVE);
-  const wMax=clamp(Number(opts.waveMax)||19,wMin,MAX_WAVE);
-  const seeds=clamp(Number(opts.seeds)||120,1,2000);
-  const intensity=clamp(Number(opts.intensity==null?100:opts.intensity)||0,0,100);
-  const stage=fractureStageOf(intensity).id;
-  const budget=Number.isFinite(Number(opts.budget))
-    ?Math.max(0,Math.floor(Number(opts.budget))):ENEMY_BUDGET;
-  const per={};
-  for(const th of themes){
-    const rec={theme:th,themeNm:(fractureThemeById(th)||{}).nm,entitySum:0,entityN:0,
-      entityMax:0,budgetHits:0,budgetOver:0,arch:{},kinds:{},extremes:0,
-      violations:0,share:{},baseEntitySum:0,baseFitEntitySum:0};
-    for(const k of WAVE_ARCHETYPES)rec.arch[k]=0;
-    for(let s=1;s<=seeds;s++){
-      const ctx={theme:th,seed:fractureHash32(s*7919),intensity,stage,bias:null,pool:null};
-      for(let n=wMin;n<=wMax;n++){
-        const base=waveCompBase(n);
-        const final=waveCompFit(fractureShapeWave(base,n,ctx),budget);
-        let tot=0,kindN=0,mx=0;
-        for(const k of WAVE_ARCHETYPES){
-          const v=final[k]|0;
-          tot+=v;rec.arch[k]+=v;
-          if(v>0)kindN++;
-          if(v>mx)mx=v;
-        }
-        const all=tot+(final.elite|0);
-        rec.entitySum+=all;rec.entityN++;
-        /* duas referências: a base CRUA (intenção) e a base CORRIGIDA pelo
-           budget — é contra a corrigida que o Tema deve ser comparado,
-           porque sem Tema o pipeline devolve exatamente ela. */
-        rec.baseEntitySum+=waveCompTotal(base);
-        rec.baseFitEntitySum+=waveCompTotal(waveCompFit(base,budget));
-        if(all>rec.entityMax)rec.entityMax=all;
-        if(all>=budget)rec.budgetHits++;
-        if(all>budget)rec.budgetOver++;
-        rec.kinds[kindN]=(rec.kinds[kindN]||0)+1;
-        /* threshold: arquétipo presente sem estar na base = violação */
-        for(const k of WAVE_ARCHETYPES)
-          if((final[k]|0)>0&&(base[k]|0)<=0)rec.violations++;
-        /* monocultura: um arquétipo dominando a onda inteira */
-        if(tot>0&&mx/tot>.60)rec.extremes++;
-      }
+/* =====================================================================
+   BLOCO 3 — RESSONÂNCIA: identidade via Echo (B3.9)
+   ---------------------------------------------------------------------
+   REGRA CRÍTICA: o Diretor LÊ os sistemas de Echo e NÃO escreve neles.
+   Nada aqui chama echoSetDis, echoRelResonance, smFlat ou qualquer mutador
+   de trust/relationship/dissonância/personality. A identidade vem de:
+     · pesar eventos de memória/vínculo (ou de distorção, se o Echo está
+       ruptured/hostile) — só pesos;
+     · poucas falas contextuais do Echo via echoReact (que já tem cooldown
+       próprio e chance de 35% contra spam).
+   ===================================================================== */
+/* leitura defensiva do estado dos Ecos. Devolve um objeto neutro quando não
+   há Echo — run sem Echo continua 100% jogável. */
+function fractureResoRead(){
+  const out={count:0,allied:0,hostile:false,ruptured:false,
+    trust:null,rel:null,disSt:null,pressure:0};
+  try{
+    if(typeof echoes==='undefined'||!echoes||!echoes.length)return out;
+    const live=echoes.filter(e=>e&&e.alive);
+    out.count=live.length;
+    if(!out.count)return out;
+    const allied=live.filter(e=>echoAllied(e));
+    out.allied=allied.length;
+    out.hostile=live.some(e=>e.hostile);
+    /* alvo para leitura: o aliado com maior pressão, senão o primeiro vivo */
+    const alvo=allied.length?allied.slice().sort(
+      (a,b)=>relPressurePct(b)-relPressurePct(a))[0]:live[0];
+    if(alvo){
+      out.rel=(echoRelState(alvo)||{}).id||null;
+      out.trust=Number.isFinite(alvo.trust)?Math.round(alvo.trust):null;
+      out.disSt=(alvo.dis&&alvo.dis.st)||null;
+      out.pressure=Math.round(relPressurePct(alvo)*100)/100;
+      out.ruptured=out.disSt==='ruptured'||out.disSt==='fracturing'||out.hostile;
     }
-    for(const k of WAVE_ARCHETYPES)
-      rec.share[k]=rec.entitySum?rec.arch[k]/rec.entitySum:0;
-    rec.entityAvg=rec.entityN?rec.entitySum/rec.entityN:0;
-    rec.baseEntityAvg=rec.entityN?rec.baseEntitySum/rec.entityN:0;
-    rec.baseFitEntityAvg=rec.entityN?rec.baseFitEntitySum/rec.entityN:0;
-    rec.kindAvg=rec.entityN?(function(){
-      let s=0;for(const k in rec.kinds)s+=(+k)*rec.kinds[k];return s/rec.entityN;})():0;
-    per[th]=rec;
+  }catch(e){}
+  return out;
+}
+/* Ajuste fino do viés de RESSONÂNCIA conforme o estado do Echo.
+   Echo estável  → mais memória/vínculo.
+   Echo em crise → mais distorção/dissonância.
+   Devolve 1 quando o Tema não é RESSONÂNCIA (não afeta mais ninguém). */
+function fractureResoBias(d,ctx){
+  if(!ctx||ctx.theme!=='resonance')return 1;
+  const w=fractureThemeWeight(ctx);
+  if(!(w>0))return 1;
+  const tags=fractureEventTags(d);
+  if(!tags.length)return 1;
+  const r=(ctx.reso&&typeof ctx.reso==='object')?ctx.reso:fractureResoRead();
+  if(!r.count)return 1;                    // sem Echo: neutro, run segue normal
+  const calm=!r.ruptured;
+  let b=0;
+  for(const t of tags){
+    if(calm){
+      if(t==='MEMORIA'||t==='RESSONANCIA'||t==='VINCULO')b+=.45;
+      else if(t==='DISTORCAO'||t==='ANOMALIA')b-=.20;
+    }else{
+      if(t==='DISTORCAO'||t==='ANOMALIA')b+=.45;
+      else if(t==='RESSONANCIA'||t==='VINCULO')b-=.15;
+    }
   }
-  return {themes:themes,waveMin:wMin,waveMax:wMax,seeds:seeds,
-    intensity:intensity,stage:stage,budget:budget,per:per};
+  if(b===0)return 1;
+  b=b/Math.sqrt(tags.length);
+  /* RESSONÂNCIA nunca tranca evento: piso alto de propósito */
+  return clamp(1+clamp(w,-1,1)*b,.75,1.45);
+}
+/* poucas falas contextuais — 4 no total, sem spam. Reusa echoReact, que já
+   respeita _echoSpeakCd e a chance anti-spam de 35%. */
+const FRACTURE_RESO_LINES={
+  signature:[
+    'Essa assinatura… eu já ouvi antes. Não aqui.',
+    'Tem algo meu nesse ruído. Não sei se é meu mesmo.',
+    'Reconheci um eco que não deveria existir ainda.'],
+  highStage:[
+    'A fratura está mais alta. Eu sinto na borda do que sou.',
+    'Isso não é só a arena tremendo. É o ciclo inteiro.',
+    'Consigo ouvir o fim daqui. Ele já aconteceu antes.'],
+  ruptured:[
+    'Não chega perto disso. Não agora. Não de mim.',
+    'Tem uma parte de mim concordando com a fratura.',
+    'Se você insistir, eu não sei qual de nós vai responder.'],
+  memory:[
+    'Eu lembro de um operador que fez diferente. Não foi você.',
+    'Essa memória não é desta run. E ainda assim é minha.',
+    'Alguém já esteve exatamente aqui. Eu estive.']
+};
+/* reação contextual: chamada quando um evento é escolhido em run RESSONÂNCIA.
+   Só fala; não muta nada. Cooldown próprio (uma reação a cada 3 ondas) para
+   não virar spam por cima do cooldown do Echo. */
+function fractureResoReact(d,info){
+  if(!fractureRun||fractureRun.theme!=='resonance')return false;
+  if(typeof echoes==='undefined'||!echoes||!echoes.length)return false;
+  const w=(typeof wave!=='undefined')?(wave|0):0;
+  const b=fractureB3();
+  if(b&&w-(b.resoW|0)<3)return false;      // no máximo 1 reação a cada 3 ondas
+  const tags=fractureEventTags(d);
+  const r=fractureResoRead();
+  if(!r.count)return false;
+  /* qual das 4 situações se aplica — uma só, na ordem de prioridade */
+  let key=null;
+  if(r.ruptured&&(tags.indexOf('DISTORCAO')>=0||tags.indexOf('ANOMALIA')>=0))key='ruptured';
+  else if(tags.indexOf('MEMORIA')>=0||tags.indexOf('RESSONANCIA')>=0)key='memory';
+  else if(tags.indexOf('ECHO')>=0||tags.indexOf('VINCULO')>=0)key='signature';
+  else if(fractureGetStage().min>=60)key='highStage';
+  if(!key)return false;
+  if(b)b.resoW=w;
+  try{
+    const pool=FRACTURE_RESO_LINES[key];
+    const pick=fractureRng(fractureHash32(
+      ((fractureRun.seed>>>0)^(Math.imul(w+1,0x9E3779B1))^
+       Math.imul(fractureHash32(key),0x85EBCA6B))>>>0));
+    const txt=pool[Math.floor(pick()*pool.length)%pool.length];
+    const alvo=echoes.filter(e=>e&&e.alive&&echoAllied(e))[0]||
+      echoes.filter(e=>e&&e.alive)[0];
+    if(alvo)echoSpeak(alvo,txt,key==='ruptured'?'#ff2f5e':'#8ff6ff');
+    fractureHistPush({t:'reso_line',w:w,d:0,s:key});
+  }catch(e){return false;}
+  return true;
+}
+
+/* =====================================================================
+   BLOCO 3 — ESCASSEZ: identidade via economia (B3.10)
+   ---------------------------------------------------------------------
+   Não é "-30% de tudo". A identidade vem de:
+     · eventos econômicos mais frequentes (já vem das tags);
+     · recompensas de Créditos dos EVENTOS DE FRATURA um pouco menores
+       (só eles — nada de multiplicador global sobre o jogo inteiro);
+     · oportunidades de Resíduos Temporais pelas APIs da PR12
+       (addResidues/spendResidues — nunca escrita direta em fracRun.res);
+     · reroll temporal ligeiramente mais barato na loja (uma vez por visita).
+   ===================================================================== */
+const FRACTURE_SCAR_COIN_MUL=.88;   // só nos eventos de Fratura
+const FRACTURE_SCAR_REROLL=7;       // contra os 10 padrão
+const FRACTURE_SCAR_RES_BONUS=1;    // +1 resíduo nas oportunidades de Fratura
+/* multiplicador de Créditos para recompensas vindas de evento de Fratura.
+   Devolve 1 para qualquer outro Tema e para qualquer fonte que não seja
+   evento — o jogo inteiro NÃO fica mais pobre em ESCASSEZ. */
+function fractureCoinMul(source){
+  if(!fractureRun||fractureRun.theme!=='scarcity')return 1;
+  const w=fractureThemeWeight(fractureWaveCtx());
+  if(!(w>0))return 1;
+  if(source!=='fracture_event')return 1;
+  /* interpolado pela Intensidade: no começo quase não se sente */
+  return clamp(1-(1-FRACTURE_SCAR_COIN_MUL)*clamp(w,0,1),FRACTURE_SCAR_COIN_MUL,1);
+}
+/* aplica o multiplicador sem nunca zerar nem negativar uma recompensa */
+function fractureCoins(n,source){
+  const v=Math.round(Number(n));
+  if(!Number.isFinite(v))return 0;
+  if(v<=0)return v;                        // custo não é recompensa: intocado
+  return Math.max(1,Math.round(v*fractureCoinMul(source)));
+}
+/* oportunidade de Resíduo: usa a API da PR12, nunca escreve em fracRun */
+function fractureScarcityResidues(n,src){
+  if(!fractureRun||fractureRun.theme!=='scarcity')return 0;
+  const w=fractureThemeWeight(fractureWaveCtx());
+  if(!(w>0))return 0;
+  const extra=Math.round(FRACTURE_SCAR_RES_BONUS*clamp(w,0,1));
+  const tot=Math.max(0,(Math.round(Number(n))||0)+extra);
+  if(!tot)return 0;
+  try{return addResidues(tot,String(src||'fratura').slice(0,24))||0;}catch(e){return 0;}
+}
+/* reroll da loja em ESCASSEZ: mais barato na primeira tentativa da visita.
+   Uma vez por visita, sem farm (abrir/fechar não acumula). */
+function fractureShopRerollCost(base){
+  const v=Math.round(Number(base));
+  if(!Number.isFinite(v)||v<=0)return v;
+  if(!fractureRun||fractureRun.theme!=='scarcity')return v;
+  const w=fractureThemeWeight(fractureWaveCtx());
+  if(!(w>0))return v;
+  const b=fractureB3();
+  if(b&&b.scarUsed['rr'+((typeof wave!=='undefined')?(wave|0):0)])return v;
+  return Math.max(1,Math.min(v,FRACTURE_SCAR_REROLL));
+}
+function fractureShopRerollUsed(){
+  const b=fractureB3();
+  if(!b)return;
+  b.scarUsed['rr'+((typeof wave!=='undefined')?(wave|0):0)]=1;
 }
 
 /* =====================================================================
@@ -24311,7 +24986,22 @@ const FRACTURE_EVENT_TAG_MAP={
   lg_child        :['ECHO','VINCULO'],
   lg_archive      :['MEMORIA','ANOMALIA'],
   lg_hunger       :['RISCO','PRESSAO'],
-  lg_mirror       :['ANOMALIA','DISTORCAO']
+  lg_mirror       :['ANOMALIA','DISTORCAO'],
+  /* ---- FRACTURE_RUN_EVENTS (12) — B3.11 ----
+     Taguados pelo que o evento FAZ, como os outros 67. */
+  fx_col_secao        :['FRAGMENTACAO','INSTABILIDADE','INVOCADOR','RECURSO'],
+  fx_col_alicerce     :['INSTABILIDADE','FRAGMENTACAO','RECURSO'],
+  fx_cer_rotas        :['CONTENCAO','DEFESA','MOVEL','MORAL'],
+  fx_cer_choke        :['DEFESA','CONTENCAO','RISCO','SACRIFICIO'],
+  fx_cac_assinatura   :['CACADOR','PRESSAO','RISCO','EVASIVO'],
+  fx_cac_assinatura2  :['CACADOR','PRESSAO','RISCO','SACRIFICIO'],
+  fx_cac_isca         :['CACADOR','PRESSAO','MORAL','SACRIFICIO','ECHO'],
+  fx_ano_duas         :['ANOMALIA','DISTORCAO','EXPLORACAO','INVOCADOR'],
+  fx_ano_testemunha   :['ANOMALIA','MEMORIA','MORAL'],
+  fx_res_memoria      :['MEMORIA','RESSONANCIA','ECHO','VINCULO'],
+  fx_res_coro         :['RESSONANCIA','ECHO','INSTABILIDADE','VINCULO'],
+  fx_esc_tempo        :['ESCASSEZ','RECURSO','ECONOMIA','SACRIFICIO'],
+  fx_esc_mercado      :['ECONOMIA','ESCASSEZ','MORAL']
 };
 /* tags de um evento: campo inline (eventos novos) tem precedência sobre a
    tabela central. Sempre devolve array; nunca chave herdada. */
@@ -24384,7 +25074,9 @@ function fractureEvCtx(ctx){
     relWorst:c?(c.relWorst||null):null,
     relBest:c?(c.relBest||null):null,
     disRuptured:c?!!c.disRuptured:false,
-    disCount:c?(c.disCount|0):0};
+    disCount:c?(c.disCount|0):0,
+    /* RESSONÂNCIA: estado dos Ecos lido aqui, uma vez por scoring */
+    reso:(ctx&&ctx.theme==='resonance')?fractureResoRead():null};
 }
 /* ---------------- B3.4: magnitude de Intensidade por evento ----------------
    NÃO é "todo evento = +X". A magnitude vem da RARIDADE (o sistema antigo
@@ -24446,7 +25138,10 @@ function fractureEventBiasMul(d,ctx){
   /* normaliza pela quantidade de tags: evento com 3 tags afins não leva
      triplo de um evento com 1 */
   b=b/Math.sqrt(tags.length);
-  const mul=1+clamp(w,-1,1)*clamp(prof.force,0,1.5)*b;
+  let mul=1+clamp(w,-1,1)*clamp(prof.force,0,1.5)*b;
+  /* B3.9: em RESSONÂNCIA o estado do Echo ajusta o viés (memória/vínculo
+     quando estável, distorção quando em crise). É ajuste de PESO apenas. */
+  mul*=fractureResoBias(d,ctx);
   /* piso > 0: redução leve, nunca hard lock */
   return clamp(mul,prof.down,prof.up);
 }

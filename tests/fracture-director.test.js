@@ -65,6 +65,15 @@ src+=';globalThis.__t={'+
   'factionEmit,MINI_WAVES,killEnemy,evQueue,RUN_EVENT_BY_ID,'+
   'miniEligiblePool,fractureMiniWeight,fracturePickMiniBoss,fractureMiniRng,'+
   'FRACTURE_MINI_BIAS,fractureMiniReport,fractureOnMiniSpawn,fractureOnMiniKill,'+
+  /* B3.9/B3.10/B3.11: identidade de RESSONÂNCIA e ESCASSEZ + eventos novos */
+  'FRACTURE_RUN_EVENTS,FRACTURE_CHAIN_EVENTS,fractureEventBiasMul,fractureEventTags,'+
+  'FRACTURE_EVENT_TAGS,FRACTURE_EVENT_TAG_DEFS,FRACTURE_EVENT_TAG_MAP,FRACTURE_EVENT_BIAS,'+
+  'fractureResoRead,fractureResoBias,fractureResoReact,FRACTURE_RESO_LINES,'+
+  'fractureCoins,fractureCoinMul,fractureScarcityResidues,fractureShopRerollCost,'+
+  'fractureShopRerollUsed,fractureOnShopOpen,fractureOnEventChosen,fractureEvCtx,'+
+  'FRACTURE_EV_INT_BY_RARITY,fractureEventIntensity,FRACTURE_THEME_IDS,'+
+  'changeEchoTrust,echoSpeak,liveEchoesForEvents,evEpilogue,evSetFlag,evMem,evQueue,'+
+  'getEchoes:()=>echoes,setEchoesArr:a=>{echoes=a;},relPressurePct,echoAllied,echoRelState,'+
   /* acesso ao estado vivo */
   'getFx:()=>fractureRun,setFx:v=>{fractureRun=v;},'+
   /* jogo */
@@ -2372,10 +2381,15 @@ ok('filtro de segurança de pickMiniBoss intacto (com e sem Diretor)',()=>{
     }
   }
 });
-ok('pool de eventos continua com 61 e as réguas antigas continuam no comando',()=>{
+ok('pool de eventos cresceu só com os 12 novos e as réguas antigas continuam no comando',()=>{
   assert.strictEqual(t.RUN_EVENTS.length+t.RUN_CHAIN_EVENTS.length,31,
-    '25 eventos + 6 de cadeia');
-  assert.strictEqual(t.ALL_RUN_EVENTS.length,61,'pool real continua 61');
+    '25 eventos + 6 de cadeia (pools antigos intactos)');
+  /* B3.11 adiciona 12 eventos de Fratura (2 por Tema) + 1 cadeia. O pool do B2
+     era 61; agora é 61 + 12 = 73. Nada foi REMOVIDO nem repesado para dar lugar
+     aos novos — eles entram pelo mesmo evRegister e pelo mesmo pool. */
+  assert.strictEqual(t.FRACTURE_RUN_EVENTS.length,12,'12 eventos novos (2 por Tema)');
+  assert.strictEqual(t.FRACTURE_CHAIN_EVENTS.length,1,'1 cadeia nova (a CAÇADA)');
+  assert.strictEqual(t.ALL_RUN_EVENTS.length,73,'pool real = 61 antigos + 12 novos');
   /* scoreEvent agora tem o termo do Diretor (B3.2) — o que não pode mudar
      é que ele NÃO decide elegibilidade: bloqueios continuam exclusivos de
      eventBlockReason. */
