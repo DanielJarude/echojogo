@@ -52,6 +52,19 @@ src+=';globalThis.__t={'+
   'FRACTURE_CAP_SHARE,FRACTURE_MIN_KINDS,FRACTURE_STAGE_MUL,FRACTURE_RUN_BIAS_MAX,'+
   'FRACTURE_RUN_POOL_MAX,updateEnemy,scoreEvent,makeElite,eliteChance,'+
   'RUN_EVENTS,RUN_CHAIN_EVENTS,diffHp,diffDmg,diffSpd,'+
+  /* BLOCO 3 — eventos, minibosses, identidade temática */
+  'ALL_RUN_EVENTS,FACTION_RUN_EVENTS,FRAC_CONTACT_EVENTS,EVENT_BLOCK:null,'+
+  'FRACTURE_EVENT_TAG_DEFS,FRACTURE_EVENT_TAGS,FRACTURE_EVENT_TAG_MAP,'+
+  'fractureEventTags,FRACTURE_EVENT_BIAS,fractureEventBiasMul,fractureEvCtx,'+
+  'fractureEventIntensity,FRACTURE_EV_INT_BY_RARITY,FRACTURE_EV_INT_PER_WAVE_MAX,'+
+  'FRACTURE_EV_INT_PER_RUN_MAX,fractureOnEventChosen,evSelectFinal,'+
+  'fractureB3,fractureCleanMiniMap,fractureCleanLastEv,scoreEvent,buildEventContext,'+
+  'pickRunEvent,eventBlockReason,getEligibleEvents,evMem,evMemRecord,'+
+  'MINIBOSS_IDS:null,getMiniBoss:()=>miniBoss,spawnMiniBoss,openShop,closeShop,'+
+  'addResidues,spendResidues,getResidues,echoReact,ECHO_LINES,'+
+  'factionEmit,MINI_WAVES,killEnemy,evQueue,RUN_EVENT_BY_ID,'+
+  'miniEligiblePool,fractureMiniWeight,fracturePickMiniBoss,fractureMiniRng,'+
+  'FRACTURE_MINI_BIAS,fractureMiniReport,fractureOnMiniSpawn,fractureOnMiniKill,'+
   /* acesso ao estado vivo */
   'getFx:()=>fractureRun,setFx:v=>{fractureRun=v;},'+
   /* jogo */
@@ -1472,25 +1485,47 @@ ok('updateEnemy NÃO depende de tags: nenhum if gigante Tema→inimigo',()=>{
   assert.ok(!/switch\s*\(\s*fracture(GetTheme|Run)/.test(jogo),
     'nenhum switch sobre o Tema');
 });
-ok('tags dos MINIBOSS são só metadado (B2.13) e pickMiniBoss não as lê',()=>{
+ok('tags dos MINIBOSS são metadado; AI/stats continuam intactos',()=>{
   for(const mb of t.MINIBOSS){
     assert.ok(Array.isArray(mb.tags)&&mb.tags.length>0,mb.id+' tem tags');
     for(const x of mb.tags)
       assert.ok(t.ENEMY_TAGS.indexOf(x)>=0,mb.id+': tag desconhecida '+x);
   }
-  const i=src.indexOf('function pickMiniBoss(');
-  const corpo=src.slice(i,src.indexOf('\nfunction ',i+10));
-  assert.ok(!/tags/.test(corpo),'pickMiniBoss inalterado (não lê tags)');
-  assert.ok(!/fracture/.test(corpo),'pickMiniBoss não consulta o Diretor');
-});
-ok('eventos NÃO recebem fractureTags (B2.14) e scoreEvent está intacto',()=>{
-  for(const ev of t.RUN_EVENTS){
-    assert.strictEqual(ev.fractureTags,undefined,
-      'evento '+ev.id+' não pode ter fractureTags no B2');
+  /* B2.13 dizia "pickMiniBoss não lê tags". O B3.6 muda isso DE PROPÓSITO
+     (é o que dá identidade temática ao mini-chefe). O que continua valendo:
+     as tags são SÓ metadado de seleção — nenhum stat/AI foi tocado. */
+  for(const mb of t.MINIBOSS){
+    assert.ok(Number.isFinite(mb.hp)&&mb.hp>0,mb.id+'.hp intacto');
+    assert.ok(Number.isFinite(mb.spd)&&mb.spd>0,mb.id+'.spd intacto');
+    assert.ok(Number.isFinite(mb.r)&&mb.r>0,mb.id+'.r intacto');
+    assert.ok(Number.isFinite(mb.plates)&&mb.plates>0,mb.id+'.plates intacto');
+    assert.ok(mb.sk&&typeof mb.sk==='object',mb.id+'.sk intacto');
   }
+  const jogo=m[1];
+  const i=jogo.indexOf('function spawnMiniBoss(');
+  const corpo=jogo.slice(i,jogo.indexOf('\nfunction ',i+10));
+  assert.ok(!/fractureMiniWeight|fractureEventBiasMul/.test(corpo),
+    'spawnMiniBoss não aplica viés aos stats (só seleciona)');
+});
+ok('B2.14 valia no B2; no B3 scoreEvent ganha UM termo temático e nada mais',()=>{
+  /* Este teste afirmava que scoreEvent não conhecia o Diretor. Isso era
+     verdade no B2 e é FALSO POR DESIGN no B3 (B3.2 pede exatamente essa
+     integração). O que precisa continuar valendo para sempre:
+       · o termo do Diretor é o ÚLTIMO (rarity, cooldown, família,
+         oncePerRun, viés moral, condições, Relationship e Echo continuam
+         decidindo sozinhos antes dele);
+       · ele é multiplicativo e devolve 1 sem Diretor — ou seja, não
+         substitui regra nenhuma. */
   const i=src.indexOf('function scoreEvent(');
   const corpo=src.slice(i,src.indexOf('\nfunction ',i+10));
-  assert.ok(!/fracture/.test(corpo),'scoreEvent não referencia o Diretor');
+  const posFracture=corpo.indexOf('fractureEventBiasMul');
+  assert.ok(posFracture>0,'scoreEvent aplica o viés temático (B3.2)');
+  for(const regra of ['lastFamily','evFamRecent','ctx.seen','MORAL_BALANCE','ctx.coins'])
+    assert.ok(corpo.indexOf(regra)>=0&&corpo.indexOf(regra)<posFracture,
+      regra+' continua sendo aplicado ANTES do termo do Diretor');
+  assert.ok(/w\*=fractureEventBiasMul/.test(corpo),'é multiplicativo, não substitui');
+  assert.ok(corpo.indexOf('return Math.max(.01,w)')>posFracture,
+    'o piso .01 continua sendo a última palavra (nada vira impossível)');
 });
 
 /* ============ [15] B2.4/B2.5 — PERFIS DOS 6 TEMAS ============ */
@@ -2308,29 +2343,47 @@ ok('HP/dano/velocidade de inimigo NÃO mudam por Tema',()=>{
   assert.ok(jogo.indexOf('hpMul*fracture')<0);
   assert.ok(jogo.indexOf('dmg*fractureGet')<0);
 });
-ok('pickMiniBoss continua igual: distribuição por faixa de onda intacta',()=>{
-  /* as tags de miniboss são metadado; a escolha não pode ter mudado */
-  const antes={};
-  for(let i=0;i<3000;i++){
+ok('filtro de segurança de pickMiniBoss intacto (com e sem Diretor)',()=>{
+  /* O que NÃO podia mudar é o FILTRO de HP: duelist (hp .70) some a partir
+     da wave 11, e o pool das waves <=5 continua restrito a hp<=1.15.
+     A escolha em si passou a ser ponderada no B3.6 — testada no bloco [27]. */
+  for(let i=0;i<400;i++){
     const n=1+(i%20);
     const mb=t.pickMiniBoss(n);
     assert.ok(mb&&mb.id,'miniboss sempre definido (wave '+n+')');
-    antes[n]=antes[n]||{};
-    antes[n][mb.id]=(antes[n][mb.id]||0)+1;
+    if(n>=11)assert.ok(mb.hp>=.8,'wave '+n+': '+mb.id+' hp '+mb.hp+' fora do filtro');
+    if(n<=5)assert.ok(mb.hp<=1.15,'wave '+n+': '+mb.id+' hp '+mb.hp+' fora do filtro');
   }
-  /* duelist some a partir da wave 11 (regra original) */
-  for(let n=11;n<=20;n++)
-    assert.strictEqual(antes[n]&&antes[n].duelist,undefined,
-      'duelist não pode aparecer na wave '+n);
-  for(let n=6;n<=10;n++)
-    assert.ok(antes[n].duelist>0,'duelist aparece entre 6 e 10');
+  /* pools medidos na regra real (hp<=1.15 / todos / hp>=.8):
+       <=5  → 6 elegíveis (fora furnace 1.25 e colossus 1.75)
+       6-10 → os 8
+       >=11 → 7 elegíveis (fora duelist 0.70) */
+  for(const n of [1,5,6,10,11,15,19]){
+    const ids=t.miniEligiblePool(n).map(m=>m.id).sort();
+    if(n<=5){
+      assert.strictEqual(ids.length,6,'wave '+n+': 6 elegíveis, obtive '+ids.length);
+      assert.ok(ids.indexOf('furnace')<0,'wave '+n+': furnace fora (hp 1.25)');
+      assert.ok(ids.indexOf('colossus')<0,'wave '+n+': colossus fora (hp 1.75)');
+    }
+    if(n>=6&&n<=10)assert.strictEqual(ids.length,8,'wave '+n+': os 8 elegíveis');
+    if(n>=11){
+      assert.strictEqual(ids.length,7,'wave '+n+': 7 elegíveis, obtive '+ids.length);
+      assert.ok(ids.indexOf('duelist')<0,'wave '+n+': duelist fora (hp 0.70)');
+    }
+  }
 });
-ok('pool de eventos continua com 61 e scoreEvent não foi tocado',()=>{
+ok('pool de eventos continua com 61 e as réguas antigas continuam no comando',()=>{
   assert.strictEqual(t.RUN_EVENTS.length+t.RUN_CHAIN_EVENTS.length,31,
     '25 eventos + 6 de cadeia');
+  assert.strictEqual(t.ALL_RUN_EVENTS.length,61,'pool real continua 61');
+  /* scoreEvent agora tem o termo do Diretor (B3.2) — o que não pode mudar
+     é que ele NÃO decide elegibilidade: bloqueios continuam exclusivos de
+     eventBlockReason. */
   const jogo=m[1];
-  const i=jogo.indexOf('function scoreEvent(');
-  assert.ok(!/fracture/.test(jogo.slice(i,jogo.indexOf('\nfunction ',i+10))));
+  const i=jogo.indexOf('function eventBlockReason(');
+  const corpo=jogo.slice(i,jogo.indexOf('\nfunction ',i+10));
+  assert.ok(!/fracture/.test(corpo),
+    'eventBlockReason não pode bloquear por Tema (nada de hard lock)');
 });
 ok('SM_VERSION não mudou e o save antigo continua carregando',()=>{
   assert.strictEqual(t.SM_VERSION,3,'SM_VERSION preservado');

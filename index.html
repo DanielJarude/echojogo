@@ -10205,6 +10205,12 @@ function scoreEvent(d,ctx){
   else if(ctx.hp<.35&&(d.family==='sobreviventes'||d.family==='recursos'))w*=1.22;
   else if(ctx.echoCount>0&&d.family==='echo')w*=1.10;
   else if(ctx.disRuptured&&d.family==='ruptura')w*=1.35;
+  /* ---- PR 13 B3.2: afinidade temática ----
+     ÚLTIMO termo de propósito: rarity, cooldown, família, oncePerRun, viés
+     moral, condições, Relationship, Echo e facções já foram aplicados acima
+     e continuam decidindo sozinhos quando não há Diretor (o multiplicador
+     devolve 1). Piso > 0 garante que nenhum evento vire impossível. */
+  w*=fractureEventBiasMul(d,fractureEvCtx(ctx));
   return Math.max(.01,w);
 }
 /* sorteio principal. rng injetável (simulação determinística).
@@ -10212,7 +10218,44 @@ function scoreEvent(d,ctx){
    decisão, ou janela global de ~2 waves não fechada). A fila de chains é a
    única exceção — e mesmo ela nunca cai na mesma wave, salvo uma
    continuação explicitamente marcada com chainImmediate. */
-function pickRunEvent(ctx,rng){
+/* B3.3: ponto ÚNICO de "este evento foi escolhido de verdade".
+   Não emite em preview, scoring, simulação, render, evento rejeitado nem
+   candidato não escolhido — só aqui, onde pickRunEvent já decidiu.
+   opts.silent é usado pela simulação do DEV (que roda pickRunEvent em
+   loop e NÃO pode contaminar a Intensidade da run). */
+function evSelectFinal(d,opts){
+  if(!d)return d;
+  try{
+    if(!(opts&&opts.silent))fractureOnEventChosen(d);
+  }catch(e){}
+  return d;
+}
+/* ÚNICO lugar onde um evento escolhido paga Intensidade e fica registrado.
+   Caps por onda e por run impedem farm por spam de beacon (B3.15). */
+function fractureOnEventChosen(d){
+  const w=wave|0;
+  const tags=fractureEventTags(d);
+  const info={id:String(d.id||''),wave:w,family:String(d.family||''),
+    rarity:String(d.rarity||''),tags:tags.slice(0,6)};
+  const b=fractureB3();
+  let want=fractureEventIntensity(d);
+  if(b){
+    if(b.evW!==w){b.evW=w;b.evWG=0;}          // nova onda: zera o teto da onda
+    want=Math.min(want,Math.max(0,FRACTURE_EV_INT_PER_WAVE_MAX-b.evWG));
+    want=Math.min(want,Math.max(0,FRACTURE_EV_INT_PER_RUN_MAX-b.evRG));
+  }
+  const r=fractureEmit('event_triggered',{wave:w,source:'evento',intensity:want,
+    eventId:info.id,family:info.family,rarity:info.rarity,tags:info.tags});
+  if(b){
+    const ganho=Math.max(0,r.delta|0);
+    b.evWG+=ganho;b.evRG+=ganho;
+    b.lastEv=info;
+  }
+  /* RESSONÂNCIA: o Eco pode reconhecer a Fratura (B3.9) — só leitura + fala */
+  try{fractureResoReact(d,info);}catch(e){}
+  return r;
+}
+function pickRunEvent(ctx,rng,opts){
   const rnd=rng||Math.random;
   const c=ctx||buildEventContext();
   const now=c.wave|0;
@@ -10226,7 +10269,7 @@ function pickRunEvent(ctx,rng){
     if(d.oncePerRun&&(evMem.sn[d.id]|0)>0)continue;
     if(sameWave&&!d.chainImmediate){evQueue.push(id);break;}  // reentra: ritmo
     evMemRecord(d.id,d.family);
-    return d;
+    return evSelectFinal(d,opts);
   }
   /* 2) MESMA WAVE: nunca duas decisões independentes */
   if(sameWave)return null;
@@ -10244,18 +10287,18 @@ function pickRunEvent(ctx,rng){
     /* 7) último recurso: sorteio legado puro */
     const k=pickEventKind();
     evMemRecord('lg_'+k,EV_LEGACY_FAMILY[k]||'risco');
-    return RUN_EVENT_BY_KIND[k];
+    return evSelectFinal(RUN_EVENT_BY_KIND[k],opts);
   }
   let tot=0;
   const ws=pass.elig.map(d=>{const w=scoreEvent(d,c);tot+=w;return w;});
   let r=rnd()*tot;
   for(let i=0;i<pass.elig.length;i++){
     r-=ws[i];
-    if(r<=0){const d=pass.elig[i];evMemRecord(d.id,d.family);return d;}
+    if(r<=0){const d=pass.elig[i];evMemRecord(d.id,d.family);return evSelectFinal(d,opts);}
   }
   const d=pass.elig[pass.elig.length-1];
   evMemRecord(d.id,d.family);
-  return d;
+  return evSelectFinal(d,opts);
 }
 
 /* =====================================================================
@@ -11711,7 +11754,11 @@ function killEnemy(e){
   // ---- PROGRESSÃO ----
   bumpProg('kills');
   if(e.elite)bumpProg('elites');
-  if(e.type==='miniboss')bumpProg('minis');
+  if(e.type==='miniboss'){
+    bumpProg('minis');
+    /* B3.8: abate real do mini-chefe → Intensidade moderada, uma vez por onda */
+    try{fractureOnMiniKill(e.mb,wave|0);}catch(_e){}
+  }
   if(curAttacker&&curAttacker!==player&&curAttacker.slot)bumpProg('echoKills');
   if(player){
     player.waveKills=(player.waveKills||0)+1;              // MOTOR DE ENTROPIA
@@ -12422,12 +12469,12 @@ const MINIBOSS=[
   desc:'Drena sua vida à distância e corrói armadura.',
   tags:['SUSTENTACAO','DISTANCIA','ANOMALIA']}
 ];
+/* B3.6/B3.7: sem Diretor ativo o comportamento é o ORIGINAL (sorteio
+   uniforme). Com Diretor, o filtro de segurança é o mesmo e o sorteio vira
+   ponderado + determinístico por (seed, Tema, Intensidade, wave). */
 function pickMiniBoss(n){
-  const pool=MINIBOSS.filter(m=>{
-    if(n<=5)return m.hp<=1.15;
-    if(n<=10)return true;
-    return m.hp>=.8;
-  });
+  if(fractureRun)return fracturePickMiniBoss(n);
+  const pool=miniEligiblePool(n);
   return pool[randi(0,pool.length-1)]||MINIBOSS[0];
 }
 /* forced: definição específica do pool (usado pelo Modo Desenvolvedor).
@@ -12448,6 +12495,8 @@ function spawnMiniBoss(n,forced){
     spinAng:0,ring:0,core:0,trailT:0};
   enemies.push(b);
   miniBoss=b;
+  /* B3.8: emissão real (só aqui — nunca em preview, pool ou inspetor) */
+  try{fractureOnMiniSpawn(def,n);}catch(e){}
   $('bosswrap').classList.add('on');
   $('bossnm').textContent=def.nm.toUpperCase().replace(/ /g,'   ');
   $('bossnm').style.color='#ffd9a8';
@@ -19281,7 +19330,7 @@ const DEV={
               }
               evSimNoCdW=false;
             }else{
-              d=pickRunEvent(ctx,rnd);
+              d=pickRunEvent(ctx,rnd,{silent:true});   // B3.3: simular não emite
             }
             if(!d)break;               // janela fechada: sem beacon na wave
             decTotal++;
@@ -23496,6 +23545,17 @@ function fractureFresh(seed){
        significam "waveComp/pickMiniBoss inalterados". Os próximos blocos
        passam a consultar isto antes de compor a onda. */
     waveProfile:{wave:0,last:0,bias:{},pool:[]},
+    /* ---- B3: o mínimo necessário para anti-exploit + determinismo ----
+       evW/evWG  : onda e Intensidade já ganha por eventos NELA (teto/onda)
+       evRG      : Intensidade acumulada de eventos na run (teto/run)
+       mini      : wave → id do miniboss escolhido (Continue não rerrola)
+       miniSpawn : wave → 1 quando miniboss_spawn já foi emitido
+       miniPaid  : wave → 1 quando miniboss_killed já foi pago
+       lastEv    : último evento realmente disparado (inspetor)
+       resoW     : onda da última reação de Ressonância (cooldown)
+       scarUsed  : oportunidades econômicas de ESCASSEZ já usadas (anti-farm) */
+    b3:{evW:0,evWG:0,evRG:0,mini:{},miniSpawn:{},miniPaid:{},
+        lastEv:null,resoW:0,scarUsed:{}},
     history:[],                 // últimos acontecimentos relevantes (limitado)
     last:null                   // último evento recebido {t,w,d}
   };
@@ -23870,6 +23930,140 @@ function fractureShapeWave(base,n,ctx){
     res.elite=Math.max(0,out.elite|0);
   return res;
 }
+/* =====================================================================
+   BLOCO 3 — MINIBOSSES: PESO TEMÁTICO + DETERMINISMO
+   ---------------------------------------------------------------------
+   pickMiniBoss era: filtro de HP → sorteio uniforme (randi).
+   Agora é:      filtro de HP (INTACTO) → pool elegível → peso temático
+                 → sorteio DETERMINÍSTICO por (seed, Tema, Intensidade, wave).
+
+   Regras duras:
+   · o filtro de segurança não muda — nenhum miniboss fora da faixa de HP
+     da onda entra no pool;
+   · nenhum elegível recebe peso 0 (tema favorece, nunca exclui);
+   · Continue/reload NÃO rerrola: a escolha fica gravada em fractureRun.b3.mini;
+   · spawnMiniBoss(n, forced) continua obedecendo `forced` (DEV/Sandbox);
+   · spawn e kill emitem UMA vez cada (flags em b3.miniSpawn / b3.miniPaid).
+   ===================================================================== */
+/* afinidade Tema → tags de miniboss. Mesmo formato dos eventos. */
+const FRACTURE_MINI_BIAS={
+  collapse :{up:2.20,down:.55,tags:{ENXAME:.90,FRAGMENTACAO:.80,INVOCADOR:.75,
+    PRESSAO:.55,DISTORCAO:.35},red:{DEFESA:-.35,CONTENCAO:-.30}},
+  siege    :{up:2.20,down:.55,tags:{DEFESA:.90,CONTENCAO:.85,RESISTENTE:.70,
+    PESADO:.60,PRESSAO:.30},red:{EVASIVO:-.35,MOVEL:-.30}},
+  hunt     :{up:2.30,down:.55,tags:{CACADOR:.95,MOVEL:.80,EVASIVO:.70,
+    SUSTENTACAO:.40,PRESSAO:.30},red:{PESADO:-.40,RESISTENTE:-.30}},
+  anomaly  :{up:2.40,down:.55,tags:{ANOMALIA:.95,DISTORCAO:.90,DISTANCIA:.40,
+    FRAGMENTACAO:.30},red:{DEFESA:-.30}},
+  /* RESSONÂNCIA: o Oráculo (memória/distorção) e o que fala de vínculo */
+  resonance:{up:2.10,down:.70,tags:{ANOMALIA:.60,DISTORCAO:.55,SUSTENTACAO:.50,
+    DISTANCIA:.35,INVOCADOR:.25},red:{PESADO:-.25}},
+  /* ESCASSEZ: pressão, risco e sustentação — o que custa recurso */
+  scarcity :{up:2.10,down:.70,tags:{PRESSAO:.70,SUSTENTACAO:.65,DISTANCIA:.55,
+    INVOCADOR:.45,PESADO:.30},red:{EVASIVO:-.25}}
+};
+/* pool elegível: EXATAMENTE o filtro de segurança que já existia */
+function miniEligiblePool(n){
+  return MINIBOSS.filter(m=>{
+    if(n<=5)return m.hp<=1.15;
+    if(n<=10)return true;
+    return m.hp>=.8;
+  });
+}
+/* peso temático de um miniboss. Sem Diretor/Tema/Intensidade ⇒ 1 (uniforme). */
+function fractureMiniWeight(m,ctx){
+  ctx=ctx||fractureWaveCtx();
+  if(!ctx||!m)return 1;
+  const prof=Object.prototype.hasOwnProperty.call(FRACTURE_MINI_BIAS,ctx.theme)
+    ?FRACTURE_MINI_BIAS[ctx.theme]:null;
+  if(!prof)return 1;
+  const w=fractureThemeWeight(ctx);
+  if(!(w>0))return 1;
+  const tags=Array.isArray(m.tags)?m.tags:[];
+  let b=0;
+  for(const t of tags){
+    if(Object.prototype.hasOwnProperty.call(prof.tags,t))b+=prof.tags[t];
+    else if(Object.prototype.hasOwnProperty.call(prof.red,t))b+=prof.red[t];
+  }
+  if(b===0)return 1;
+  b=b/Math.sqrt(Math.max(1,tags.length));
+  /* piso estritamente positivo: favorecer nunca vira exclusão */
+  return clamp(1+clamp(w,-1,1)*b,prof.down,prof.up);
+}
+/* RNG determinístico do miniboss: mesma (seed,Tema,Intensidade,wave) ⇒
+   mesma escolha. Deriva da seed da run, nunca de aleatoriedade solta. */
+function fractureMiniRng(n){
+  const f=fractureRun;
+  const seed=f?(f.seed>>>0):0x5EED1337;
+  const mix=fractureHash32(
+    (seed^(Math.imul((n|0)+1,0x9E3779B1))^
+     Math.imul(fractureHash32(String(f&&f.theme||'')),0x85EBCA6B)^
+     Math.imul(((f&&f.intensity)|0)+1,0xC2B2AE35))>>>0);
+  return fractureRng(mix);
+}
+/* ---------------- pickMiniBoss determinístico ----------------
+   `forced` NÃO passa por aqui (spawnMiniBoss trata antes), então isto é só
+   o caminho automático das ondas 5/10/15. */
+function fracturePickMiniBoss(n){
+  const pool=miniEligiblePool(n);
+  if(!pool.length)return MINIBOSS[0];
+  const b=fractureB3();
+  /* 1) já escolhido nesta run? Continue/reload devolve o MESMO */
+  if(b&&b.mini[n]){
+    const prev=MINIBOSS.find(m=>m.id===b.mini[n]);
+    if(prev&&pool.indexOf(prev)>=0)return prev;
+  }
+  /* 2) escolha ponderada determinística */
+  const ws=pool.map(m=>fractureMiniWeight(m));
+  let tot=0;
+  for(const x of ws)tot+=x;
+  const rnd=fractureMiniRng(n);
+  let r=rnd()*tot,pick=pool[pool.length-1];
+  for(let i=0;i<pool.length;i++){
+    r-=ws[i];
+    if(r<=0){pick=pool[i];break;}
+  }
+  /* 3) grava — é isso que impede reroll no Continue */
+  if(b)b.mini[n]=pick.id;
+  return pick;
+}
+/* relatório para o inspetor DEV (B3.18): pool, pesos e escolhido */
+function fractureMiniReport(n){
+  n=clamp(n|0,1,MAX_WAVE);
+  const pool=miniEligiblePool(n);
+  const ws=pool.map(m=>({id:m.id,nm:m.nm,tags:(m.tags||[]).slice(),
+    w:Math.round(fractureMiniWeight(m)*1000)/1000}));
+  let tot=0;
+  for(const x of ws)tot+=x.w;
+  for(const x of ws)x.pct=tot?Math.round(x.w/tot*1000)/10:0;
+  const b=fractureB3();
+  return {wave:n,pool:ws,total:Math.round(tot*1000)/1000,
+    chosen:(b&&b.mini[n])||null,
+    spawned:!!(b&&b.miniSpawn[n]),paid:!!(b&&b.miniPaid[n])};
+}
+/* ---------------- B3.8: spawn/kill emitem UMA vez ---------------- */
+function fractureOnMiniSpawn(def,n){
+  const b=fractureB3();
+  if(b){
+    if(b.miniSpawn[n])return null;             // já emitido nesta onda
+    b.miniSpawn[n]=1;
+    if(def&&def.id)b.mini[n]=def.id;           // grava inclusive o `forced`
+  }
+  return fractureEmit('miniboss_spawn',{wave:n|0,source:'miniboss',
+    miniId:String(def&&def.id||'').slice(0,24)});
+}
+function fractureOnMiniKill(def,n){
+  const b=fractureB3();
+  if(b){
+    if(b.miniPaid[n])return null;              // reload não paga duas vezes
+    b.miniPaid[n]=1;
+  }
+  /* +4 vem do FRACTURE_EVENT_GRID do B1 (medido: run de 20 ondas com os 3
+     minibosses fecha em ~38 + 12 = ainda longe de 100 cedo demais) */
+  return fractureEmit('miniboss_killed',{wave:n|0,source:'miniboss',
+    miniId:String(def&&def.id||'').slice(0,24)});
+}
+
 /* ---------------- sanitização de waveProfile (B2.11) ----------------
    bias/pool vêm do save, ou seja, são INPUT NÃO CONFIÁVEL. Só passam:
    arquétipos que existem em EDEFS (nada de '__proto__'/'constructor'),
@@ -24000,6 +24194,264 @@ function fractureSimulate(opts){
     intensity:intensity,stage:stage,budget:budget,per:per};
 }
 
+/* =====================================================================
+   BLOCO 3 — EVENTOS: VOCABULÁRIO E CLASSIFICAÇÃO SEMÂNTICA
+   ---------------------------------------------------------------------
+   Os 67 eventos registrados (61 no pool + 6 chains noPool) foram lidos um
+   a um e classificados pelo que ACONTECE neles, não pela família. A
+   família continua sendo a régua de variedade do sistema antigo; as tags
+   são a régua semântica do Diretor.
+
+   O vocabulário REUSA as tags de inimigo do B2 quando o sentido é o mesmo
+   (PRESSAO, CONTENCAO, DEFESA, ANOMALIA, DISTORCAO, CACADOR, MOVEL,
+   FRAGMENTACAO, EVASIVO, INVOCADOR, SUSTENTACAO) e cria tags próprias de
+   EVENTO onde inimigo não faz sentido (RECURSO, ECONOMIA, ESCASSEZ,
+   MEMORIA, ECHO, RESSONANCIA, VINCULO, MORAL, EXPLORACAO, FACCAO,
+   INSTABILIDADE, RISCO, SACRIFICIO).
+   ===================================================================== */
+const FRACTURE_EVENT_TAG_DEFS={
+  /* --- compartilhadas com o vocabulário de inimigos (B2) --- */
+  PRESSAO      :'pressão imediata, ameaça que aperta o ritmo',
+  CONTENCAO    :'conter, isolar, fechar uma região da fratura',
+  DEFESA       :'proteger alguém ou algo sob ataque',
+  ANOMALIA     :'fenômeno fora das regras conhecidas',
+  DISTORCAO    :'a realidade local está errada/duplicada',
+  CACADOR      :'algo persegue o Operador',
+  MOVEL        :'deslocamento, rota, travessia',
+  FRAGMENTACAO :'quebrar em partes, multiplicar',
+  EVASIVO      :'escapar, despistar, desaparecer',
+  INVOCADOR    :'traz mais entidades para a arena',
+  SUSTENTACAO  :'manter vivo, curar, segurar o dano',
+  /* --- próprias de evento --- */
+  RECURSO      :'créditos, sucata, material recuperável',
+  ECONOMIA     :'troca, dívida, contrato, mercado',
+  ESCASSEZ     :'quantidade limitada, disputa pelo que resta',
+  MEMORIA      :'passado, registro, o que já aconteceu',
+  ECHO         :'um Eco é o centro do acontecimento',
+  RESSONANCIA  :'vínculo, reconhecimento, eco harmônico',
+  VINCULO      :'relação com outra pessoa/ser',
+  MORAL        :'escolha ética sem resposta certa',
+  EXPLORACAO   :'entrar em lugar fechado/desconhecido',
+  FACCAO       :'uma facção está diretamente envolvida',
+  INSTABILIDADE:'a fratura local pode escalar ou colapsar',
+  RISCO        :'aposta, consequência grave possível',
+  SACRIFICIO   :'perder algo de propósito para ganhar outra coisa'
+};
+const FRACTURE_EVENT_TAGS=Object.keys(FRACTURE_EVENT_TAG_DEFS);
+/* classificação evento → tags (67 entradas, auditadas uma a uma) */
+const FRACTURE_EVENT_TAG_MAP={
+  /* ---- RUN_EVENTS (25) ---- */
+  x_camara        :['EXPLORACAO','PRESSAO'],
+  x_carga         :['EXPLORACAO','RECURSO'],
+  x_caravana      :['VINCULO','MORAL'],
+  x_falsosoco     :['RISCO','CACADOR'],
+  x_posto         :['RECURSO','SUSTENTACAO'],
+  x_gerador       :['RECURSO','ECONOMIA'],
+  x_loop          :['MEMORIA','INSTABILIDADE'],
+  x_no            :['ANOMALIA','INSTABILIDADE'],
+  x_trocador      :['ECONOMIA','RECURSO'],
+  x_marcador      :['CACADOR','PRESSAO'],
+  x_cirurgia      :['SUSTENTACAO','VINCULO'],
+  x_cobrador      :['ECONOMIA','ESCASSEZ'],
+  x_duplo         :['ECHO','RESSONANCIA'],
+  x_memoria       :['MEMORIA','ECHO'],
+  x_prova         :['MORAL','SACRIFICIO'],
+  x_olho          :['ANOMALIA','DISTORCAO'],
+  x_cargaop       :['EXPLORACAO','MORAL'],
+  x_procissao     :['MEMORIA','RESSONANCIA'],
+  x_mercadop      :['ECONOMIA','ESCASSEZ','RISCO'],
+  x_imitador      :['ECHO','DISTORCAO'],
+  x_confissao     :['RESSONANCIA','VINCULO'],
+  x_pacto         :['ECHO','VINCULO'],
+  x_onda0         :['ANOMALIA','DISTORCAO','INSTABILIDADE'],
+  x_observador    :['ANOMALIA','DISTORCAO'],
+  x_cicatriz      :['RESSONANCIA','DISTORCAO'],
+  /* ---- RUN_CHAIN_EVENTS (6, noPool) ---- */
+  x_feridoposto   :['VINCULO','SUSTENTACAO'],
+  x_resposta      :['MEMORIA','RESSONANCIA'],
+  x_caravanavolta :['VINCULO','ECONOMIA'],
+  x_cobradorvolta :['ECONOMIA','ESCASSEZ','RISCO'],
+  x_cobranca      :['ECONOMIA','ESCASSEZ'],
+  x_cinzas        :['ECHO','MEMORIA'],
+  /* ---- FACTION_RUN_EVENTS (12) ---- */
+  fa_anc_camara   :['FACCAO','ECHO','CONTENCAO'],
+  fa_anc_relogio  :['FACCAO','CONTENCAO','INSTABILIDADE'],
+  fa_anc_fila     :['FACCAO','CONTENCAO','MORAL'],
+  fa_rem_enjeitado:['FACCAO','ECHO','VINCULO'],
+  fa_rem_coro     :['FACCAO','RESSONANCIA','MEMORIA'],
+  fa_rem_refugio  :['FACCAO','DEFESA','CONTENCAO'],
+  fa_con_leilao   :['FACCAO','ECONOMIA','MEMORIA'],
+  fa_con_bombardeio:['FACCAO','ECONOMIA','RISCO'],
+  fa_con_arquivo  :['FACCAO','ECONOMIA','ANOMALIA'],
+  fa_dev_espelho  :['FACCAO','ANOMALIA','DISTORCAO'],
+  fa_dev_pergunta :['FACCAO','ANOMALIA','ECONOMIA'],
+  fa_dev_marcha   :['FACCAO','ANOMALIA','PRESSAO'],
+  /* ---- FRAC_CONTACT_EVENTS (4) ---- */
+  fc_anchor       :['FACCAO','CONTENCAO'],
+  fc_remnants     :['FACCAO','RESSONANCIA','ECHO'],
+  fc_consortium   :['FACCAO','ECONOMIA'],
+  fc_deviants     :['FACCAO','ANOMALIA','DISTORCAO'],
+  /* ---- legados EV_KINDS (20) ---- */
+  lg_survivor     :['VINCULO','SUSTENTACAO'],
+  lg_merchant     :['ECONOMIA','RECURSO'],
+  lg_rift         :['ANOMALIA','INSTABILIDADE'],
+  lg_altar        :['MEMORIA','RESSONANCIA'],
+  lg_ambush       :['RISCO','CACADOR'],
+  lg_vault        :['RECURSO','ECONOMIA'],
+  lg_ghost        :['ECHO','MEMORIA'],
+  lg_scrap        :['EXPLORACAO','RECURSO'],
+  lg_forge        :['RECURSO','SUSTENTACAO'],
+  lg_oracle       :['MEMORIA','ANOMALIA'],
+  lg_prisoner     :['CONTENCAO','MORAL'],
+  lg_twin         :['ECHO','DISTORCAO'],
+  lg_market       :['ECONOMIA','MORAL','ESCASSEZ'],
+  lg_shrine       :['MORAL','RESSONANCIA'],
+  lg_gambler      :['RISCO','ECONOMIA'],
+  lg_reactor      :['RISCO','INSTABILIDADE'],
+  lg_child        :['ECHO','VINCULO'],
+  lg_archive      :['MEMORIA','ANOMALIA'],
+  lg_hunger       :['RISCO','PRESSAO'],
+  lg_mirror       :['ANOMALIA','DISTORCAO']
+};
+/* tags de um evento: campo inline (eventos novos) tem precedência sobre a
+   tabela central. Sempre devolve array; nunca chave herdada. */
+function fractureEventTags(d){
+  if(!d)return [];
+  if(Array.isArray(d.fractureTags))
+    return d.fractureTags.filter(t=>FRACTURE_EVENT_TAGS.indexOf(t)>=0);
+  const id=String(d.id||'');
+  if(!Object.prototype.hasOwnProperty.call(FRACTURE_EVENT_TAG_MAP,id))return [];
+  return FRACTURE_EVENT_TAG_MAP[id].slice();
+}
+/* ---------------- B3: estado derivado (sanitizado) ----------------
+   Todo campo do B3 nasce vazio e é revalidado no unpack — save antigo ou
+   malformado continua funcionando (B3.16). */
+function fractureB3(){
+  if(!fractureRun)return null;
+  if(!fractureRun.b3||typeof fractureRun.b3!=='object')
+    fractureRun.b3={evW:0,evWG:0,evRG:0,mini:{},miniSpawn:{},miniPaid:{},
+      lastEv:null,resoW:0,scarUsed:{}};
+  const b=fractureRun.b3;
+  for(const k of ['mini','miniSpawn','miniPaid','scarUsed'])
+    if(!b[k]||typeof b[k]!=='object'||Array.isArray(b[k]))b[k]={};
+  b.evW=b.evW|0;b.evWG=b.evWG|0;b.evRG=b.evRG|0;b.resoW=b.resoW|0;
+  return b;
+}
+/* mapa wave→id só aceita ondas reais e ids de miniboss conhecidos */
+function fractureCleanMiniMap(m,validIds){
+  const out={};
+  if(!m||typeof m!=='object')return out;
+  for(const k in m){
+    if(!Object.prototype.hasOwnProperty.call(m,k))continue;
+    const w=Number(k);
+    if(!Number.isFinite(w))continue;
+    const wi=w|0;
+    if(wi<1||wi>MAX_WAVE)continue;
+    const v=m[k];
+    if(validIds){
+      if(typeof v!=='string'||validIds.indexOf(v)<0)continue;
+      out[wi]=v;
+    }else{
+      if(v!==1&&v!==true)continue;
+      out[wi]=1;
+    }
+  }
+  return out;
+}
+function fractureCleanLastEv(e){
+  if(!e||typeof e!=='object')return null;
+  const id=typeof e.id==='string'?e.id.slice(0,32):'';
+  if(!id)return null;
+  return {id:id,wave:clamp(e.wave|0,0,MAX_WAVE),
+    family:typeof e.family==='string'?e.family.slice(0,24):'',
+    rarity:typeof e.rarity==='string'?e.rarity.slice(0,16):'',
+    tags:Array.isArray(e.tags)?e.tags.filter(t=>FRACTURE_EVENT_TAGS.indexOf(t)>=0).slice(0,6):[]};
+}
+/* ---------------- contexto do Diretor para eventos ----------------
+   fractureWaveCtx() dá seed/tema/intensidade/stage. Aqui acrescentamos o
+   que só o contexto de evento sabe — e é SOMENTE LEITURA: o Diretor observa
+   Echo/Relationship/Dissonância para pesar eventos, nunca escreve neles
+   (B3.9). Nenhum campo abaixo é gravado em echo, fracRun ou player. */
+function fractureEvCtx(ctx){
+  const base=fractureWaveCtx();
+  if(!base)return null;
+  const c=(ctx&&typeof ctx==='object')?ctx:null;
+  return {theme:base.theme,seed:base.seed,intensity:base.intensity,stage:base.stage,
+    bias:base.bias,pool:base.pool,
+    /* leitura defensiva: se o contexto de evento não existir (simulação,
+       teste, boot parcial) tudo cai em neutro e o bias vira 1. */
+    echoCount:c?(c.echoCount|0):0,
+    relWorst:c?(c.relWorst||null):null,
+    relBest:c?(c.relBest||null):null,
+    disRuptured:c?!!c.disRuptured:false,
+    disCount:c?(c.disCount|0):0};
+}
+/* ---------------- B3.4: magnitude de Intensidade por evento ----------------
+   NÃO é "todo evento = +X". A magnitude vem da RARIDADE (o sistema antigo
+   já a define) e é limitada por um teto por onda, para que spam de beacon
+   não farme Intensidade. */
+const FRACTURE_EV_INT_BY_RARITY={common:0,uncommon:1,rare:2,anomalous:3};
+const FRACTURE_EV_INT_PER_WAVE_MAX=3;   // teto de Intensidade vinda de eventos/onda
+const FRACTURE_EV_INT_PER_RUN_MAX=26;   // teto acumulado (anti-farm de run longa)
+function fractureEventIntensity(d){
+  if(!d)return 0;
+  /* chains são continuação de uma decisão já paga: não cobram de novo */
+  if(d.noPool)return 0;
+  const v=FRACTURE_EV_INT_BY_RARITY[String(d.rarity||'common')];
+  return Number.isFinite(v)?Math.max(0,v|0):0;
+}
+/* ---------------- afinidade Tema → tags de evento ----------------
+   Mesmo formato do waveBias do B2: soma das tags, clamp, força por Tema.
+   RESSONÂNCIA e ESCASSEZ deixam de ser sutis AQUI (era o que faltava para
+   elas terem identidade) — mas continuam sutis na COMPOSIÇÃO de waves. */
+const FRACTURE_EVENT_BIAS={
+  collapse :{force:1,up:1.55,down:.72,tags:{INSTABILIDADE:.75,FRAGMENTACAO:.65,
+    PRESSAO:.55,RISCO:.50,EXPLORACAO:.35,ANOMALIA:.30},
+    red:{CONTENCAO:-.35,DEFESA:-.30}},
+  siege    :{force:1,up:1.55,down:.72,tags:{CONTENCAO:.80,DEFESA:.70,
+    SUSTENTACAO:.45,FACCAO:.30,MORAL:.20},
+    red:{EVASIVO:-.35,MOVEL:-.30,DISTORCAO:-.25}},
+  hunt     :{force:1,up:1.60,down:.70,tags:{CACADOR:.85,MOVEL:.60,PRESSAO:.55,
+    RISCO:.50,EVASIVO:.45},
+    red:{CONTENCAO:-.35,DEFESA:-.30,ECONOMIA:-.20}},
+  anomaly  :{force:1,up:1.65,down:.70,tags:{ANOMALIA:.90,DISTORCAO:.80,
+    INSTABILIDADE:.60,MEMORIA:.25},
+    red:{ECONOMIA:-.25,RECURSO:-.20}},
+  /* RESSONÂNCIA: identidade real vem dos Ecos/memória, não de buff de combate */
+  resonance:{force:1,up:1.70,down:.80,tags:{ECHO:.95,RESSONANCIA:.90,MEMORIA:.70,
+    VINCULO:.55,SACRIFICIO:.25},
+    red:{RISCO:-.20,PRESSAO:-.15}},
+  /* ESCASSEZ: identidade real vem da economia/disputa pelo que resta */
+  scarcity :{force:1,up:1.70,down:.80,tags:{ESCASSEZ:.95,ECONOMIA:.85,RECURSO:.65,
+    MORAL:.35,SACRIFICIO:.30},
+    red:{ANOMALIA:-.20,DISTORCAO:-.15}}
+};
+/* peso temático de um evento: 1 = neutro. Nunca 0 (nada sai do pool). */
+function fractureEventBiasMul(d,ctx){
+  ctx=ctx||fractureWaveCtx();
+  if(!ctx)return 1;
+  const prof=Object.prototype.hasOwnProperty.call(FRACTURE_EVENT_BIAS,ctx.theme)
+    ?FRACTURE_EVENT_BIAS[ctx.theme]:null;
+  if(!prof)return 1;
+  const w=fractureThemeWeight(ctx);
+  if(!(w>0))return 1;                              // Intensidade 0 → neutro
+  const tags=fractureEventTags(d);
+  if(!tags.length)return 1;                        // sem tags → intocado
+  let b=0;
+  for(const t of tags){
+    if(Object.prototype.hasOwnProperty.call(prof.tags,t))b+=prof.tags[t];
+    else if(Object.prototype.hasOwnProperty.call(prof.red,t))b+=prof.red[t];
+  }
+  if(b===0)return 1;
+  /* normaliza pela quantidade de tags: evento com 3 tags afins não leva
+     triplo de um evento com 1 */
+  b=b/Math.sqrt(tags.length);
+  const mul=1+clamp(w,-1,1)*clamp(prof.force,0,1.5)*b;
+  /* piso > 0: redução leve, nunca hard lock */
+  return clamp(mul,prof.down,prof.up);
+}
+
+
 /* ---------------- ciclo de vida da run ---------------- */
 function fractureBeginRun(){
   fractureRun=fractureFresh(fractureMakeSeed());
@@ -24029,7 +24481,22 @@ function fractureRunPack(){
       bias:fractureCleanBias(f.waveProfile.bias),
       pool:fractureCleanPool(f.waveProfile.pool)},
     hist:f.history.slice(-FRACTURE_HIST_MAX).map(h=>({t:h.t,w:h.w|0,d:h.d|0,s:h.s})),
-    last:f.last?{t:String(f.last.t).slice(0,32),w:f.last.w|0,d:f.last.d|0}:null};
+    last:f.last?{t:String(f.last.t).slice(0,32),w:f.last.w|0,d:f.last.d|0}:null,
+    /* B3: persiste só o que impede exploit/duplicidade. mini/miniSpawn/
+       miniPaid são mapas wave→valor; nada de objeto grande aqui. */
+    b3:(function(){
+      const b=fractureB3();
+      if(!b)return null;
+      const ids=MINIBOSS.map(m=>m.id);
+      return {evW:b.evW|0,evWG:clamp(b.evWG|0,0,FRACTURE_EV_INT_PER_WAVE_MAX),
+        evRG:clamp(b.evRG|0,0,FRACTURE_EV_INT_PER_RUN_MAX),
+        mini:fractureCleanMiniMap(b.mini,ids),
+        miniSpawn:fractureCleanMiniMap(b.miniSpawn,null),
+        miniPaid:fractureCleanMiniMap(b.miniPaid,null),
+        lastEv:fractureCleanLastEv(b.lastEv),
+        resoW:b.resoW|0,
+        scarUsed:fractureCleanMiniMap(b.scarUsed,null)};
+    })()};
 }
 /* input NÃO confiável (igual a fracRunUnpack): save antigo sem cp.fracture
    cai em estado fresco + Tema novo; lixo nunca derruba a run. O estágio é
@@ -24074,6 +24541,21 @@ function fractureRunUnpack(cp){
     fractureRun.last={t:String(p.last.t==null?'':p.last.t).slice(0,32),
       w:clamp(Math.round(Number(p.last.w))||0,0,MAX_WAVE),
       d:clamp(Math.round(Number(p.last.d))||0,-FRACTURE_INT_MAX,FRACTURE_INT_MAX)};
+  /* B3.16: estado do Bloco 3. Save antigo (sem p.b3) simplesmente fica com
+     o estado novo zerado — e malformado cai no mesmo caminho, porque cada
+     campo é revalidado individualmente. */
+  if(p.b3&&typeof p.b3==='object'){
+    const b=fractureB3(),q=p.b3,ids=MINIBOSS.map(m=>m.id);
+    b.evW=clamp(Math.round(Number(q.evW))||0,0,MAX_WAVE);
+    b.evWG=clamp(Math.round(Number(q.evWG))||0,0,FRACTURE_EV_INT_PER_WAVE_MAX);
+    b.evRG=clamp(Math.round(Number(q.evRG))||0,0,FRACTURE_EV_INT_PER_RUN_MAX);
+    b.mini=fractureCleanMiniMap(q.mini,ids);
+    b.miniSpawn=fractureCleanMiniMap(q.miniSpawn,null);
+    b.miniPaid=fractureCleanMiniMap(q.miniPaid,null);
+    b.lastEv=fractureCleanLastEv(q.lastEv);
+    b.resoW=clamp(Math.round(Number(q.resoW))||0,0,MAX_WAVE);
+    b.scarUsed=fractureCleanMiniMap(q.scarUsed,null);
+  }
   return fractureRun;
 }
 
