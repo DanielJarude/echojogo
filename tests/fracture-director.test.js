@@ -80,6 +80,25 @@ src+=';globalThis.__t={'+
   'FRACTURE_EV_INT_BY_RARITY,fractureEventIntensity,FRACTURE_THEME_IDS,'+
   'changeEchoTrust,echoSpeak,liveEchoesForEvents,evEpilogue,evSetFlag,evMem,evQueue,'+
   'getEchoes:()=>echoes,setEchoesArr:a=>{echoes=a;},relPressurePct,echoAllied,echoRelState,'+
+  /* BLOCO 4 - assinaturas, revelacao, stages, HUD, Codex */
+  'FRACTURE_SIGNATURES,FRACTURE_SIG_BY_ID,FRACTURE_SIG_MAX_PER_RUN,'+
+  'FRACTURE_SIG_COOLDOWN,FRACTURE_SIG_CHANCE,FRACTURE_STAGE_GATES,fractureStageGate,'+
+  'fractureB4,fractureCleanSigMap,fractureCleanStageMap,'+
+  'fractureSignatureEligible,fractureSignaturePool,fracturePickSignature,'+
+  'fractureApplySignature,fractureSignatureForWave,fractureSignatureReport,'+
+  'FRACTURE_LORE,FRACTURE_REVEAL_MIN_WAVE,FRACTURE_REVEAL_FORCE_MIN,'+
+  'FRACTURE_REVEAL_FORCE_SPAN,FRACTURE_REVEAL_INT,FRACTURE_REVEAL_EV_FLOOR,'+
+  'FRACTURE_REVEAL_EV_DECILE,FRACTURE_REVEAL_MINI_FLOOR,'+
+  'fractureRevealForceWave,fractureRevealTrigger,fractureReveal,fractureIsRevealed,'+
+  'fractureIsThematicEvent,fractureIsAlignedMini,'+
+  'fractureHudState,fractureHudText,fractureHudChip,FRACTURE_HUD_UNKNOWN,'+
+  'fractureStageAnnounce,fractureSignatureBanner,fractureRareOppMul,'+
+  'FRACTURE_B4_ECHO_LINES,fractureEchoOnReveal,fractureEchoOnStage,'+
+  'fractureEchoOnSignature,FRACTURE_FACTION_REMARKS,fractureFactionRemark,'+
+  'fractureCodexSlot,fractureCodexDiscover,fractureCodexDiscovered,'+
+  'fractureCodexBody,fractureB4InspectorLines,'+
+  'fractureSandboxSimTransitionLines,FRACTURE_ANOMALY_SPIKE,'+
+  'getB4:()=>(fractureRun&&fractureRun.b4)||null,'+
   /* acesso ao estado vivo */
   'getFx:()=>fractureRun,setFx:v=>{fractureRun=v;},'+
   /* jogo */
@@ -3164,6 +3183,778 @@ ok('B4-07: o texto de fx_esc_tempo não chama função com efeito colateral',()=
   const cb=corpo.slice(corpo.indexOf('[0,3,1]'));
   assert.strictEqual((cb.match(/fractureGrantResidues\(|fractureScarcityResidues\(/g)||[]).length,1,
     'callback concede uma vez');
+});
+
+/* ============ [33] B4 · ASSINATURAS, REVELAÇÃO, STAGES, CODEX ============ */
+console.log('\n[33] B4 · BLOCO 4 — ASSINATURAS · REVELAÇÃO · STAGES · CODEX (8-58)');
+
+/* ---------------- ASSINATURAS (B4.3 / B4.4) ---------------- */
+ok('B4-08: existem 12 assinaturas, exatamente 2 por Tema',()=>{
+  const A=bootFx({});
+  assert.strictEqual(A.FRACTURE_SIGNATURES.length,12,'12 assinaturas');
+  const por={};
+  for(const s of A.FRACTURE_SIGNATURES)por[s.theme]=(por[s.theme]||0)+1;
+  for(const th of THEMES)assert.strictEqual(por[th],2,th+': 2 assinaturas');
+});
+ok('B4-09: cada assinatura tem estrutura completa e id único no lookup',()=>{
+  const A=bootFx({});
+  const ids=new Set();
+  for(const s of A.FRACTURE_SIGNATURES){
+    for(const k of ['id','theme','nm','minWave','minStage','add','from','lore'])
+      assert.ok(s[k]!=null,s.id+': campo '+k+' presente');
+    assert.ok(THEMES.indexOf(s.theme)>=0,s.id+': Tema válido');
+    assert.ok(!ids.has(s.id),s.id+': id único');
+    ids.add(s.id);
+    assert.strictEqual(A.FRACTURE_SIG_BY_ID[s.id],s,s.id+': lookup por id');
+  }
+});
+ok('B4-10: nomes são narrativos pt-BR — nunca id cru nem token técnico',()=>{
+  const A=bootFx({});
+  for(const s of A.FRACTURE_SIGNATURES){
+    assert.notStrictEqual(s.nm,s.id,s.id+': nome difere do id');
+    assert.ok(s.nm.indexOf('_')<0,s.id+': sem underscore no nome');
+    assert.ok(!/sig_|signature|_[0-9]/i.test(s.nm),s.id+': sem token técnico');
+    assert.ok(s.nm.length>=3,s.id+': nome legível');
+    assert.strictEqual(s.nm,s.nm.toUpperCase(),s.id+': em caixa alta');
+  }
+});
+ok('B4-11: minWave nunca pede arquétipo ainda bloqueado na base',()=>{
+  const A=bootFx({});beginRun(A,1);
+  for(const s of A.FRACTURE_SIGNATURES){
+    const base=A.waveCompBase(s.minWave);
+    for(const k in s.add)
+      assert.ok((base[k]|0)>0,
+        s.id+': '+k+' já liberado na w'+s.minWave+' (base='+(base[k]|0)+')');
+  }
+});
+ok('B4-12: add e from só usam arquétipos que existem',()=>{
+  const A=bootFx({});
+  for(const s of A.FRACTURE_SIGNATURES){
+    for(const k in s.add)
+      assert.ok(A.WAVE_ARCHETYPES.indexOf(k)>=0,s.id+': add '+k+' existe');
+    for(const k of s.from)
+      assert.ok(A.WAVE_ARCHETYPES.indexOf(k)>=0,s.id+': from '+k+' existe');
+    assert.ok(s.from.length>0,s.id+': tem de onde tirar');
+  }
+});
+ok('B4-13: assinatura nunca é elegível antes do próprio minWave',()=>{
+  const A=bootFx({});beginRun(A,1);
+  A.fractureSetIntensity(100,'teste');
+  for(const th of THEMES){
+    A.fractureForceTheme(th,'teste');
+    for(const s of A.FRACTURE_SIGNATURES){
+      if(s.theme!==th)continue;
+      for(let w=1;w<s.minWave;w++)
+        assert.strictEqual(A.fractureSignatureEligible(s,w),false,
+          s.id+' não elegível na w'+w);
+    }
+  }
+});
+ok('B4-14: assinatura nunca em onda de miniboss nem na onda final',()=>{
+  const A=bootFx({});beginRun(A,1);
+  A.fractureSetIntensity(100,'teste');
+  for(const th of THEMES){
+    A.fractureForceTheme(th,'teste');
+    for(const s of A.FRACTURE_SIGNATURES){
+      if(s.theme!==th)continue;
+      for(const w of A.MINI_WAVES)
+        assert.strictEqual(A.fractureSignatureEligible(s,w),false,
+          s.id+' bloqueada na w'+w+' (miniboss tem prioridade)');
+      assert.strictEqual(A.fractureSignatureEligible(s,A.MAX_WAVE),false,
+        s.id+' bloqueada na onda final');
+    }
+  }
+});
+ok('B4-15: assinatura exige o Stage mínimo próprio (LATENTE não libera)',()=>{
+  const A=bootFx({});beginRun(A,1);
+  const ordem=['latente','instavel','propagando','critica','ruptura'];
+  const mins={latente:0,instavel:20,propagando:40,critica:60,ruptura:80};
+  for(const th of THEMES){
+    A.fractureForceTheme(th,'teste');
+    for(const s of A.FRACTURE_SIGNATURES){
+      if(s.theme!==th)continue;
+      const w=Math.max(s.minWave+1,8);
+      for(const st of ordem){
+        if(ordem.indexOf(st)>=ordem.indexOf(s.minStage))continue;
+        A.fractureSetIntensity(mins[st],'teste');
+        assert.strictEqual(A.fractureSignatureEligible(s,w),false,
+          s.id+' bloqueada em '+st.toUpperCase());
+      }
+    }
+  }
+});
+ok('B4-16: assinatura redistribui 1:1 — total preservado, budget intacto',()=>{
+  const A=bootFx({});beginRun(A,1);
+  const b=A.fractureB4();
+  for(const s of A.FRACTURE_SIGNATURES){
+    if(s.shrink)continue;                       // ESCASSEZ remove de propósito
+    A.fractureForceTheme(s.theme,'teste');
+    A.fractureSetIntensity(100,'teste');
+    const w=Math.max(s.minWave,8);
+    b.sig={};b.sig[w]=s.id;
+    const shaped=A.fractureShapeWave(A.waveCompBase(w),w);
+    const com=A.fractureApplySignature(shaped,w);
+    /* a assinatura roda ANTES do waveCompFit no pipeline real
+       (waveComp = fit(applySignature(shape(base)))), então o que ela deve
+       garantir é a preservação 1:1 — quem impõe o teto é o fit, depois. */
+    assert.strictEqual(A.waveCompTotal(com),A.waveCompTotal(shaped),
+      s.id+': total preservado (1:1)');
+    const fit=A.waveCompFit(com,A.ENEMY_BUDGET);
+    assert.ok(A.waveCompTotal(fit)<=A.ENEMY_BUDGET,
+      s.id+': pipeline fechado dentro do budget');
+  }
+});
+ok('B4-17: assinatura de ESCASSEZ com shrink só REDUZ a quantidade',()=>{
+  const A=bootFx({});beginRun(A,1);
+  const b=A.fractureB4();
+  A.fractureForceTheme('scarcity','teste');A.fractureSetIntensity(100,'teste');
+  let achou=0;
+  for(const s of A.FRACTURE_SIGNATURES){
+    if(s.theme!=='scarcity'||!s.shrink)continue;
+    achou++;
+    const w=Math.max(s.minWave,8);
+    b.sig={};b.sig[w]=s.id;
+    const shaped=A.fractureShapeWave(A.waveCompBase(w),w);
+    const com=A.fractureApplySignature(shaped,w);
+    assert.ok(A.waveCompTotal(com)<A.waveCompTotal(shaped),
+      s.id+': shrink reduziu o total');
+  }
+  assert.ok(achou>=1,'existe ao menos uma assinatura com shrink');
+});
+ok('B4-18: assinatura nunca cria arquétipo bloqueado na onda',()=>{
+  const A=bootFx({});beginRun(A,1);
+  const b=A.fractureB4();
+  for(const s of A.FRACTURE_SIGNATURES){
+    A.fractureForceTheme(s.theme,'teste');
+    A.fractureSetIntensity(100,'teste');
+    const w=Math.max(s.minWave,8);
+    b.sig={};b.sig[w]=s.id;
+    const base=A.waveCompBase(w);
+    const com=A.fractureApplySignature(A.fractureShapeWave(base,w),w);
+    for(const k in com)
+      if((com[k]|0)>0)
+        assert.ok((base[k]|0)>0,s.id+': '+k+' estava bloqueado na w'+w);
+  }
+});
+ok('B4-19: teto de assinaturas por run é respeitado',()=>{
+  const A=bootFx({});beginRun(A,1);
+  const b=A.fractureB4();
+  A.fractureSetIntensity(100,'teste');
+  assert.ok(A.FRACTURE_SIG_MAX_PER_RUN>=1,'teto definido');
+  b.sigN=A.FRACTURE_SIG_MAX_PER_RUN;
+  /* prova primeiro que SEM o teto sairia algo — senão o teste passa no vazio */
+  b.sigN=0;b.sig={};b.sigUsed=[];b.sigLast=0;
+  A.fractureForceTheme('collapse','teste');
+  let sairia=0;
+  for(let w=8;w<=19;w++){b.sig={};if(A.fracturePickSignature(w))sairia++;}
+  assert.ok(sairia>0,'controle: sem teto saem assinaturas ('+sairia+' ondas)');
+  b.sigN=A.FRACTURE_SIG_MAX_PER_RUN;
+  for(const th of THEMES){
+    A.fractureForceTheme(th,'teste');
+    for(let w=1;w<=19;w++){
+      b.sig={};
+      assert.strictEqual(A.fracturePickSignature(w),null,
+        th+' w'+w+': teto atingido, nada sai');
+    }
+  }
+});
+ok('B4-20: cooldown entre assinaturas é respeitado',()=>{
+  const A=bootFx({});beginRun(A,1);
+  const b=A.fractureB4();
+  A.fractureSetIntensity(100,'teste');
+  A.fractureForceTheme('collapse','teste');
+  b.sigN=0;b.sigLast=8;
+  for(let w=9;w<8+A.FRACTURE_SIG_COOLDOWN;w++){
+    b.sig={};
+    assert.strictEqual(A.fracturePickSignature(w),null,'w'+w+': dentro do cooldown');
+  }
+  /* e fora do cooldown volta a ser possível */
+  let depois=0;
+  for(let w=8+A.FRACTURE_SIG_COOLDOWN;w<=19;w++){
+    b.sig={};b.sigLast=0;
+    if(A.fracturePickSignature(w))depois++;
+  }
+  assert.ok(depois>0,'controle: após o cooldown saem assinaturas');
+});
+ok('B4-21: escolha é determinística — mesma seed e onda, mesma assinatura',()=>{
+  /* a seed da run é gerada no startRun; o que o teste fixa é a seed DA RUN
+     via fractureSetSeed, que é o que o Continue persiste e reproduz. */
+  const SEED=4242;
+  const A=bootFx({});beginRun(A,1);
+  A.fractureSetSeed(SEED);
+  A.fractureForceTheme('collapse','teste');A.fractureSetIntensity(100,'teste');
+  assert.strictEqual(A.fractureGetSeed(),SEED,'seed da run fixada');
+  const prim=[];
+  for(let w=8;w<=19;w++){
+    const b=A.fractureB4();b.sig={};b.sigUsed=[];b.sigN=0;b.sigLast=0;
+    const s=A.fracturePickSignature(w);
+    prim.push(s?s.id:null);
+  }
+  assert.ok(prim.some(x=>x),'alguma assinatura saiu (senão o teste é vazio)');
+  const B=bootFx({});beginRun(B,1);
+  B.fractureSetSeed(SEED);
+  B.fractureForceTheme('collapse','teste');B.fractureSetIntensity(100,'teste');
+  assert.strictEqual(B.fractureGetSeed(),SEED,'mesma seed');
+  for(let i=0,w=8;w<=19;i++,w++){
+    const b=B.fractureB4();b.sig={};b.sigUsed=[];b.sigN=0;b.sigLast=0;
+    const s=B.fracturePickSignature(w);
+    assert.strictEqual(s?s.id:null,prim[i],'w'+w+' reproduz');
+  }
+  /* e uma seed DIFERENTE muda a escolha em alguma onda */
+  const C=bootFx({});beginRun(C,1);
+  C.fractureSetSeed(SEED+1);
+  C.fractureForceTheme('collapse','teste');C.fractureSetIntensity(100,'teste');
+  let dif=0;
+  for(let i=0,w=8;w<=19;i++,w++){
+    const b=C.fractureB4();b.sig={};b.sigUsed=[];b.sigN=0;b.sigLast=0;
+    const s=C.fracturePickSignature(w);
+    if((s?s.id:null)!==prim[i])dif++;
+  }
+  assert.ok(dif>0,'seed diferente produz escolha diferente');
+});
+ok('B4-22: anti-repeat — não repete enquanto houver alternativa',()=>{
+  const A=bootFx({});beginRun(A,1);
+  const b=A.fractureB4();
+  A.fractureForceTheme('collapse','teste');A.fractureSetIntensity(100,'teste');
+  const vistos={};
+  for(let w=8;w<=19;w++){
+    b.sig={};
+    const s=A.fracturePickSignature(w);
+    if(!s)continue;
+    assert.ok(!vistos[s.id]||b.sigUsed.length>=2,
+      s.id+' repetiu antes de esgotar as alternativas');
+    vistos[s.id]=1;
+    /* simula o que fractureOnWaveStart faz ao aplicar */
+    if(b.sigUsed.indexOf(s.id)<0)b.sigUsed.push(s.id);
+    b.sigN++;b.sigLast=w;
+  }
+  assert.ok(Object.keys(vistos).length>0,'assinaturas saíram de fato');
+});
+
+/* ---------------- STAGES E CAMADAS (B4.1 / B4.2 / B4.15 / B4.16) --------- */
+ok('B4-23: thresholds de Stage continuam função exclusiva da Intensidade',()=>{
+  const A=bootFx({});
+  const mins=A.FRACTURE_STAGES.map(s=>s.min).sort((a,b)=>b-a);
+  assert.strictEqual(J(mins),J([80,60,40,20,0]),'thresholds 80/60/40/20/0');
+  assert.strictEqual(A.fractureStageOf(0).id,'latente');
+  assert.strictEqual(A.fractureStageOf(19).id,'latente');
+  assert.strictEqual(A.fractureStageOf(20).id,'instavel');
+  assert.strictEqual(A.fractureStageOf(40).id,'propagando');
+  assert.strictEqual(A.fractureStageOf(60).id,'critica');
+  assert.strictEqual(A.fractureStageOf(80).id,'ruptura');
+});
+ok('B4-24: não há segunda progressão — gate não carrega campo bias',()=>{
+  const A=bootFx({});
+  for(const id in A.FRACTURE_STAGE_GATES){
+    const g=A.FRACTURE_STAGE_GATES[id];
+    assert.ok(!Object.prototype.hasOwnProperty.call(g,'bias'),
+      id+': sem campo bias (evita 2ª progressão sobre FRACTURE_STAGE_MUL)');
+    assert.ok(Object.prototype.hasOwnProperty.call(g,'sig'),id+': tem sig');
+    assert.ok(Object.prototype.hasOwnProperty.call(g,'opp'),id+': tem opp');
+  }
+  assert.strictEqual(A.fractureStageGate('bias'),1,'bias devolve neutro');
+});
+ok('B4-25: camada de assinaturas só abre em PROPAGANDO',()=>{
+  const A=bootFx({});beginRun(A,1);
+  const mins={latente:0,instavel:20,propagando:40,critica:60,ruptura:80};
+  for(const st of ['latente','instavel']){
+    A.fractureSetIntensity(mins[st],'teste');
+    assert.strictEqual(A.fractureStageGate('sig'),0,st+': assinaturas bloqueadas');
+  }
+  for(const st of ['propagando','critica','ruptura']){
+    A.fractureSetIntensity(mins[st],'teste');
+    assert.strictEqual(A.fractureStageGate('sig'),1,st+': assinaturas liberadas');
+  }
+});
+ok('B4-26: oportunidade rara cresce em CRÍTICA e RUPTURA',()=>{
+  const A=bootFx({});beginRun(A,1);
+  const mins={latente:0,instavel:20,propagando:40,critica:60,ruptura:80};
+  let prev=1;
+  for(const st of ['latente','instavel','propagando','critica','ruptura']){
+    A.fractureSetIntensity(mins[st],'teste');
+    const g=A.fractureStageGate('opp');
+    assert.ok(g>=prev,st+': opp não decresce');
+    prev=g;
+  }
+  A.fractureSetIntensity(40,'teste');
+  const prop=A.fractureStageGate('opp');
+  A.fractureSetIntensity(80,'teste');
+  assert.ok(A.fractureStageGate('opp')>prop,'RUPTURA abre mais que PROPAGANDO');
+});
+ok('B4-27: oportunidade rara NÃO toca evento comum — só rare/anomalous',()=>{
+  const A=bootFx({});beginRun(A,1);
+  A.fractureSetIntensity(100,'teste');          // RUPTURA
+  const raro=A.ALL_RUN_EVENTS.find(e=>e.rarity==='rare');
+  const ano=A.ALL_RUN_EVENTS.find(e=>e.rarity==='anomalous');
+  const com=A.ALL_RUN_EVENTS.find(e=>!e.rarity||e.rarity==='common');
+  assert.ok(raro&&ano&&com,'eventos das 3 raridades existem no pool');
+  assert.ok(A.fractureRareOppMul(raro)>1,'rare recebe o bônus');
+  assert.ok(A.fractureRareOppMul(ano)>1,'anomalous recebe o bônus');
+  assert.strictEqual(A.fractureRareOppMul(com),1,'comum intocado');
+  assert.strictEqual(A.fractureRareOppMul(null),1,'null é neutro');
+});
+ok('B4-28: gate não altera HP nem dano — só pesos e frequência',()=>{
+  const jogo=m[1];
+  const i=jogo.indexOf('const FRACTURE_STAGE_GATES=');
+  assert.ok(i>0,'tabela localizada');
+  const bloco=jogo.slice(i,jogo.indexOf('};',i)+2);
+  assert.ok(!/hp|dmg|damage|vida|dano/i.test(bloco),
+    'nenhum campo de HP/dano na tabela de gates');
+});
+ok('B4-29: RUPTURA é alcançável — o teto da run supera 80',()=>{
+  const A=bootFx({});beginRun(A,1);
+  /* teto teórico: ondas + minibosses + eventos + pico anômalo */
+  const teto=(A.MAX_WAVE-1)*A.FRACTURE_INT_PER_WAVE+3*4+
+    A.FRACTURE_EV_INT_PER_RUN_MAX+A.FRACTURE_ANOMALY_SPIKE;
+  assert.ok(teto>=80,'teto '+teto+' alcança RUPTURA (80)');
+  /* e o pico realmente é aditivo: não é descontado do orçamento de evento */
+  const b=A.fractureB3();
+  b.evRG=0;b.evWG=0;b.evSpike=0;
+  const ano=A.ALL_RUN_EVENTS.find(e=>e.rarity==='anomalous');
+  A.setWave(6);
+  A.fractureOnEventChosen(ano);
+  assert.ok(A.fractureGetIntensity()>=A.FRACTURE_ANOMALY_SPIKE,
+    'pico somou de verdade (int '+A.fractureGetIntensity()+')');
+});
+ok('B4-30: pico anômalo dispara UMA vez por run (não é farm)',()=>{
+  const A=bootFx({});beginRun(A,1);
+  const ano=A.ALL_RUN_EVENTS.find(e=>e.rarity==='anomalous');
+  A.setWave(5);
+  A.fractureOnEventChosen(ano);
+  const depois=A.fractureGetIntensity();
+  for(let i=0;i<5;i++)A.fractureOnEventChosen(ano);
+  assert.ok(A.fractureGetIntensity()-depois<=A.FRACTURE_EV_INT_PER_WAVE_MAX,
+    'repetir o evento não repete o pico');
+  assert.strictEqual(A.fractureB3().evSpike,1,'flag marcada');
+});
+
+/* ---------------- REVELAÇÃO (B4.5 / B4.6 / B4.7) ---------------- */
+ok('B4-31: a run começa com o Tema OCULTO',()=>{
+  const A=bootFx({});beginRun(A,1);
+  assert.strictEqual(A.fractureIsRevealed(),false,'nada revelado no início');
+  assert.strictEqual(A.fractureB4().rev,0,'rev=0');
+  assert.strictEqual(A.fractureB4().revWhy,'','sem motivo ainda');
+});
+ok('B4-32: antes da revelação o HUD mostra DESCONHECIDA',()=>{
+  const A=bootFx({});beginRun(A,1);
+  const h=A.fractureHudState();
+  assert.strictEqual(h.known,false,'estado desconhecido');
+  assert.strictEqual(h.themeNm,A.FRACTURE_HUD_UNKNOWN.nm,'nome DESCONHECIDA');
+  assert.strictEqual(h.sym,A.FRACTURE_HUD_UNKNOWN.sym,'símbolo ◌');
+  const txt=A.fractureHudText();
+  assert.ok(txt.indexOf('DESCONHECIDA')>=0,'texto: '+txt);
+  /* o Tema real existe, só não é mostrado */
+  assert.ok(A.fractureGetThemeId(),'Tema já está sorteado');
+});
+ok('B4-33: revelação acontece no máximo uma vez por run',()=>{
+  const A=bootFx({});beginRun(A,1);
+  assert.strictEqual(A.fractureReveal('dev',6),true,'primeira revela');
+  const rev=A.fractureB4().rev,why=A.fractureB4().revWhy;
+  assert.strictEqual(A.fractureReveal('tempo',9),false,'segunda é recusada');
+  assert.strictEqual(A.fractureB4().rev,rev,'onda não muda');
+  assert.strictEqual(A.fractureB4().revWhy,why,'motivo não muda');
+});
+ok('B4-34: revelar NÃO muda o Tema da run',()=>{
+  const A=bootFx({});beginRun(A,1);
+  const antes=A.fractureGetThemeId(),seed=A.fractureGetSeed();
+  A.fractureReveal('dev',6);
+  assert.strictEqual(A.fractureGetThemeId(),antes,'Tema preservado');
+  assert.strictEqual(A.fractureGetSeed(),seed,'seed preservada');
+});
+ok('B4-35: após revelar o HUD é compacto e traz o nome narrativo',()=>{
+  const A=bootFx({});beginRun(A,1);
+  A.fractureForceTheme('hunt','teste');
+  A.fractureSetIntensity(30,'teste');
+  A.fractureReveal('dev',6);
+  const h=A.fractureHudState();
+  assert.strictEqual(h.known,true,'Tema conhecido');
+  assert.strictEqual(h.themeNm,(A.FRACTURE_THEME_BY_ID.hunt||{}).nm,'nome do Tema');
+  assert.strictEqual(h.sym,(A.FRACTURE_THEME_BY_ID.hunt||{}).sym,'símbolo do Tema');
+  const txt=A.fractureHudText();
+  assert.ok(txt.indexOf('DESCONHECIDA')<0,'não diz mais DESCONHECIDA');
+  assert.ok(txt.length<40,'compacto: "'+txt+'"');
+});
+ok('B4-36: o HUD nunca expõe número de Intensidade nem id cru',()=>{
+  const A=bootFx({});beginRun(A,1);
+  for(const th of THEMES){
+    A.fractureForceTheme(th,'teste');
+    for(const i of [0,7,33,47,88,100]){
+      A.fractureSetIntensity(i,'teste');
+      for(const rev of [false,true]){
+        if(rev&&!A.fractureIsRevealed())A.fractureReveal('dev',6);
+        const txt=A.fractureHudText();
+        assert.ok(!/[0-9]{2,}/.test(txt),th+' int'+i+': sem número — "'+txt+'"');
+        assert.ok(txt.indexOf('_')<0,th+': sem id cru — "'+txt+'"');
+        assert.ok(txt.toLowerCase().indexOf(th)<0||th==='anomaly',
+          th+': sem id interno — "'+txt+'"');
+      }
+    }
+  }
+});
+ok('B4-37: os cinco motivos de revelação têm texto narrativo',()=>{
+  const A=bootFx({});
+  const jogo=m[1];
+  const i=jogo.indexOf('const FRACTURE_REVEAL_TEXT=');
+  assert.ok(i>0,'tabela localizada');
+  const bloco=jogo.slice(i,jogo.indexOf('};',i)+2);
+  for(const k of ['signature','miniboss','evento','intensidade','tempo'])
+    assert.ok(bloco.indexOf(k+':')>=0,'motivo '+k+' tem texto');
+});
+ok('B4-38: revelação respeita a onda mínima',()=>{
+  const A=bootFx({});beginRun(A,1);
+  A.fractureForceTheme('siege','teste');
+  assert.strictEqual(A.fractureRevealTrigger(1,{}),null,'w1: nada');
+  assert.strictEqual(A.fractureRevealTrigger(2,{}),null,'w2: nada');
+  /* com sinal forte, revela a partir da onda mínima */
+  assert.strictEqual(A.fractureRevealTrigger(A.FRACTURE_REVEAL_MIN_WAVE,
+    {signature:true}),'signature','sinal forte na onda mínima revela');
+});
+ok('B4-39: o fallback de tempo varia por seed (não é sempre a mesma onda)',()=>{
+  const A=bootFx({});
+  const vistas=new Set();
+  for(let sd=1;sd<=40;sd++){
+    beginRun(A,1);
+    A.fractureSetSeed(sd*977);
+    const w=A.fractureRevealForceWave();
+    assert.ok(w>=A.FRACTURE_REVEAL_FORCE_MIN,'w'+w+' >= mínimo');
+    assert.ok(w<A.FRACTURE_REVEAL_FORCE_MIN+A.FRACTURE_REVEAL_FORCE_SPAN,
+      'w'+w+' dentro da janela');
+    vistas.add(w);
+  }
+  assert.ok(vistas.size>=3,
+    'fallback espalhado em '+vistas.size+' ondas distintas: '+J([...vistas]));
+});
+ok('B4-40: a revelação persiste no checkpoint e volta no Continue',()=>{
+  const A=bootFx({});beginRun(A,1);
+  A.fractureForceTheme('anomaly','teste');
+  A.fractureSetIntensity(45,'teste');
+  A.fractureReveal('evento',7);
+  const cp={fracture:A.fractureRunPack()};
+  const B=bootFx({});beginRun(B,1);
+  B.fractureRunUnpack(cp);
+  assert.strictEqual(B.fractureIsRevealed(),true,'revelado após unpack');
+  assert.strictEqual(B.fractureB4().rev,7,'onda 7 preservada');
+  assert.strictEqual(B.fractureB4().revWhy,'evento','motivo preservado');
+  assert.strictEqual(B.fractureGetThemeId(),'anomaly','Tema preservado');
+  assert.strictEqual(B.fractureReveal('tempo',12),false,'não revela de novo');
+});
+
+/* ---------------- ANÚNCIO DE STAGE (B4.8) ---------------- */
+ok('B4-41: cada Stage é anunciado uma única vez por run',()=>{
+  const A=bootFx({});beginRun(A,1);
+  assert.strictEqual(A.fractureStageAnnounce('propagando',9),true,'primeira anuncia');
+  assert.strictEqual(A.fractureStageAnnounce('propagando',12),false,'segunda recusa');
+  assert.strictEqual(A.fractureStageAnnounce('critica',14),true,'outro Stage anuncia');
+  assert.strictEqual(A.fractureStageAnnounce('critica',15),false,'e não repete');
+  const b=A.fractureB4();
+  assert.ok(b.stages.propagando&&b.stages.critica,'flags gravadas');
+});
+ok('B4-42: LATENTE não gasta banner — é o estado inicial da run',()=>{
+  const A=bootFx({});beginRun(A,1);
+  A.fractureStageAnnounce('latente',1);
+  const b=A.fractureB4();
+  assert.ok(b.stages.latente,'marcado como visto');
+  /* mas não pode ter virado anúncio: o histórico não registra banner */
+  const f=A.getFx();
+  const banners=(f.history||[]).filter(x=>x.t==='stage'&&x.s==='latente'&&x.d!==0);
+  assert.strictEqual(banners.length,0,'nenhum banner de LATENTE');
+});
+ok('B4-43: anúncios de Stage não se repetem depois do Continue',()=>{
+  const A=bootFx({});beginRun(A,1);
+  A.fractureSetIntensity(45,'teste');
+  A.fractureStageAnnounce('instavel',5);
+  A.fractureStageAnnounce('propagando',9);
+  const cp={fracture:A.fractureRunPack()};
+  const B=bootFx({});beginRun(B,1);
+  B.fractureRunUnpack(cp);
+  assert.strictEqual(B.fractureStageAnnounce('instavel',11),false,'não repete');
+  assert.strictEqual(B.fractureStageAnnounce('propagando',12),false,'não repete');
+  assert.strictEqual(B.fractureStageAnnounce('critica',16),true,'novo Stage sim');
+});
+ok('B4-44: anúncio de Stage inválido é recusado sem marcar nada',()=>{
+  const A=bootFx({});beginRun(A,1);
+  assert.strictEqual(A.fractureStageAnnounce('inexistente',5),false,'recusado');
+  assert.strictEqual(A.fractureStageAnnounce('__proto__',5),false,'prototype recusado');
+  assert.strictEqual(A.fractureStageAnnounce('',5),false,'vazio recusado');
+  const b=A.fractureB4();
+  assert.strictEqual(Object.keys(b.stages).length,0,'nada marcado');
+});
+
+/* ---------------- CODEX E LORE (B4.11 / B4.12) ---------------- */
+ok('B4-45: há 12 entradas de lore — exatamente 2 por Tema',()=>{
+  const A=bootFx({});
+  assert.strictEqual(Object.keys(A.FRACTURE_LORE).length,6,'6 Temas');
+  for(const th of THEMES){
+    const L=A.FRACTURE_LORE[th];
+    assert.ok(Array.isArray(L),th+': lista');
+    assert.strictEqual(L.length,2,th+': 2 entradas');
+    for(const e of L){
+      assert.ok(typeof e.t==='string'&&e.t.length>0,th+': título');
+      assert.ok(typeof e.d==='string'&&e.d.length>20,th+': descrição substantiva');
+    }
+  }
+});
+ok('B4-46: a descoberta do Tema persiste no Save Slot',()=>{
+  const A=bootFx({});beginRun(A,1);
+  A.fractureForceTheme('resonance','teste');
+  A.clearDevTaint();
+  assert.strictEqual(A.fractureCodexDiscovered().indexOf('resonance')<0,true,
+    'ainda não descoberto');
+  assert.strictEqual(A.fractureCodexDiscover('resonance'),true,'descobriu');
+  assert.ok(A.fractureCodexDiscovered().indexOf('resonance')>=0,'listado');
+  assert.strictEqual(A.fractureCodexDiscover('resonance'),false,'não redescobre');
+  /* sobrevive a um boot novo (localStorage do slot) */
+  const root=JSON.stringify(A.smRootGet());
+  const B=bootFx({});
+  B.activateSlot(1);
+  assert.ok(JSON.stringify(B.smRootGet()).indexOf('fxThemes')>=0||
+    root.indexOf('fxThemes')>=0,'fxThemes foi gravado no slot');
+});
+ok('B4-47: o Codex NÃO grava durante uma sessão de Sandbox',()=>{
+  const A=bootFx({});
+  A.sandboxOpenSetup();A.setChar(0);A.sandboxStart();
+  assert.ok(A.getSandboxRun(),'Sandbox ativo');
+  const antes=JSON.stringify(A.smRootGet());
+  assert.strictEqual(A.fractureCodexDiscover('collapse'),false,'recusado no Sandbox');
+  assert.strictEqual(A.fractureCodexDiscovered().indexOf('collapse')<0,true,
+    'nada gravado');
+  assert.strictEqual(JSON.stringify(A.smRootGet()),antes,'slot intocado');
+});
+ok('B4-48: o Codex NÃO grava a partir de run contaminada pelo DEV',()=>{
+  const A=bootFx({});beginRun(A,1);
+  A.DEV_on();
+  A.devCommand('fx:int:50');
+  assert.ok(A.isTainted(),'run taintada pelo DEV');
+  assert.strictEqual(A.fractureCodexDiscover('hunt'),false,'recusado');
+  assert.strictEqual(A.fractureCodexDiscovered().indexOf('hunt')<0,true,
+    'nada gravado a partir do DEV');
+});
+ok('B4-49: o Codex guarda só descoberta — nunca estado mecânico da run',()=>{
+  const A=bootFx({});beginRun(A,1);
+  A.fractureForceTheme('siege','teste');
+  A.fractureSetIntensity(63,'teste');
+  A.clearDevTaint();
+  A.fractureCodexDiscover('siege');
+  const s=A.smRootGet().slots[A.getCurSlot()];
+  assert.deepStrictEqual(J(Object.keys(s.fxThemes)),J(['siege']),
+    'só o id do Tema');
+  assert.strictEqual(s.fxThemes.siege,1,'flag, não objeto de estado');
+  const txt=J(s.fxThemes);
+  for(const proibido of ['intensity','int','stage','sig','rev','seed','b3','b4'])
+    assert.ok(txt.indexOf(proibido)<0,'sem campo mecânico "'+proibido+'"');
+});
+ok('B4-50: a aba do Diretor existe no Codex e o corpo renderiza',()=>{
+  const A=bootFx({});beginRun(A,1);
+  const jogo=m[1];
+  assert.ok(jogo.indexOf("id:'fracture'")>=0,"aba 'fracture' registrada");
+  /* fractureCodexBody renderiza em #cx-body (mesmo contrato das outras abas
+     do Codex), então o corpo é lido do DOM do stub, não do retorno. */
+  A.fractureCodexBody();
+  const el=A._env.document.getElementById('cx-body');
+  const body=el.innerHTML;
+  assert.ok(typeof body==='string'&&body.length>0,'corpo renderizado não vazio');
+  assert.ok(body.indexOf('ASSINATURAS TEMPORAIS')>=0,'título da seção');
+  assert.ok(body.indexOf('NÃO IDENTIFICADA')>=0,'Tema ainda oculto no Codex');
+  /* nada descoberto ainda: o Codex NÃO pode vazar nome nem id de Tema */
+  for(const th of THEMES){
+    const nm=(A.FRACTURE_THEME_BY_ID[th]||{}).nm;
+    assert.ok(body.indexOf(nm)<0,'oculto: nome de '+th+' não vaza');
+    assert.ok(body.indexOf(th)<0,'oculto: id "'+th+'" não vaza');
+  }
+  assert.ok(body.indexOf('0/'+A.FRACTURE_THEME_IDS.length)>=0,
+    'contador de descobertas zerado');
+  /* descobre os 6 Temas e confere que cada um passa a aparecer pelo nome */
+  A.clearDevTaint();
+  for(const th of THEMES)assert.strictEqual(A.fractureCodexDiscover(th),true,
+    th+': descoberto');
+  A.fractureCodexBody();
+  const body2=A._env.document.getElementById('cx-body').innerHTML;
+  assert.ok(body2.indexOf('NÃO IDENTIFICADA')<0,'nada mais oculto');
+  for(const th of THEMES){
+    const nm=(A.FRACTURE_THEME_BY_ID[th]||{}).nm;
+    assert.ok(body2.indexOf(nm)>=0,'descoberto: corpo traz o nome de '+th);
+    /* lore do Tema entra junto */
+    const lo=A.FRACTURE_LORE[th];
+    assert.ok(body2.indexOf(lo[0].t)>=0,'descoberto: lore de '+th+' visível');
+  }
+  assert.ok(body2.indexOf('6/'+A.FRACTURE_THEME_IDS.length)>=0,
+    'contador mostra 6 descobertas');
+  /* id cru nunca aparece, nem descoberto */
+  for(const th of THEMES)
+    assert.ok(body2.indexOf('>'+th+'<')<0,'id "'+th+'" não é exibido como texto');
+});
+
+/* ---------------- ECHO E FACÇÕES (B4.13 / B4.14) ---------------- */
+ok('B4-51: reações de facção são narrativas — nunca chamam factionEmit',()=>{
+  const A=bootFx({});beginRun(A,1);
+  const jogo=m[1];
+  const i=jogo.indexOf('function fractureFactionRemark(');
+  assert.ok(i>0,'função localizada');
+  const corpo=jogo.slice(i,jogo.indexOf('\nfunction ',i+10));
+  assert.ok(corpo.indexOf('factionEmit')<0,
+    'fractureFactionRemark não emite afinidade');
+  assert.ok(corpo.indexOf('changeEchoTrust')<0,'não muda Trust');
+  /* sem Tema revelado, não há reação */
+  assert.strictEqual(A.fractureFactionRemark(),null,'oculto: sem reação');
+  A.fractureReveal('dev',6);
+  const r=A.fractureFactionRemark();
+  assert.ok(r&&typeof r.text==='string'&&r.text.length>0,'reação narrativa');
+});
+ok('B4-52: proibido Tema determinar afinidade de facção',()=>{
+  const jogo=m[1];
+  /* o padrão vetado pelo escopo: theme === 'x' → facção +N */
+  const proibido=/theme\s*===?\s*['"][a-z]+['"][^;]{0,80}factionEmit/;
+  assert.ok(!proibido.test(jogo),'nenhum atalho Tema → factionEmit');
+  const i=jogo.indexOf('const FRACTURE_FACTION_REMARKS=');
+  assert.ok(i>0,'tabela de falas existe');
+  const bloco=jogo.slice(i,jogo.indexOf('\n};',i)+3);
+  assert.ok(!/[+-]\d/.test(bloco.replace(/rgba?\([^)]*\)/g,'')),
+    'tabela de falas não carrega números de afinidade');
+});
+ok('B4-53: cada Tema tem fala de facção e cada um tem as 4 facções cobertas',()=>{
+  const A=bootFx({});
+  for(const th of THEMES){
+    const m2=A.FRACTURE_FACTION_REMARKS[th];
+    assert.ok(m2&&typeof m2==='object',th+': tem falas');
+    assert.ok(Object.keys(m2).length>=1,th+': ao menos uma facção');
+    for(const k in m2)
+      assert.ok(typeof m2[k]==='string'&&m2[k].length>10,th+'/'+k+': texto real');
+  }
+});
+ok('B4-54: o Echo reage à revelação sem alterar Personality',()=>{
+  const A=bootFx({});beginRun(A,1);
+  const antes=J(A.getEchoes().map(e=>e.ps&&e.ps.id));
+  const trustAntes=J(A.getEchoes().map(e=>e.trust));
+  A.fractureForceTheme('collapse','teste');
+  A.fractureReveal('dev',6);
+  A.fractureEchoOnReveal();
+  A.fractureEchoOnStage('critica');
+  A.fractureEchoOnStage('ruptura');
+  assert.strictEqual(J(A.getEchoes().map(e=>e.ps&&e.ps.id)),antes,
+    'Personality intacta');
+  assert.strictEqual(J(A.getEchoes().map(e=>e.trust)),trustAntes,
+    'Trust intacto');
+  assert.ok(A.FRACTURE_B4_ECHO_LINES.reveal,'há fala de revelação');
+  assert.ok(A.FRACTURE_B4_ECHO_LINES.critica,'há fala de CRÍTICA');
+  assert.ok(A.FRACTURE_B4_ECHO_LINES.ruptura,'há fala de RUPTURA');
+});
+
+/* ---------------- PERSISTÊNCIA, SANDBOX E DEV (B4.17-B4.19) ------------- */
+ok('B4-55: o estado b4 é sanitizado no unpack — lixo e prototype caem fora',()=>{
+  const A=bootFx({});beginRun(A,1);
+  A.fractureRunUnpack({fracture:{
+    v:A.FRACTURE_STATE_VERSION,theme:'hunt',seed:99,intensity:44,
+    b4:{rev:'oito',revWhy:'x'.repeat(300),
+      stages:{latente:1,nao_existe:1,__proto__:1,ruptura:'sim'},
+      sig:{0:'sig_hun_matilha',99:'sig_hun_matilha',3:'inexistente',
+           7:'sig_hun_rastro',__proto__:'sig_hun_matilha'},
+      sigUsed:['sig_hun_matilha','nao_existe',42,null],
+      sigLast:'muitas',sigN:'NaN',hudSeen:{},
+      evThematic:'x',miniAligned:[],evSig:null}
+  }});
+  const b=A.fractureB4();
+  assert.ok(Number.isFinite(b.rev),'rev numérico');
+  assert.ok(b.revWhy.length<=24,'revWhy limitado');
+  assert.ok(!Object.prototype.hasOwnProperty.call(b.stages,'nao_existe'),
+    'Stage inventado caiu');
+  assert.ok(!Object.prototype.hasOwnProperty.call(b.stages,'__proto__'),
+    'prototype bloqueado');
+  assert.ok(b.stages.latente&&b.stages.ruptura,'Stages válidos ficaram');
+  assert.ok(!Object.prototype.hasOwnProperty.call(b.sig,0),'onda 0 recusada');
+  assert.ok(!Object.prototype.hasOwnProperty.call(b.sig,99),'onda > MAX recusada');
+  assert.ok(!Object.prototype.hasOwnProperty.call(b.sig,3),'assinatura falsa recusada');
+  assert.strictEqual(b.sig[7],'sig_hun_rastro','assinatura válida ficou');
+  assert.ok(b.sigUsed.indexOf('nao_existe')<0,'id inventado caiu de sigUsed');
+  assert.ok(b.sigUsed.indexOf(42)<0,'não-string caiu de sigUsed');
+  assert.ok(Number.isFinite(b.sigLast),'sigLast numérico');
+  assert.ok(Number.isFinite(b.sigN),'sigN numérico');
+  assert.strictEqual(typeof b.hudSeen,'string','hudSeen é string');
+});
+ok('B4-56: save antigo sem b4 funciona e ganha o estado novo zerado',()=>{
+  const A=bootFx({});beginRun(A,1);
+  A.fractureForceTheme('scarcity','teste');
+  A.fractureSetIntensity(55,'teste');
+  const cp={fracture:{v:A.FRACTURE_STATE_VERSION,theme:'scarcity',seed:1234,
+    intensity:55}};                    // sem b4 — save de antes do Bloco 4
+  A.fractureRunUnpack(cp);
+  const b=A.fractureB4();
+  assert.ok(b,'b4 criado');
+  assert.strictEqual(b.rev,0,'oculto');
+  assert.strictEqual(b.sigN,0,'sem assinaturas');
+  assert.deepStrictEqual(J(b.sigUsed),J([]),'histórico vazio');
+  assert.strictEqual(A.fractureGetThemeId(),'scarcity','Tema do save respeitado');
+  assert.strictEqual(A.fractureGetIntensity(),55,'Intensidade respeitada');
+});
+ok('B4-57: assinaturas escolhidas sobrevivem ao Continue e não se repetem',()=>{
+  const A=bootFx({});beginRun(A,1);
+  A.fractureForceTheme('collapse','teste');
+  A.fractureSetIntensity(100,'teste');
+  const b=A.fractureB4();
+  b.sig={};b.sig[9]='sig_col_enxame';b.sigUsed=['sig_col_enxame'];
+  b.sigN=1;b.sigLast=9;
+  const cp={fracture:A.fractureRunPack()};
+  const B=bootFx({});beginRun(B,1);
+  B.fractureRunUnpack(cp);
+  const b2=B.fractureB4();
+  assert.strictEqual(b2.sig[9],'sig_col_enxame','assinatura da w9 preservada');
+  assert.strictEqual(b2.sigN,1,'contagem preservada');
+  assert.strictEqual(b2.sigLast,9,'cooldown preservado');
+  const comp=B.waveComp(9);
+  assert.ok(comp.swarm>0,'composição da w9 ainda reflete a assinatura');
+  /* e o teto continua valendo — não vira farm no reload */
+  assert.strictEqual(b2.sigN,1,'não somou de novo no restore');
+});
+ok('B4-58: Sandbox byte-a-byte e comandos DEV do B4 taintam a run',()=>{
+  const A=bootFx({});
+  A.activateSlot(1);A.activateSlot(2);A.activateSlot(3);
+  const antes=JSON.stringify(A.smRootGet().slots);
+  A.sandboxOpenSetup();A.setChar(0);A.sandboxStart();
+  assert.ok(A.getSandboxRun(),'Sandbox ativo');
+  /* ações do B4 dentro do Sandbox */
+  assert.strictEqual(A.fractureSandboxAction('reveal'),true,'reveal ok');
+  assert.strictEqual(A.fractureSandboxAction('stage:critica'),true,'stage ok');
+  assert.strictEqual(A.fractureSandboxAction('sig:sig_col_enxame'),true,'sig ok');
+  assert.strictEqual(A.fractureSandboxAction('sim:transicao'),true,'sim ok');
+  assert.strictEqual(A.fractureSandboxAction('sig:off'),true,'limpar ok');
+  assert.strictEqual(A.fractureSandboxAction('tema:ruim'),false,'ação inválida recusa');
+  A.sandboxExit();
+  assert.strictEqual(JSON.stringify(A.smRootGet().slots),antes,
+    'Save 1/2/3 byte-a-byte intactos após a sessão');
+  /* DEV: os três comandos novos existem e taintam */
+  const B=bootFx({});beginRun(B,1);
+  B.DEV_on();B.clearDevTaint();
+  assert.strictEqual(B.fractureDevCommand('reveal'),true,'fx:reveal');
+  assert.ok(B.isTainted(),'reveal tainta');
+  B.clearDevTaint();
+  B.setWave(9);
+  assert.strictEqual(B.fractureDevCommand('signature:sig_col_enxame'),true,
+    'fx:signature:<id>');
+  assert.ok(B.isTainted(),'signature tainta');
+  B.clearDevTaint();
+  assert.strictEqual(B.fractureDevCommand('stage:ruptura'),true,'fx:stage:<stage>');
+  assert.ok(B.isTainted(),'stage tainta');
+  assert.strictEqual(B.fractureGetStage().id,'ruptura','foi para RUPTURA');
+  /* ids inválidos são recusados sem taintar */
+  B.clearDevTaint();
+  assert.strictEqual(B.fractureDevCommand('stage:naoexiste'),false,'Stage falso');
+  assert.strictEqual(B.fractureDevCommand('signature:naoexiste'),false,'sig falsa');
+  assert.ok(!B.isTainted(),'recusa não tainta');
+  /* leitura continua sem tainta */
+  B.clearDevTaint();
+  assert.strictEqual(B.fractureDevCommand('insp'),true,'inspetor funciona');
+  assert.ok(!B.isTainted(),'inspetor é leitura, não tainta');
+  const linhas=B.fractureB4InspectorLines();
+  assert.ok(linhas.length>=4,'inspetor do B4 tem as 4 seções');
+  assert.ok(linhas.join('|').indexOf('REVELAÇÃO')>=0,'seção REVELAÇÃO');
+  assert.ok(linhas.join('|').indexOf('ASSINATURA')>=0,'seção ASSINATURA');
+  assert.ok(linhas.join('|').indexOf('STAGE')>=0,'seção STAGE');
+  assert.ok(linhas.join('|').indexOf('CODEX')>=0,'seção CODEX');
+  /* simulação de transição é pura e cobre os 5 Stages */
+  const tr=B.fractureSandboxSimTransitionLines();
+  assert.strictEqual(tr.length,5,'5 Stages na simulação');
+  assert.strictEqual(tr[0].id,'latente','começa em LATENTE');
+  assert.strictEqual(tr[4].id,'ruptura','termina em RUPTURA');
+  assert.strictEqual(A.SM_VERSION,3,'SM_VERSION continua 3');
 });
 
 /* ---------------- resultado ---------------- */

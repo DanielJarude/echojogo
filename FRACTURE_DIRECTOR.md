@@ -1392,3 +1392,296 @@ Nenhuma afirmação do Bloco 2 foi invalidada. O que mudou é escopo:
 2. `fractureCleanLastEv` era permissivo demais: aceitava qualquer string como
    id de evento. Agora o id precisa existir no registro, e `family`/`rarity`
    saem do registro em vez de saírem do save.
+
+---
+
+## 15. BLOCO 4 — Assinaturas, revelação e progressão visível
+
+Os Blocos 1 a 3 fizeram o Diretor **existir** e **influenciar**: estado central,
+composição de onda, eventos, minibosses, economia. Mas quase nada disso era
+*perceptível*. O jogador não tinha como dizer "esta linha temporal está se
+comportando de um jeito diferente" — só sentia que as ondas variavam.
+
+O Bloco 4 é a camada de **leitura**. Ele responde a três perguntas do jogador:
+
+1. *O que está acontecendo comigo?* → **revelação do Tema**
+2. *Está piorando?* → **Stages com camadas que se abrem**
+3. *Esta run é diferente daquela?* → **Encounter Signatures**
+
+E mantém a regra que atravessa toda a PR 13:
+
+> O Diretor é um **sistema de influência**. O Bloco 4 acrescenta *linguagem*
+> ao que já existia. Ele não acrescenta poder.
+
+Concretamente: **nenhum número de HP, dano ou recompensa global muda por
+Stage**. O teste `B4-28` varre a tabela de gates procurando por isso.
+
+---
+
+### 15.1 Encontro com a realidade: três bugs que a medição achou
+
+Antes de escrever qualquer feature nova, o Bloco 4 mediu o que os Blocos
+anteriores afirmavam. Três afirmações caíram:
+
+**(a) `fractureStageGate` era código morto.** A tabela `FRACTURE_STAGE_GATES`
+estava definida com campos `bias` e `sig`, mas a função nunca era chamada em
+lugar nenhum. Pior: o campo `bias` (.45 … 1.32) multiplicaria
+`fractureThemeWeight` **de novo**, por cima do `FRACTURE_STAGE_MUL` que já
+existe desde o Bloco 2. Medido, isso faria LATENTE valer .80×.45 = **.36** e
+RUPTURA valer 1.10×1.32 = **1.45** — uma segunda progressão escondida sobre a
+primeira, exatamente o que o escopo proíbe. O campo foi **removido**, não
+ligado. O teste `B4-24` trava isso: a tabela não pode voltar a ter `bias`.
+
+**(b) RUPTURA era matematicamente impossível.** O teto teórico de Intensidade
+de uma run é 38 (19 ondas × 2) + 12 (3 minibosses × 4) + 26 (eventos) =
+**76**. RUPTURA começa em **80**. Não era "rara": era inatingível, e nenhuma
+run jamais anunciaria o Stage final.
+
+**(c) 4 assinaturas pediam arquétipos ainda bloqueados.** `sig_col_cadeia`
+pedia `spawner` na w7, mas `spawner` só entra na base na **w8**. `sig_sie_linha`
+e `sig_esc_raciona` pediam `tank` na w5 (entra na **w6**); `sig_res_freq` pedia
+`anomaly` na w5 (entra na **w6**). A onda real de desbloqueio foi medida, não
+lembrada — a tabela que constava na memória da sessão dizia "spawner w7" e
+estava errada.
+
+---
+
+### 15.2 Stages — auditoria e camadas (B4.1 / B4.2)
+
+Os thresholds **não mudaram**: 0 / 20 / 40 / 60 / 80. Eles continuam função
+exclusiva da Intensidade e não criam contagem paralela (teste `B4-23`).
+
+O que mudou é que cada Stage agora **libera camadas de comportamento**, e cada
+camada é uma coisa que *aparece*, nunca um número global:
+
+| Stage | Intensidade | `sig` | `opp` | Identidade (`FRACTURE_STAGE_MUL`) |
+|---|---|---|---|---|
+| LATENTE | 0–19 | ✗ | ×1 | .80 |
+| INSTÁVEL | 20–39 | ✗ | ×1 | .90 |
+| PROPAGANDO | 40–59 | ✓ | ×1 | 1.00 |
+| CRÍTICA | 60–79 | ✓ | ×1.20 | 1.05 |
+| RUPTURA | 80–100 | ✓ | ×1.45 | 1.10 |
+
+- **`sig`** — libera Encounter Signatures. LATENTE e INSTÁVEL são discretos de
+  verdade: a run inteira pode passar sem nenhuma.
+- **`opp`** — `fractureRareOppMul` eleva o **peso de eventos `rare` e
+  `anomalous`**. Não é buff: é frequência de sorte bom. Evento comum devolve
+  ×1.00 sempre (teste `B4-27`). É a parte "oportunidades raras" do escopo.
+
+A leitura correta da tabela: LATENTE não faz nada além de existir; RUPTURA tem
+identidade clara **e** acesso às oportunidades mais valiosas do pool.
+
+---
+
+### 15.3 RUPTURA — por que existe um pico separado (B4.15 / B4.16)
+
+Dado o item (b) acima, havia duas saídas. A errada era subir o ganho por onda:
+isso inflaria **todas** as runs e destruiria a meta de pacing (early Latente,
+late Propagando). O escopo é explícito: *"não aumentar artificialmente toda run
+até 100 para forçar RUPTURA"*.
+
+A saída foi dar a RUPTURA uma fonte **própria e rara**: os eventos anômalos.
+
+```js
+const FRACTURE_ANOMALY_SPIKE=26;   // uma vez por run, só de rarity 'anomalous'
+```
+
+São apenas **3** eventos anômalos no pool (`x_onda0`, `x_observador`,
+`x_cicatriz`), todos `oncePerRun`. Medido em 400 runs: **3,8%** das runs topam
+em um.
+
+Dois detalhes que só a medição mostrou:
+
+1. **O pico precisou ficar FORA do orçamento anti-farm.** Na primeira versão
+   ele era descontado de `evRG`, então apenas *substituía* intensidade comum e
+   o teto continuava 76 — RUPTURA seguia inalcançável (máx medido 75). Aditivo,
+   o teto vira 38+12+26+26 = **102**.
+2. **O valor 26 foi dimensionado por curva, não por intuição.** Com pico 18,
+   RUPTURA acontecia em 0,5% das runs — raro a ponto de não existir. A medição
+   da distribuição condicional mostrou que 26 é o ponto em que *toda* run que
+   encontra a anomalia chega lá. A regra fica legível: **RUPTURA é o que
+   acontece quando a linha temporal topa na anomalia.**
+
+O pico é limitado a uma vez por run por flag (`b3.evSpike`), persistida nos
+quatro pontos (init ×2, pack, unpack) — sem ela o Continue re-concederia 26 de
+Intensidade a cada reload (teste `B4-30`).
+
+**Pacing medido em 300 runs realistas** (eventos + minibosses):
+
+| Onda | Média | p10 | p50 | p90 | Máx |
+|---|---|---|---|---|---|
+| 5 | 12.8 | 12 | 12 | 14 | 41 |
+| 10 | 28.5 | 26 | 28 | 31 | 59 |
+| 15 | 43.9 | 40 | 44 | 47 | 78 |
+| 19 | 53.2 | 50 | 52 | 56 | 88 |
+
+Stage final: PROPAGANDO 278 · CRÍTICA 16 · **RUPTURA 6 (2,0%)**. RUPTURA começa
+na mediana **w19** (faixa w17–20): tarde, rara e marcante — exatamente a meta.
+
+---
+
+### 15.4 Encounter Signatures (B4.3 / B4.4)
+
+**Não são inimigos novos.** São 12 templates raros de composição — 2 por Tema —
+que *redistribuem* arquétipos que a onda já teria.
+
+A descoberta de arquitetura que definiu o formato: **o budget já está saturado
+a partir da w13** (base 56/61/69/70 contra teto de 46; a última sobra real é na
+w10, de 3 entidades). Logo, uma assinatura que *somasse* entidades seria
+comida pelo `waveCompFit` e não teria efeito nenhum. Por isso:
+
+```
+waveComp(n) = waveCompFit( fractureApplySignature( fractureShapeWave(
+                waveCompBase(n), n ), n ), 46 )
+```
+
+`fractureApplySignature` **tira 1 de `from` e dá 1 para `add`**, na proporção
+1:1. O total não muda, então o budget é respeitado **por construção** (teste
+`B4-16`). A exceção é ESCASSEZ, cujo `shrink` remove **sem repassar** — menos
+quantidade bruta, que é a identidade do Tema (teste `B4-17`).
+
+**Regras duras**, todas com teste:
+
+| Regra | Teste |
+|---|---|
+| Nunca antes do threshold do arquétipo na base | `B4-11` |
+| Nunca em onda de miniboss (w5/10/15) | `B4-14` |
+| Nunca na onda final (w20 é do boss) | `B4-14` |
+| Exige o Stage mínimo próprio | `B4-15` |
+| Nunca cria arquétipo bloqueado | `B4-18` |
+| Teto de 3 por run | `B4-19` |
+| Cooldown de 3 ondas | `B4-20` |
+| Anti-repeat enquanto houver alternativa | `B4-22` |
+| Determinística pela seed | `B4-21` |
+| Continue reproduz, não re-sorteia | `B4-57` |
+
+A escolha acontece **uma vez por onda**, em `fractureOnWaveStart`, e fica
+gravada em `b4.sig[onda]`. `waveComp()` é chamado várias vezes por onda e
+precisa ser puro, então ele apenas **lê** o que já foi decidido.
+
+**Medido em 300 runs:** 226 runs (75%) têm ao menos uma assinatura; 269 no
+total, média **0,90 por run**.
+
+---
+
+### 15.5 Revelação gradual do Tema (B4.5 / B4.6 / B4.7)
+
+A run começa com `FRACTURA ◌ DESCONHECIDA`. Em algum momento o jogador junta
+pistas suficientes e o Tema é nomeado — **uma vez**, e o Tema nunca muda.
+
+A primeira implementação revelava em **100% das runs, sempre na w6, sempre pelo
+mesmo motivo**. Era exatamente o que o escopo mandava evitar. A causa: os
+gatilhos "reais" estavam desligados e só o fallback de tempo funcionava.
+
+A correção teve duas partes.
+
+**1. Os gatilhos passaram a ser relativos, não absolutos.** Um threshold
+absoluto de viés ≥1.30 nunca seria atingido antes do fallback: medido, numa run
+real a Intensidade cresce ~2/onda e na w10 o peso do Tema vale ~0.14, então o
+maior multiplicador de evento chega só a **~1.15**. O que o jogador percebe é
+"a coisa mais característica deste Tema apareceu", então:
+
+- `fractureIsThematicEvent` — o evento disparado está no **quintil superior**
+  do viés da onda (e acima de 1.08, para não contar ruído);
+- `fractureIsAlignedMini` — o miniboss que apareceu é **o argmax** do pool da
+  onda (e acima de 1.10). São só 3 ondas de miniboss por run e o favorito tem
+  ~25-30% de chance, então é raro de verdade.
+
+**2. O fallback de tempo deixou de ser fixo.** `fractureRevealForceWave()`
+devolve 8 + `hash(seed) % 5`, ou seja **8 a 12** conforme a run (teste `B4-39`).
+
+**Resultado medido em 300 runs:** revelação em 300/300, onda média **w9.1**,
+faixa **w5–w12**, e os quatro motivos aparecem:
+
+| Motivo | Fatia |
+|---|---|
+| tempo (fallback) | 49% |
+| evento temático | 32% |
+| Intensidade ≥ 30 | 15% |
+| miniboss alinhado | 4% |
+
+Nenhum domina. `signature` fica em 0% porque assinaturas exigem PROPAGANDO
+(w13+), e a essa altura o Tema já foi revelado — o gatilho existe para runs
+atípicas de Intensidade alta cedo, não para ser o caminho comum.
+
+**O HUD nunca mostra número.** `fractureHudText()` produz estados narrativos
+(`FRACTURA ◌ DESCONHECIDA` → `FRACTURA CAÇADA · INSTÁVEL`), nunca `47/100` e
+nunca um id cru. O teste `B4-36` varre os 6 Temas × 6 Intensidades × 2 estados
+procurando por dígito ou underscore.
+
+---
+
+### 15.6 Anúncio de Stage (B4.8)
+
+Uma vez por Stage por run, gravado em `b4.stages`. O Continue não repete
+(teste `B4-43`). LATENTE é marcado **sem anunciar** — é o estado inicial da run
+e não deve gastar o primeiro banner com algo que o jogador já está vendo
+(teste `B4-42`).
+
+`fractureStageAnnounce` **valida o id contra o catálogo antes de marcar**. Sem
+isso, qualquer string — inclusive `'__proto__'` ou um Stage inventado — virava
+"já anunciado" e a função devolvia `true` alegando ter anunciado algo
+inexistente. Bug real, corrigido, travado pelo teste `B4-44`.
+
+---
+
+### 15.7 Codex, Echo e facções (B4.11–B4.14)
+
+**Codex** — aba `fracture` com nome, símbolo, descrição, lore e status. São
+**12 entradas de lore** (2 por Tema). A descoberta persiste por Save Slot em
+`smRoot.slots[curSlot].fxThemes` como um mapa `{id:1}` — só o id, nenhum estado
+mecânico (teste `B4-49`). Enquanto o Tema não é descoberto, o Codex mostra
+`◌ ASSINATURA NÃO IDENTIFICADA` e **não vaza** nome nem id (teste `B4-50`).
+
+Descoberta narrativa é permanente — **mas nunca a partir do Sandbox nem de uma
+run contaminada pelo DEV**. `fractureCodexDiscover` recusa nos dois casos
+(testes `B4-47` e `B4-48`). Este guard foi exigido pelo teste byte-a-byte do
+Sandbox: a primeira versão gravava `fxThemes` no slot *durante* a sessão de
+laboratório e quebrou o teste 17.
+
+**Facções** — `FRACTURE_FACTION_REMARKS` são falas, e `fractureFactionRemark`
+**não chama `factionEmit`**. Afinidade continua vindo só de escolhas concretas.
+O teste `B4-52` varre a fonte pelo padrão vetado
+(`theme === 'x' … factionEmit`) e confere que a tabela de falas não carrega
+números de afinidade.
+
+**Echo** — reage à revelação, à CRÍTICA e à RUPTURA via `echoSpeak`, sem tocar
+em Personality ou Trust (teste `B4-54`).
+
+---
+
+### 15.8 Sandbox e DEV (B4.18 / B4.19)
+
+**Sandbox** ganhou botões de Stage, revelação, assinatura forçada e simulação
+de transição. `fractureSandboxSimTransitionLines()` é **pura**: varre os 5
+Stages e devolve o que muda em cada um sem tocar em `fractureRun`. O
+byte-a-byte dos Save 1/2/3 continua intacto (92/0 em `tests/sandbox.test.js`).
+
+**DEV** ganhou três comandos, todos taintando a run:
+
+```
+fx:reveal                 revela o Tema na hora
+fx:signature:<id>         força uma assinatura na onda atual
+fx:signature:off          limpa as assinaturas da run
+fx:stage:<stage>          vai para o MEIO da faixa do Stage
+```
+
+`fx:stage:` mira o meio da faixa, não o limite — assim o Stage pedido fica
+estável e não cai no vizinho por arredondamento. Ids inválidos são recusados
+**sem taintar** (teste `B4-58`).
+
+O inspetor ganhou quatro seções (`fractureB4InspectorLines`): REVELAÇÃO com os
+sinais acumulados, STAGE com as camadas ativas, ASSINATURA com o pool elegível,
+e CODEX com o status de descoberta. É leitura pura: não tainta.
+
+---
+
+### 15.9 O que ficou de fora, de propósito
+
+Do escopo negativo da PR 13, nada foi implementado: novos finais, epílogos,
+Tema × Facção no fim da run, boss adaptativo (reservado para a PR 15), guerra
+entre facções, mapa de facções, progressão permanente nova, novas árvores,
+rework do HUD.
+
+`SM_VERSION` continua **3**. O `b4` é um campo novo dentro do checkpoint
+existente, e um save antigo sem ele ganha o estado zerado (teste `B4-56`).

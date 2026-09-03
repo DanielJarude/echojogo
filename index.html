@@ -10715,6 +10715,8 @@ function scoreEvent(d,ctx){
      e continuam decidindo sozinhos quando não há Diretor (o multiplicador
      devolve 1). Piso > 0 garante que nenhum evento vire impossível. */
   w*=fractureEventBiasMul(d,fractureEvCtx(ctx));
+  /* B4.2: oportunidade rara liberada por Stage (não é buff, é frequência) */
+  w*=fractureRareOppMul(d);
   return Math.max(.01,w);
 }
 /* sorteio principal. rng injetável (simulação determinística).
@@ -10743,18 +10745,41 @@ function fractureOnEventChosen(d){
     rarity:String(d.rarity||''),tags:tags.slice(0,6)};
   const b=fractureB3();
   let want=fractureEventIntensity(d);
+  /* B4.15: pico de RUPTURA. Canal próprio porque um pico de 18 nunca caberia
+     no teto de 3/onda — e não precisa: só dispara uma vez por run, então não
+     existe farm. Os tetos normais continuam valendo para o `want` comum. */
+  let spike=0;
+  if(b&&String(d.rarity||'')==='anomalous'&&!b.evSpike){
+    spike=FRACTURE_ANOMALY_SPIKE;
+    b.evSpike=1;
+  }
   if(b){
     if(b.evW!==w){b.evW=w;b.evWG=0;}          // nova onda: zera o teto da onda
     want=Math.min(want,Math.max(0,FRACTURE_EV_INT_PER_WAVE_MAX-b.evWG));
     want=Math.min(want,Math.max(0,FRACTURE_EV_INT_PER_RUN_MAX-b.evRG));
   }
+  want+=spike;
   const r=fractureEmit('event_triggered',{wave:w,source:'evento',intensity:want,
     eventId:info.id,family:info.family,rarity:info.rarity,tags:info.tags});
   if(b){
     const ganho=Math.max(0,r.delta|0);
-    b.evWG+=ganho;b.evRG+=ganho;
+    /* B4.15: o pico fica FORA do orçamento anti-farm. Medido antes: quando ele
+       era descontado de evRG, apenas SUBSTITUÍA intensidade comum e o teto da
+       run continuava 76 — RUPTURA seguia inalcançável. Aditivo, o teto vira
+       38+12+26+18 = 94 e RUPTURA passa a existir, ainda dependendo de duas
+       coisas raras ao mesmo tempo (run no topo + topar na anomalia). */
+    const normal=Math.max(0,ganho-spike);
+    b.evWG+=normal;b.evRG+=normal;
     b.lastEv=info;
   }
+  /* B4.5: um evento fortemente alinhado ao Tema é um SINAL de revelação.
+     Medido pelo multiplicador real que o Diretor aplicou, não pela família. */
+  try{
+    const b4=fractureB4();
+    if(b4&&!b4.evThematic&&fractureRun&&w>=FRACTURE_REVEAL_MIN_WAVE){
+      if(fractureIsThematicEvent(d))b4.evThematic=w;
+    }
+  }catch(e){}
   /* RESSONÂNCIA: o Eco pode reconhecer a Fratura (B3.9) — só leitura + fala */
   try{fractureResoReact(d,info);}catch(e){}
   return r;
@@ -12913,6 +12938,10 @@ function waveComp(n){
   const base=waveCompBase(n);
   let shaped=base;
   try{shaped=fractureShapeWave(base,n);}catch(e){shaped=base;}  // fallback: base
+  /* B4.3: assinatura de encontro. Entra DEPOIS do shaping do Tema e ANTES do
+     fit ao budget. É leitura pura do que fractureOnWaveStart decidiu para esta
+     onda — waveComp() é chamado várias vezes por onda e não pode sortear. */
+  try{shaped=fractureApplySignature(shaped,n);}catch(e){}
   return waveCompFit(shaped,ENEMY_BUDGET);
 }
 function makeElite(e,variant){
@@ -24058,8 +24087,19 @@ function fractureFresh(seed){
        lastEv    : último evento realmente disparado (inspetor)
        resoW     : onda da última reação de Ressonância (cooldown)
        scarUsed  : oportunidades econômicas de ESCASSEZ já usadas (anti-farm) */
-    b3:{evW:0,evWG:0,evRG:0,mini:{},miniSpawn:{},miniPaid:{},
+    b3:{evW:0,evWG:0,evRG:0,evSpike:0,mini:{},miniSpawn:{},miniPaid:{},
         lastEv:null,resoW:0,scarUsed:{}},
+    /* ---- B4: progressão visível ----
+       rev     : onda em que o Tema foi revelado (0 = ainda oculto)
+       revWhy  : motivo narrativo da revelação
+       stages  : Stage já ANUNCIADO (uma vez por run; Continue não repete)
+       sig     : wave → id da assinatura escolhida para aquela onda
+       sigUsed : ids já usados na run (anti-repeat)
+       sigLast : onda da última assinatura (cooldown)
+       sigN    : quantas assinaturas já aconteceram (teto por run)
+       hudSeen : último estado mostrado no HUD (evita redraw) */
+    b4:{rev:0,revWhy:'',stages:{},sig:{},sigUsed:[],sigLast:0,sigN:0,hudSeen:'',
+        evThematic:0,miniAligned:0,evSig:0},
     history:[],                 // últimos acontecimentos relevantes (limitado)
     last:null                   // último evento recebido {t,w,d}
   };
@@ -24210,6 +24250,37 @@ function fractureOnWaveStart(n){
   if(prev>0&&n>prev)
     out.complete=fractureEmit('wave_complete',{wave:prev,source:'fronteira'});
   out.start=fractureEmit('wave_start',{wave:n,source:'onda'});
+  /* ---------------- B4: camada visível da onda ----------------
+     Tudo aqui é idempotente e o estado vai no checkpoint, então o Continue
+     não repete anúncio nem re-sorteia assinatura. */
+  try{
+    const b4=fractureB4();
+    if(b4){
+      /* 1) assinatura: decide UMA vez para esta onda e grava */
+      if(!Object.prototype.hasOwnProperty.call(b4.sig,n)){
+        const pick=fracturePickSignature(n);
+        if(pick){
+          b4.sig[n]=pick.id;
+          b4.sigUsed.push(pick.id);
+          if(b4.sigUsed.length>12)b4.sigUsed.shift();
+          b4.sigLast=n;
+          b4.sigN=(b4.sigN|0)+1;
+          out.signature=fractureSignatureBanner(pick,n);
+          try{fractureHistPush({t:'signature',w:n,d:0,s:pick.id});}catch(e){}
+        }
+      }
+      /* 2) revelação do Tema (no máximo uma vez por run) */
+      const trig=fractureRevealTrigger(n,{
+        signature:!!fractureSignatureForWave(n),
+        thematicEvent:false,
+        miniAligned:!!(b4.miniAligned)});
+      if(trig)out.reveal=fractureReveal(trig,n);
+      /* 3) anúncio de transição de Stage (uma vez por Stage) */
+      const st=fractureStageOf(fractureRun.intensity);
+      if(!Object.prototype.hasOwnProperty.call(b4.stages,st.id))
+        out.stage=fractureStageAnnounce(st.id,n);
+    }
+  }catch(e){}
   return out;
 }
 
@@ -24487,6 +24558,79 @@ function fractureB3InspectorLines(){
   return L;
 }
 
+/* ---------------- B4.18: simulação de transição de Stage ----------------
+   PURA: varre os 5 Stages e devolve o que muda em cada um, sem tocar em
+   fractureRun, sem emitir evento e sem gravar nada. Serve para ver de uma
+   vez o que a Intensidade libera, que é exatamente o que o B4.2 pede. */
+function fractureSandboxSimTransitionLines(){
+  const out=[];
+  const ordem=FRACTURE_STAGES.slice().sort((a,b)=>a.min-b.min);
+  for(let i=0;i<ordem.length;i++){
+    const st=ordem[i];
+    const prox=ordem[i+1];
+    const meio=prox?Math.round((st.min+prox.min)/2)
+      :Math.min(FRACTURE_INT_MAX,st.min+10);
+    const g=FRACTURE_STAGE_GATES[st.id]||{};
+    const faixas=prox?(st.min+'–'+(prox.min-1)):(st.min+'+');
+    const camadas=[];
+    camadas.push((g.sig?'assinaturas LIBERADAS':'assinaturas bloqueadas'));
+    camadas.push('oportunidade rara ×'+(g.opp||1));
+    camadas.push('identidade '+Math.round((FRACTURE_STAGE_MUL[st.id]||1)*100)+'%');
+    let sigN=0;
+    for(const sg of FRACTURE_SIGNATURES)
+      if(sg.minStage===st.id)sigN++;
+    out.push({id:st.id,lab:st.lab,col:st.col,faixa:faixas,int:meio,
+      gate:g,camadas:camadas,sigMin:sigN,label:g.label||'—'});
+  }
+  return out;
+}
+/* chamada pelo Sandbox: só mostra, nunca altera */
+function fractureSandboxSimTransition(){
+  const L=fractureSandboxSimTransitionLines();
+  try{
+    for(const x of L)
+      devLog('FX TRANSIÇÃO '+x.lab.padEnd(11)+' int '+String(x.int).padStart(3)+
+        ' ('+x.faixa+') · '+x.camadas.join(' · ')+
+        (x.sigMin?(' · '+x.sigMin+' assinatura(s) nascem aqui'):''));
+  }catch(e){}
+  return true;
+}
+
+/* ---------------- B4.19: inspetor do Bloco 4 ----------------
+   Só LEITURA. Não muda estado, não emite evento, não tainta a run. */
+function fractureB4InspectorLines(){
+  const L=[];
+  const b=fractureB4();
+  if(!b)return ['B4: sem estado'];
+  /* REVELAÇÃO */
+  const th=fractureGetTheme();
+  L.push('REVELAÇÃO: '+(b.rev>0
+    ?('w'+b.rev+' · motivo '+b.revWhy+' · '+((th&&th.nm)||'?'))
+    :'OCULTA (HUD mostra DESCONHECIDA)')+' · sinais: ev '+
+    (b.evThematic||'—')+' mini '+(b.miniAligned||'—')+
+    ' · fallback w'+fractureRevealForceWave());
+  /* STAGES já anunciados */
+  const st=fractureStageOf(fractureRun.intensity);
+  const gate=FRACTURE_STAGE_GATES[st.id]||{};
+  L.push('STAGE: '+st.lab+' · camadas sig='+(gate.sig||0)+' opp='+
+    (gate.opp||1)+' · anunciados: '+(Object.keys(b.stages||{}).join('/')||'nenhum'));
+  /* ASSINATURAS */
+  const rep=fractureSignatureReport(
+    clamp((typeof wave!=='undefined'?(wave|0):1)||1,1,MAX_WAVE));
+  L.push('ASSINATURA w'+rep.wave+': '+(rep.nm?(rep.nm+' ['+rep.id+']'):'nenhuma')+
+    ' · pool '+rep.pool.length+' ('+(rep.pool.join('/')||'vazio')+')'+
+    ' · usadas '+rep.used.length+'/'+rep.max+
+    (rep.last?(' · última w'+rep.last+' (cooldown '+rep.cooldown+')'):''));
+  /* CODEX */
+  let disc='?';
+  /* fractureCodexDiscovered() devolve a LISTA de temas descobertos — não um
+     booleano. Testar a verdade do array daria 'SIM' sempre (bug). */
+  try{disc=fractureCodexDiscovered().indexOf(fractureRun.theme)>=0?'SIM':'não';}
+  catch(e){disc='?';}
+  L.push('CODEX: entrada descoberta '+disc+' · HUD: '+fractureHudText());
+  return L;
+}
+
 /* ---------------- B3.13: emissão de abertura de loja ----------------
    shop_open tem delta 0 na grade do B1: existe só para histórico e DEV.
    Uma chamada por visita; delta 0 significa que abrir loja não pode ser
@@ -24750,6 +24894,15 @@ function fractureOnMiniSpawn(def,n){
     b.miniSpawn[n]=1;
     if(def&&def.id)b.mini[n]=def.id;           // grava inclusive o `forced`
   }
+  /* B4.5: miniboss fortemente alinhado ao Tema é sinal de revelação.
+     1.60 é bem acima do ruído (a maioria fica entre 0.86 e 1.49) e só é
+     atingido pelo miniboss que o Tema realmente favorece. */
+  try{
+    const b4=fractureB4();
+    if(b4&&!b4.miniAligned&&def&&(n|0)>=FRACTURE_REVEAL_MIN_WAVE){
+      if(fractureIsAlignedMini(def,n))b4.miniAligned=(n|0);
+    }
+  }catch(e){}
   return fractureEmit('miniboss_spawn',{wave:n|0,source:'miniboss',
     miniId:String(def&&def.id||'').slice(0,24)});
 }
@@ -25108,12 +25261,15 @@ function fractureEventTags(d){
 function fractureB3(){
   if(!fractureRun)return null;
   if(!fractureRun.b3||typeof fractureRun.b3!=='object')
-    fractureRun.b3={evW:0,evWG:0,evRG:0,mini:{},miniSpawn:{},miniPaid:{},
-      lastEv:null,resoW:0,scarUsed:{}};
+    fractureRun.b3={evW:0,evWG:0,evRG:0,evSpike:0,mini:{},miniSpawn:{},
+      miniPaid:{},lastEv:null,resoW:0,scarUsed:{}};
   const b=fractureRun.b3;
   for(const k of ['mini','miniSpawn','miniPaid','scarUsed'])
     if(!b[k]||typeof b[k]!=='object'||Array.isArray(b[k]))b[k]={};
   b.evW=b.evW|0;b.evWG=b.evWG|0;b.evRG=b.evRG|0;b.resoW=b.resoW|0;
+  /* B4.15: flag do pico anômalo — 1 bit, mas sem ela o Continue re-concede
+     18 de Intensidade toda vez que o jogador recarrega. */
+  b.evSpike=b.evSpike?1:0;
   return b;
 }
 /* mapa wave→id só aceita ondas reais e ids de miniboss conhecidos */
@@ -25182,6 +25338,32 @@ function fractureEvCtx(ctx){
 const FRACTURE_EV_INT_BY_RARITY={common:0,uncommon:1,rare:2,anomalous:3};
 const FRACTURE_EV_INT_PER_WAVE_MAX=3;   // teto de Intensidade vinda de eventos/onda
 const FRACTURE_EV_INT_PER_RUN_MAX=26;   // teto acumulado (anti-farm de run longa)
+/* ---------------- B4.15/B4.16: por que existe um PICO separado --------------
+   Medido antes de mexer em qualquer pacing: o teto teórico de Intensidade de
+   uma run é 38 (19 ondas × 2) + 12 (3 minibosses × 4) + 26 (eventos) = 76, e
+   RUPTURA começa em 80. Ou seja, RUPTURA era MATEMATICAMENTE IMPOSSÍVEL — não
+   era "rara", era inatingível, e nenhuma run jamais anunciaria o Stage final.
+
+   A correção NÃO foi subir o ganho por onda: isso inflaria todas as runs e
+   destruiria a meta de pacing (early Latente, late Propagando). Em vez disso
+   RUPTURA ganhou uma fonte PRÓPRIA e rara: os eventos ANÔMALOS.
+
+   São só 3 no pool (x_onda0, x_observador, x_cicatriz), todos oncePerRun, e
+   medido em 200 runs apenas 5% das runs encontram um. O pico é limitado a
+   UMA vez por run por flag, então é estritamente limitado e infarmável — os
+   tetos de onda e de run continuam valendo para todo o resto.
+
+   Efeito medido: uma run mediana (52) que tope numa anomalia chega a 70 —
+   CRÍTICA, não RUPTURA. Só as runs que já estão no topo E toparam na anomalia
+   cruzam 80. RUPTURA vira o que o escopo pede: rara e marcante. */
+/* Dimensionado por medição, não por intuição. Em 400 runs realistas só 3,8%
+   topam num evento anômalo (3 eventos no pool, todos oncePerRun). Com pico 18
+   RUPTURA acontecia em 0,5% das runs — raro a ponto de não existir. Com 26,
+   toda run que encontra a anomalia chega lá: 3,5%. A regra fica legível para
+   o jogador: RUPTURA é o que acontece quando a linha temporal topa na
+   anomalia. Continua raro porque achar a anomalia é raro, e o pico não muda
+   nada nas outras 96% das runs. */
+const FRACTURE_ANOMALY_SPIKE=26;
 function fractureEventIntensity(d){
   if(!d)return 0;
   /* chains são continuação de uma decisão já paga: não cobram de novo */
@@ -25242,7 +25424,759 @@ function fractureEventBiasMul(d,ctx){
   /* piso > 0: redução leve, nunca hard lock */
   return clamp(mul,prof.down,prof.up);
 }
+/* B4.2: em CRÍTICA e RUPTURA a run passa a TOCAR em eventos raros/anômalos
+   com mais frequência. Só isso: nenhum número de HP, dano ou recompensa é
+   alterado aqui — o que muda é a chance de o sorteio achar a oportunidade
+   que já existe no pool. Devolve 1 para qualquer outra raridade, então o
+   evento comum continua exatamente como era. */
+function fractureRareOppMul(d){
+  if(!fractureRun||!d)return 1;
+  const r=String(d.rarity||'');
+  if(r!=='rare'&&r!=='anomalous')return 1;
+  const g=fractureStageGate('opp');
+  return (g>1)?g:1;
+}
 
+
+/* =====================================================================
+   BLOCO 4 — PROGRESSÃO DA FRATURA: ASSINATURAS, REVELAÇÃO, UI
+   ---------------------------------------------------------------------
+   O Bloco 3 deixou o Diretor com números internos corretos. O Bloco 4
+   transforma esses números em algo que o jogador PERCEBE:
+     · Stage passa a ter consequência mecânica leve (liberação progressiva);
+     · ASSINATURAS DE ENCONTRO: templates raros de COMPOSIÇÃO (não são
+       inimigos novos) que o Diretor escolhe pela seed;
+     · REVELAÇÃO: o Tema começa desconhecido e é descoberto durante a run;
+     · HUD, banner de transição, identidade visual, Codex, lore, reações.
+
+   REGRA DE OURO DO B4 (herdada dos blocos anteriores):
+     · o Diretor continua sendo INFLUÊNCIA — pesos e oportunidades;
+     · NENHUM Stage aumenta HP/dano global;
+     · as assinaturas REDISTRIBUEM o orçamento, nunca o inflam.
+   ===================================================================== */
+
+/* ---------------- B4.3: ASSINATURAS DE ENCONTRO ----------------
+   Cada assinatura é um par (add, from): tira de `from` e dá para `add`,
+   na proporção 1:1. O total da composição NÃO muda — o budget de 46 é
+   respeitado por construção, não por verificação posterior.
+
+   ESCASSEZ é a exceção proposital: `shrink` remove algumas entidades sem
+   repassar ("menos quantidade bruta, mais composição estratégica").
+
+   minWave = a MAIOR onda de desbloqueio entre os arquétipos envolvidos,
+   medida em waveCompBase (swarm/chaser 1, orbiter 2, shooter 3, bulwark 4,
+   tank/anomaly 5, splitter 6, spawner 7, phantom 8, singular 13).
+   minStage = o Stage mínimo; começa em PROPAGANDO. */
+const FRACTURE_SIGNATURES=[
+  /* ---- COLAPSO: instável, fraturado, multiplicando ---- */
+  {id:'sig_col_enxame',theme:'collapse',nm:'ENXAME FRATURADO',minWave:6,minStage:'propagando',
+   add:{swarm:3,splitter:2},from:['chaser','tank','shooter'],
+   lore:'O setor se quebra em pedaços que se comportam como um só organismo.'},
+  {id:'sig_col_cadeia',theme:'collapse',nm:'COLAPSO EM CADEIA',minWave:8,minStage:'critica',
+   add:{splitter:3,spawner:2},from:['orbiter','shooter','tank'],
+   lore:'Cada coisa que morre aqui deixa duas no lugar. Não é reprodução: é fratura.'},
+
+  /* ---- CERCO: contido, geométrico, fechado ---- */
+  {id:'sig_sie_linha',theme:'siege',nm:'LINHA DE CONTENÇÃO',minWave:6,minStage:'propagando',
+   add:{bulwark:3,tank:2},from:['chaser','swarm','orbiter'],
+   lore:'Eles não avançam. Eles fecham o espaço até não sobrar espaço.'},
+  {id:'sig_sie_muralha',theme:'siege',nm:'MURALHA FECHADA',minWave:4,minStage:'critica',
+   add:{bulwark:3,shooter:2},from:['swarm','chaser','phantom'],
+   lore:'Uma parede com olhos. Atravessar custa; contornar não existe.'},
+
+  /* ---- CAÇADA: alerta, rastreamento ---- */
+  {id:'sig_hun_matilha',theme:'hunt',nm:'MATILHA',minWave:8,minStage:'propagando',
+   add:{chaser:3,orbiter:2},from:['tank','bulwark','shooter'],
+   lore:'Eles não cercam. Eles acompanham — e o acompanhamento é o ataque.'},
+  {id:'sig_hun_rastro',theme:'hunt',nm:'RASTRO QUENTE',minWave:8,minStage:'critica',
+   add:{chaser:2,phantom:2},from:['tank','bulwark','spawner'],
+   lore:'Alguém aprendeu o seu passo. Agora anda igual.'},
+
+  /* ---- ANOMALIA: distorção, erro ---- */
+  {id:'sig_ano_erro',theme:'anomaly',nm:'ERRO DE CONTINUIDADE',minWave:13,minStage:'critica',
+   add:{singular:1,anomaly:3},from:['swarm','chaser','shooter'],
+   lore:'Duas versões do mesmo instante ocupando o mesmo lugar. Nenhuma cede.'},
+  {id:'sig_ano_fenda',theme:'anomaly',nm:'FENDA INSTÁVEL',minWave:6,minStage:'propagando',
+   add:{anomaly:3,splitter:2},from:['swarm','chaser','orbiter'],
+   lore:'O chão aqui não decide se existe.'},
+
+  /* ---- RESSONÂNCIA: ondas, memória ---- */
+  {id:'sig_res_freq',theme:'resonance',nm:'ECOS DE FREQUÊNCIA',minWave:6,minStage:'propagando',
+   add:{anomaly:2,orbiter:3},from:['swarm','chaser','tank'],
+   lore:'Não são Ecos. São o formato que um Eco teria se não tivesse sido alguém.'},
+  {id:'sig_res_coro',theme:'resonance',nm:'CORO PARTIDO',minWave:8,minStage:'critica',
+   add:{anomaly:2,phantom:2,orbiter:1},from:['swarm','chaser','shooter'],
+   lore:'Todos dizem a mesma frase ao mesmo tempo, e nenhum deles sabe qual.'},
+
+  /* ---- ESCASSEZ: recurso, decadência (menos quantidade) ---- */
+  {id:'sig_esc_bloqueio',theme:'scarcity',nm:'BLOQUEIO DE RECURSOS',minWave:4,minStage:'propagando',
+   add:{bulwark:2,shooter:2},from:['swarm','chaser'],shrink:2,
+   lore:'Poucos, bem colocados, e tudo que você precisa está atrás deles.'},
+  {id:'sig_esc_raciona',theme:'scarcity',nm:'RACIONAMENTO',minWave:6,minStage:'critica',
+   add:{tank:2,shooter:2},from:['swarm','chaser','orbiter'],shrink:3,
+   lore:'A arena também está com pouco. Ela escolheu gastar com o quê.'}
+];
+const FRACTURE_SIG_BY_ID={};
+for(const s of FRACTURE_SIGNATURES)FRACTURE_SIG_BY_ID[s.id]=s;
+/* B4.4: limites de diversidade */
+const FRACTURE_SIG_MAX_PER_RUN=3;    // no máximo 3 assinaturas por run
+const FRACTURE_SIG_COOLDOWN=3;       // pelo menos 3 ondas entre duas
+const FRACTURE_SIG_CHANCE={propagando:.28,critica:.42,ruptura:.55};
+
+/* ---------------- B4.1/B4.2: liberação progressiva por Stage ----------------
+   AUDITORIA (o que já existia e por que esta tabela mudou de forma):
+
+   · `FRACTURE_STAGE_MUL` (do Bloco 2) JÁ escala a força da identidade do Tema
+     por Stage — .80 / .90 / 1 / 1.05 / 1.10. Ela entra em fractureThemeWeight,
+     que alimenta composição, eventos e minibosses ao mesmo tempo.
+
+   · A primeira versão desta tabela tinha um campo `bias` (.45 … 1.32) que
+     multiplicaria esse mesmo valor DE NOVO. Medido, isso faria LATENTE valer
+     .80×.45 = .36 e RUPTURA valer 1.10×1.32 = 1.45 — uma SEGUNDA progressão
+     escondida sobre a primeira, exatamente o que o B4.1 proíbe. O campo foi
+     removido em vez de ligado.
+
+   · Os thresholds (20/40/60/80) foram auditados e MANTIDOS: já são função
+     exclusiva da Intensidade e não criam contagem paralela.
+
+   O que sobra aqui são CAMADAS DE COMPORTAMENTO que o Stage ainda não
+   liberava — cada uma é uma coisa que aparece, nunca um número global:
+     sig — libera Encounter Signatures (B4.3)
+     opp — eleva o peso de eventos RAROS e ANÔMALOS, ou seja, dá ao jogador
+           a CHANCE de topar com as oportunidades mais valiosas da run.
+           Não é buff de HP nem de dano: é frequência de sorte bom.
+   RUPTURA continua sendo "identidade clara + oportunidades raras", como pede
+   o escopo, e LATENTE continua discreto (nenhuma das duas camadas ativa). */
+const FRACTURE_STAGE_GATES={
+  latente   :{sig:0,opp:1,   label:'discreto'},
+  instavel  :{sig:0,opp:1,   label:'perceptível'},
+  propagando:{sig:1,opp:1,   label:'marcado'},
+  critica   :{sig:1,opp:1.20,label:'forte'},
+  ruptura   :{sig:1,opp:1.45,label:'dominante'}
+};
+/* multiplicador de liberação: devolve neutro (1) quando não há Diretor */
+function fractureStageGate(kind){
+  if(!fractureRun)return 1;
+  const st=fractureStageOf(fractureRun.intensity);
+  const g=Object.prototype.hasOwnProperty.call(FRACTURE_STAGE_GATES,st.id)
+    ?FRACTURE_STAGE_GATES[st.id]:null;
+  if(!g)return 1;
+  if(kind==='sig')return g.sig;
+  if(kind==='opp')return g.opp;
+  return 1;
+}
+
+/* ---------------- B4.17: estado do Bloco 4 ----------------
+   fractureRun.b4 guarda só o que impede exploit/duplicidade:
+     rev      onda em que o Tema foi revelado (0 = ainda oculto)
+     revWhy   motivo narrativo da revelação
+     stages   Stage já ANUNCIADO (uma vez por run)
+     sig      mapa onda → id de assinatura (a escolha da onda)
+     sigUsed  ids já usados na run
+     sigLast  onda da última assinatura (cooldown)
+     sigN     quantas assinaturas já aconteceram
+     hudSeen  último par tema|stage já mostrado no HUD (evita redraw) */
+function fractureB4(){
+  if(!fractureRun)return null;
+  if(!fractureRun.b4||typeof fractureRun.b4!=='object')fractureRun.b4={};
+  const b=fractureRun.b4;
+  if(!Number.isFinite(b.rev))b.rev=0;
+  if(typeof b.revWhy!=='string')b.revWhy='';
+  if(!b.stages||typeof b.stages!=='object')b.stages={};
+  if(!b.sig||typeof b.sig!=='object')b.sig={};
+  if(!Array.isArray(b.sigUsed))b.sigUsed=[];
+  if(!Number.isFinite(b.sigLast))b.sigLast=0;
+  if(!Number.isFinite(b.sigN))b.sigN=0;
+  if(typeof b.hudSeen!=='string')b.hudSeen='';
+  /* sinais que levam à revelação (onda em que aconteceram, 0 = nunca) */
+  if(!Number.isFinite(b.evThematic))b.evThematic=0;
+  if(!Number.isFinite(b.miniAligned))b.miniAligned=0;
+  if(!Number.isFinite(b.evSig))b.evSig=0;
+  return b;
+}
+/* sanitização de mapa stageId→1 (anúncios já vistos). Só aceita os 5 ids
+   reais; hasOwnProperty impede __proto__/constructor de virarem Stage. */
+function fractureCleanStageMap(m){
+  const out={};
+  if(!m||typeof m!=='object')return out;
+  const validos={};
+  for(const st of FRACTURE_STAGES)validos[st.id]=1;
+  for(const k in m){
+    if(!Object.prototype.hasOwnProperty.call(m,k))continue;
+    if(!Object.prototype.hasOwnProperty.call(validos,k))continue;
+    out[k]=1;
+  }
+  return out;
+}
+/* sanitização de mapa onda→string (assinaturas) */
+function fractureCleanSigMap(m){
+  const out={};
+  if(!m||typeof m!=='object')return out;
+  for(const k in m){
+    if(!Object.prototype.hasOwnProperty.call(m,k))continue;
+    const w=Math.round(Number(k));
+    if(!Number.isFinite(w)||w<1||w>MAX_WAVE)continue;
+    const v=m[k];
+    if(typeof v!=='string')continue;
+    const id=v.slice(0,32);
+    if(!Object.prototype.hasOwnProperty.call(FRACTURE_SIG_BY_ID,id))continue;
+    out[w]=id;
+  }
+  return out;
+}
+
+/* ---------------- B4.3: elegibilidade (threshold + budget + regra) ----------------
+   Função PURA: não lê nem escreve estado da run além do Tema/Intensidade. */
+function fractureSignatureEligible(sig,wave){
+  if(!sig||!fractureRun)return false;
+  if(sig.theme!==fractureRun.theme)return false;          // só o Tema da run
+  const w=Math.round(Number(wave))||0;
+  if(w<sig.minWave)return false;                          // threshold de inimigo
+  /* B4.3: nunca em onda de miniboss — a assinatura não rouba a cena do chefe */
+  if(typeof MINI_WAVES!=='undefined'&&MINI_WAVES.indexOf(w)>=0)return false;
+  if(w>=MAX_WAVE)return false;                            // onda final é do boss
+  /* B4.2: o Stage precisa liberar a CAMADA de assinaturas… */
+  if(!(fractureStageGate('sig')>0))return false;
+  /* …e a assinatura ainda pede um Stage mínimo próprio */
+  const st=fractureStageOf(fractureRun.intensity);
+  const ordem=['latente','instavel','propagando','critica','ruptura'];
+  if(ordem.indexOf(st.id)<ordem.indexOf(sig.minStage))return false;
+  /* os arquétipos pedidos precisam existir no que waveCompBase já liberou */
+  const base=(typeof waveCompBase==='function')?waveCompBase(w):null;
+  if(base){
+    for(const k in sig.add)
+      if(!Number.isFinite(base[k])||base[k]<=0)return false;
+  }
+  return true;
+}
+function fractureSignaturePool(wave){
+  const out=[];
+  for(const s of FRACTURE_SIGNATURES)
+    if(fractureSignatureEligible(s,wave))out.push(s);
+  return out;
+}
+/* ---------------- B4.3/B4.4: escolha determinística ----------------
+   Decidida UMA vez por onda em fractureOnWaveStart e gravada em b4.sig,
+   porque waveComp() é chamado várias vezes por onda e precisa ser puro. */
+function fracturePickSignature(wave){
+  const b=fractureB4();
+  if(!b)return null;
+  const w=Math.round(Number(wave))||0;
+  /* já decidido para esta onda? devolve a MESMA (Continue reproduz) */
+  if(Object.prototype.hasOwnProperty.call(b.sig,w)){
+    const id=b.sig[w];
+    return Object.prototype.hasOwnProperty.call(FRACTURE_SIG_BY_ID,id)
+      ?FRACTURE_SIG_BY_ID[id]:null;
+  }
+  const pool=fractureSignaturePool(w);
+  if(!pool.length)return null;
+  /* teto por run e cooldown entre assinaturas */
+  if(b.sigN>=FRACTURE_SIG_MAX_PER_RUN)return null;
+  if(b.sigLast&&w-b.sigLast<FRACTURE_SIG_COOLDOWN)return null;
+  /* chance por Stage */
+  const st=fractureStageOf(fractureRun.intensity);
+  const chance=(Object.prototype.hasOwnProperty.call(FRACTURE_SIG_CHANCE,st.id)
+    ?FRACTURE_SIG_CHANCE[st.id]:0);
+  if(!(chance>0))return null;
+  /* B4.4 anti-repeat: descarta o que já saiu nesta run quando há alternativa */
+  let cands=pool.filter(s=>b.sigUsed.indexOf(s.id)<0);
+  if(!cands.length)cands=pool;
+  const rng=fractureRng(fractureHash32(
+    ((fractureRun.seed>>>0)^Math.imul(w+1,0x9E3779B1)^0x51ED2701)>>>0));
+  const roll=rng();
+  if(roll>=chance)return null;                            // esta onda não tem
+  const pick=cands[Math.floor(rng()*cands.length)%cands.length];
+  return pick||null;
+}
+/* ---------------- B4.3: aplicação na composição (PURA, soma preservada) ----
+   Tira 1 de `from` e dá 1 para `add`, na proporção 1:1. O total não muda,
+   então o budget de 46 é respeitado por construção. `shrink` (ESCASSEZ)
+   remove sem repassar. Nunca zera um arquétipo protegido. */
+function fractureApplySignature(comp,wave){
+  if(!comp||typeof comp!=='object')return comp;
+  if(!fractureRun)return comp;
+  const b=fractureB4();
+  if(!b)return comp;
+  const w=Math.round(Number(wave))||0;
+  const id=b.sig[w];
+  if(!id||!Object.prototype.hasOwnProperty.call(FRACTURE_SIG_BY_ID,id))return comp;
+  const sig=FRACTURE_SIG_BY_ID[id];
+  if(sig.theme!==fractureRun.theme)return comp;
+  const out=Object.assign({},comp);
+  /* ordem estável: sempre a mesma para a mesma assinatura */
+  const from=Array.isArray(sig.from)?sig.from.slice():[];
+  const adds=Object.keys(sig.add).sort();
+  let fi=0;
+  for(const k of adds){
+    const want=Math.max(0,Math.round(Number(sig.add[k])||0));
+    for(let i=0;i<want;i++){
+      /* procura uma fonte que ainda tenha gordura */
+      let src=null;
+      for(let t=0;t<from.length;t++){
+        const c=from[(fi+t)%from.length];
+        const piso=(Object.prototype.hasOwnProperty.call(WAVE_PROTECTED_MIN,c)
+          ?WAVE_PROTECTED_MIN[c]:0);
+        if((out[c]|0)>piso){src=c;fi=(fi+t+1)%Math.max(1,from.length);break;}
+      }
+      if(!src)break;                 // sem gordura: para, nunca estoura budget
+      out[src]=(out[src]|0)-1;
+      out[k]=(out[k]|0)+1;           // 1:1 → total preservado
+    }
+  }
+  /* ESCASSEZ: remove sem repassar (menos quantidade bruta) */
+  const sh=Math.max(0,Math.round(Number(sig.shrink)||0));
+  for(let i=0;i<sh;i++){
+    let src=null;
+    for(let t=0;t<from.length;t++){
+      const c=from[(fi+t)%from.length];
+      const piso=(Object.prototype.hasOwnProperty.call(WAVE_PROTECTED_MIN,c)
+        ?WAVE_PROTECTED_MIN[c]:0);
+      if((out[c]|0)>piso){src=c;fi=(fi+t+1)%Math.max(1,from.length);break;}
+    }
+    if(!src)break;
+    out[src]=(out[src]|0)-1;
+  }
+  for(const k in out)if(!Number.isFinite(out[k])||out[k]<0)out[k]=0;
+  return out;
+}
+/* ---------------- B4.10: o que o jogador vê ---------------- */
+function fractureSignatureForWave(wave){
+  const b=fractureB4();
+  if(!b)return null;
+  const w=Math.round(Number(wave))||0;
+  const id=b.sig[w];
+  if(!id||!Object.prototype.hasOwnProperty.call(FRACTURE_SIG_BY_ID,id))return null;
+  const sig=FRACTURE_SIG_BY_ID[id];
+  return sig.theme===fractureRun.theme?sig:null;
+}
+function fractureSignatureReport(wave){
+  const w=clamp(Math.round(Number(wave))||1,1,MAX_WAVE);
+  const sig=fractureSignatureForWave(w);
+  const b=fractureB4();
+  return {wave:w,sig:sig,id:sig?sig.id:null,nm:sig?sig.nm:null,
+    pool:fractureSignaturePool(w).map(s=>s.id),
+    used:(b?b.sigUsed.slice():[]),n:(b?b.sigN|0:0),
+    max:FRACTURE_SIG_MAX_PER_RUN,cooldown:FRACTURE_SIG_COOLDOWN,
+    last:(b?b.sigLast|0:0)};
+}
+
+/* =====================================================================
+   BLOCO 4 — REVELAÇÃO, HUD, FEEDBACK, CODEX, LORE, REAÇÕES
+   ===================================================================== */
+
+/* ---------------- B4.12: LORE dos seis Temas (2 entradas cada) ----------------
+   Curto de propósito: sensação e mundo, não documentação técnica. */
+const FRACTURE_LORE={
+  collapse:[
+    {t:'O QUE CEDE',d:'Não há explosão. Há um momento em que o setor simplesmente '+
+      'deixa de sustentar a própria forma, e tudo que estava dentro passa a caber '+
+      'em menos espaço do que antes. Os técnicos chamavam de <i>colapso por '+
+      'densidade</i>. Os sobreviventes chamam de <i>cheio</i>.'},
+    {t:'CONTAGEM ERRADA',d:'O protocolo mandava contar os corpos. Em colapso a '+
+      'contagem nunca fecha: cada registro puxa outro. Alguém decidiu que o '+
+      'problema era o protocolo e parou de contar.'}],
+  siege:[
+    {t:'A LINHA',d:'Existe um perímetro que ninguém desenhou. De um lado dele as '+
+      'coisas avançam; do outro, esperam. Quem ficou tempo suficiente aprendeu a '+
+      'sentir onde ele passa — e aprendeu tarde que ele se move.'},
+    {t:'CONTENÇÃO',d:'A Âncora tentou lacrar o setor três vezes. Nas três, a '+
+      'fratura respondeu do mesmo jeito: não rompeu o lacre, apenas o incluiu. '+
+      'Hoje o lacre faz parte da defesa deles.'}],
+  hunt:[
+    {t:'O REGISTRO DO PASSO',d:'A fratura não vê. Ela mede o intervalo entre os '+
+      'seus passos e aprende o ritmo. Depois de três ciclos ela não precisa mais '+
+      'procurar você — basta chegar antes.'},
+    {t:'MATILHA',d:'Nunca atacam sozinhos porque nunca estiveram sozinhos. O que '+
+      'parece um grupo é uma única intenção dividida em vários corpos, e por isso '+
+      'matar um deles não interrompe nada.'}],
+  anomaly:[
+    {t:'ERRO DE CONTINUIDADE',d:'Há um corredor no nível quatro onde duas versões '+
+      'do mesmo instante insistem em coexistir. Nenhuma cede. A arena resolveu o '+
+      'impasse do jeito mais simples possível: manteve as duas.'},
+    {t:'IMPROVISO',d:'As regras físicas do setor foram registradas, auditadas e '+
+      'assinadas. Depois do colapso, elas viraram <i>sugestões</i>. A fratura '+
+      'improvisa — e o improviso dela não tem intenção de ser gentil.'}],
+  resonance:[
+    {t:'O QUE FICOU PENDURADO',d:'Todo vínculo deixa uma ponta solta. A fratura '+
+      'guarda essas pontas. Quando dois Ecos passam perto, as pontas vibram na '+
+      'mesma frequência e algo responde do outro lado.'},
+    {t:'FREQUÊNCIA',d:'Não são Ecos. São o formato que um Eco teria se nunca '+
+      'tivesse sido alguém. Reconhecem você do mesmo jeito — e é isso que '+
+      'incomoda os Remanescentes.'}],
+  scarcity:[
+    {t:'O QUE RESTA',d:'O setor não acabou com os recursos: acabou com a '+
+      'possibilidade de haver mais. Tudo que existe aqui já existia quando você '+
+      'chegou. Nada será reposto, e todo mundo sabe.'},
+    {t:'RACIONAMENTO',d:'O Consórcio chama de <i>mercado fechado</i>. A Âncora '+
+      'chama de <i>colapso logístico</i>. Quem mora aqui chama de <i>terça-feira</i>. '+
+      'A arena também está com pouco — ela só escolheu com o quê gastar.'}]
+};
+
+/* ---------------- B4.5: REVELAÇÃO DO TEMA ----------------
+   O Tema existe desde a onda 1, mas o jogador não recebe o nome de graça.
+   A revelação acontece por gatilho, no máximo uma vez por run, e é
+   narrativa — nunca uma escolha. */
+const FRACTURE_REVEAL_MIN_WAVE=3;      // antes disso, nem com gatilho
+const FRACTURE_REVEAL_INT=30;          // Intensidade alta basta como sinal
+/* Os sinais são RELATIVOS, não absolutos — e isso foi medido, não escolhido.
+   Numa run real a Intensidade cresce ~2/onda, então na onda 10 o peso do Tema
+   vale ~0.14 e o maior multiplicador de evento chega só a ~1.15. Um threshold
+   absoluto de 1.30 nunca seria atingido antes do fallback de tempo, o que
+   fazia 100% das runs revelarem exatamente na mesma onda e pelo mesmo motivo.
+
+   O que o jogador percebe é "a coisa mais característica deste Tema
+   apareceu", então o sinal é: o evento disparado está no DECIL SUPERIOR do
+   viés da onda (e acima de 1.08, para não contar ruído). */
+const FRACTURE_REVEAL_EV_FLOOR=1.08;
+const FRACTURE_REVEAL_EV_DECILE=.80;   // quintil superior, não decil
+/* miniboss: precisa ser O mais favorecido do pool (argmax) e acima de 1.10.
+   São só 3 ondas de miniboss por run e o favorito tem ~25-30% de chance,
+   então este gatilho é raro de verdade. */
+const FRACTURE_REVEAL_MINI_FLOOR=1.10;
+/* fallback de tempo, determinístico por seed: varia de 7 a 10 conforme a run,
+   para que a revelação não aconteça sempre na mesma onda. */
+const FRACTURE_REVEAL_FORCE_MIN=8,FRACTURE_REVEAL_FORCE_SPAN=5;  // 8..12
+function fractureRevealForceWave(){
+  if(!fractureRun)return FRACTURE_REVEAL_FORCE_MIN;
+  return FRACTURE_REVEAL_FORCE_MIN+
+    (fractureHash32((fractureRun.seed>>>0)^0x5EED17)%FRACTURE_REVEAL_FORCE_SPAN);
+}
+/* devolve o motivo da revelação se houver gatilho nesta onda, senão null */
+/* O evento disparado está no decil superior do viés desta onda? Medido sobre
+   o pool inteiro de eventos da run, então escala com a Intensidade em vez de
+   exigir um multiplicador absoluto que só existiria em run de Intensidade
+   máxima. Só leitura — nada aqui altera o sorteio. */
+function fractureIsThematicEvent(d){
+  if(!d||!fractureRun)return false;
+  const ctx=fractureEvCtx(fractureWaveCtx());
+  let mine=1;
+  try{mine=fractureEventBiasMul(d,ctx);}catch(e){return false;}
+  if(!(mine>FRACTURE_REVEAL_EV_FLOOR))return false;
+  const pool=(typeof ALL_RUN_EVENTS!=='undefined'&&Array.isArray(ALL_RUN_EVENTS))?ALL_RUN_EVENTS:[];
+  if(!pool.length)return false;
+  const vals=[];
+  for(const e of pool){
+    let v=1;try{v=fractureEventBiasMul(e,ctx);}catch(err){v=1;}
+    vals.push(v);
+  }
+  vals.sort((a,b)=>a-b);
+  const cut=vals[Math.min(vals.length-1,Math.floor(vals.length*FRACTURE_REVEAL_EV_DECILE))];
+  return mine>=cut;
+}
+
+/* O miniboss que apareceu é O mais favorecido do pool desta onda? argmax,
+   não threshold absoluto — mesmo motivo de fractureIsThematicEvent. */
+function fractureIsAlignedMini(def,w){
+  if(!def||!fractureRun)return false;
+  const ctx=fractureWaveCtx();
+  let pool=[];
+  try{pool=miniEligiblePool(w|0)||[];}catch(e){pool=[];}
+  if(!pool.length)return false;
+  let mine=1,best=1;
+  try{mine=fractureMiniWeight(def,ctx);}catch(e){return false;}
+  for(const m of pool){
+    let v=1;try{v=fractureMiniWeight(m,ctx);}catch(err){v=1;}
+    if(v>best)best=v;
+  }
+  return mine>=best&&mine>=FRACTURE_REVEAL_MINI_FLOOR;
+}
+
+function fractureRevealTrigger(wave,info){
+  if(!fractureRun)return null;
+  const b=fractureB4();
+  if(!b||b.rev>0)return null;                      // já revelado: nunca de novo
+  const w=Math.round(Number(wave))||0;
+  if(w<FRACTURE_REVEAL_MIN_WAVE)return null;
+  const i=info||{};
+  /* gatilhos fortes, na ordem do mais específico para o mais genérico.
+     Todos vêm de algo que ACONTECEU na run — nunca de "a wave chegou". */
+  if(i.signature||b.evSig)return 'signature';
+  if(i.miniAligned||b.miniAligned)return 'miniboss';
+  if(i.thematicEvent||b.evThematic)return 'evento';
+  /* gatilhos de tempo/pressão */
+  if(fractureRun.intensity>=FRACTURE_REVEAL_INT)return 'intensidade';
+  if(w>=fractureRevealForceWave())return 'tempo';
+  return null;
+}
+const FRACTURE_REVEAL_TEXT={
+  signature:'ASSINATURA DE FRATURA RECONHECIDA',
+  miniboss:'O QUE VEIO DA FENDA TEM UMA FORMA CONHECIDA',
+  evento:'UM ACONTECIMENTO DESTA LINHA SÓ ACONTECE AQUI',
+  intensidade:'A FRATURA DEIXOU DE DISCRETA',
+  tempo:'VOCÊ JÁ VIU O SUFICIENTE PARA NOMEAR ISTO'
+};
+/* revela. Idempotente: chamar de novo não faz nada. */
+function fractureReveal(reason,wave){
+  const b=fractureB4();
+  if(!b||b.rev>0)return false;
+  const w=clamp(Math.round(Number(wave))||
+    ((typeof wave!=='undefined')?(wave|0):0),1,MAX_WAVE);
+  b.rev=w;
+  b.revWhy=String(reason||'').slice(0,24);
+  try{fractureHistPush({t:'reveal',w:w,d:0,s:b.revWhy});}catch(e){}
+  /* B4.11: descoberta narrativa persiste por slot (não é estado de run) */
+  try{fractureCodexDiscover(fractureRun.theme);}catch(e){}
+  /* B4.8/B4.5: feedback curto, sem interromper o jogo */
+  const th=fractureGetTheme();
+  try{
+    if(th)banner('FRATURA IDENTIFICADA',th.sym+' '+th.nm);
+    if(typeof toast==='function')
+      toast(FRACTURE_REVEAL_TEXT[b.revWhy]||'ASSINATURA TEMPORAL IDENTIFICADA');
+  }catch(e){}
+  try{fractureEchoOnReveal();}catch(e){}
+  return true;
+}
+function fractureIsRevealed(){
+  const b=fractureB4();
+  return !!(b&&b.rev>0);
+}
+
+/* ---------------- B4.6/B4.7: HUD ----------------
+   Chip compacto no estilo dos chips existentes. Mostra estado narrativo,
+   nunca "47/100". Antes da revelação, mostra DESCONHECIDA. */
+const FRACTURE_HUD_UNKNOWN={nm:'DESCONHECIDA',sym:'◌',col:'#9db8c8'};
+function fractureHudState(){
+  if(!fractureRun)return null;
+  const st=fractureStageOf(fractureRun.intensity);
+  if(!fractureIsRevealed())
+    return {known:false,themeNm:FRACTURE_HUD_UNKNOWN.nm,sym:FRACTURE_HUD_UNKNOWN.sym,
+      col:FRACTURE_HUD_UNKNOWN.col,stage:st.lab,stageCol:st.col,stageId:st.id};
+  const th=fractureGetTheme();
+  return {known:true,themeNm:th?th.nm:'—',sym:th?th.sym:'?',
+    col:th?th.col:'#9db8c8',stage:st.lab,stageCol:st.col,stageId:st.id};
+}
+/* texto do chip — nunca expõe id cru nem número de Intensidade */
+function fractureHudText(){
+  const h=fractureHudState();
+  if(!h)return '';
+  return h.known?(h.themeNm+' · '+h.stage):('DESCONHECIDA · '+h.stage);
+}
+function fractureHudChip(){
+  if(!document||typeof document.getElementById!=='function')return;
+  const hud=document.getElementById('hud');
+  if(!hud)return;
+  let chip=document.getElementById('frac-hud-theme');
+  if(!fractureRun||!(typeof state!=='undefined'&&(state==='play'||state==='paused'))){
+    if(chip&&chip.parentNode)chip.parentNode.removeChild(chip);
+    return;
+  }
+  const h=fractureHudState();
+  if(!h){if(chip&&chip.parentNode)chip.parentNode.removeChild(chip);return;}
+  if(!chip){
+    chip=document.createElement('div');
+    chip.id='frac-hud-theme';
+    chip.style.cssText='position:absolute;top:88px;right:14px;'+
+      'font-family:Consolas,monospace;font-size:11px;letter-spacing:.16em;'+
+      'padding:5px 10px;z-index:44;pointer-events:none;'+
+      'background:rgba(8,20,32,.72);border:1px solid rgba(232,251,255,.22)';
+    hud.appendChild(chip);
+  }
+  const sig=fractureSignatureForWave((typeof wave!=='undefined')?(wave|0):0);
+  const key=[h.known,h.themeNm,h.stageId,sig?sig.id:''].join('|');
+  /* B4.9: identidade visual por Tema — cor da borda e símbolo, nada além disso
+     (sem rework artístico e sem comprometer legibilidade) */
+  chip.style.color=h.known?h.col:'#9db8c8';
+  chip.style.borderColor=(h.known?h.col:'#9db8c8')+'44';
+  chip.textContent='FRACTURA  '+h.sym+' '+fractureHudText()+
+    (sig?('   ⚑ '+sig.nm):'');
+  const b=fractureB4();
+  if(b)b.hudSeen=key;
+}
+
+/* ---------------- B4.8: transição de Stage ----------------
+   Cada Stage anuncia no MÁXIMO uma vez por run, e o Continue não repete
+   anúncio já visto (a flag vai no checkpoint). */
+function fractureStageAnnounce(stageId,wave){
+  const b=fractureB4();
+  if(!b)return false;
+  const id=String(stageId||'');
+  /* valida contra o catálogo ANTES de marcar: sem isso qualquer string
+     (inclusive '__proto__' ou um Stage inventado) virava "já anunciado"
+     e a função devolvia true alegando ter anunciado algo inexistente. */
+  let valido=false;
+  for(const st of FRACTURE_STAGES)if(st.id===id)valido=true;
+  if(!valido)return false;
+  if(Object.prototype.hasOwnProperty.call(b.stages,id))return false;
+  b.stages[id]=1;
+  const w=clamp(Math.round(Number(wave))||0,0,MAX_WAVE);
+  const st=fractureStageOf(fractureRun?fractureRun.intensity:0);
+  const MSG={
+    latente:'A FRATURA ESTÁ PRESENTE',
+    instavel:'A FRATURA ESTÁ INSTÁVEL',
+    propagando:'A FRATURA ESTÁ SE PROPAGANDO',
+    critica:'A FRATURA ESTÁ CRÍTICA',
+    ruptura:'A FRATURA ROMPEU'
+  };
+  try{fractureHistPush({t:'stage',w:w,d:0,s:id});}catch(e){}
+  /* latente é o estado inicial — marca sem anunciar, para não gastar o
+     primeiro banner da run com algo que o jogador já está vendo */
+  if(id==='latente')return false;
+  try{
+    if(typeof banner==='function')banner(MSG[id]||'A FRATURA MUDOU',
+      (fractureGetTheme()&&fractureIsRevealed())
+        ?(fractureGetTheme().sym+' '+fractureGetTheme().nm+' · '+st.lab):st.lab);
+    if(typeof AUDIO!=='undefined'&&AUDIO&&typeof AUDIO.ui==='function')AUDIO.ui(300);
+  }catch(e){}
+  try{fractureEchoOnStage(id);}catch(e){}
+  return true;
+}
+
+/* ---------------- B4.9/B4.10: feedback de assinatura na onda ---------------- */
+function fractureSignatureBanner(sig,wave){
+  if(!sig)return false;
+  try{
+    if(typeof banner==='function')
+      banner('ASSINATURA DE FRATURA',sig.sym+' '+sig.nm);
+    if(typeof toast==='function')toast('COMPOSIÇÃO INCOMUM · '+sig.nm);
+  }catch(e){}
+  try{fractureEchoOnSignature(sig);}catch(e){}
+  return true;
+}
+
+/* ---------------- B4.14: ECHO REAGE (só fala; nunca escreve) ----------------
+   Mesmo contrato do B3: echoSpeak + cooldowns existentes. Não altera
+   Personality, Trust, Relationship nem Dissonância. */
+const FRACTURE_B4_ECHO_LINES={
+  reveal:['Isso tem nome, então. Eu preferia quando não tinha.',
+    'Reconheci o padrão antes de você. Não sei o que isso diz de mim.',
+    'Agora que você sabe, ela também sabe que você sabe.'],
+  critica:['Está alto. Eu consigo ouvir o ciclo inteiro daqui.',
+    'Não é a arena tremendo — é o tempo tentando caber.',
+    'Se subir mais, eu não sei qual de nós vai responder.'],
+  ruptura:['Acabou a margem. Isto aqui agora é só consequência.',
+    'Eu já estive neste exato ponto. Terminou mal das duas vezes.',
+    'Segura. Segura. Segura.'],
+  signature:['Essa formação não é natural. Alguém a escolheu.',
+    'Já vi isto antes, em outra run. Não nesta.',
+    'Eles estão se comportando como uma frase, não como um grupo.']
+};
+function fractureEchoSpeakPick(key){
+  const pool=FRACTURE_B4_ECHO_LINES[key];
+  if(!pool||!pool.length)return null;
+  if(typeof echoes==='undefined'||!echoes||!echoes.length)return null;
+  const alvo=echoes.filter(e=>e&&e.alive&&echoAllied(e))[0]||
+    echoes.filter(e=>e&&e.alive)[0];
+  if(!alvo)return null;
+  /* escolha determinística por (seed, onda, chave) — sem aleatoriedade solta */
+  const w=(typeof wave!=='undefined')?(wave|0):0;
+  const rng=fractureRng(fractureHash32(
+    ((fractureRun?fractureRun.seed>>>0:1)^Math.imul(w+1,0x9E3779B1)^
+     Math.imul(fractureHash32(key),0x85EBCA6B))>>>0));
+  const txt=pool[Math.floor(rng()*pool.length)%pool.length];
+  try{echoSpeak(alvo,txt,'#8ff6ff');}catch(e){return false;}
+  return true;
+}
+function fractureEchoOnReveal(){return fractureEchoSpeakPick('reveal');}
+function fractureEchoOnStage(id){
+  if(id==='critica')return fractureEchoSpeakPick('critica');
+  if(id==='ruptura')return fractureEchoSpeakPick('ruptura');
+  return false;
+}
+function fractureEchoOnSignature(){return fractureEchoSpeakPick('signature');}
+
+/* ---------------- B4.13: FACÇÕES REAGEM, NÃO CONTROLAM ----------------
+   Devolve uma frase de observação. NÃO chama factionEmit: afinidade
+   continua vindo exclusivamente de escolhas concretas. */
+const FRACTURE_FACTION_REMARKS={
+  collapse:{anchor:'A Âncora registra a cascata e não tenta mais contê-la.',
+    consortium:'O Consórcio calcula o custo de reconstruir e desiste.'},
+  siege:{anchor:'A Âncora aprova: contenção é o que ela sabe fazer.',
+    remnants:'Os Remanescentes usam a linha para esconder gente.'},
+  hunt:{deviants:'Os Desviados apostam em quanto tempo você dura.',
+    consortium:'O Consórcio cobra pedágio pelas rotas de fuga.'},
+  anomaly:{anchor:'A Âncora observa ANOMALIA com preocupação mal disfarçada.',
+    deviants:'Os Desviados estão genuinamente interessados. Isso é pior.'},
+  resonance:{remnants:'Os Remanescentes ficam em silêncio quando isto começa.',
+    anchor:'A Âncora prefere não registrar o que os Ecos disseram.'},
+  scarcity:{consortium:'O Consórcio vê oportunidade onde os outros veem falta.',
+    remnants:'Os Remanescentes racionam o que já não era suficiente.'}
+};
+function fractureFactionRemark(){
+  if(!fractureRun||!fractureIsRevealed())return null;
+  const th=fractureRun.theme;
+  const m=Object.prototype.hasOwnProperty.call(FRACTURE_FACTION_REMARKS,th)
+    ?FRACTURE_FACTION_REMARKS[th]:null;
+  if(!m)return null;
+  const keys=Object.keys(m);
+  if(!keys.length)return null;
+  const w=(typeof wave!=='undefined')?(wave|0):0;
+  const rng=fractureRng(fractureHash32(
+    ((fractureRun.seed>>>0)^Math.imul(w+7,0x9E3779B1))>>>0));
+  const k=keys[Math.floor(rng()*keys.length)%keys.length];
+  return {faction:k,text:m[k]};
+}
+
+/* ---------------- B4.11: CODEX — descoberta por slot ----------------
+   Conteúdo narrativo permanente. NENHUM estado mecânico de run é gravado
+   aqui: só "este Tema já foi identificado neste slot". */
+/* o padrão de persistência por slot é o mesmo de prog/echoes/meta:
+   smRoot.slots[curSlot].<chave>, seguido de smCommit(). */
+function fractureCodexSlot(){
+  if(typeof smEnsureSlot==='function'&&!smEnsureSlot())return null;
+  if(typeof smRoot==='undefined'||!smRoot||!smRoot.slots)return null;
+  const s=smRoot.slots[curSlot];
+  if(!s||typeof s!=='object')return null;
+  return s;
+}
+function fractureCodexDiscover(themeId){
+  const id=String(themeId||'');
+  if(!Object.prototype.hasOwnProperty.call(FRACTURE_THEME_BY_ID,id))return false;
+  /* Descoberta narrativa é permanente — mas NUNCA a partir do Sandbox nem de
+     uma run contaminada pelo DEV. O byte-a-byte dos Save 1/2/3 é intocável,
+     e o teste 17 do bloco Sandbox verifica exatamente isso. */
+  if(typeof sandboxRun!=='undefined'&&sandboxRun)return false;
+  if(typeof devTainted!=='undefined'&&devTainted)return false;
+  try{
+    const s=fractureCodexSlot();
+    if(!s)return false;
+    if(!s.fxThemes||typeof s.fxThemes!=='object')s.fxThemes={};
+    if(s.fxThemes[id])return false;                    // já descoberto
+    s.fxThemes[id]=1;
+    if(typeof smCommit==='function')smCommit();
+    return true;
+  }catch(e){return false;}
+}
+function fractureCodexDiscovered(){
+  const out=[];
+  try{
+    const s=fractureCodexSlot();
+    if(!s||!s.fxThemes)return out;
+    for(const id in s.fxThemes)
+      if(Object.prototype.hasOwnProperty.call(s.fxThemes,id)&&
+         Object.prototype.hasOwnProperty.call(FRACTURE_THEME_BY_ID,id))out.push(id);
+  }catch(e){}
+  return out;
+}
+function fractureCodexBody(){
+  const el=document.getElementById('cx-body');
+  if(!el)return;
+  const done=fractureCodexDiscovered();
+  let h='<div class="cds" style="color:#cfe9f7">ASSINATURAS TEMPORAIS</div>';
+  h+='<div class="cds" style="opacity:.7;font-size:12px">Cada ciclo carrega uma '+
+    'única assinatura. Ela é identificada durante a run, não escolhida. '+
+    'Descobertas: '+done.length+'/'+FRACTURE_THEME_IDS.length+' neste Save.</div>';
+  for(const id of FRACTURE_THEME_IDS){
+    const th=FRACTURE_THEME_BY_ID[id];
+    const known=done.indexOf(id)>=0;
+    h+='<div class="cds" style="border-color:'+(known?th.col:'rgba(255,255,255,.12)')+
+      ';margin-top:8px">';
+    h+='<div style="color:'+(known?th.col:'#7d8b96')+';letter-spacing:.18em">'+
+      (known?(th.sym+' '+th.nm):'◌ ASSINATURA NÃO IDENTIFICADA')+'</div>';
+    if(known){
+      h+='<div style="margin-top:6px;opacity:.9">'+escDev(th.desc)+'</div>';
+      const lo=(Object.prototype.hasOwnProperty.call(FRACTURE_LORE,id)
+        ?FRACTURE_LORE[id]:[]);
+      for(const e of lo)
+        h+='<div style="margin-top:8px"><b style="letter-spacing:.1em;opacity:.85">'+
+          escDev(e.t)+'</b><div style="opacity:.8">'+e.d+'</div></div>';
+    }else{
+      h+='<div style="margin-top:6px;opacity:.55">Identifique esta assinatura '+
+        'durante um ciclo para registrar o arquivo.</div>';
+    }
+    h+='</div>';
+  }
+  el.innerHTML=h;
+}
 
 /* ---------------- ciclo de vida da run ---------------- */
 function fractureBeginRun(){
@@ -25282,12 +26216,29 @@ function fractureRunPack(){
       const ids=MINIBOSS.map(m=>m.id);
       return {evW:b.evW|0,evWG:clamp(b.evWG|0,0,FRACTURE_EV_INT_PER_WAVE_MAX),
         evRG:clamp(b.evRG|0,0,FRACTURE_EV_INT_PER_RUN_MAX),
+        evSpike:b.evSpike?1:0,
         mini:fractureCleanMiniMap(b.mini,ids),
         miniSpawn:fractureCleanMiniMap(b.miniSpawn,null),
         miniPaid:fractureCleanMiniMap(b.miniPaid,null),
         lastEv:fractureCleanLastEv(b.lastEv),
         resoW:b.resoW|0,
         scarUsed:fractureCleanMiniMap(b.scarUsed,null)};
+    })(),
+    /* B4: só o que impede repetir anúncio, re-sortejar assinatura ou
+       revelar duas vezes. Nada de estado mecânico grande aqui. */
+    b4:(function(){
+      const b=fractureB4();
+      if(!b)return null;
+      return {rev:clamp(b.rev|0,0,MAX_WAVE),
+        revWhy:String(b.revWhy||'').slice(0,24),
+        stages:fractureCleanStageMap(b.stages),
+        sig:fractureCleanSigMap(b.sig),
+        sigUsed:(Array.isArray(b.sigUsed)?b.sigUsed:[])
+          .filter(x=>typeof x==='string'&&
+            Object.prototype.hasOwnProperty.call(FRACTURE_SIG_BY_ID,x))
+          .slice(-12),
+        sigLast:clamp(b.sigLast|0,0,MAX_WAVE),
+        sigN:clamp(b.sigN|0,0,FRACTURE_SIG_MAX_PER_RUN)};
     })()};
 }
 /* input NÃO confiável (igual a fracRunUnpack): save antigo sem cp.fracture
@@ -25341,12 +26292,30 @@ function fractureRunUnpack(cp){
     b.evW=clamp(Math.round(Number(q.evW))||0,0,MAX_WAVE);
     b.evWG=clamp(Math.round(Number(q.evWG))||0,0,FRACTURE_EV_INT_PER_WAVE_MAX);
     b.evRG=clamp(Math.round(Number(q.evRG))||0,0,FRACTURE_EV_INT_PER_RUN_MAX);
+    b.evSpike=q.evSpike?1:0;   // save antigo sem o campo ⇒ 0 (nunca concedeu)
     b.mini=fractureCleanMiniMap(q.mini,ids);
     b.miniSpawn=fractureCleanMiniMap(q.miniSpawn,null);
     b.miniPaid=fractureCleanMiniMap(q.miniPaid,null);
     b.lastEv=fractureCleanLastEv(q.lastEv);
     b.resoW=clamp(Math.round(Number(q.resoW))||0,0,MAX_WAVE);
     b.scarUsed=fractureCleanMiniMap(q.scarUsed,null);
+  }
+  /* B4.17: estado do Bloco 4. Save antigo (sem p.b4) fica zerado — o Tema
+     começa oculto de novo, o que é seguro: revelar é idempotente e o
+     gatilho de tempo acaba revelando sozinho. Malformado cai no mesmo
+     caminho, porque cada campo é revalidado. */
+  if(p.b4&&typeof p.b4==='object'){
+    const b=fractureB4(),q=p.b4;
+    b.rev=clamp(Math.round(Number(q.rev))||0,0,MAX_WAVE);
+    b.revWhy=String(q.revWhy||'').slice(0,24);
+    b.stages=fractureCleanStageMap(q.stages);
+    b.sig=fractureCleanSigMap(q.sig);
+    b.sigUsed=(Array.isArray(q.sigUsed)?q.sigUsed:[])
+      .filter(x=>typeof x==='string'&&
+        Object.prototype.hasOwnProperty.call(FRACTURE_SIG_BY_ID,x))
+      .slice(-12);
+    b.sigLast=clamp(Math.round(Number(q.sigLast))||0,0,MAX_WAVE);
+    b.sigN=clamp(Math.round(Number(q.sigN))||0,0,FRACTURE_SIG_MAX_PER_RUN);
   }
   return fractureRun;
 }
@@ -25464,6 +26433,49 @@ function fractureSandboxSection(){
   for(const ln of fractureB3InspectorLines()){
     h+='<div class="srow"><span class="v" style="white-space:pre-wrap">'+escDev(ln)+'</span></div>';
   }
+  /* ---- B4.18: laboratório do Bloco 4 ----
+     Tema, Intensidade, Stage, revelação e assinatura forçada, tudo isolado
+     na run de Sandbox. A descoberta do Codex se recusa aqui (ver
+     fractureCodexDiscover), então Save 1/2/3 permanecem byte-a-byte. */
+  h+='<div class="sect" style="border-color:rgba(255,209,102,.4);margin-top:10px">'+
+    'PR 13 BLOCO 4 — ASSINATURAS · REVELAÇÃO · ESTÁGIOS</div>';
+  const b4=run?fractureB4():null;
+  h+='<div class="srow"><span class="k">REVELAÇÃO</span><span class="v">'+
+    (b4&&b4.rev>0
+      ?('revelado na w'+b4.rev+' · motivo '+b4.revWhy+' · '+
+        ((fractureThemeById(run.theme)||{}).nm||'—'))
+      :'OCULTA — o HUD mostra ASSINATURA TEMPORAL DESCONHECIDA')+
+    ' · <b>'+escDev(fractureHudText())+'</b></span></div>';
+  h+='<div class="sbrow" style="flex-wrap:wrap">'+
+    '<span class="asbtn" data-f2sb="reveal">REVELAR TEMA</span>'
+    +'</div>';
+  h+='<div class="srow"><span class="k">ESTÁGIO</span><span class="v">'+
+    fractureStageOf(run.intensity).lab+' · camadas liberadas: '+
+    (function(){const g=FRACTURE_STAGE_GATES[fractureStageOf(run.intensity).id]||{};
+      return (g.sig?'assinaturas SIM':'assinaturas NÃO')+
+        ' · oportunidade rara ×'+(g.opp||1);})()+'</span></div>';
+  h+='<div class="sbrow" style="flex-wrap:wrap">';
+  for(const st of FRACTURE_STAGES.slice().sort((a,b)=>a.min-b.min))
+    h+='<span class="asbtn" data-f2sb="stage:'+st.id+'"'+
+      (fractureStageOf(run.intensity).id===st.id
+        ?' style="color:'+st.col+';border-color:'+st.col+'"':'')+'>'+st.lab+'</span>';
+  h+='<span class="asbtn" data-f2sb="sim:transicao">SIMULAR TRANSIÇÃO</span></div>';
+  const repS=fractureSignatureReport(cur);
+  h+='<div class="srow"><span class="k">ASSINATURA w'+String(cur).padStart(2,'0')+
+    '</span><span class="v">'+(repS.nm?(repS.nm+' ['+repS.id+']'):'nenhuma')+
+    ' · usadas '+repS.used.length+'/'+repS.max+
+    ' · pool elegível: '+(repS.pool.length?repS.pool.join('/'):'vazio')+
+    '</span></div>';
+  h+='<div class="sbrow" style="flex-wrap:wrap">';
+  for(const sg of FRACTURE_SIGNATURES)
+    h+='<span class="asbtn" data-f2sb="sig:'+sg.id+'"'+
+      (sg.theme===run.theme?' style="color:'+(fractureThemeById(sg.theme)||{}).col+'"':'')+
+      ' title="'+escDev(sg.nm)+'">'+escDev(sg.nm)+'</span>';
+  h+='<span class="asbtn" data-f2sb="sig:off">LIMPAR</span></div>';
+  h+='<div class="srow"><span class="k" style="color:#9db8c8">Assinaturas em cor são as '+
+    'do Tema atual (as outras são mostradas para teste, mas não são aplicadas). Elas '+
+    'REDISTRIBUEM arquétipos 1:1 — nunca inflam a onda nem estouram o teto de '+
+    ENEMY_BUDGET+' entidades.</span></div>';
   h+='<div class="srow"><span class="k" style="color:#9db8c8">Trocar Tema/Intensidade acima '+
     'remonta estes números na hora. O Diretor só LÊ o Echo — nada aqui escreve em trust, '+
     'relationship, dissonância ou personality, e o byte-a-byte dos Save 1/2/3 não é tocado.'+
@@ -25502,6 +26514,46 @@ function fractureSandboxAction(cmd){
   }else if(cmd.indexOf('wave:')===0){
     const n=clamp(Math.round(Number(cmd.slice(5)))||1,1,MAX_WAVE);
     if(typeof player!=='undefined'&&player){sandboxJumpTo(n);ok=true;msg='Onda → '+n;}
+  /* ---- B4.18: laboratório do Bloco 4 ----
+     Tudo isolado na run de Sandbox. Nada aqui grava no Save 1/2/3: a
+     descoberta do Codex se recusa quando sandboxRun está ativo (ver
+     fractureCodexDiscover), então o byte-a-byte dos slots não é tocado. */
+  }else if(cmd.indexOf('stage:')===0){
+    const id=cmd.slice(6);
+    let alvo=null;
+    for(const st of FRACTURE_STAGES)if(st.id===id)alvo=st;
+    if(!alvo)return false;
+    const prox=FRACTURE_STAGES.filter(x=>x.min>alvo.min).sort((a,b)=>a.min-b.min)[0];
+    const meio=prox?Math.round((alvo.min+prox.min)/2)
+      :Math.min(FRACTURE_INT_MAX,alvo.min+10);
+    ok=fractureSetIntensity(meio,'sandbox')>=0;
+    msg='Estágio → '+alvo.lab+' (int '+fractureRun.intensity+')';
+  }else if(cmd==='reveal'){
+    /* revela na hora, ignorando os gatilhos — é para ver o HUD/Codex */
+    ok=fractureReveal('sandbox',(typeof wave!=='undefined')?(wave|0):1);
+    msg=ok?('Revelado → '+fractureHudText()):'Tema já estava revelado';
+  }else if(cmd==='sig:off'){
+    const b=fractureB4();
+    if(b){b.sig={};b.sigUsed=[];b.sigN=0;b.sigLast=0;ok=true;
+      msg='Assinaturas da run limpas';}
+  }else if(cmd.indexOf('sig:')===0){
+    const id=cmd.slice(4);
+    const sig=Object.prototype.hasOwnProperty.call(FRACTURE_SIG_BY_ID,id)
+      ?FRACTURE_SIG_BY_ID[id]:null;
+    if(!sig)return false;
+    const b=fractureB4();
+    if(!b)return false;
+    const w=clamp((typeof wave!=='undefined'?(wave|0):1)||1,1,MAX_WAVE);
+    b.sig[w]=sig.id;
+    if(b.sigUsed.indexOf(sig.id)<0)b.sigUsed.push(sig.id);
+    b.sigN++;b.sigLast=w;
+    ok=true;
+    msg='Assinatura w'+w+' → '+sig.nm+
+      (sig.theme!==fractureRun.theme?' (tema diferente: não será aplicada)':'');
+  }else if(cmd==='sim:transicao'){
+    /* percorre os 5 Stages e mostra o que muda em cada um — sem gravar nada */
+    ok=fractureSandboxSimTransition();
+    msg='Transição de estágios simulada (nada gravado)';
   }
   if(!ok)return false;
   try{toast('DIRETOR: '+msg);}catch(e){}
@@ -25554,6 +26606,10 @@ function fractureInspectorText(){
      Quatro blocos curtos. Cada um responde UMA pergunta e para aí —
      o inspetor não vira painel ilegível. */
   L.push(fractureB3InspectorLines().join(' | '));
+  /* ---- B4.19: REVELAÇÃO / ASSINATURAS / STAGES ----
+     Mesmo padrão do B3: blocos curtos, um por pergunta. Mostra ids crus de
+     propósito — o inspetor é ferramenta de DEV, não é o que o jogador vê. */
+  L.push(fractureB4InspectorLines().join(' | '));
   const hh=f.history.slice(-6).map(x=>'w'+x.w+' '+x.t+(x.d?' Δ'+x.d:'')+(x.s?'('+x.s+')':''));
   L.push('HISTÓRICO('+f.history.length+'/'+FRACTURE_HIST_MAX+'): '+(hh.join(' · ')||'—'));
   return L.join(' | ');
@@ -25682,6 +26738,53 @@ function fractureDevCommand(c){
   }
   if(c==='reroll'){fractureRerollTheme('dev');devTaint();
     devLog('FX TEMA RE-SORTEADO → '+fractureGetThemeId());return true;}
+  /* ---- B4.19: comandos DEV do Bloco 4. Todos TAINTAM a run. ---- */
+  if(c==='reveal'){
+    const ok=fractureReveal('dev',(typeof wave!=='undefined')?(wave|0):1);
+    devTaint();
+    devLog(ok?('FX REVELAÇÃO → '+fractureHudText())
+              :'FX REVELAÇÃO RECUSADA (Tema já revelado nesta run)');
+    return ok;
+  }
+  if(c.indexOf('signature:')===0){
+    const id=c.slice(10);
+    if(id==='off'||id==='limpar'){
+      const b=fractureB4();
+      if(b){b.sig={};b.sigUsed=[];b.sigN=0;b.sigLast=0;}
+      devTaint();devLog('FX ASSINATURAS DA RUN LIMPAS');return true;
+    }
+    const sig=Object.prototype.hasOwnProperty.call(FRACTURE_SIG_BY_ID,id)
+      ?FRACTURE_SIG_BY_ID[id]:null;
+    if(!sig){devLog('FX ASSINATURA INEXISTENTE: '+id);return false;}
+    const b=fractureB4();
+    const w=(typeof wave!=='undefined')?(wave|0):1;
+    if(!b){devLog('FX SEM ESTADO B4');return false;}
+    /* força de verdade: grava na onda atual, como o sorteio faria */
+    b.sig[w]=sig.id;
+    if(b.sigUsed.indexOf(sig.id)<0)b.sigUsed.push(sig.id);
+    b.sigN++;b.sigLast=w;
+    devTaint();
+    devLog('FX ASSINATURA FORÇADA w'+w+' → '+sig.nm+' ['+sig.id+']'+
+      (sig.theme!==fractureGetThemeId()?('  ⚠ TEMA DIFERENTE (run='+
+        fractureGetThemeId()+') — não será aplicada'):''));
+    return true;
+  }
+  if(c.indexOf('stage:')===0){
+    const id=c.slice(6);
+    let alvo=null;
+    for(const st of FRACTURE_STAGES)if(st.id===id)alvo=st;
+    if(!alvo){devLog('FX ESTÁGIO INEXISTENTE: '+id);return false;}
+    /* vai para o MEIO da faixa do Stage, não para o limite: assim o Stage
+       pedido fica estável e não cai no vizinho por arredondamento. */
+    const prox=FRACTURE_STAGES.filter(x=>x.min>alvo.min)
+      .sort((a,b)=>a.min-b.min)[0];
+    const meio=prox?Math.round((alvo.min+prox.min)/2):Math.min(FRACTURE_INT_MAX,alvo.min+10);
+    fractureSetIntensity(meio,'dev');
+    fractureStageAnnounce(alvo.id,(typeof wave!=='undefined')?(wave|0):1);
+    devTaint();
+    devLog('FX ESTÁGIO → '+alvo.lab+' (int '+fractureGetIntensity()+')');
+    return true;
+  }
   if(c==='insp'){devLog(fractureInspectorText());return true;}
   return false;
 }
@@ -25793,6 +26896,29 @@ function fractureKitBoot(){
       const r=_dr.apply(this,arguments);
       try{fractureDevSection();}catch(e){}
       return r;
+    };
+  }catch(e){}
+  /* ---------- 9. B4: chip de Fratura no HUD ---------- */
+  try{
+    const _uh=updateHUD;updateHUD=function(f){
+      const r=_uh.apply(this,arguments);
+      try{fractureHudChip();}catch(e){}
+      return r;
+    };
+  }catch(e){}
+  /* ---------- 10. B4: aba FRATURA no Codex ---------- */
+  try{
+    if(Array.isArray(CX_TABS)&&!CX_TABS.some(t=>t.id==='fracture'))
+      CX_TABS.push({id:'fracture',nm:'FRATURA'});
+    const _rc=renderCodexBody;renderCodexBody=function(){
+      if(codexTab==='fracture'){
+        try{fractureCodexBody();}catch(e){
+          const b=document.getElementById('cx-body');
+          if(b)b.innerHTML='<div class="cds">FALHA AO RENDERIZAR FRATURA</div>';
+        }
+        return false;
+      }
+      return _rc.apply(this,arguments);
     };
   }catch(e){}
 }
