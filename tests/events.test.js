@@ -28,6 +28,11 @@ src+=';globalThis.__t={'+
   'RUN_EVENTS,RUN_CHAIN_EVENTS,ALL_RUN_EVENTS,RUN_EVENT_BY_ID,RUN_EVENT_BY_KIND,'+
   'ARENA_EVENTS,MICRO_EVENTS,'+
   'buildEventContext,getEligibleEvents,eventBlockReason,scoreEvent,pickRunEvent,'+
+  /* B5: pickRunEvent passa pelo Diretor de Fratura (PR 13), que faz parte do
+     estado de scoring. Testes de determinismo precisam FIXAR a seed da run,
+     senão cada startRun sorteia um Tema novo e a premissa "estado idêntico"
+     deixa de ser verdadeira. */
+  'fractureSetSeed,fractureGetThemeId,'+
   'evMemFresh,evMemPack,evMemRestore,evMemRecord,evFamRecent,'+
   'evSetFlag,evFlag,evVar,evVarGet,evVarDel,evEpilogue,evDelay,'+
   'processDelayedEvents,fireDelayed,'+
@@ -412,8 +417,16 @@ ok('pickRunEvent nunca devolve evento de continuação pelo sorteio',()=>{
   }
 });
 ok('sorteio é determinístico com RNG injetado (estado idêntico → sequência idêntica)',()=>{
+  /* B5 · por que a seed da Fratura é fixada aqui:
+     pickRunEvent → scoreEvent → fractureEventBiasMul, e o viés depende do
+     TEMA da run. freshRun() chama startRun(), que sorteia uma seed NOVA —
+     logo um Tema potencialmente diferente a cada attempt. O estado de entrada
+     NÃO era idêntico, e a sequência divergia por causa do Diretor, não do
+     sorteio. Fixar a seed torna a premissa do teste verdadeira; a asserção de
+     determinismo continua exatamente a mesma. */
   for(let attempt=0;attempt<2;attempt++){
     freshRun();t.setWave(6);
+    if(t.fractureSetSeed)t.fractureSetSeed(0x5EED77);
     t.setEvMem(t.evMemFresh());t.setEvQueue([]);
     const rnd=mulberry32(777);
     const seq=[];
