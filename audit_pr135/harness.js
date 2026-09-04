@@ -8,14 +8,25 @@ let src=m[1];
 src+='\n;globalThis.__t={'+
   'ECHO_LINES,PERSONALITIES,MORAL_AFFINITY,MORAL_BALANCE,ITEMS,UPGRADES,WEAPONS,MINIBOSS,'+
   'SM_STATS,SM_ORDER,UNLOCKS,BASE_WEAPONS,BASE_ITEMS,BASE_UPGRADES,CHARS,ECHO_SPEAK_INTERVAL,'+
+  'SPEECH_PRI,ECHO_SPEECH_QUEUE_MAX,echoSpeechDuration,speechClear,speechTick,'+
+  'speechActive:()=>speechActive,speechQueue:()=>speechQueue,'+
   'FTEXT_SPEAK,FTEXT_SIZE,FTEXT_MAX,MAX_WAVE,MINI_WAVES,MORAL_AFF_LEVELS,EV_KINDS,WAVE_KEYS,'+
   'makePlayer,startRun,setChar,itemById,itemTags,itemHasTag,rollShop,pickWeighted,pickWeightedMoral,'+
   'rarityWeight,moralShopWeight,shopWeaponPool,isItemUnlocked,isUpgUnlocked,isWeaponUnlocked,'+
   'waveComp,applyMoral,mEff,priceUpg,priceItem,repairCost,giveItem,ownsItem,'+
   'getMoralProfile,calcMoralAffinityMatch,getItemMoralAffinity,moralTuneFactor,moralAffinityLevel,'+
-  'applyMoralTuning,countAttunedItems,smGet,smBreakdown,calcDamageMul,'+
+  'applyMoralTuning,countAttunedItems,smGet,smRefresh,smBreakdown,calcDamageMul,'+
+  'smMul,smAdd,smFlat,smAddPct,smRemoveId,smRemoveSource,'+
+  'fireMelee,fireBeam,fireWeaponFrom,updateProjectiles,weaponRange,srcRangeMul,migrateLegacyRangeMods,'+
+  'getProjectiles:()=>projectiles,setProjectiles:a=>{projectiles=a;},'+
+  'getSwings:()=>swings,setSwings:a=>{swings=a;},'+
+  'getEnemies:()=>enemies,setEnemies:a=>{enemies=a;},'+
+  'getEchoes:()=>echoes,setEchoes:a=>{echoes=a;},makeEcho,echoSpeak,echoReact,'+
+  'getSpeakCd:()=>_echoSpeakCd,setSpeakCd:v=>{_echoSpeakCd=v;},'+
+  'getEchoSpeakCd:()=>_echoSpeakCd,'+
   'unlockAll:()=>{for(const k in UNLOCKS)if(prog.seen.indexOf(k)<0)prog.seen.push(k);},'+
   'getState:()=>state,setState:s=>{state=s;},'+
+  'getFtexts:()=>ftexts,setFtexts:a=>{ftexts=a;},'+
   'getPlayer:()=>player,setPlayer:p=>{player=p;},'+
   'getWave:()=>wave,setWave:w=>{wave=w;},'+
   'getMoral:()=>moral,setMoral:mm=>{moral=mm;},'+

@@ -45,6 +45,8 @@ src+=';globalThis.__t={'+
   'dissolveEcho,echoDisLabel,relationPanelHTML,'+
   'relPackEcho,disPackEcho,relUnpackEcho,'+
   'makeEcho,echoReact,echoSpeak,echoRoleTick,trustTier,echoesReact,'+
+  'speechClear,speechTick,echoSpeechDuration,speechActive:()=>speechActive,'+
+  'speechQueue:()=>speechQueue,'+
   'triggerResonance,updateEcho,damageEcho,damagePlayer,nearestEnemy,'+
   'deriveEchoPersonality,smBuildCheckpoint,captureCheckpoint,'+
   'startRun,onPlayerDeath,saveEchoes,loadEchoes,activateSlot,smLoadRoot,'+
@@ -180,6 +182,7 @@ function freshRun(){
   t.clearDevTaint();
   t.setRunTime(100);
   t.setSpeakCd(0);
+  t.speechClear();
 }
 const COMPASSION={comp:10,greed:0,viol:0};
 const VIOLENT={comp:0,greed:0,viol:10};
@@ -590,11 +593,11 @@ ok('anti-spam: com dois Ecos só a reação mais intensa fala',()=>{
   const b=mkEcho(COMPASSION,'versatile',2);
   t.setEchoes([a,b]);
   t.setSpeakCd(0);
-  t.getFtexts().length=0;
+  t.speechClear();
   t.echoesReact(0,0,5);
-  const speaks=t.getFtexts().filter(f=>f.kind!=null||f.k!=null);
   assert.ok(t.getSpeakCd()>0,'o cooldown global de fala foi armado');
-  assert.ok(t.getFtexts().length<=4,'nada de enxurrada de texto');
+  const n=(t.speechActive()?1:0)+t.speechQueue().length;
+  assert.ok(n<=4,'nada de enxurrada de texto: '+n);
   t.setEchoes([]);
 });
 ok('cooldown de fala (8s) segura reações em sequência',()=>{
