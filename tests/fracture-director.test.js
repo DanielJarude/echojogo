@@ -2675,12 +2675,20 @@ ok('B3-11: payload de event_triggered carrega id/family/rarity/tags/wave',()=>{
 });
 ok('B3-12: evento não concede Intensidade duas vezes na mesma onda',()=>{
   const A=bootFx({});beginRun(A,1);playWaves(A,2,6);
-  const d=evById('fx_res_memoria');          // uncommon → +1
-  assert.strictEqual(t.FRACTURE_EV_INT_BY_RARITY[d.rarity],1);
+  const d=evById('fx_res_memoria');          // uncommon
+  /* B5: o valor vem da TABELA, não de um literal copiado aqui. Copiar o
+     número fazia este teste quebrar por calibração mesmo quando a invariant
+     que ele protege (sem dupla cobrança + teto por onda) continuava valendo. */
+  const v=t.FRACTURE_EV_INT_BY_RARITY[d.rarity];
+  assert.strictEqual(d.rarity,'uncommon','evento de referência é uncommon');
+  assert.ok(v>0,'uncommon paga Intensidade ('+v+')');
   const i0=A.fractureGetIntensity();
   A.fractureOnEventChosen(d);const i1=A.fractureGetIntensity();
+  assert.strictEqual(i1-i0,Math.min(v,t.FRACTURE_EV_INT_PER_WAVE_MAX),
+    'primeiro evento soma o valor da raridade');
   A.fractureOnEventChosen(d);
-  assert.strictEqual(A.fractureGetIntensity(),i1+1,'segunda ainda soma');
+  assert.strictEqual(A.fractureGetIntensity(),
+    i0+Math.min(2*v,t.FRACTURE_EV_INT_PER_WAVE_MAX),'segunda ainda soma');
   for(let k=0;k<6;k++)A.fractureOnEventChosen(d);
   assert.ok(A.fractureGetIntensity()-i0<=t.FRACTURE_EV_INT_PER_WAVE_MAX,
     'teto por onda = '+t.FRACTURE_EV_INT_PER_WAVE_MAX);
@@ -2985,8 +2993,17 @@ ok('B3-35: bônus de Resíduo vale só em ESCASSEZ e o reroll é 1× por onda',(
 
 console.log('\n[29] B3 · INTENSIDADE (36-41)');
 ok('B3-36: magnitude vem da raridade, nunca de intensity += direto',()=>{
+  /* B5 · valores recalibrados por medição (ver comentário em
+     FRACTURE_EV_INT_BY_RARITY no index.html). O que este teste garante não é
+     um número específico: é que a magnitude SAI desta tabela, que ela é
+     monotônica na raridade e que `common` continua zerado — sem isso spam de
+     evento trivial voltaria a farmar Intensidade. */
   assert.strictEqual(J(t.FRACTURE_EV_INT_BY_RARITY),
-    J({common:0,uncommon:1,rare:2,anomalous:3}),'tabela de raridade');
+    J({common:0,uncommon:3,rare:6,anomalous:10}),'tabela de raridade');
+  const R=t.FRACTURE_EV_INT_BY_RARITY;
+  assert.strictEqual(R.common,0,'common = 0 (anti-farm)');
+  assert.ok(R.uncommon<R.rare&&R.rare<R.anomalous,
+    'magnitude cresce com a raridade');
   const jogo=m[1];
   const ini=jogo.indexOf('BLOCO 3 — MINIBOSSES');
   const fim=jogo.indexOf('BLOCO 3 — EVENTOS');

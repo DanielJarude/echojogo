@@ -25386,9 +25386,23 @@ function fractureEvCtx(ctx){
 /* ---------------- B3.4: magnitude de Intensidade por evento ----------------
    NÃO é "todo evento = +X". A magnitude vem da RARIDADE (o sistema antigo
    já a define) e é limitada por um teto por onda, para que spam de beacon
-   não farme Intensidade. */
-const FRACTURE_EV_INT_BY_RARITY={common:0,uncommon:1,rare:2,anomalous:3};
-const FRACTURE_EV_INT_PER_WAVE_MAX=3;   // teto de Intensidade vinda de eventos/onda
+   não farme Intensidade.
+
+   B5 · CALIBRAÇÃO MEDIDA. Com {0,1,2,3} e teto 3/onda o canal de eventos
+   entregava em média 5,0 pontos numa run de 19 ondas — porque ~75% dos
+   eventos sorteados são `common` e não pagam nada. Somado ao piso
+   determinístico de 48 (18 fronteiras × 2 + 3 minibosses × 4), a
+   distribuição final ficava BIMODAL: 80,8% das runs em 50–54 e um vazio
+   completo entre 60 e 74 (400 runs medidas). CRÍTICA, que é um Stage de
+   20 pontos e ainda por cima o portão de 6 das 12 assinaturas e do
+   multiplicador de oportunidade rara, aparecia em 5,5% das runs.
+
+   A correção é estreitar o canal, não inflar o piso: `common` continua 0
+   (spam de evento trivial não paga nada — invariante do B3-37) e o ganho
+   passa a vir de fato da raridade. O teto acumulado de 26 por run NÃO muda,
+   então o teto anti-farm continua o mesmo; só a rampa até ele é real. */
+const FRACTURE_EV_INT_BY_RARITY={common:0,uncommon:3,rare:6,anomalous:10};
+const FRACTURE_EV_INT_PER_WAVE_MAX=6;   // teto de Intensidade vinda de eventos/onda
 const FRACTURE_EV_INT_PER_RUN_MAX=26;   // teto acumulado (anti-farm de run longa)
 /* ---------------- B4.15/B4.16: por que existe um PICO separado --------------
    Medido antes de mexer em qualquer pacing: o teto teórico de Intensidade de
