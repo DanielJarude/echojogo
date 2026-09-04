@@ -4224,6 +4224,243 @@ ok('B4-66: PR10.5.2 continua íntegra após a correção',()=>{
       'bloco PR13 não chama '+proibido);
 });
 
+/* ============ [35] B5 · FECHAMENTO TÉCNICO E VALIDAÇÃO FINAL ============
+   Os testes estatísticos daqui usam PRNG próprio e seed fixa: um teste de
+   distribuição que depende de Math.random é um flake anunciado, e esta
+   suíte já pagou esse preço uma vez. */
+console.log('\n[35] B5 · FECHAMENTO TÉCNICO, BALANCEAMENTO E VALIDAÇÃO FINAL');
+
+function b5rng(a){return function(){a|=0;a=(a+0x6D2B79F5)|0;
+  let x=Math.imul(a^(a>>>15),1|a);x=(x+Math.imul(x^(x>>>7),61|x))^x;
+  return ((x^(x>>>14))>>>0)/4294967296;};}
+
+/* Run completa pelo caminho REAL do jogo: spawnWave (que carrega o hook do
+   Diretor), miniboss com kill de verdade e pickRunEvent com rng injetado
+   (é ele que paga Intensidade, via evSelectFinal → fractureOnEventChosen). */
+function b5run(seed,rngSeed){
+  const B=bootFx({});
+  beginRun(B,1);
+  B.fractureSetSeed(seed);
+  const rnd=b5rng(rngSeed);
+  const reg={maxInt:0,reveal:0,sigs:[],mini:{}};
+  for(let n=1;n<=19;n++){
+    B.setWave(n);
+    B.spawnWave(n);
+    if(t.MINI_WAVES.indexOf(n)>=0){
+      const d=B.pickMiniBoss(n);
+      if(d&&d.id){B.fractureOnMiniKill(d,n);reg.mini[n]=d.id;}
+    }
+    B.pickRunEvent(B.buildEventContext(),rnd);
+    const i=B.fractureGetIntensity();
+    if(i>reg.maxInt)reg.maxInt=i;
+    const b4=B.fractureB4();
+    if(b4&&b4.rev>0&&!reg.reveal)reg.reveal=b4.rev;
+  }
+  const b4=B.fractureB4();
+  reg.sigs=((b4&&b4.sigUsed)||[]).slice();
+  reg.finalInt=B.fractureGetIntensity();
+  reg.stage=B.fractureGetStage().id;
+  reg.theme=B.fractureGetThemeId();
+  return reg;
+}
+let B5_RUNS=null;
+function b5runs(){
+  if(!B5_RUNS){
+    B5_RUNS=[];
+    for(let s=1;s<=60;s++)B5_RUNS.push(b5run(s*7919,s*104729));
+  }
+  return B5_RUNS;
+}
+
+ok('B5-01: Continue em CRÍTICA preserva Intensidade, Stage, Tema e assinatura',()=>{
+  const A=bootFx({});beginRun(A,1);
+  A.fractureForceTheme('siege','teste');
+  A.setWave(12);
+  A.fractureSetIntensity(66,'teste');
+  assert.strictEqual(A.fractureGetStage().id,'critica','sanidade: 66 é CRÍTICA');
+  const b=A.fractureB4();
+  b.sig[11]='sig_sie_muralha';b.sigUsed=['sig_sie_muralha'];b.sigN=1;b.sigLast=11;
+  A.fractureReveal('teste',10);
+  /* o Stage precisa ter sido ANUNCIADO na run A: é a flag de anúncio que viaja
+     no checkpoint. Só setar a Intensidade não anuncia nada. */
+  assert.strictEqual(A.fractureStageAnnounce('critica',12),true,'primeiro anúncio');
+  const cp={fracture:A.fractureRunPack()};
+  const B=bootFx({});beginRun(B,1);
+  B.fractureRunUnpack(cp);
+  assert.strictEqual(B.fractureGetIntensity(),66,'Intensidade preservada');
+  assert.strictEqual(B.fractureGetStage().id,'critica','Stage continua derivado');
+  assert.strictEqual(B.fractureGetThemeId(),'siege','Tema não rerrolou');
+  assert.strictEqual(B.fractureIsRevealed(),true,'revelação preservada');
+  assert.strictEqual(B.fractureB4().sig[11],'sig_sie_muralha','assinatura preservada');
+  assert.strictEqual(B.fractureStageAnnounce('critica',13),false,
+    'anúncio de Stage não repete depois do Continue');
+});
+
+ok('B5-02: Continue em RUPTURA preserva o Stage e não paga o pico de novo',()=>{
+  const A=bootFx({});beginRun(A,1);
+  A.fractureForceTheme('anomaly','teste');
+  A.setWave(16);
+  A.fractureSetIntensity(88,'teste');
+  assert.strictEqual(A.fractureGetStage().id,'ruptura','sanidade: 88 é RUPTURA');
+  A.fractureB3().evSpike=1;                     // pico anômalo já disparou
+  const cp={fracture:A.fractureRunPack()};
+  const B=bootFx({});beginRun(B,1);
+  B.fractureRunUnpack(cp);
+  assert.strictEqual(B.fractureGetIntensity(),88,'Intensidade preservada');
+  assert.strictEqual(B.fractureGetStage().id,'ruptura','RUPTURA preservada');
+  assert.strictEqual(B.fractureB3().evSpike,1,'pico continua marcado');
+  const antes=B.fractureGetIntensity();
+  const ano=t.ALL_RUN_EVENTS.find(e=>e.rarity==='anomalous');
+  B.setWave(17);
+  B.fractureOnEventChosen(ano);
+  const ganho=B.fractureGetIntensity()-antes;
+  assert.ok(ganho<=t.FRACTURE_EV_INT_PER_WAVE_MAX,
+    'pico duplicado no Continue: ganho '+ganho+' (teto '+t.FRACTURE_EV_INT_PER_WAVE_MAX+')');
+});
+
+ok('B5-03: RUPTURA é alcançável sem ser rotineira e CRÍTICA é parcela real',()=>{
+  const R=b5runs();
+  const rup=R.filter(r=>r.maxInt>=80).length;
+  const crit=R.filter(r=>r.maxInt>=60).length;
+  assert.ok(rup>0,'RUPTURA nunca acontece em '+R.length+
+    ' runs — o Stage final seria decorativo');
+  assert.ok(rup/R.length<=0.25,'RUPTURA virou rotina: '+rup+'/'+R.length);
+  assert.ok(crit/R.length>=0.15,'CRÍTICA rara demais: '+crit+'/'+R.length+
+    ' — o Stage é portão de 6 das 12 assinaturas e da oportunidade rara');
+  assert.ok(crit>rup,'CRÍTICA precisa ser mais comum que RUPTURA');
+});
+
+ok('B5-04: a revelação acontece em toda run, cedo o bastante e em ondas variadas',()=>{
+  const R=b5runs();
+  const rv=R.map(r=>r.reveal);
+  assert.ok(rv.every(x=>x>0),'existe run que termina sem revelar o Tema');
+  const media=rv.reduce((a,b)=>a+b,0)/rv.length;
+  assert.ok(media<=14,'revelação tarde demais (média w'+media.toFixed(1)+')');
+  assert.ok(Math.max.apply(null,rv)<t.MAX_WAVE,'revelação só na última onda');
+  assert.ok(Math.min.apply(null,rv)>=t.FRACTURE_REVEAL_MIN_WAVE,
+    'revelação antes da onda mínima');
+  assert.ok(new Set(rv).size>=3,'revelação sempre na mesma onda');
+});
+
+ok('B5-05: nenhuma Intensidade nem Tema estoura o budget de entidades',()=>{
+  const A=bootFx({});beginRun(A,1);
+  for(const inten of [0,20,40,60,80,100]){
+    const r=A.fractureSimulate({seeds:40,intensity:inten,waveMin:1,waveMax:19});
+    for(const th of r.themes){
+      const p=r.per[th];
+      assert.strictEqual(p.budgetOver,0,'int'+inten+' '+th+': '+p.budgetOver+' estouros');
+      assert.strictEqual(p.violations,0,'int'+inten+' '+th+': '+p.violations+' violações');
+      assert.ok(p.entityMax<=t.ENEMY_BUDGET,
+        'int'+inten+' '+th+': pico de '+p.entityMax+' entidades');
+    }
+  }
+});
+
+ok('B5-06: fractureKitBoot não instala os wrappers duas vezes',()=>{
+  const B=bootFx({});
+  assert.strictEqual(B.fractureKitBoot.done,true,'kit instalado no boot');
+  B.fractureKitBoot();B.fractureKitBoot();B.fractureKitBoot();
+  /* referência: um boot que NÃO recebeu chamadas extras */
+  const ref=bootFx({});beginRun(ref,1);
+  const r0=ref.fractureGetIntensity();
+  playWaves(ref,2,4);
+  const refGain=ref.fractureGetIntensity()-r0;
+  beginRun(B,1);
+  const i0=B.fractureGetIntensity();
+  playWaves(B,2,4);
+  const ganho=B.fractureGetIntensity()-i0;
+  /* spawnWave duplamente embrulhado faria fractureOnWaveStart rodar duas
+     vezes por onda e cada fronteira pagaria o dobro */
+  assert.strictEqual(ganho,refGain,
+    'fronteiras pagaram '+ganho+' contra '+refGain+' do boot de referência');
+  assert.ok(ganho>0,'sanidade: as fronteiras pagaram alguma coisa');
+});
+
+ok('B5-07: o HUD do Diretor não redesenha quando nada mudou',()=>{
+  const B=bootFx({});beginRun(B,1);
+  B.setState('play');
+  B.fractureHudChip();
+  const chip=B._env.document.getElementById('frac-hud-theme');
+  assert.ok(chip,'chip do HUD criado');
+  let escritas=0,val=chip.textContent;
+  Object.defineProperty(chip,'textContent',
+    {get:()=>val,set:v=>{escritas++;val=v;},configurable:true});
+  for(let i=0;i<200;i++)B.fractureHudChip();
+  assert.strictEqual(escritas,0,
+    '200 frames com estado estável reescreveram o chip '+escritas+'×');
+  B.fractureAddIntensity(45,'teste');
+  B.fractureHudChip();
+  assert.strictEqual(escritas,1,'mudar o Stage precisa repintar exatamente uma vez');
+});
+
+ok('B5-08: nenhum comando DEV desbloqueia progresso permanente',()=>{
+  const B=bootFx({});beginRun(B,1);
+  B.setWave(6);
+  assert.strictEqual(B.isTainted(),false,'run limpa antes do DEV');
+  assert.strictEqual(B.fractureCodexDiscovered().length,0,'nada descoberto ainda');
+  B.DEV_on();
+  assert.strictEqual(B.fractureDevCommand('reveal'),true,'DEV revela a run');
+  assert.strictEqual(B.fractureIsRevealed(),true,'a run foi revelada');
+  assert.strictEqual(B.fractureCodexDiscovered().length,0,
+    'DEV gravou descoberta permanente no Codex');
+});
+
+ok('B5-09: os quatro invocadores respeitam o teto de entidades',()=>{
+  const jogo=m[1];
+  /* cisão do splitter, convocação do mini-chefe e fenda do spawner. O
+     spawner era o único sem teto — e COLAPSO favorece spawner de propósito
+     (média 1,58/onda contra 0,95–1,16 dos outros Temas), chegando a 4 na
+     onda 19: ~80 entidades extras sobre um orçamento de 46. */
+  /* Verificação por âncora semântica, sem janela de tamanho fixo: cada
+     invocador é localizado pelo próprio código e o teto é procurado até o
+     fim natural do ramo. */
+  const teto=(nome,ancora,fim)=>{
+    const i=jogo.indexOf(ancora);
+    assert.ok(i>=0,'âncora ausente: '+ancora);
+    const f=fim?jogo.indexOf(fim,i):jogo.indexOf('\n',i);
+    assert.ok(f>i,'fim do ramo não encontrado em '+nome);
+    assert.ok(jogo.slice(i,f).indexOf('enemies.length<ENEMY_BUDGET')>0,
+      nome+' sem teto de entidades');
+  };
+  teto('cisão do splitter',"if(e.type==='splitter'&&!e.isShard");
+  teto('convocação do mini-chefe','if(e.summonCd<=0');
+  teto('habilidade swarmSpawn','if(SK.swarmSpawn&&e.skillCd<=0');
+  teto('fenda do spawner',"if(e.type==='spawner'){",'/* ---- ANÔMALO TEMPORAL');
+  /* e não pode existir invocador novo sem teto: o total é exatamente 4 */
+  const total=(jogo.match(/enemies\.length<ENEMY_BUDGET/g)||[]).length;
+  assert.strictEqual(total,4,'mudou o número de invocadores com teto: '+total);
+});
+
+ok('B5-10: o runner continua recapitulando os rótulos das falhas',()=>{
+  const src=fs.readFileSync(__filename,'utf8');
+  assert.ok(src.indexOf("console.log('FALHAS ('+falhas.length+'):')")>=0,
+    'resumo final sem a recapitulação de falhas');
+  assert.ok(/falhas\.push\(\{\s*label/.test(src),'runner não coleta os rótulos');
+});
+
+ok('B5-11: versão do jogo, SM_VERSION e versão do estado do Diretor intactas',()=>{
+  assert.strictEqual(t.SM_VERSION,3,'SM_VERSION mudou sem necessidade');
+  assert.strictEqual(t.FRACTURE_STATE_VERSION,1,
+    'versão do estado do Diretor mudou sem necessidade');
+  const pkg=JSON.parse(fs.readFileSync(path.join(ROOT,'package.json'),'utf8'));
+  assert.strictEqual(pkg.version,'0.7.0-alpha','versão do pacote mudou');
+});
+
+ok('B5-12: as 12 assinaturas são alcançáveis e nenhuma domina o conjunto',()=>{
+  const R=b5runs();
+  const cont={};
+  let tot=0;
+  for(const r of R)for(const s of r.sigs){cont[s]=(cont[s]||0)+1;tot++;}
+  assert.ok(tot>0,'nenhuma assinatura saiu em '+R.length+' runs');
+  const ids=Object.keys(cont);
+  assert.strictEqual(ids.length,12,
+    'só '+ids.length+' das 12 assinaturas apareceram: '+J(ids.sort()));
+  const freqs=ids.map(k=>cont[k]);
+  const topo=Math.max.apply(null,freqs)/tot;
+  assert.ok(topo<0.5,'uma assinatura concentra '+(topo*100).toFixed(1)+'% do conjunto');
+  assert.ok(tot/R.length>=0.4,'assinaturas raras demais: '+(tot/R.length).toFixed(2)+'/run');
+});
+
 /* ---------------- resultado ---------------- */
 console.log('\n---------------------------------------------');
 console.log('Resultado: '+passed+' passaram · '+failed+' falharam');
