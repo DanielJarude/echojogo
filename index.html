@@ -26822,8 +26822,14 @@ function fractureDevCommand(c){
     devLog('FX TEMA RE-SORTEADO → '+fractureGetThemeId());return true;}
   /* ---- B4.19: comandos DEV do Bloco 4. Todos TAINTAM a run. ---- */
   if(c==='reveal'){
-    const ok=fractureReveal('dev',(typeof wave!=='undefined')?(wave|0):1);
+    /* B5 · o taint vem ANTES, não depois. fractureReveal() chama
+       fractureCodexDiscover() por dentro, e essa função recusa gravar quando
+       a run está contaminada — mas com o devTaint() no fim a revelação
+       acontecia primeiro e o Codex gravava a descoberta permanente a partir
+       de um comando DEV. Medido: fx:reveal numa run limpa gravava o Tema no
+       slot. A ordem inversa fecha o caminho sem mudar mais nada. */
     devTaint();
+    const ok=fractureReveal('dev',(typeof wave!=='undefined')?(wave|0):1);
     devLog(ok?('FX REVELAÇÃO → '+fractureHudText())
               :'FX REVELAÇÃO RECUSADA (Tema já revelado nesta run)');
     return ok;
