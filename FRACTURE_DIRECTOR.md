@@ -477,6 +477,19 @@ perfis `waveBias` nos 6 Temas, Intensidade/Stage como modulação, `waveProfile.
 integrados e sanitizados, inspetor DEV expandido com BASE × FINAL, seção do Diretor no
 Sandbox, `fractureSimulate` e 77 verificações novas.
 
+**Implementado no Bloco 3** (ver **§14**): `fractureTags` consumidos em eventos e na
+ponderação de `pickMiniBoss`, identidade real de RESSONÂNCIA e ESCASSEZ, custo de
+Intensidade por raridade com tetos anti-farm, 12 run events temáticos, integração do
+Eco como leitura.
+
+**Implementado no Bloco 4** (ver **§15**): UI de Tema/Intensidade no HUD, revelação
+gradual, 12 encounter signatures, progressão de Stages com camadas, Codex da Fratura,
+anúncios e falas de facção.
+
+**Implementado no Bloco 5** (ver **§16**): validação de Save/Continue e do Sandbox,
+simulação em escala, recalibração do pacing, correções de performance, correção de
+dois bugs reais e 13 verificações novas.
+
 **Explicitamente FORA desta PR:**
 
 - chefe adaptativo ao estilo do jogador (**PR 15**);
@@ -485,12 +498,7 @@ Sandbox, `fractureSimulate` e 77 verificações novas.
 - finais novos;
 - nova árvore de progressão;
 - dezenas de inimigos novos;
-- sistema de chefe adaptativo completo;
-- rework visual de UI (a UI de Tema/Intensidade fica para o **B4**);
-- `fractureTags` em eventos e ponderação de `pickMiniBoss` pelo Tema (**B3** — o metadado
-  de tags já está pronto, o consumo não);
-- qualquer alteração de HP/dano/velocidade de inimigo derivada do Tema (**B3/B4**);
-- identidade real de RESSONÂNCIA e ESCASSEZ (**B3/B4** — no B2 elas são sutis de propósito).
+- sistema de chefe adaptativo completo.
 
 ---
 
@@ -1016,15 +1024,18 @@ raridade que o sistema antigo já define:
 | raridade | Intensidade |
 |---|---|
 | `common` | +0 |
-| `uncommon` | +1 |
-| `rare` | +2 |
-| `anomalous` | +3 |
+| `uncommon` | +3 |
+| `rare` | +6 |
+| `anomalous` | +10 |
+
+Valores recalibrados no **Bloco 5** (ver §16.5): a escala original era bimodal e
+deixava a maioria das runs parada em PROPAGANDO.
 
 Cadeias (`noPool`) não cobram — já foram pagas pelo evento que as enfileirou.
 
 **Tetos** (guardados em `fractureRun.b3`, portanto sobrevivem ao reload):
 
-- `FRACTURE_EV_INT_PER_WAVE_MAX = 3` por onda
+- `FRACTURE_EV_INT_PER_WAVE_MAX = 6` por onda
 - `FRACTURE_EV_INT_PER_RUN_MAX = 26` por run
 
 Sem isso, ficar parado numa área com vários beacons viraria farm de
@@ -1510,13 +1521,17 @@ Intensidade a cada reload (teste `B4-30`).
 
 | Onda | Média | p10 | p50 | p90 | Máx |
 |---|---|---|---|---|---|
-| 5 | 12.8 | 12 | 12 | 14 | 41 |
-| 10 | 28.5 | 26 | 28 | 31 | 59 |
-| 15 | 43.9 | 40 | 44 | 47 | 78 |
-| 19 | 53.2 | 50 | 52 | 56 | 88 |
+| 5 | 13.8 | 12 | 12 | 18 | 24 |
+| 10 | 31.9 | 26 | 32 | 38 | 61 |
+| 15 | 49.5 | 43 | 49 | 55 | 81 |
+| 19 | 60.3 | 54 | 60 | 66 | 89 |
 
-Stage final: PROPAGANDO 278 · CRÍTICA 16 · **RUPTURA 6 (2,0%)**. RUPTURA começa
-na mediana **w19** (faixa w17–20): tarde, rara e marcante — exatamente a meta.
+Stage final: PROPAGANDO 42,0% · CRÍTICA 54,7% · **RUPTURA 3,3%**. RUPTURA começa
+em média na **w16** (faixa w15–18): ainda tardia, rara e marcante, mas agora é
+alcançável por uma parcela real das runs.
+
+Tabela recalibrada no **Bloco 5** (ver §16.5); os valores anteriores deixavam
+92,7% das runs paradas em PROPAGANDO.
 
 ---
 
@@ -1559,8 +1574,8 @@ A escolha acontece **uma vez por onda**, em `fractureOnWaveStart`, e fica
 gravada em `b4.sig[onda]`. `waveComp()` é chamado várias vezes por onda e
 precisa ser puro, então ele apenas **lê** o que já foi decidido.
 
-**Medido em 300 runs:** 226 runs (75%) têm ao menos uma assinatura; 269 no
-total, média **0,90 por run**.
+**Medido em 150 runs por Tema:** 86% das runs têm ao menos uma assinatura; média
+**1,21 por run**, e as 12 aparecem (topo 15,1%, piso 2,2%).
 
 ---
 
@@ -1685,3 +1700,194 @@ rework do HUD.
 
 `SM_VERSION` continua **3**. O `b4` é um campo novo dentro do checkpoint
 existente, e um save antigo sem ele ganha o estado zerado (teste `B4-56`).
+
+---
+
+## 16. BLOCO 5 — Fechamento técnico, balanceamento e validação
+
+O Bloco 5 não adiciona camada de gameplay. Ele **mede, corrige e registra**.
+Tudo o que está abaixo saiu de execução real do código — nada foi ajustado por
+intuição.
+
+Ferramentas de medição (fora do repositório, usadas para produzir os números):
+
+| Script | O que faz |
+|---|---|
+| `b5/sim.js` | 20 ondas completas por run: `spawnWave` real + `pickMiniBoss`/`fractureOnMiniKill` + `pickRunEvent` com PRNG seedado |
+| `b5/measure.js` | ciclo completo + Continue + morte + limpeza |
+| `b5/audit_save.js` | as 35 verificações das seções 2 e 3, com saída `OK`/`FALHA` |
+| `b5/smoke.js` | os 26 passos do caminho mínimo (20 de jogo + 6 de Sandbox) |
+
+---
+
+### 16.1 Dois bugs reais encontrados e corrigidos
+
+**Bug 1 — sinais de revelação não eram persistidos.** `fractureRevealTrigger`
+lê `b.miniAligned`, `b.evThematic` e `b.evSig`, mas `fractureRunPack` não
+gravava nenhum dos três. Um miniboss alinhado ou um evento fortemente temático
+ocorridos antes do save deixavam de servir de gatilho na retomada, e a revelação
+caía para um motivo mais fraco e mais tardio.
+
+Medido: `miniAligned` ia de 10 para 0 no Continue, reproduzível em 3 de 400
+reloads em CRÍTICA. Depois da correção, 0 em 400.
+
+Save antigo sem os campos cai em 0 — o comportamento de antes, campo a campo
+revalidado. Não há quebra de compatibilidade, então `SM_VERSION` continua 3 e
+`FRACTURE_STATE_VERSION` continua 1. Coberto por `B5-13`.
+
+**Bug 2 — o Sandbox reportava redução como falha.** `fractureSetIntensity`
+devolve o **delta** aplicado, e os ramos `int:` e `stage:` do laboratório usavam
+`>=0` como teste de sucesso. Qualquer ação que *reduzia* a Intensidade
+(`int:20` a partir de 90, `stage:latente` a partir de RUPTURA) era aplicada
+corretamente mas reportada como falha — e como o fim da função faz
+`if(!ok)return false`, o toast e o refresh do painel eram pulados: o laboratório
+mudava de estado sem dar feedback nenhum.
+
+Medido antes: `int:20` (de 90) → `false` com a Intensidade já em 20. Depois:
+`true`, e `lixo:xxx` continua `false`. Os testes existentes só cobriam aumentos,
+por isso o bug passou.
+
+---
+
+### 16.2 Performance (seção 11 da validação)
+
+Dois pontos corrigidos, ambos localizados:
+
+**a) `fractureHudChip` rodava a 60 fps com três escritas DOM.** O wrapper do
+HUD chama o chip *depois* de `updateHUD`, portanto **fora** do throttle de
+`.09` do jogo. O cache `b4.hudSeen` era escrito mas nunca lido. Com a guarda
+`if(b.hudSeen===key && chip.textContent) return;`, 600 frames estáveis caíram de
+**600 escritas para 0**; mudar de Stage custa exatamente 1.
+
+**b) o summon do `spawner` era o único invocador sem teto.** Existem quatro
+invocadores de entidades: splitter, mini-chefe, `SK.swarmSpawn` e o spawner. Os
+três primeiros já respeitavam `ENEMY_BUDGET`; o quarto não. COLAPSO favorece
+spawner (**1,58/onda** contra 0,95–1,16 dos outros Temas, máximo 4 na onda 19),
+o que somava ~80 entidades extras em 120 s sobre um teto de 46.
+
+O que estava limpo e foi confirmado: `render()`/`loop()` não chamam `fracture*`;
+`devTick` é throttled a 0,2 s; os loops aninhados rodam só sobre 11 arquétipos
+uma vez por onda; `fractureKitBoot` tem guarda `.done`.
+
+---
+
+### 16.3 DEV `fx:*` (seção 13 da validação)
+
+`fx:reveal` taintava **depois** de `fractureReveal()`, então `fractureCodexDiscover()`
+chegava a gravar uma descoberta permanente a partir de um comando de DEV
+(medido: `["hunt"]`). Agora tainta antes → `[]`.
+
+Comando | Efeito | Tainta
+---|---|---
+`fx:comp[:n]` · `fx:wave:<n>` (fora do Sandbox) · `fx:sim` · `fx:insp` | leitura | não
+`fx:theme:` · `fx:int:` · `fx:emit:` · `fx:bias:` · `fx:pool:` · `fx:reroll` · `fx:reveal` · `fx:signature:` · `fx:stage:` · `fx:wave:` (Sandbox) | mutação | sim
+
+---
+
+### 16.4 Auditoria de Save/Continue e Sandbox
+
+`b5/audit_save.js` — **35/35 verificações OK**, reproduzido em 8 execuções
+seguidas:
+
+- ciclo completo run → checkpoint → sair → Continue → avançar → morte, com
+  Tema, seed, Intensidade e composição preservados;
+- reload idêntico nos seis pontos pedidos: antes da revelação, logo após, após
+  assinatura, após miniboss, em CRÍTICA e em RUPTURA;
+- miniboss não paga de novo nem rerrola no Continue; anúncio de Stage não
+  repete; `wave_complete` não é cobrado duas vezes na retomada;
+- save antigo funciona; save malformado é sanitizado;
+- **Sandbox byte-a-byte idêntico nos Save 1/2/3** (~8,5 KB, 11 ações, segunda
+  revelação recusada); isolamento entre slots; `smClearSlotSave` descarta o
+  Diretor.
+
+`b4.hudSeen` **não** entra no pack por desenho — é cache de redraw. Uma
+auditoria que compare o `b4` inteiro gera falso positivo.
+
+---
+
+### 16.5 Recalibração do pacing (seção 6 da validação)
+
+A escala `{common:0, uncommon:1, rare:2, anomalous:3}` era **bimodal**: 80,8%
+das runs terminavam em 50–54, a faixa 60–74 ficava vazia, e CRÍTICA aparecia em
+5,5% das runs. O teto teórico de 102 nunca era o problema — o piso
+determinístico de 48 já garantia PROPAGANDO, e os eventos não tinham peso para
+subir dali.
+
+`{0,4,8,12}` foi medido e **rejeitado** (CRÍTICA 67,0% — viraria o normal).
+Aplicado `{0,3,6,10}`, com `PER_WAVE_MAX` de 3 para 6 para que um único evento
+raro ainda se faça sentir. `common:0` foi preservado de propósito (anti-farm,
+`B3-37`).
+
+| | antes | depois |
+|---|---|---|
+| Intensidade média na w19 | 53,0 | 60,3 |
+| CRÍTICA | 5,5% | 54,7% |
+| RUPTURA | 2,0% | 3,3% |
+| primeiro RUPTURA | w19 (w17–20) | w16 (w15–18) |
+
+Nenhum HP, dano ou velocidade global foi tocado — a recalibração é só de
+Intensidade, que já era o eixo de modulação.
+
+**Por Tema** (150 runs cada, seed fixa):
+
+| Tema | int w5 / w10 / w15 / w19 | CRÍTICA | RUPTURA | revelação | eventos | temáticos | assinaturas |
+|---|---|---|---|---|---|---|---|
+| COLAPSO | 14,1 / 31,6 / 49,4 / 59,9 | 52% | 3% | w8,5 | 12,9 | 20,1% | 1,15 |
+| CERCO | 14,3 / 32,3 / 50,0 / 60,8 | 53% | 5% | w9,1 | 12,9 | 10,9% | 1,16 |
+| CAÇADA | 13,9 / 31,8 / 49,7 / 60,5 | 52% | 5% | w8,8 | 12,8 | 14,6% | 1,16 |
+| ANOMALIA | 13,6 / 30,9 / 48,2 / 59,5 | 49% | 4% | w8,6 | 12,7 | 18,1% | 1,09 |
+| RESSONÂNCIA | 13,6 / 30,9 / 48,8 / 59,6 | 51% | 2% | w8,1 | 12,8 | 17,7% | 1,18 |
+| ESCASSEZ | 13,6 / 30,4 / 48,1 / 58,9 | 46% | 2% | w8,4 | 12,8 | 27,8% | 1,13 |
+
+A Intensidade é praticamente idêntica entre Temas (é o comportamento pedido: o
+Tema muda a **forma** da run, não a sua dificuldade bruta). A diferença visível
+está na proporção de eventos temáticos — ESCASSEZ 27,8% contra CERCO 10,9%.
+
+**Revelação:** 100% das runs, média **w8,7**, faixa w4–w12, 9 ondas distintas.
+**Assinaturas:** 86% das runs, 1,21 por run, **as 12 aparecem** (topo 15,1%,
+piso 2,2%). **Minibosses:** os 8 aparecem, nenhum Tema zera elegível.
+**`budgetOver` acumulado: 0.**
+
+---
+
+### 16.6 Game feel (seção 12 da validação)
+
+79 strings que chegam ao jogador foram inspecionadas (HUD nos 6 Temas × 5
+Stages, HUD oculto, 12 nomes de assinatura, rótulos de Stage, falas de facção,
+falas do Eco, títulos de lore): **0 vazamentos** de id de Tema, id de assinatura,
+id de Stage, id de evento ou número de Intensidade.
+
+Os dois anúncios (`fractureSignatureBanner` e `fractureStageAnnounce`) reusam o
+`banner()`/`toast()` do jogo em vez de criar overlay próprio, então herdam o
+posicionamento da PR 11.5 e não cobrem área nova. O bloco inteiro cria só três
+elementos: o chip do HUD e as duas seções de painel (Sandbox e DEV), que vivem
+dentro de painéis já existentes.
+
+Não verificado: colisão do chip em viewports muito estreitos, renderização real,
+áudio e entrada de teclado — Electron não existe no ambiente de validação.
+
+---
+
+### 16.7 Testes
+
+Suíte PR 13: **274 verificações**. Projeto: **18 suítes · 1235 ✔ · 0 ✘**.
+
+O bloco novo é `[35] B5-01..B5-13`, sobre 60 runs determinísticas (seeds
+`s*7919`/`s*104729`):
+
+| | cobertura |
+|---|---|
+| B5-01/02 | Continue em CRÍTICA e em RUPTURA sem pico duplo |
+| B5-03 | RUPTURA alcançável e não rotineira |
+| B5-04 | revelação nem tarde nem imediata |
+| B5-05 | `fractureSimulate` sem estouro de budget |
+| B5-06 | wrappers não duplicados (contra um boot de referência) |
+| B5-07 | HUD sem redraw redundante |
+| B5-08 | DEV não grava Codex |
+| B5-09 | as quatro âncoras de teto de entidades |
+| B5-10 | o runner continua imprimindo o nome das falhas |
+| B5-11 | versões intactas |
+| B5-12 | as 12 assinaturas alcançáveis |
+| B5-13 | sinais de revelação sobrevivem ao Continue |
+
+Smoke semimanual: **26 passos, 0 falhas**.
