@@ -13965,6 +13965,14 @@ function updateEnemy(e,dt){
       AUDIO.tone(150,.5,'sine',.03,90);}
     if(e.spawnCd<=0){
       e.spawnCd=6;e.charging=false;
+      /* B5 · PERF: o MESMO teto que a CISÃO do splitter e a CONVOCAÇÃO do
+         mini-chefe já aplicavam — o spawner era o único invocador sem ele.
+         Medido: COLAPSO favorece spawner de propósito (média 1,58 por onda
+         contra 0,95–1,16 dos outros Temas) e chega a 4 na onda 19; a 1
+         invocação cada 6s isso são ~80 entidades extras numa onda de 120s
+         sobre um orçamento de 46, crescendo sem limite enquanto a onda dura.
+         O cooldown continua resetando, então nada fica martelando a checagem. */
+      if(enemies.length<ENEMY_BUDGET){
       const a=rand(0,TAU),rr=e.r+34;
       const sx=clamp(e.x+Math.cos(a)*rr,30,ARENA.w-30);
       const sy=clamp(e.y+Math.sin(a)*rr,30,ARENA.h-30);
@@ -13975,6 +13983,7 @@ function updateEnemy(e,dt){
       spawnShards(sx,sy,'#39d98a',5,4);
       AUDIO.tone(rand(300,360),.3,'sawtooth',.04,-170);
       AUDIO.noise(.3,.03,900,1.2);
+      }
     }
     // deriva lenta mantendo-se ancorado perto da borda
     const edge=Math.min(e.x,e.y,ARENA.w-e.x,ARENA.h-e.y);
@@ -26039,13 +26048,20 @@ function fractureHudChip(){
   }
   const sig=fractureSignatureForWave((typeof wave!=='undefined')?(wave|0):0);
   const key=[h.known,h.themeNm,h.stageId,sig?sig.id:''].join('|');
+  /* B5 · PERF: a guarda que o campo hudSeen sempre prometeu ("evita redraw")
+     e nunca teve — ele era escrito, jamais comparado. Sem ela o chip
+     reescrevia style.color, style.borderColor e textContent em TODO frame:
+     o wrapper do B4.9 chama fractureHudChip DEPOIS de updateHUD(), então o
+     throttle de .09s do HUD não o alcança. textContent vazio (chip recém
+     criado) sempre força a primeira pintura. */
+  const b=fractureB4();
+  if(b&&b.hudSeen===key&&chip.textContent)return;
   /* B4.9: identidade visual por Tema — cor da borda e símbolo, nada além disso
      (sem rework artístico e sem comprometer legibilidade) */
   chip.style.color=h.known?h.col:'#9db8c8';
   chip.style.borderColor=(h.known?h.col:'#9db8c8')+'44';
   chip.textContent='FRACTURA  '+h.sym+' '+fractureHudText()+
     (sig?('   ⚑ '+sig.nm):'');
-  const b=fractureB4();
   if(b)b.hudSeen=key;
 }
 
