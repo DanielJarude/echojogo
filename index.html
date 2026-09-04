@@ -26600,7 +26600,14 @@ function fractureSandboxAction(cmd){
     ok=fractureForceTheme(cmd.slice(6),'sandbox');
     msg='Tema → '+((fractureThemeById(fractureRun.theme)||{}).nm||fractureRun.theme);
   }else if(cmd.indexOf('int:')===0){
-    ok=fractureSetIntensity(cmd.slice(4),'sandbox')>=0;
+    /* B5: o sucesso é o RESULTADO, não o sinal do delta. `fractureSetIntensity`
+       devolve o delta aplicado, então `>=0` reportava falha em qualquer
+       REDUÇÃO de Intensidade — e como o fim da função faz `if(!ok)return false`,
+       o toast e o refresh do painel eram pulados. O laboratório mudava de
+       estado sem dar nenhum feedback. */
+    const alvo=clamp(Math.round(Number(cmd.slice(4)))||0,FRACTURE_INT_MIN,FRACTURE_INT_MAX);
+    fractureSetIntensity(alvo,'sandbox');
+    ok=fractureRun.intensity===alvo;
     msg='Intensidade → '+fractureRun.intensity+' ('+fractureStageOf(fractureRun.intensity).lab+')';
   }else if(cmd.indexOf('seed:')===0){
     ok=fractureSetSeed(cmd.slice(5));
@@ -26623,7 +26630,10 @@ function fractureSandboxAction(cmd){
     const prox=FRACTURE_STAGES.filter(x=>x.min>alvo.min).sort((a,b)=>a.min-b.min)[0];
     const meio=prox?Math.round((alvo.min+prox.min)/2)
       :Math.min(FRACTURE_INT_MAX,alvo.min+10);
-    ok=fractureSetIntensity(meio,'sandbox')>=0;
+    /* B5: idem ao ramo int: — descer de Stage é uma ação válida e precisa
+       ser reportada como tal. */
+    fractureSetIntensity(meio,'sandbox');
+    ok=fractureGetStage().id===alvo.id;
     msg='Estágio → '+alvo.lab+' (int '+fractureRun.intensity+')';
   }else if(cmd==='reveal'){
     /* revela na hora, ignorando os gatilhos — é para ver o HUD/Codex */
