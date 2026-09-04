@@ -1729,7 +1729,18 @@ ocorridos antes do save deixavam de servir de gatilho na retomada, e a revelaç�
 caía para um motivo mais fraco e mais tardio.
 
 Medido: `miniAligned` ia de 10 para 0 no Continue, reproduzível em 3 de 400
-reloads em CRÍTICA. Depois da correção, 0 em 400.
+reloads em CRÍTICA.
+
+Verificação da correção — as **196 combinações** de `miniAligned × evThematic ×
+evSig` (0–6 × 0–6 × {0,3,7,12}) sobrevivem ao ciclo pack → unpack: 196
+preservadas, 0 divergências. Fora da faixa o clamp segura: `999 → 20`, `-5 → 0`,
+`1e6 → 20` (`MAX_WAVE`).
+
+> **Cuidado ao re-medir.** `fractureRunUnpack(cp)` espera o **wrapper**
+> `{fracture: {...}}`. Passar o pack cru faz `p` cair em `null` e a função cria
+> uma run **nova** e zerada — o que parece "sinais perdidos" mas é só argumento
+> errado. Igualmente, um ciclo em que nenhum sinal foi populado compara 0 com 0
+> e não prova nada.
 
 Save antigo sem os campos cai em 0 — o comportamento de antes, campo a campo
 revalidado. Não há quebra de compatibilidade, então `SM_VERSION` continua 3 e
