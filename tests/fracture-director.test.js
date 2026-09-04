@@ -232,10 +232,15 @@ function bootFx(seed,noTimers){return runGame(makeEnv(seed),noTimers!==false);}
 
 /* ---------------- helpers ---------------- */
 let passed=0,failed=0;
+const falhas=[];
 function ok(label,fn){
   try{fn();passed++;console.log('  ✔ '+label);}
-  catch(e){failed++;console.log('  ✘ '+label+'\n    '+
-    (e&&e.stack||e).toString().split('\n').slice(0,4).join('\n    '));}
+  catch(e){
+    failed++;
+    const pilha=(e&&e.stack||e).toString();
+    falhas.push({label,erro:pilha.split('\n')[0]});
+    console.log('  ✘ '+label+'\n    '+pilha.split('\n').slice(0,4).join('\n    '));
+  }
 }
 const J=x=>JSON.stringify(x);
 
@@ -4205,6 +4210,16 @@ ok('B4-66: PR10.5.2 continua íntegra após a correção',()=>{
 /* ---------------- resultado ---------------- */
 console.log('\n---------------------------------------------');
 console.log('Resultado: '+passed+' passaram · '+failed+' falharam');
-if(failed)console.log('PR 13 — HÁ TESTES FALHANDO');
+if(failed){
+  /* Recapitulação no FIM da saída. O rótulo de cada falha já é impresso na
+     hora, mas fica perdido no meio de 261 linhas: qualquer `tail`, log
+     truncado ou corrida em loop que só guarde a última linha devolve
+     "1 falharam" sem dizer QUAL teste falhou. Foi exatamente assim que uma
+     falha rara desta suíte ficou sem diagnóstico. Repetir os rótulos aqui
+     custa duas linhas e garante que o nome sobreviva a qualquer recorte. */
+  console.log('FALHAS ('+falhas.length+'):');
+  for(const f of falhas)console.log('  ✘ '+f.label+'  →  '+f.erro);
+  console.log('PR 13 — HÁ TESTES FALHANDO');
+}
 else console.log('PR 13 — TODOS OS TESTES PASSARAM');
 process.exit(failed?1:0);
