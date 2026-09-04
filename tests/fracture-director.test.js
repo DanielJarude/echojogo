@@ -4461,6 +4461,39 @@ ok('B5-12: as 12 assinaturas são alcançáveis e nenhuma domina o conjunto',()=
   assert.ok(tot/R.length>=0.4,'assinaturas raras demais: '+(tot/R.length).toFixed(2)+'/run');
 });
 
+ok('B5-13: os sinais de revelação sobrevivem ao Continue',()=>{
+  /* fractureRevealTrigger lê b.miniAligned, b.evThematic e b.evSig. Nenhum
+     dos três era gravado no checkpoint, então um miniboss alinhado ou um
+     evento fortemente temático ocorridos antes do save deixavam de servir de
+     gatilho na retomada. Medido antes da correção: miniAligned ia de 10 a 0
+     em 3 de 400 reloads; depois, 0 de 400. */
+  const A=bootFx({});beginRun(A,1);
+  A.setWave(10);
+  const b=A.fractureB4();
+  b.miniAligned=10;b.evThematic=9;b.evSig=0;
+  const cp={fracture:A.fractureRunPack()};
+  const B=bootFx({});beginRun(B,1);
+  B.fractureRunUnpack(cp);
+  const b2=B.fractureB4();
+  assert.strictEqual(b2.miniAligned,10,'miniAligned perdido no Continue');
+  assert.strictEqual(b2.evThematic,9,'evThematic perdido no Continue');
+  /* e o gatilho volta a enxergar o sinal — a ordem do trigger é
+     signature > miniboss > evento, por isso evSig fica zerado aqui */
+  assert.strictEqual(B.fractureRevealTrigger(11,{}),'miniboss',
+    'gatilho de miniboss não sobreviveu ao Continue');
+  b2.miniAligned=0;
+  assert.strictEqual(B.fractureRevealTrigger(11,{}),'evento',
+    'gatilho de evento temático não sobreviveu ao Continue');
+  /* save antigo, sem os campos: cai em 0 como antes, sem quebrar */
+  const C=bootFx({});beginRun(C,1);
+  const velho=JSON.parse(J(A.fractureRunPack()));
+  delete velho.b4.miniAligned;delete velho.b4.evThematic;delete velho.b4.evSig;
+  C.fractureRunUnpack({fracture:velho});
+  const b3=C.fractureB4();
+  assert.strictEqual(b3.miniAligned,0,'save antigo: miniAligned 0');
+  assert.strictEqual(b3.evThematic,0,'save antigo: evThematic 0');
+});
+
 /* ---------------- resultado ---------------- */
 console.log('\n---------------------------------------------');
 console.log('Resultado: '+passed+' passaram · '+failed+' falharam');

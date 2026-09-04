@@ -26320,7 +26320,16 @@ function fractureRunPack(){
             Object.prototype.hasOwnProperty.call(FRACTURE_SIG_BY_ID,x))
           .slice(-12),
         sigLast:clamp(b.sigLast|0,0,MAX_WAVE),
-        sigN:clamp(b.sigN|0,0,FRACTURE_SIG_MAX_PER_RUN)};
+        sigN:clamp(b.sigN|0,0,FRACTURE_SIG_MAX_PER_RUN),
+        /* B5: os três SINAIS de revelação. fractureRevealTrigger lê
+           b.miniAligned, b.evThematic e b.evSig, mas nenhum deles era
+           gravado — então um miniboss alinhado ou um evento fortemente
+           temático acontecidos antes do save deixavam de servir de gatilho
+           na retomada, e a revelação caía para um motivo mais fraco e mais
+           tardio. Medido: miniAligned ia de 10 para 0 no Continue. */
+        evThematic:clamp(b.evThematic|0,0,MAX_WAVE),
+        miniAligned:clamp(b.miniAligned|0,0,MAX_WAVE),
+        evSig:clamp(b.evSig|0,0,MAX_WAVE)};
     })()};
 }
 /* input NÃO confiável (igual a fracRunUnpack): save antigo sem cp.fracture
@@ -26398,6 +26407,12 @@ function fractureRunUnpack(cp){
       .slice(-12);
     b.sigLast=clamp(Math.round(Number(q.sigLast))||0,0,MAX_WAVE);
     b.sigN=clamp(Math.round(Number(q.sigN))||0,0,FRACTURE_SIG_MAX_PER_RUN);
+    /* B5: sinais de revelação, revalidados como todo o resto. Save antigo sem
+       os campos cai em 0 — exatamente o comportamento de antes, então não há
+       quebra de compatibilidade nem motivo para subir versão de estado. */
+    b.evThematic=clamp(Math.round(Number(q.evThematic))||0,0,MAX_WAVE);
+    b.miniAligned=clamp(Math.round(Number(q.miniAligned))||0,0,MAX_WAVE);
+    b.evSig=clamp(Math.round(Number(q.evSig))||0,0,MAX_WAVE);
   }
   return fractureRun;
 }
