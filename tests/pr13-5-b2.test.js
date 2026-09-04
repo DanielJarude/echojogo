@@ -213,9 +213,9 @@ ok('modificador universal (smRangeBoth) aplica aos dois',()=>{
   const p=freshRun();
   const u=T.UPGRADES.find(u=>u.id==='range');
   u.apply(p);
-  assert.ok(near(p.rangeMul,1.25));
-  assert.ok(near(p.meleeRangeMul,1.25));
-  assert.ok(near(p.rangedRangeMul,1.25));
+  assert.ok(near(p.rangeMul,1.18));
+  assert.ok(near(p.meleeRangeMul,1.18));
+  assert.ok(near(p.rangedRangeMul,1.18));
 });
 ok('condicional e override funcionam nos novos stats',()=>{
   const p=freshRun();

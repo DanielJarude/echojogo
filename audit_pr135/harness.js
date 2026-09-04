@@ -32,9 +32,13 @@ src+='\n;globalThis.__t={'+
   'getMoral:()=>moral,setMoral:mm=>{moral=mm;},'+
   'getProg:()=>prog,setProg:p=>{prog=p;},'+
   'getShopOffers:()=>shopOffers,getShopItems:()=>shopItems,getShopGuns:()=>shopGuns,'+
+  'SHOP_RECENT_MAX,SHOP_REPEAT_LAST_W,SHOP_REPEAT_PENULT_W,shopRecentReset,shopRepeatWeight,shopOfferSeen,shopMarkBought,shopWaveMul,rerollBaseCost,incomeCoinCap,moralMarketMul,'+
+  'getShopRecent:()=>shopRecent.map(e=>({id:e.id,seq:e.seq,now:shopRollSeq,bought:e.bought})),'+
+  'smBuildCheckpoint,captureCheckpoint,resumeRun,activateSlot,clearActiveRun,hasActiveRun,getActiveRun:()=>activeRun,'+
+  'getCurSlot:()=>curSlot,setCurSlot:v=>{curSlot=v;},'+
   'setShopLock:v=>{shopLock=v;},'+
   'setSandboxRun:v=>{sandboxRun=v;},'+
-  'resetShopVars:()=>{shopOffers=[];shopItems=[];shopGuns=[];rerollCost=10;shopLock=null;},'+
+  'resetShopVars:()=>{shopOffers=[];shopItems=[];shopGuns=[];rerollCost=rerollBaseCost();shopLock=null;shopRecentReset();},'+
   'grantItemInternal,itemStateInit,updateHUD,getMeta:()=>meta'+
   '};';
 function makeStyle(){const store={};return new Proxy(store,{get(t,k){return k in t?t[k]:'';},set(t,k,v){t[k]=String(v);return true;}});}
