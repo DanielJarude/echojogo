@@ -743,4 +743,39 @@ Este bloco implementou somente **B2-A (Echo Speech UX)** e **B2-B (Melee × Rang
 
 ## 24. Limites de escopo
 
-Este documento registra a auditoria B1 **e** a implementação B2. Continua **sem** alterar economia, loja (anti-repeat), itens além da migração de Range, Sintonia, bosses, facções, versão ou PR/merge.
+Este documento registra a auditoria B1 **e** a implementação B2 **e** a implementação B3 (seção 25). B3 **alterou** economia da run, variedade da loja e parte da identidade dos itens. **Não** alterou Sintonia, bosses, Fracture Director (além de compatibilidade), facções, versão, PR ou merge.
+
+---
+
+## 25. B3 — implementação (PR13.5 · Bloco 3)
+
+O Bloco 3 foi executado na ordem obrigatória: **Shop Variety → Item Identity → Price pass → Economy pass → simulação final conjunta**. Detalhes, tabelas e métricas completas em `PR13_5_B3.md`.
+
+### B3-A — Shop Variety (anti-repeat leve)
+- Novo histórico run-scoped `shopRecent` (máx. 12 entradas, seq `shopRollSeq`).
+- Item recente **não comprado**: último peso `0.42`, penúltimo `0.72`, depois normal; comprado nunca é penalizado; nenhum item é banido.
+- `pickWeighted` e `pickWeightedMoral` passaram a receber um fator de repetição; armas usam `pickWeightedAny`.
+- Reroll usa o mesmo histórico; Save/Continue grava `p.shopRecent`/`p.shopRollSeq` e restaura no resume (`smBuildCheckpoint`/`resumeRun`).
+- Pool early: raros passam a desbloquear na **onda 3** (antes onda 4) — pool efetivo early passou de 10 para **14**; catálogo inteiro continua fechado no início.
+
+### B3-B — Item Identity
+- Range após B2:
+  - `ESTABILIZADOR DE FASE`: simples, universal (`meleeRange`+`rangedRange`, +18%).
+  - `BOBINA DE LONGO CURSO`: identidade ranged (`rangedRange`×1.32 + `projSpd`×1.14), não mexe no corpo a corpo.
+  - `LUNETA DE VÁCUO`: ranged build (`rangedRange`×1.70, dano distante +30%, −18% cadência, −8% meleeRange).
+  - `CÂMARA DE ESTILHAÇO`: close build (`rangedRange`×0.60, `meleeRange`×1.20, dano ×1.40, cadência ×1.15).
+- Economia: módulos de crédito reduzidos e agora pagam **sobrepreço de mercado** (`shopSurcharge`).
+- `su_sorte`: removida a promessa fantasma de “+12% de sorte”; descrição fiel ao efeito.
+- Catálogo **não inflado**: mesmos 19 upgrades / 57 itens passivos.
+
+### B3-C — Run Economy
+- Entrada: abates usam `incomeCoinCap(mEff.coinMul × player.coinMul)` — soft cap (×2 intacto; só 8% do excedente vira crédito). Mini-chefe e cache usam o mesmo cap.
+- Saída: `shopWaveMul` (+5%/onda, teto +100%) e `moralMarketMul` (mercado cobra da Ganância); reroll base cresce com a onda.
+- Trade-off de Greed: mais créditos, mas loja mais cara (moral + surcharge dos módulos).
+- Resultado: Perfil A tem fases de “não posso comprar tudo” (onda 18/20), Perfil B deixa de trivializar tudo no fim, Perfil C continua claramente mais rico (~3,5× a renda de A) mas com `canTotalPct` variando entre 0% e 100%, sem comprar tudo o tempo todo.
+
+### Testes e simulações
+- `npm test` final: **20 suítes · 0 falhas · 1277 checks** (1258 baseline B2 + 19 checks novos).
+- Stress: **350 execuções** (7 suítes B3-relacionadas × 50) com **0 falhas**: `pr13-5-b3`, `statmods`, `items-build-rework`, `morality`, `pr13-5-b2`, `pr12`, `fracture-director`.
+- Simulações: `audit_pr135/variety3.js` (anti-repeat sem/melhor compras e memória de reroll) e `audit_pr135/economy_sim.js` (perfis A/B/C, N=500, 20 ondas, compra agressiva + 1 reroll se couber).
+- Smoke visual/Electron não executado (ambiente sem GUI); cobertura funcional via harness real.
