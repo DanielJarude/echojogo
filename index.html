@@ -2993,6 +2993,9 @@ function sandboxClearRunState(){
   enemies=[];projectiles=[];xporbs=[];parts=[];ftexts=[];pickups=[];allies=[];
   swings=[];arcs=[];beacon=null;boss=null;miniBoss=null;
   speechClear();
+  /* B3-FIX: histórico de variedade do laboratório não fica stale na memória
+     (o Continue real já reconstruía do slot; aqui só evita estado morto). */
+  shopOffers.length=0;shopItems.length=0;shopGuns.length=0;shopRecentReset();
   $('bosswrap').classList.remove('on');$('endwrap').classList.remove('on');
   echoes=[];
 }
@@ -3450,6 +3453,8 @@ function saveEchoes(){
     const slim=echoQueue.filter(r=>r&&!r.dev).map(r=>({v:2,dur:Math.round(r.dur*100)/100,dmgMul:r.dmgMul,
       frMul:r.frMul,wave:r.wave,level:r.level,trail:r.trail,
       crit:r.crit,critMul:r.critMul,pierce:r.pierce,aoeMul:r.aoeMul,rangeMul:r.rangeMul,
+      /* B3-FIX: alcance separado (B2) viaja no snapshot; rangeMul fica p/ compat. */
+      meleeRangeMul:r.meleeRangeMul,rangedRangeMul:r.rangedRangeMul,
       projSpdMul:r.projSpdMul,longRangeBonus:r.longRangeBonus,
       coins:r.coins,items:r.items,upg:r.upg,owned:r.owned,moral:r.moral,dom:r.dom,
       k:r.kills|0,mh:r.mh||0,st:r.st||null,ps:r.ps||null}));   // PR 8: ps + sinais
@@ -3920,6 +3925,13 @@ function makePlayer(operatorId,freshMeta){
   smRefresh(p);
   return p;
 }
+/* B3-FIX: campo de alcance do snapshot com fallback legado (rangeMul → 1). */
+function echoRangeField(data,key){
+  const v=data?data[key]:null;
+  if(v!=null&&isFinite(+v)&&+v>0)return +v;
+  const lg=data?data.rangeMul:null;
+  return (lg!=null&&isFinite(+lg)&&+lg>0)?+lg:1;
+}
 function makeEcho(data,slot){
   const tr=data.trail;
   const boost=1+((player&&player.echoBoost)||0);
@@ -3931,6 +3943,9 @@ function makeEcho(data,slot){
     glitchT:0,glitchAmp:0,seed:rand(0,100),ca:rand(0,TAU),ghosts:[],
     crit:data.crit||0,critMul:data.critMul||1.8,pierce:data.pierce||0,
     aoeMul:data.aoeMul||1,rangeMul:data.rangeMul||1,
+    /* B3-FIX: snapshot novo traz melee/ranged; snapshot antigo cai no rangeMul legado */
+    meleeRangeMul:echoRangeField(data,'meleeRangeMul'),
+    rangedRangeMul:echoRangeField(data,'rangedRangeMul'),
     projSpdMul:data.projSpdMul||1,longRangeBonus:data.longRangeBonus||0,
     itemIds:(data.items||[]).slice(),upgLog:(data.upg||[]).slice(),
     ownedW:(data.owned||STARTER_WEAPONS).slice(),
@@ -7273,7 +7288,13 @@ function rarityWeight(r,waveN){
   return R.w*(1+Math.min(1.8,(waveN-unlockWave)*.14));
 }
 /* ---- PR13.5 B3-A: variedade leve na loja ---- */
-const SHOP_RECENT_MAX=12;
+/* Capacidade do histórico (B3-FIX): uma visita normal registra 7 ofertas
+   (3 upg + 2 mód + 2 armas); com ARQUIVO PROIBIDO (bigShop) 10. A janela
+   pretendida é "última visita (d=0) + penúltima (d=1)" e cada reroll conta
+   como visita. Para que d=1 sobreviva a 1 reroll com bigShop são precisos
+   3 lotes × 10 = 30; 32 dá folga sem crescer além de ~3 lotes (~4,5 lotes
+   normais). Continua limitado, pequeno e sem penalidade por meia run. */
+const SHOP_RECENT_MAX=32;
 const SHOP_REPEAT_LAST_W=.42;        // último item NÃO comprado: peso ~0.42
 const SHOP_REPEAT_PENULT_W=.72;      // penúltimo item NÃO comprado: peso ~0.72
 function shopRecentReset(){shopRecent=[];shopRollSeq=0;}
@@ -7289,9 +7310,11 @@ function shopMarkBought(id){
   }
 }
 function shopRepeatWeight(id){
+  const sid=String(id);
   for(let i=shopRecent.length-1;i>=0;i--){
     const e=shopRecent[i];
-    if(e.id!==String(id))continue;
+    if(shopRollSeq-e.seq>=2)break;           // B3-FIX: só d≤1 pesa; o resto do histórico (32) não precisa ser varrido
+    if(e.id!==sid)continue;
     if(e.bought)return 1;                    // comprado nunca é penalizado
     const d=shopRollSeq-e.seq;
     if(d===0)return SHOP_REPEAT_LAST_W;
@@ -7695,7 +7718,7 @@ function rollShop(){
   const wp=shopWeaponPool().filter(i=>player.owned.indexOf(i)<0&&i!==lockG);
   shopGuns=lockG!==null?[lockG]:[];
   while(shopGuns.length<2&&wp.length){
-    const pick=pickWeightedAny(wp,o=>shopRepeatWeight(o.id)); // B3-A: menos armas repetidas
+    const pick=pickWeightedAny(wp,wi=>shopRepeatWeight(WEAPONS[wi].id)); // B3-A/FIX: wp guarda ÍNDICES; o histórico usa o id da arma
     shopGuns.push(wp.splice(wp.indexOf(pick),1)[0]);
   }
   /* B3-A: registra a oferta desta visita (compra marca como comprado) */
@@ -16186,6 +16209,7 @@ function onPlayerDeath(){
     frMul:player.fireRateMul,wave,level:player.level,
     crit:player.crit,critMul:player.critMul,pierce:player.pierce,
     aoeMul:player.aoeMul,rangeMul:player.rangeMul,coins:player.coins,
+    meleeRangeMul:player.meleeRangeMul,rangedRangeMul:player.rangedRangeMul,   // B3-FIX
     projSpdMul:player.projSpdMul,longRangeBonus:player.longRangeBonus,
     items:player.items.slice(),upg:player.upgLog.slice(),
     owned:player.owned.slice(),
@@ -21701,7 +21725,9 @@ function echoEqInit(e){
   if(!e.eqBase){
     e.eqBase={hp:e.maxHp||100,sh:e.shieldMax||0,reg:e.shieldRegen||0,mul:e.mul||1,
       crit:e.crit||0,critMul:e.critMul||1.8,pierce:e.pierce||0,
-      aoe:e.aoeMul||1,range:e.rangeMul||1,proj:e.projSpdMul||1};
+      aoe:e.aoeMul||1,range:e.rangeMul||1,proj:e.projSpdMul||1,
+      mrange:(e.meleeRangeMul!=null?e.meleeRangeMul:(e.rangeMul||1)),
+      rrange:(e.rangedRangeMul!=null?e.rangedRangeMul:(e.rangeMul||1))};   // B3-FIX
   }
   if(!e.eqCaps)e.eqCaps={wave:0,coleta:0,revigor:0,ultima:0,contrato:0,contain:0,mascara:0};
   if(!e.eqBoost)e.eqBoost={dmgMul:1,rateMul:1,hpMul:1,shMul:1,regenMul:1,takenMul:1,disMul:1};
@@ -21744,6 +21770,9 @@ function echoEqRefresh(e){
   e.pierce=Math.max(0,(b.pierce||0)+fx.pierceA);
   e.aoeMul=Math.max(.2,(b.aoe||1)*fx.aoeMul);
   e.rangeMul=Math.max(.2,(b.range||1)*fx.rangeMul);
+  /* B3-FIX: equipamento escala os dois alcances (eqBase antigo sem mrange/rrange cai no range legado) */
+  e.meleeRangeMul=Math.max(.2,(b.mrange!=null?b.mrange:(b.range||1))*fx.rangeMul);
+  e.rangedRangeMul=Math.max(.2,(b.rrange!=null?b.rrange:(b.range||1))*fx.rangeMul);
   e.projSpdMul=Math.max(.2,(b.proj||1)*fx.projMul);
 }
 /* multiplicador dinâmico por equipamento (dyn) — lido no momento do dano */
