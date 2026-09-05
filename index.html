@@ -13506,6 +13506,7 @@ function spawnMiniBoss(n,forced){
     chargeCd:3.4,telegraphT:0,dashT:0,dashDx:0,dashDy:0,
     burstCd:2.6,summonCd:9,skillCd:rand(2,4),
     spinAng:0,ring:0,core:0,trailT:0};
+  mbInitState(b);                       // B5-B: estado mecânico próprio + hazards (cap)
   enemies.push(b);
   miniBoss=b;
   /* B3.8: emissão real (só aqui — nunca em preview, pool ou inspetor) */
@@ -13541,309 +13542,379 @@ function clearMiniBossHUD(){
     $('bossfill').style.background='linear-gradient(90deg,#ff4df0,#ff9df7,#46e0ff)';
   }
 }
+/* =====================================================================
+   PR13.5 · B5-B — IDENTIDADE MECÂNICA DOS MINI-CHEFES
+   ---------------------------------------------------------------------
+   Antes: investida telegrafada + rajada radial + escolta + fase 2 (só
+   acelera) para os 8, e a "variante" por cima. Agora:
+   · núcleo comum = timers, fase 2 (50 %), movimento base, contato;
+   · MB_UPDATERS[id] = mecânica principal + secundária + mudança REAL de
+     fase 2 para cada um; dash só para herald/duelist(lunge)/colossus,
+     rajada só para herald/oracle(prevista)/brood(fase 2);
+   · hazards de área (fogo, presságio, previsão, slam) vivem em e.hazards
+     com CAP e lifetime (mbHazardAdd) — nunca crescem sem limite;
+   · estado próprio em e.ms (miniState); nada visual persistido;
+   · hazards ferem o JOGADOR (damagePlayer) — Ecos aliados e inimigos
+     não são atingidos (mesma regra dos orbes inimigos da arena).
+   ===================================================================== */
+const MB_HAZARD_CAP={furnace:22,herald:8,oracle:6,colossus:4,duelist:3,leech:2,brood:0,sentinel:0};
+const MB_BROOD_CAP=12;                // crias vivas da Matriz (além do teto global ENEMY_BUDGET)
+function mbHazardAdd(e,h){
+  if(!e.hazards)e.hazards=[];
+  const cap=MB_HAZARD_CAP[e.mb&&e.mb.id]||4;
+  while(e.hazards.length>=cap)e.hazards.shift();   // o mais antigo some
+  h.age=0;e.hazards.push(h);return h;
+}
+/* tick genérico dos hazards: expira, e cada tipo decide quando fere */
+function mbHazardsTick(e,dt,p){
+  if(!e.hazards||!e.hazards.length)return;
+  for(let i=e.hazards.length-1;i>=0;i--){
+    const h=e.hazards[i];h.age+=dt;h.life-=dt;
+    if(h.tick)h.tick(h,dt,p,e);
+    if(h.life<=0)e.hazards.splice(i,1);
+  }
+}
+function mbPlayerIn(h,p){return dist2(p.x,p.y,h.x,h.y)<(h.r+p.r*.5)*(h.r+p.r*.5);}
+/* movimento base: aproximação pesada (era comum a todos) */
+function mbApproach(e,p,dt,mul,keep){
+  const dx=p.x-e.x,dy=p.y-e.y,d=Math.hypot(dx,dy)||1;
+  const slow=e.slowT>0?.5:1;
+  let spd=e.spd*slow*mEff.enemySpd*(mul||1);
+  if(keep&&d<keep)spd=-spd*.6;           // mantém distância (Oráculo/Sanguessuga)
+  e.vx+=((dx/d)*spd-e.vx)*Math.min(1,2.6*dt);
+  e.vy+=((dy/d)*spd-e.vy)*Math.min(1,2.6*dt);
+  e.x=clamp(e.x+e.vx*dt,e.r,ARENA.w-e.r);
+  e.y=clamp(e.y+e.vy*dt,e.r,ARENA.h-e.r);
+  e.aim=angTo(e.aim,Math.atan2(dy,dx),1.9*dt);
+  if(d<e.r+p.r&&e.touchCd<=0){e.touchCd=.8;damagePlayer(e.dmg);}
+}
+/* investida telegrafada (helper — só quem a tem chama) */
+function mbCharge(e,p,dt,cfg){
+  const dx=p.x-e.x,dy=p.y-e.y,d=Math.hypot(dx,dy)||1;
+  const slow=e.slowT>0?.5:1;
+  if(e.dashT>0){
+    e.dashT-=dt;
+    const sp=cfg.speed*slow;
+    e.x=clamp(e.x+e.dashDx*sp*dt,e.r,ARENA.w-e.r);
+    e.y=clamp(e.y+e.dashDy*sp*dt,e.r,ARENA.h-e.r);
+    if(Math.random()<.7)spawnParticles(e.x,e.y,e.color,2,150,.3,4);
+    if(d<e.r+p.r+6&&e.touchCd<=0){e.touchCd=.6;damagePlayer(e.dmg*cfg.dmgMul);shake=Math.max(shake,11);}
+    if(cfg.onDash)cfg.onDash(e);
+    return true;
+  }
+  if(e.telegraphT>0){
+    e.telegraphT-=dt;
+    e.aim=angTo(e.aim,Math.atan2(dy,dx),cfg.track*dt);
+    if(e.telegraphT<=0){
+      e.dashT=cfg.dur;e.dashDx=Math.cos(e.aim);e.dashDy=Math.sin(e.aim);
+      spawnRing(e.x,e.y,e.color,10,120,.4);AUDIO.dash();AUDIO.tone(150,.3,'sawtooth',.06,-60);
+    }
+    return true;
+  }
+  e.chargeCd-=dt;
+  if(e.chargeCd<=0){e.chargeCd=cfg.cd;e.telegraphT=cfg.tele;AUDIO.tone(90,.5,'square',.05,40);}
+  return false;
+}
+/* rajada radial (helper) */
+function mbBurst(e,cnt,spd,color,dmgMul){
+  const off=rand(0,TAU);
+  for(let i=0;i<cnt;i++){
+    const a=off+i*TAU/cnt;
+    projectiles.push({x:e.x+Math.cos(a)*(e.r+6),y:e.y+Math.sin(a)*(e.r+6),
+      vx:Math.cos(a)*spd,vy:Math.sin(a)*spd,r:6,dmg:e.dmg*(dmgMul||.42),life:3.4,
+      type:'eorb',team:'enemy',color:color||'#ffb347',aoe:0});
+  }
+  spawnRing(e.x,e.y,color||'#ffb347',e.r,e.r+70,.4);
+  AUDIO.tone(rand(300,360),.16,'square',.035,-120);
+}
+/* escolta (helper) — teto global preservado */
+function mbSummon(e,type,n,rr,label){
+  if(enemies.length>=ENEMY_BUDGET)return 0;
+  let made=0;
+  for(let i=0;i<n;i++){
+    if(enemies.length>=ENEMY_BUDGET)break;
+    const a=rand(0,TAU);
+    const sx=clamp(e.x+Math.cos(a)*rr,30,ARENA.w-30),sy=clamp(e.y+Math.sin(a)*rr,30,ARENA.h-30);
+    const c=spawnEnemy(type,sx,sy,Math.max(1,wave));c.spawnT=.5;c.mbChild=e.mb.id;made++;
+    spawnRing(sx,sy,e.color,6,66,.5);
+  }
+  if(made&&label)toast(e.mb.nm+' '+label);
+  return made;
+}
+function mbChildren(e){let n=0;for(const x of enemies)if(!x.dead&&x.mbChild===e.mb.id)n++;return n;}
+
+/* ---------------- ARAUTO: ESCALADA (presságios) ----------------
+   Cria marcas de ruptura na posição do jogador; detonam após 1,5 s.
+   A CADA ciclo o número de marcas cresce (escalada: 2→3→4… teto 5 na
+   fase 1, 7 na fase 2) e o intervalo encurta. Matar rápido = menos
+   marcas. Mantém investida (identidade de presença) e rajada. */
+function updateHerald(e,dt,p){
+  const ms=e.ms;
+  if(!mbCharge(e,p,dt,{speed:e.phase===2?1180:980,dur:e.phase===2?.55:.45,cd:e.phase===2?3.4:5.0,tele:e.phase===2?.62:.85,track:3.4,dmgMul:1.35}))
+    mbApproach(e,p,dt,1);
+  e.burstCd-=dt;
+  if(e.burstCd<=0){e.burstCd=e.phase===2?2.6:3.6;mbBurst(e,e.phase===2?12:8,300,'#ffb347');}
+  ms.omenCd-=dt;
+  if(ms.omenCd<=0){
+    ms.escal=Math.min(e.phase===2?7:5,(ms.escal|0)+1);
+    ms.omenCd=Math.max(e.phase===2?3.2:4.5,(e.phase===2?6:8)-ms.escal*.5);
+    for(let i=0;i<ms.escal;i++){
+      const ang=rand(0,TAU),rr=i===0?0:rand(40,110);
+      mbHazardAdd(e,{kind:'omen',x:clamp(p.x+Math.cos(ang)*rr,40,ARENA.w-40),y:clamp(p.y+Math.sin(ang)*rr,40,ARENA.h-40),r:90,life:1.5,fuse:1.5,
+        tick:(h,dt,p,e)=>{if(h.life<=0){spawnRing(h.x,h.y,'#ffd166',6,h.r,.5);spawnShards(h.x,h.y,'#ffd166',6,4);
+          if(mbPlayerIn(h,p)){damagePlayer(e.dmg*.45);applyStatus(p,'chill',1.8,.25);}AUDIO.tone(280,.15,'square',.025,-80);}}});
+    }
+    AUDIO.tone(440,.2,'sine',.03,-120);
+  }
+  e.summonCd-=dt;
+  if(e.summonCd<=0){e.summonCd=e.phase===2?9:12;mbSummon(e,'chaser',e.phase===2?3:2,e.r+52,'CONVOCOU ESCOLTA');}
+}
+/* ---------------- FORNALHA: RASTRO DE FOGO (burn real) ----------------
+   Ao se mover deixa zonas de fogo (r 34, 5 s; cap 22) que queimam
+   (dano/s + status burn). Nova incendiária a cada 6,5 s (R 260) que
+   ACENDE 6 zonas em anel. Fase 2 (sobreaquecimento): zonas duram 7 s,
+   r 40, e a Fornalha corre (spd ×1.25) enquanto o núcleo está quente. */
+/* zona de fogo: 0,25 s de "acendendo" sem dano; depois 1 tick a cada 0,6 s
+   (dmg×0,16 + burn). Zonas sobrepostas NÃO somam: um único tick global. */
+function mbFireTick(h,dt,p,e){
+  if(h.age<.25)return;
+  if(!mbPlayerIn(h,p))return;
+  e.ms.fireIn=true;                 // consumido UMA vez por frame em updateFurnace (zonas sobrepostas não somam)
+}
+function updateFurnace(e,dt,p){
+  const ms=e.ms,ph2=e.phase===2;
+  /* tick de queimadura do frame ANTERIOR (hazards rodam depois do updater) */
+  ms.fireHitT=(ms.fireHitT||0)-dt;
+  if(ms.fireIn&&ms.fireHitT<=0){ms.fireHitT=.6;damagePlayer(e.dmg*.16);applyStatus(p,'burn',2,.08,e);}
+  ms.fireIn=false;
+  mbApproach(e,p,dt,ph2&&ms.hot>0?1.25:1);
+  if(ms.hot>0)ms.hot-=dt;
+  ms.trailT-=dt;
+  const moved=Math.hypot(e.vx,e.vy)>18;
+  if(ms.trailT<=0&&moved){
+    ms.trailT=ph2?.30:.36;
+    mbHazardAdd(e,{kind:'fire',x:e.x,y:e.y,r:ph2?40:34,life:ph2?7:5,max:ph2?7:5,
+      tick:mbFireTick});
+  }
+  ms.novaCd-=dt;
+  if(ms.novaCd<=0){
+    ms.novaCd=ph2?5.5:6.5;ms.hot=3;
+    const R=260;
+    spawnRing(e.x,e.y,'#ff7a2f',14,R,.8);spawnShards(e.x,e.y,'#ff7a2f',16,6);
+    if(dist2(p.x,p.y,e.x,e.y)<R*R)damagePlayer(e.dmg*.8);
+    for(let i=0;i<6;i++){const a=i/6*TAU+rand(0,.4);const d=R*.62;
+      mbHazardAdd(e,{kind:'fire',x:clamp(e.x+Math.cos(a)*d,30,ARENA.w-30),y:clamp(e.y+Math.sin(a)*d,30,ARENA.h-30),r:ph2?44:38,life:ph2?6:4.5,max:ph2?6:4.5,
+        tick:mbFireTick});}
+    shake=Math.max(shake,12);AUDIO.boom();
+  }
+}
+/* ---------------- SENTINELA: POSTURAS ----------------
+   Ciclo GUARDA (4 s: reflete projéteis do jogador, −75 % dano recebido,
+   placas fechadas) → ABERTURA (2,5 s: dano recebido ×1,30, placas abertas
+   — a janela) → NEUTRA (3,5 s). Fase 2: guarda 3 s / abertura 1,8 s / neutra
+   2 s e, ao abrir, dispara um leque de 5 orbes na direção do jogador.
+   Sem investida, sem rajada radial. */
+function updateSentinel(e,dt,p){
+  const ms=e.ms,ph2=e.phase===2;
+  mbApproach(e,p,dt,ms.stance==='guard'?.55:.9);
+  ms.stanceT-=dt;
+  if(ms.stanceT<=0){
+    if(ms.stance==='neutral'){ms.stance='guard';ms.stanceT=ph2?3:4;spawnRing(e.x,e.y,'#8ff6ff',e.r,e.r+80,.6);AUDIO.tone(520,.3,'sine',.04,140);}
+    else if(ms.stance==='guard'){ms.stance='open';ms.stanceT=ph2?1.8:2.5;spawnRing(e.x,e.y,'#ff5c7a',e.r,e.r+40,.4);AUDIO.tone(700,.2,'square',.03,-200);
+      if(ph2){const base=Math.atan2(p.y-e.y,p.x-e.x);for(let i=-2;i<=2;i++){const a=base+i*.22;
+        projectiles.push({x:e.x+Math.cos(a)*(e.r+6),y:e.y+Math.sin(a)*(e.r+6),vx:Math.cos(a)*340,vy:Math.sin(a)*340,r:6,dmg:e.dmg*.4,life:3,type:'eorb',team:'enemy',color:'#8ff6ff',aoe:0});}}}
+    else{ms.stance='neutral';ms.stanceT=ph2?2:3.5;}
+  }
+  /* estados legados lidos pelo renderer/overlays continuam coerentes */
+  e.shieldUpState=ms.stance==='guard'?'active':(ms.stance==='open'?'vulnerable':null);
+  e.reflectState=ms.stance==='guard'?'active':null;
+  /* dano recebido: damageEnemy já aplica ×0.25 em 'active' e ×1.30 em 'vulnerable' */
+  if(ms.stance==='guard'){
+    for(let i=projectiles.length-1;i>=0;i--){
+      const pr=projectiles[i];
+      if(pr.team!=='enemy'&&dist2(pr.x,pr.y,e.x,e.y)<(e.r+50)*(e.r+50)){
+        pr.vx*=-1.1;pr.vy*=-1.1;pr.team='enemy';pr.color='#8ff6ff';pr.dmg=e.dmg*.3;pr.owner=e;
+        spawnParticles(pr.x,pr.y,'#8ff6ff',3,120,.3,2);
+      }
+    }
+  }
+}
+/* ---------------- MATRIZ: PROLIFERAÇÃO + REGEN CONDICIONADA ----------------
+   Spawn: 4 crias a cada 3,6 s (fase 2: 5 a cada 3,0 s), até MB_BROOD_CAP
+   (12) vivas e dentro do teto global. Regen: 2,2 %/s da vida máx. por…
+   só ENQUANTO ≥3 crias estiverem vivas (fase 2: ≥2, 3 %/s); com menos
+   crias não regenera. Fase 2: rajada de 8 orbes lentos após cada spawn.
+   Counterplay: matar as crias corta a regen. Sem investida. */
+function updateBrood(e,dt,p){
+  const ms=e.ms,ph2=e.phase===2;
+  mbApproach(e,p,dt,.85,200);
+  ms.spawnCd-=dt;
+  const kids=mbChildren(e);
+  if(ms.spawnCd<=0){
+    ms.spawnCd=ph2?3.0:3.6;
+    const want=Math.min(ph2?5:4,MB_BROOD_CAP-kids);
+    if(want>0&&enemies.length<ENEMY_BUDGET){mbSummon(e,'swarm',want,e.r+40,null);spawnRing(e.x,e.y,'#39d98a',8,90,.5);AUDIO.tone(340,.25,'sawtooth',.035,-120);}
+    /* esporos: pressão própria da Matriz mesmo com o enxame no teto */
+    if(ph2)mbBurst(e,8,220,'#39d98a',.35);
+    else{const base=Math.atan2(p.y-e.y,p.x-e.x);for(let i=-1;i<=1;i++){const a=base+i*.35;
+      projectiles.push({x:e.x+Math.cos(a)*(e.r+6),y:e.y+Math.sin(a)*(e.r+6),vx:Math.cos(a)*200,vy:Math.sin(a)*200,r:7,dmg:e.dmg*.35,life:3.2,type:'eorb',team:'enemy',color:'#39d98a',aoe:0});}}
+  }
+  const need=ph2?2:3,rate=ph2?.030:.022;
+  ms.regenOn=kids>=need;
+  if(ms.regenOn&&e.hp<e.maxHp){e.hp=Math.min(e.maxHp,e.hp+e.maxHp*rate*dt);ms.regenT=(ms.regenT||0)+dt;}
+}
+/* ---------------- DUELISTA: SLASH / LUNGE ----------------
+   Blink para o flanco (2,6 s) → telegraph estreito (.42 s) → lunge curto
+   (.22 s a 1500 px/s) com hitbox de LÂMINA (segmento à frente, 70 px).
+   Fase 2: combo de até 3 lunges encadeados, cada um com telegraph (.30 s).
+   Nunca teleporta em cima do jogador (raio 70–130 ao redor). */
+function updateDuelist(e,dt,p){
+  const ms=e.ms,ph2=e.phase===2;
+  if(ms.slashT>0){
+    ms.slashT-=dt;
+    const sp=1500;
+    e.x=clamp(e.x+Math.cos(e.aim)*sp*dt,e.r,ARENA.w-e.r);e.y=clamp(e.y+Math.sin(e.aim)*sp*dt,e.r,ARENA.h-e.r);
+    /* lâmina: segmento do centro até r+70 na direção da mira */
+    const bx=e.x+Math.cos(e.aim)*(e.r+70),by=e.y+Math.sin(e.aim)*(e.r+70);
+    const t=Math.max(0,Math.min(1,((p.x-e.x)*(bx-e.x)+(p.y-e.y)*(by-e.y))/((bx-e.x)**2+(by-e.y)**2||1)));
+    const cx=e.x+(bx-e.x)*t,cy=e.y+(by-e.y)*t;
+    if(!ms.hit&&dist2(p.x,p.y,cx,cy)<(p.r+14)*(p.r+14)){ms.hit=true;damagePlayer(e.dmg*1.2);shake=Math.max(shake,9);}
+    if(ms.slashT<=0){
+      if(ms.combo>0){ms.combo--;e.telegraphT=.30;ms.hit=false;ms.chain=(ms.chain|0)+1;}
+      else e.skillCd=Math.max(e.skillCd,.9);   // respiro após o último golpe (janela de punição)
+    }
+    return;
+  }
+  if(e.telegraphT>0){
+    e.telegraphT-=dt;
+    const dx=p.x-e.x,dy=p.y-e.y;
+    /* 1º golpe: mira trava devagar (dá para ler); golpes do combo: giram
+       rápido para o jogador (o telegraph de .30 s continua visível) */
+    e.aim=angTo(e.aim,Math.atan2(dy,dx),(ms.chain>0?14:5)*dt);
+    if(e.telegraphT<=0){
+      /* comprimento do lunge: não passa do jogador em mais de ~40 px */
+      const d=Math.hypot(dx,dy);ms.slashT=Math.min(.22,Math.max(.10,(d+40-(e.r+70))/1500));
+      ms.hit=false;spawnRing(e.x,e.y,e.color,8,100,.3);AUDIO.dash();}
+    return;
+  }
+  mbApproach(e,p,dt,1.1);
+  e.skillCd-=dt;
+  if(e.skillCd<=0){
+    e.skillCd=ph2?2.2:2.6;
+    const a=Math.atan2(p.y-e.y,p.x-e.x)+Math.PI+rand(-.9,.9);const rr=rand(70,130);
+    spawnParticles(e.x,e.y,e.color,18,300,.5,3.5);spawnRing(e.x,e.y,e.color,8,120,.5);
+    e.x=clamp(p.x+Math.cos(a)*rr,e.r,ARENA.w-e.r);e.y=clamp(p.y+Math.sin(a)*rr,e.r,ARENA.h-e.r);
+    spawnRing(e.x,e.y,e.color,6,110,.5);aberrPeak(.5);AUDIO.tone(1300,.14,'square',.035,-700);
+    e.telegraphT=.42;ms.combo=ph2?2:0;ms.chain=0;
+  }
+}
+/* ---------------- COLOSSO: SLAM telegrafado ----------------
+   Slam: marca a zona (R 190) 1,1 s antes; ao fim: dano + empurrão só
+   dentro do raio. Cd 5 s. Quake (R 300, mantém) só ao despertar da
+   dormência (4,5 s dormente / 7 s desperto). Investida pesada (lenta,
+   cd longo) mantida. Fase 2: slam duplo — 2º anel (R 300) 0,7 s depois. */
+function updateColossus(e,dt,p){
+  const ms=e.ms,ph2=e.phase===2;
+  ms.sleepT-=dt;
+  if(ms.sleep==='awake'&&ms.sleepT<=0){ms.sleep='dormant';ms.sleepT=4.5;e.sleepDmgRed=.60;spawnRing(e.x,e.y,'#ff2f5e',e.r,e.r+100,.7);shake=Math.max(shake,8);AUDIO.tone(90,.6,'sine',.06,-24);}
+  else if(ms.sleep==='dormant'&&ms.sleepT<=0){ms.sleep='awake';ms.sleepT=7;e.sleepDmgRed=0;
+    const R2=340;spawnRing(e.x,e.y,'#ff9d3c',20,R2,.9);shake=Math.max(shake,22);
+    if(dist2(p.x,p.y,e.x,e.y)<R2*R2){damagePlayer(e.dmg*.8);const a2=Math.atan2(p.y-e.y,p.x-e.x);p.vx+=Math.cos(a2)*600;p.vy+=Math.sin(a2)*600;}
+    AUDIO.boom();AUDIO.tone(70,.7,'sine',.09,-24);}
+  e.sleepPhase=ms.sleep;e.sleepT=ms.sleepT;
+  if(ms.sleep==='dormant'){e.vx*=.85;e.vy*=.85;return;}
+  if(!mbCharge(e,p,dt,{speed:820,dur:.5,cd:7,tele:1.0,track:2.2,dmgMul:1.5}))mbApproach(e,p,dt,1);
+  ms.slamCd-=dt;
+  if(ms.slamCd<=0){
+    ms.slamCd=ph2?4.2:5;
+    const mk=(delay,R)=>mbHazardAdd(e,{kind:'slam',x:e.x,y:e.y,r:R,life:1.1+delay,fuse:1.1+delay,delay,
+      tick:(h,dt,p,e)=>{h.x=e.x;h.y=e.y;if(h.life<=0){spawnRing(h.x,h.y,'#ff2f5e',18,h.r,.9);spawnShards(h.x,h.y,'#ff9d3c',14,6);shake=Math.max(shake,14);
+        if(dist2(p.x,p.y,h.x,h.y)<h.r*h.r){damagePlayer(e.dmg*.75);const a=Math.atan2(p.y-h.y,p.x-h.x);p.vx+=Math.cos(a)*520;p.vy+=Math.sin(a)*520;}
+        AUDIO.boom();AUDIO.tone(70,.6,'sine',.09,-24);}}});
+    mk(0,190);if(ph2)mk(.7,300);
+    AUDIO.tone(60,.9,'sine',.07,-10);
+  }
+}
+/* ---------------- ORÁCULO: PREVISÃO ----------------
+   Marca "zonas futuras" (R 80) na posição prevista do jogador (pos +
+   vel×0,9 s); ativam após 1,4 s com dano + lentidão. Cd 3,2 s, 1 zona
+   (fase 2: 2 zonas cruzadas, cd 2,6 s). Maldição (−30 % dano, 6 s, cd 9)
+   preservada. Rajada só como "eco" da previsão: 6 orbes ao ativar uma
+   zona na fase 2. Mantém distância; sem investida. */
+function updateOracle(e,dt,p){
+  const ms=e.ms,ph2=e.phase===2;
+  mbApproach(e,p,dt,.9,300);
+  ms.predCd-=dt;
+  if(ms.predCd<=0){
+    ms.predCd=ph2?2.6:3.2;
+    const mk=(ox,oy)=>mbHazardAdd(e,{kind:'pred',x:clamp(p.x+p.vx*.9+ox,40,ARENA.w-40),y:clamp(p.y+p.vy*.9+oy,40,ARENA.h-40),r:80,life:1.4,fuse:1.4,
+      tick:(h,dt,p,e)=>{if(h.life<=0){spawnRing(h.x,h.y,'#ffd166',8,h.r,.5);
+        if(mbPlayerIn(h,p)){damagePlayer(e.dmg*.55);applyStatus(p,'chill',1.5,.3);}
+        if(e.phase===2){const off=rand(0,TAU);for(let i=0;i<6;i++){const a=off+i*TAU/6;projectiles.push({x:h.x,y:h.y,vx:Math.cos(a)*260,vy:Math.sin(a)*260,r:5,dmg:e.dmg*.3,life:2.4,type:'eorb',team:'enemy',color:'#ffd166',aoe:0});}}
+        AUDIO.tone(520,.18,'sine',.03,-160);}}});
+    mk(0,0);if(ph2){const a=Math.atan2(p.vy,p.vx)+Math.PI/2;mk(Math.cos(a)*110,Math.sin(a)*110);}
+    AUDIO.tone(880,.12,'sine',.025,-300);
+  }
+  ms.curseCd-=dt;
+  if(ms.curseCd<=0){
+    ms.curseCd=9;p.curseT=6;
+    smMul(p,'damage','status.oracle_curse.damage','MALDIÇÃO DO ORÁCULO −30% DANO',.70);
+    banner('MALDIÇÃO DISSONANTE','SEU DANO CAIU 30% POR 6s');spawnRing(p.x,p.y,'#ffd166',10,160,.7);AUDIO.tone(200,.5,'sawtooth',.05,-80);
+  }
+}
+/* ---------------- SANGUESSUGA: SIPHON ----------------
+   Fio de dreno (alcance 420) por 2,6 s: 4 ticks/s de dano ao jogador e
+   cura de 2× o dano drenado; QUEBRA se o jogador sair do alcance (ou
+   ficar atrás de >420). Cd 4,5 s. Corrosão leve mantida. Fase 2: fio
+   busca a 520, dura 3,2 s, e cria uma zona de fome (R 110) sob o
+   jogador ao fim que reduz 20 % do dano dele por 3 s se ficar dentro.
+   SEM escolta (a identidade de invocar é da Matriz). */
+function updateLeech(e,dt,p){
+  const ms=e.ms,ph2=e.phase===2;
+  const range=ph2?520:420;
+  mbApproach(e,p,dt,ms.siphonT>0?.4:1.1,240);
+  if(ms.siphonT>0){
+    ms.siphonT-=dt;
+    const d=Math.hypot(p.x-e.x,p.y-e.y);
+    if(d>range||p.dashT>0){ms.siphonT=0;ms.broken=(ms.broken|0)+1;floatText(e.x,e.y-e.r-20,'DRENO ROMPIDO','#e6ffb8');}
+    else{ms.tickT-=dt;if(ms.tickT<=0){ms.tickT=.25;const dd=e.dmg*.11;damagePlayer(dd);e.hp=Math.min(e.maxHp,e.hp+dd*2);ms.drained=(ms.drained||0)+dd;}}
+    if(ms.siphonT<=0&&ph2){mbHazardAdd(e,{kind:'hunger',x:p.x,y:p.y,r:110,life:3,tick:(h,dt,p)=>{if(mbPlayerIn(h,p)){h.in=true;applyStatus(p,'corrode',1,.2);}else h.in=false;}});}
+  }else{
+    ms.siphonCd-=dt;
+    if(ms.siphonCd<=0&&dist2(p.x,p.y,e.x,e.y)<range*range){ms.siphonCd=4.5;ms.siphonT=ph2?3.2:2.6;ms.tickT=.25;AUDIO.tone(150,.5,'sine',.05,60);}
+  }
+  e.drainT=ms.siphonT;             // renderer/overlay legado
+  if(Math.random()<dt*.5)applyStatus(p,'corrode',3,.1,e);
+}
+const MB_UPDATERS={herald:updateHerald,furnace:updateFurnace,sentinel:updateSentinel,brood:updateBrood,
+  duelist:updateDuelist,colossus:updateColossus,oracle:updateOracle,leech:updateLeech};
+function mbInitState(e){
+  e.ms={escal:0,omenCd:6,trailT:0,novaCd:5,hot:0,stance:'neutral',stanceT:2.5,spawnCd:2.5,regenOn:false,regenT:0,
+    slashT:0,combo:0,hit:false,sleep:'awake',sleepT:7,slamCd:3.5,predCd:2.5,curseCd:6,siphonCd:3,siphonT:0,tickT:0,drained:0,broken:0};
+  e.hazards=[];
+  return e.ms;
+}
 function updateMiniBoss(e,dt){
   e.t+=dt;e.core+=dt*2.1;e.ring+=dt*.8;e.spinAng+=dt*1.7;
   if(e.flashT>0)e.flashT-=dt;
   if(e.touchCd>0)e.touchCd-=dt;
   if(e.slowT>0)e.slowT-=dt;
+  if(!e.ms)mbInitState(e);
   if(e.spawnT>0){e.spawnT-=dt;return;}
-  // fase 2 abaixo de 50%
+  // fase 2 abaixo de 50 % — sinal comum; a mudança de comportamento é de cada updater
   if(e.phase===1&&e.hp<=e.maxHp*.5){
     e.phase=2;e.chargeCd=Math.min(e.chargeCd,1.4);
-    /* B5-A: sinal comum (banner+aro) com assinatura textual/paleta própria;
-       o efeito individual da fase 2 vive no renderer (phaseVisual) */
     const V2=minibossVisual(e.mb&&e.mb.id);
-    banner(MINIBOSS_PHASE2_TITLE[e.mb&&e.mb.id]||'FASE 2','BLINDAGEM COMPROMETIDA — ELE ACELERA');
+    banner(MINIBOSS_PHASE2_TITLE[e.mb&&e.mb.id]||'FASE 2','BLINDAGEM COMPROMETIDA — O PADRÃO MUDA');
     shake=Math.max(shake,14);aberrPeak(.8);
     spawnRing(e.x,e.y,V2.primary,16,340,.9);
     spawnShards(e.x,e.y,V2.accent,20,7);
     AUDIO.bossPhase();
   }
   const p=player;
-  const dx=p.x-e.x,dy=p.y-e.y,d=Math.hypot(dx,dy)||1;
-  const slow=e.slowT>0?.5:1;
-
-  /* ---- INVESTIDA TELEGRAFADA ---- */
-  if(e.dashT>0){
-    e.dashT-=dt;
-    const sp=(e.phase===2?1180:980)*slow;
-    e.x=clamp(e.x+e.dashDx*sp*dt,e.r,ARENA.w-e.r);
-    e.y=clamp(e.y+e.dashDy*sp*dt,e.r,ARENA.h-e.r);
-    if(Math.random()<.7)spawnParticles(e.x,e.y,'#ff9d3c',2,150,.3,4);
-    // dano de impacto durante a investida
-    if(d<e.r+p.r+6&&e.touchCd<=0){
-      e.touchCd=.6;damagePlayer(e.dmg*1.35);shake=Math.max(shake,11);
-    }
-  }else if(e.telegraphT>0){
-    e.telegraphT-=dt;
-    e.aim=angTo(e.aim,Math.atan2(dy,dx),3.4*dt);   // mira travando no alvo
-    if(e.telegraphT<=0){
-      e.dashT=e.phase===2?.55:.45;
-      e.dashDx=Math.cos(e.aim);e.dashDy=Math.sin(e.aim);
-      spawnRing(e.x,e.y,'#ff9d3c',10,120,.4);
-      AUDIO.dash();AUDIO.tone(150,.3,'sawtooth',.06,-60);
-    }
-  }else{
-    e.chargeCd-=dt;
-    e.aim=angTo(e.aim,Math.atan2(dy,dx),1.9*dt);
-    // aproximação constante e pesada
-    const spd=e.spd*slow*mEff.enemySpd;
-    e.vx+=((dx/d)*spd-e.vx)*Math.min(1,2.6*dt);
-    e.vy+=((dy/d)*spd-e.vy)*Math.min(1,2.6*dt);
-    e.x=clamp(e.x+e.vx*dt,e.r,ARENA.w-e.r);
-    e.y=clamp(e.y+e.vy*dt,e.r,ARENA.h-e.r);
-    if(e.chargeCd<=0){
-      e.chargeCd=e.phase===2?3.0:4.6;
-      e.telegraphT=e.phase===2?.62:.85;
-      AUDIO.tone(90,.5,'square',.05,40);
-    }
-    if(d<e.r+p.r&&e.touchCd<=0){e.touchCd=.8;damagePlayer(e.dmg);}
-  }
-
-  /* ---- RAJADA RADIAL ---- */
-  e.burstCd-=dt;
-  if(e.burstCd<=0){
-    e.burstCd=e.phase===2?2.0:3.2;
-    const cnt=e.phase===2?14:9;
-    const off=rand(0,TAU);
-    for(let i=0;i<cnt;i++){
-      const a=off+i*TAU/cnt;
-      projectiles.push({x:e.x+Math.cos(a)*(e.r+6),y:e.y+Math.sin(a)*(e.r+6),
-        vx:Math.cos(a)*300,vy:Math.sin(a)*300,r:6,dmg:e.dmg*.42,life:3.4,
-        type:'eorb',team:'enemy',color:'#ffb347',aoe:0});
-    }
-    spawnRing(e.x,e.y,'#ffb347',e.r,e.r+70,.4);
-    AUDIO.tone(rand(300,360),.16,'square',.035,-120);
-  }
-
-  /* ---- ESCOLTA ---- */
-  e.summonCd-=dt;
-  if(e.summonCd<=0&&enemies.length<ENEMY_BUDGET&&(e.sk.summon||e.mb.id==='herald')){
-    e.summonCd=e.phase===2?7:11;
-    for(let i=0;i<(e.phase===2?3:2);i++){
-      const a=rand(0,TAU),rr=e.r+52;
-      const sx=clamp(e.x+Math.cos(a)*rr,30,ARENA.w-30);
-      const sy=clamp(e.y+Math.sin(a)*rr,30,ARENA.h-30);
-      const c=spawnEnemy('chaser',sx,sy,Math.max(1,wave));
-      c.spawnT=.5;
-      spawnRing(sx,sy,e.color,6,66,.5);
-    }
-    toast(e.mb.nm+' CONVOCOU ESCOLTA');
-    AUDIO.tone(220,.35,'sawtooth',.04,-120);
-  }
-
-  /* ================= HABILIDADES DA VARIANTE ================= */
-  const SK=e.sk||{};
-  e.skillCd-=dt;
-  const pdx=p.x-e.x,pdy=p.y-e.y,pd=Math.hypot(pdx,pdy)||1;
-
-  // DUELISTA / BLINK: teleporte ofensivo
-  if(SK.blink&&e.skillCd<=0){
-    e.skillCd=2.6;
-    const a=Math.atan2(pdy,pdx)+Math.PI;
-    const rr=rand(70,130);
-    spawnParticles(e.x,e.y,e.color,18,300,.5,3.5);
-    spawnRing(e.x,e.y,e.color,8,120,.5);
-    e.x=clamp(p.x+Math.cos(a)*rr,e.r,ARENA.w-e.r);
-    e.y=clamp(p.y+Math.sin(a)*rr,e.r,ARENA.h-e.r);
-    spawnRing(e.x,e.y,e.color,6,110,.5);
-    aberrPeak(.5);
-    AUDIO.tone(1300,.14,'square',.035,-700);
-    if(SK.slash){e.telegraphT=.28;}
-  }
-
-  // FORNALHA: rastro incendiário
-  if(SK.trail){
-    e.trailT-=dt;
-    if(e.trailT<=0){
-      e.trailT=.28;
-      projectiles.push({x:e.x+rand(-14,14),y:e.y+rand(-14,14),vx:0,vy:0,
-        r:16,dmg:e.dmg*.30,life:4.5,type:'eorb',team:'enemy',
-        color:'#ff7a2f',aoe:0});
-      spawnParticles(e.x,e.y,'#ff7a2f',2,70,.5,3);
-    }
-  }
-  // FORNALHA: nova incendiária
-  if(SK.nova&&e.skillCd<=0){
-    e.skillCd=6.5;
-    const R=260;
-    spawnRing(e.x,e.y,'#ff7a2f',14,R,.8);
-    spawnShards(e.x,e.y,'#ff7a2f',16,6);
-    if(dist2(p.x,p.y,e.x,e.y)<R*R)damagePlayer(e.dmg*.8);
-    shake=Math.max(shake,12);AUDIO.boom();
-  }
-
-  // MATRIZ: gera enxames + regenera
-  if(SK.swarmSpawn&&e.skillCd<=0&&enemies.length<ENEMY_BUDGET){
-    e.skillCd=4.2;
-    for(let i=0;i<3;i++){
-      const a=rand(0,TAU),rr=e.r+40;
-      const c2=spawnEnemy('swarm',
-        clamp(e.x+Math.cos(a)*rr,30,ARENA.w-30),
-        clamp(e.y+Math.sin(a)*rr,30,ARENA.h-30),Math.max(1,wave));
-      c2.spawnT=.4;
-    }
-    spawnRing(e.x,e.y,'#39d98a',8,90,.5);
-    AUDIO.tone(340,.25,'sawtooth',.035,-120);
-  }
-  if(SK.heal&&e.hp<e.maxHp)e.hp=Math.min(e.maxHp,e.hp+e.maxHp*.012*dt);
-
-  // COLOSSO: tremor sísmico
-  if(SK.quake&&e.skillCd<=0){
-    e.skillCd=5.5;
-    const R=300;
-    spawnRing(e.x,e.y,'#ff2f5e',18,R,.9);
-    shake=Math.max(shake,20);
-    if(dist2(p.x,p.y,e.x,e.y)<R*R){
-      damagePlayer(e.dmg*.7);
-      const a=Math.atan2(p.y-e.y,p.x-e.x);
-      p.vx+=Math.cos(a)*520;p.vy+=Math.sin(a)*520;
-    }
-    AUDIO.boom();AUDIO.tone(70,.6,'sine',.09,-24);
-  }
-
-  // ORÁCULO: maldição que reduz dano
-  if(SK.curse&&e.skillCd<=0){
-    e.skillCd=9;
-    p.curseT=6;
-    /* PR 7: a redução de dano vira um MODIFICADOR TEMPORÁRIO do pipeline.
-       curseT continua sendo o estado/duração; remover o modificador quando
-       expira restaura o dano exatamente ao valor anterior (sem "desfazer"
-       multiplicação manual). */
-    smMul(p,'damage','status.oracle_curse.damage','MALDIÇÃO DO ORÁCULO −30% DANO',.70);
-    banner('MALDIÇÃO DISSONANTE','SEU DANO CAIU 30% POR 6s');
-    spawnRing(p.x,p.y,'#ffd166',10,160,.7);
-    AUDIO.tone(200,.5,'sawtooth',.05,-80);
-  }
-
-  // SANGUESUGA: dreno à distância
-  if(SK.drain&&e.skillCd<=0&&pd<520){
-    e.skillCd=5;
-    e.drainT=2.2;
-    AUDIO.tone(150,.5,'sine',.05,60);
-  }
-  if(e.drainT>0){
-    e.drainT-=dt;
-    if(Math.random()<dt*4){
-      damagePlayer(e.dmg*.13);
-      e.hp=Math.min(e.maxHp,e.hp+e.dmg*.2);
-    }
-  }
-  if(SK.corrode&&Math.random()<dt*.5)applyStatus(p,'corrode',3,.1,e);
-
-  /* ---- SENTINELA: escudo defensivo + reflexão ---- */
-  if(SK.shieldUp){
-    e.shieldUpCd=(e.shieldUpCd||8);
-    e.shieldUpCd-=dt;
-    if(e.shieldUpState==='active'){
-      e.shieldUpT-=dt;
-      if(e.shieldUpT<=0){e.shieldUpState='vulnerable';e.shieldUpT=2;}
-    }else if(e.shieldUpState==='vulnerable'){
-      e.shieldUpT-=dt;
-      if(e.shieldUpT<=0)e.shieldUpState=null;
-    }else if(e.shieldUpState==='telegraph'){
-      e.shieldUpT-=dt;
-      if(e.shieldUpT<=0){e.shieldUpState='active';e.shieldUpT=4;
-        spawnRing(e.x,e.y,'#8ff6ff',e.r,e.r+80,.6);
-        AUDIO.tone(520,.3,'sine',.04,140);
-      }
-    }else if(e.shieldUpCd<=0){
-      e.shieldUpCd=12;e.shieldUpState='telegraph';e.shieldUpT=1.5;
-      spawnRing(e.x,e.y,'#8ff6ff',e.r,e.r+40,.4);
-    }
-  }
-  if(SK.reflect){
-    e.reflectCd=(e.reflectCd||6);
-    e.reflectCd-=dt;
-    if(e.reflectState==='active'){
-      e.reflectT-=dt;
-      // reflete projéteis inimigos próximos
-      for(let i=projectiles.length-1;i>=0;i--){
-        const pr=projectiles[i];
-        if(pr.team!=='enemy')continue;
-        if(dist2(pr.x,pr.y,e.x,e.y)<(e.r+50)*(e.r+50)){
-          pr.vx*=-1.2;pr.vy*=-1.2;pr.team='ally';pr.color='#8ff6ff';pr.dmg*=1.5;
-          spawnParticles(pr.x,pr.y,'#8ff6ff',3,120,.3,2);
-        }
-      }
-      if(e.reflectT<=0)e.reflectState=null;
-    }else if(e.reflectState==='telegraph'){
-      e.reflectT-=dt;
-      if(e.reflectT<=0){e.reflectState='active';e.reflectT=2.5;
-        AUDIO.tone(700,.2,'square',.03,-200);
-      }
-    }else if(e.reflectCd<=0){
-      e.reflectCd=7;e.reflectState='telegraph';e.reflectT=1;
-      spawnRing(e.x,e.y,'#bffbff',e.r,e.r+30,.3);
-    }
-  }
-
-  /* ---- COLOSSO: fases DORMENTE / DESPERTO ---- */
-  if(SK.quake){
-    e.sleepPhase=e.sleepPhase||'awake';   // começa desperto
-    e.sleepT=e.sleepT||0;
-    if(e.sleepPhase==='awake'){
-      e.sleepT-=dt;
-      if(e.sleepT<=0){
-        e.sleepPhase='dormant';e.sleepT=4.5;
-        e.sleepDmgRed=.60;   // 60% redução de dano
-        spawnRing(e.x,e.y,'#ff2f5e',e.r,e.r+100,.7);
-        shake=Math.max(shake,8);
-        AUDIO.tone(90,.6,'sine',.06,-24);
-      }
-    }else if(e.sleepPhase==='dormant'){
-      e.sleepT-=dt;
-      // imóvel: força velocidade a zero
-      e.vx*=.85;e.vy*=.85;
-      if(e.sleepT<=0){
-        e.sleepPhase='awake';e.sleepT=7;e.sleepDmgRed=0;
-        // transição: quake de despertar
-        const R2=340;
-        spawnRing(e.x,e.y,'#ff9d3c',20,R2,.9);
-        shake=Math.max(shake,22);
-        if(dist2(p.x,p.y,e.x,e.y)<R2*R2){
-          damagePlayer(e.dmg*.8);
-          const a2=Math.atan2(p.y-e.y,p.x-e.x);
-          p.vx+=Math.cos(a2)*600;p.vy+=Math.sin(a2)*600;
-        }
-        AUDIO.boom();AUDIO.tone(70,.7,'sine',.09,-24);
-      }
-    }
-  }
-
-  /* ---- ARAUTO: fraturas temporais (marcação de área) ---- */
-  if(e.mb&&e.mb.id==='herald'){
-    e.fractureCd=(e.fractureCd||8);
-    e.fractureCd-=dt;
-    if(e.fractureCd<=0){
-      e.fractureCd=e.phase===2?5:8;
-      // coloca 2 marcas temporais na posição do jogador
-      for(let i=0;i<2;i++){
-        const fx=p.x+rand(-60,60),fy=p.y+rand(-60,60);
-        e.fractures=(e.fractures||[]);
-        e.fractures.push({x:fx,y:fy,t:1.5,r:90});
-      }
-      AUDIO.tone(440,.2,'sine',.03,-120);
-    }
-    // atualiza fraturas: detonam após timer
-    if(e.fractures){
-      for(let i=e.fractures.length-1;i>=0;i--){
-        const f=e.fractures[i];
-        f.t-=dt;
-        if(f.t<=0){
-          // detonação
-          spawnRing(f.x,f.y,'#ffd166',6,f.r,.5);
-          spawnShards(f.x,f.y,'#ffd166',6,4);
-          if(dist2(p.x,p.y,f.x,f.y)<f.r*f.r){
-            damagePlayer(e.dmg*.45);
-            applyStatus(p,'chill',1.8,.25);
-          }
-          e.fractures.splice(i,1);
-          AUDIO.tone(280,.15,'square',.025,-80);
-        }
-      }
-    }
-  }
+  const upd=MB_UPDATERS[e.mb&&e.mb.id]||updateHerald;
+  upd(e,dt,p);
+  mbHazardsTick(e,dt,p);
 }
 /* =====================================================================
    PR13.5 · B5-A — IDENTIDADE VISUAL DOS MINI-CHEFES
@@ -13994,10 +14065,10 @@ function drawMinibossPhaseRing(e,V){
 function drawHerald(e,V,R,flash,pl){
   const P=flash?'#fff':V.primary,S=flash?'#fff':V.secondary,A=flash?'#fff':V.accent;
   ctx.save();ctx.scale(V.scaleX,V.scaleY);
-  // halo incompleto (rompe na fase 2 em 4 fragmentos)
-  ctx.strokeStyle=A;ctx.lineWidth=3;ctx.globalAlpha=.8;
-  if(e.phase===2){for(let i=0;i<4;i++){const a=e.ring*.7+i*Math.PI/2;ctx.beginPath();ctx.arc(0,0,R+22,a,a+.9);ctx.stroke();}}
-  else{ctx.beginPath();ctx.arc(0,0,R+22,-Math.PI*.85+e.ring*.3,Math.PI*.55+e.ring*.3);ctx.stroke();}
+  // halo incompleto — a BLINDAGEM é o halo: cada placa perdida apaga um trecho (fase 2: fragmentos)
+  ctx.strokeStyle=A;ctx.lineWidth=5;ctx.globalAlpha=.85;
+  const segs=e.plateMax||6,span=TAU*.7/segs;
+  for(let i=0;i<segs;i++){if(i>=e.plates)continue;const a=-Math.PI*.85+e.ring*.3+i*span*(e.phase===2?1.25:1);ctx.beginPath();ctx.arc(0,0,R+22,a,a+span*(e.phase===2?.55:.9));ctx.stroke();}
   ctx.globalAlpha=1;
   // corpo cerimonial vertical (hexágono alongado)
   ctx.fillStyle=linGrad2('mb.herald|'+(flash?1:0),0,-R,0,R,P,S);ctx.strokeStyle=A;ctx.lineWidth=R*.09;
@@ -14009,7 +14080,9 @@ function drawHerald(e,V,R,flash,pl){
   // sinais radiais (pulsam antes da rajada — lê burstCd sem alterar)
   const bk=e.burstCd<.9?1-e.burstCd/.9:0;
   if(bk>0){ctx.globalAlpha=bk*.8;for(let i=0;i<9;i++){const a=i/9*TAU+e.spinAng*.5;ctx.beginPath();ctx.moveTo(Math.cos(a)*R*.55,Math.sin(a)*R*.55);ctx.lineTo(Math.cos(a)*(R*.55+10*bk),Math.sin(a)*(R*.55+10*bk));ctx.stroke();}ctx.globalAlpha=1;}
-  mbCore(R,V.accent,pl,1);ctx.fillStyle=flash?'#fff':'#ffe9a8';ctx.beginPath();ctx.arc(0,0,R*(.26+pl*.08),0,TAU);ctx.fill();
+  // núcleo: losango vertical (não o disco genérico)
+  mbCore(R*.9,V.accent,pl,1);ctx.fillStyle=flash?'#fff':'#ffe9a8';const cr=R*(.24+pl*.06);
+  ctx.beginPath();ctx.moveTo(0,-cr*1.5);ctx.lineTo(cr*.7,0);ctx.lineTo(0,cr*1.5);ctx.lineTo(-cr*.7,0);ctx.closePath();ctx.fill();
   ctx.restore();
 }
 function drawFurnace(e,V,R,flash,pl){
