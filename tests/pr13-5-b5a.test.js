@@ -53,7 +53,7 @@ ok('B5A-4: cor não é o único diferenciador — renderers reais produzem assin
   for(let i=0;i<8;i++)for(let j=i+1;j<8;j++){const d=dist(fps[IDS[i]],fps[IDS[j]]);assert.ok(d>=.15,IDS[i]+'×'+IDS[j]+' d='+d.toFixed(3));}
   /* pelo menos 5 famílias de forma diferentes de fato: quadraticCurve (oracle/leech), scale (aspecto), arcs múltiplos (brood/oracle), closePath múltiplos (sentinel)… */
   assert.ok(fps.oracle.quadraticCurveTo>=2&&fps.leech.quadraticCurveTo>=5&&!fps.herald.quadraticCurveTo);
-  assert.ok(fps.brood.arc>=10&&fps.duelist.arc<=2);
+  assert.ok(fps.brood.arc>=10&&(fps.duelist.arc||0)<=2,'brood muitos arcos; duelista quase nenhum (B5-B: núcleo do Duelista virou fenda retangular)');
   assert.ok(fps.sentinel.closePath>=8&&fps.herald.closePath<=2);
 });
 ok('B5A-5: aspecto/silhueta — Duelista é o mais alongado (≥2×), Arauto vertical (<1), Fornalha larga (>1)',()=>{
@@ -68,12 +68,13 @@ ok('B5A-6: fase 2 muda o desenho de TODOS (assinatura base ≠ fase 2) e a mudan
   for(const id of IDS)assert.ok(T.MINIBOSS_PHASE2_TITLE[id]&&T.MINIBOSS_PHASE2_TITLE[id].length>3);
   assert.strictEqual(new Set(Object.values(T.MINIBOSS_PHASE2_TITLE)).size,8);
 });
-ok('B5A-7: telegraph da investida existe para todos, é fiel (linha reta na direção e.aim, comprimento 760) e o estilo difere',()=>{
+ok('B5A-7: telegraph da investida existe para todos, é fiel (linha reta na direção e.aim; 760 px nas investidas, alcance real do lunge no Duelista) e o estilo difere',()=>{
   fresh();const tel={};
   for(const id of IDS){const b=spawn(id,'telegraph');b.aim=0;globalThis.__ctxLog=[];T.drawMiniBoss(b);const L=globalThis.__ctxLog;globalThis.__ctxLog=null;
-    /* deve existir um traço partindo do corpo até ~760px na direção da mira */
+    /* deve existir um traço partindo do corpo até o alcance real na direção da mira */
     const lines=L.filter(([k])=>k==='lineTo').map(([,a])=>a);
-    assert.ok(lines.some(a=>Math.abs(a[0]-(b.x+760))<12&&Math.abs(a[1]-b.y)<12),id+' sem linha fiel de 760px');
+    const reach=id==='duelist'?(1500*.22+b.r+70):760;   // B5-B: lunge = deslocamento + lâmina
+    assert.ok(lines.some(a=>Math.abs(a[0]-(b.x+reach))<12&&Math.abs(a[1]-b.y)<12),id+' sem linha fiel de '+reach+'px');
     tel[id]=fingerprint(b);}
   for(let i=0;i<8;i++)for(let j=i+1;j<8;j++)assert.ok(dist(tel[IDS[i]],tel[IDS[j]])>=.15,IDS[i]+'×'+IDS[j]+' telegraph clone');
   /* sem telegraph nada é desenhado além do corpo (não mente) */
@@ -128,10 +129,9 @@ ok('B5A-17: MINIBOSS (hp/spd/r/plates/sk/tags) idêntico ao snapshot pré-B5-A; 
   for(const m of T.MINIBOSS){const s=SNAP[m.id];assert.deepStrictEqual([m.hp,m.spd,m.r,m.plates,Object.keys(m.sk).join(',')],s,m.id);}
   fresh();for(const id of IDS){const b=spawn(id,'base');assert.strictEqual(b.r,T.MINIBOSS.find(m=>m.id===id).r,'hitbox = r');}
 });
-ok('B5A-18: updateMiniBoss/spawnMiniBoss não mudaram números (dash 980/1180, burst 9/14, cds, fase 2 a 50 %, xp 150, spawnT 1.6, dmg/hp fórmula)',()=>{
+ok('B5A-18: spawnMiniBoss não mudou números de base (HP/dmg/spd fórmulas, xp 150, spawnT 1.6, recompensa); fase 2 a 50 % (B5-B redesenhou os comportamentos — travados em pr13-5-b5b)',()=>{
   const upd=SRC.slice(SRC.indexOf('function updateMiniBoss('),SRC.indexOf('/* ====================================================================='+'\n   PR13.5 · B5-A'));
-  for(const re of [/e\.phase===2\?1180:980/,/e\.phase===2\?14:9/,/e\.phase===2\?3\.0:4\.6/,/e\.phase===2\?\.62:\.85/,/e\.phase===2\?2\.0:3\.2/,/e\.hp<=e\.maxHp\*\.5/,/e\.skillCd=6\.5/,/e\.skillCd=4\.2/,/e\.skillCd=5\.5/,/e\.skillCd=9;/,/e\.skillCd=5;/,/e\.skillCd=2\.6/,/e\.shieldUpCd=12/,/e\.reflectCd=7/])
-    assert.ok(re.test(upd),'número mudou: '+re);
+  assert.ok(/e\.hp<=e\.maxHp\*\.5/.test(upd),'fase 2 continua a 50 %');
   const sp=SRC.slice(SRC.indexOf('function spawnMiniBoss('),SRC.indexOf('function miniBossHUD('));
   assert.ok(/\(520\+n\*54\)\*def\.hp\*scale\*\(1\+\.08\*echoQueue\.length\)/.test(sp)&&/\(20\+n\*1\.1\)\*def\.hp/.test(sp)&&/\(96\+n\*2\)\*def\.spd/.test(sp)&&/xp:150/.test(sp)&&/spawnT:1\.6/.test(sp));
   /* recompensa: 120 × cap */

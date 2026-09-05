@@ -557,17 +557,20 @@ ok('MicroCd é decrementado no loop',()=>{
 });
 
 /* ====================== SENTINELA (MINIBOSS) ====================== */
+/* PR13.5 B5-B: a Sentinela passou a ter POSTURAS (updateSentinel); os
+   estados legados shieldUpState/reflectState continuam sendo escritos a
+   partir da postura para o renderer e para damageEnemy. */
 ok('Sentinela tem shieldUp funcional',()=>{
-  assert(src.includes('SK.shieldUp'),'deve processar shieldUp');
-  assert(src.includes("e.shieldUpState==='active'"),'deve ter estado ativo');
-  assert(src.includes("e.shieldUpState==='vulnerable'"),'deve ter estado vulnerável');
-  assert(src.includes("e.shieldUpState==='telegraph'"),'deve ter estado de telegraph');
+  assert(src.includes('function updateSentinel('),'deve ter updater próprio (B5-B)');
+  assert(src.includes("e.shieldUpState=ms.stance==='guard'?'active'"),'estado ativo derivado da postura GUARDA');
+  assert(src.includes("(ms.stance==='open'?'vulnerable':null)"),'estado vulnerável derivado da postura ABERTURA');
+  assert(src.includes("e.shieldUpState==='vulnerable'"),'renderer/damageEnemy leem o estado vulnerável');
 });
 
 ok('Sentinela tem reflect funcional',()=>{
-  assert(src.includes('SK.reflect'),'deve processar reflect');
-  assert(src.includes("e.reflectState==='active'"),'deve ter estado de reflexão ativa');
-  assert(src.includes("pr.team='ally'"),'deve converter projéteis inimigos');
+  assert(src.includes("e.reflectState=ms.stance==='guard'?'active':null"),'reflexão ativa na GUARDA');
+  assert(src.includes("e.reflectState==='active'"),'renderer lê a reflexão ativa');
+  assert(src.includes("pr.team='enemy';pr.color='#8ff6ff'"),'devolve projéteis do jogador');
 });
 
 ok('Sentinela tem redução de dano no damageEnemy',()=>{
@@ -580,7 +583,7 @@ ok('Sentinela tem redução de dano no damageEnemy',()=>{
 /* ====================== COLOSSO (SONO/VIGÍLIA) ====================== */
 ok('Colosso tem fases dormente/desperto',()=>{
   assert(src.includes("e.sleepPhase==='dormant'"),'deve ter fase dormente');
-  assert(src.includes("e.sleepPhase==='awake'"),'deve ter fase desperta');
+  assert(src.includes("ms.sleep==='awake'")&&src.includes("e.sleepPhase=ms.sleep"),'deve ter fase desperta (B5-B: ms.sleep espelhado em e.sleepPhase)');
 });
 
 ok('Colosso dormente tem redução de dano',()=>{
@@ -589,22 +592,23 @@ ok('Colosso dormente tem redução de dano',()=>{
 });
 
 ok('Colosso desperta com quake',()=>{
-  const block=src.substring(src.indexOf('COLOSSO: fases'),src.indexOf('COLOSSO: fases')+800);
-  assert(block.includes('quake de despertar'),'transição deve ter quake');
+  const block=src.substring(src.indexOf('function updateColossus('),src.indexOf('function updateColossus(')+1400);
+  assert(block.includes("ms.sleep==='dormant'&&ms.sleepT<=0")&&block.includes('R2=340'),'transição dormente→desperto deve ter quake (R 340)');
 });
 
 /* ====================== ARAUTO (FRATURAS) ====================== */
+/* B5-B: as fraturas viraram PRESSÁGIOS (hazards kind 'omen', com cap e escalada) */
 ok('Arauto tem fraturas temporais',()=>{
-  assert(src.includes("e.mb.id==='herald'"),'deve verificar se é Arauto');
-  assert(src.includes('e.fractures'),'deve ter array de fraturas');
-  assert(src.includes('fractureCd'),'deve ter cooldown de fratura');
+  assert(src.includes('function updateHerald('),'deve ter updater próprio');
+  assert(src.includes("kind:'omen'"),'deve criar marcas de ruptura (omen)');
+  assert(src.includes('ms.omenCd'),'deve ter cooldown de presságio');
 });
 
 ok('Fraturas do Arauto detonam com dano',()=>{
-  const start=src.indexOf('ARAUTO: fraturas temporais (marcação');
-  const block=src.substring(start,start+1000);
-  assert(block.includes('damagePlayer'),'fraturas devem causar dano');
-  assert(block.includes("'chill'"),'fraturas devem aplicar slow');
+  const start=src.indexOf('function updateHerald(');
+  const block=src.substring(start,start+1800);
+  assert(block.includes('damagePlayer'),'presságios devem causar dano');
+  assert(block.includes("'chill'"),'presságios devem aplicar slow');
 });
 
 /* ====================== LORE_WORLD / CODEX ====================== */
@@ -698,24 +702,27 @@ ok('Disruptor não interfere com Shield dos Echos',()=>{
 });
 
 /* ====================== IDENTIDADE DOS MINIBOSSES ====================== */
+/* B5-B: cada mini-chefe tem updater próprio; as habilidades históricas
+   continuam existindo dentro dele. */
 ok('Fornalha tem rastro de fogo',()=>{
-  assert(src.includes('SK.trail'),'deve ter rastro incendiário');
+  assert(src.includes('function updateFurnace(')&&src.includes("kind:'fire'"),'deve ter rastro incendiário (zonas de fogo)');
 });
 
 ok('Matriz gera swarms',()=>{
-  assert(src.includes('SK.swarmSpawn'),'deve ter swarmSpawn');
+  assert(src.includes('function updateBrood(')&&src.includes("mbSummon(e,'swarm'"),'deve gerar enxame');
 });
 
 ok('Duelista tem teleporte',()=>{
-  assert(src.includes('SK.blink'),'deve ter blink');
+  const b=src.substring(src.indexOf('function updateDuelist('),src.indexOf('function updateColossus('));
+  assert(b.includes('e.x=clamp(p.x+Math.cos(a)*rr'),'deve ter blink para o flanco');
 });
 
 ok('Oráculo tem maldição',()=>{
-  assert(src.includes('SK.curse'),'deve ter curse');
+  assert(src.includes('function updateOracle(')&&src.includes("'status.oracle_curse.damage'"),'deve ter curse');
 });
 
 ok('Sanguesuga tem dreno',()=>{
-  assert(src.includes('SK.drain'),'deve ter drain');
+  assert(src.includes('function updateLeech(')&&src.includes('ms.siphonT'),'deve ter dreno (siphon)');
 });
 
 /* ====================== RESULTADO ====================== */
