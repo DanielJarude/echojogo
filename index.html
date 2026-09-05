@@ -3333,6 +3333,7 @@ function sbBind(){
 }
 function sandboxClearMini(){
   if(!miniBoss)return;
+  miniBoss.hazards=[];                     // B5-B: zonas do mini-chefe morrem com ele
   const i=enemies.indexOf(miniBoss);
   if(i>=0){enemies[i].dead=true;enemies.splice(i,1);}
   miniBoss=null;clearMiniBossHUD();
@@ -12824,6 +12825,7 @@ function killEnemy(e){
   }
   if(e.type==='miniboss'){
     // recompensa pesada + limpeza de tela
+    e.hazards=[];                          // B5-B: fogo/presságios/previsões morrem com o chefe
     clearMiniBossHUD();
     shake=Math.max(shake,20);aberrPeak(.9);
     for(let i=0;i<5;i++)setTimeout(()=>{
@@ -14025,10 +14027,12 @@ function drawMinibossDashTelegraph(e,V){
   ctx.save();ctx.globalAlpha=.30+k*.45;ctx.strokeStyle=V.accent;
   const L=760;
   switch(V.telegraph){
-    case 'narrow-lunge':  // Duelista: fio fino + duas farpas paralelas
+    case 'narrow-lunge':{ // Duelista: alcance REAL do lunge (deslocamento .22s×1500 + lâmina r+70)
+      const LL=1500*.22+e.r+70;
       ctx.lineWidth=1.5+k*1.5;
       for(const off of [-6,0,6]){ctx.beginPath();ctx.moveTo(e.x+Math.cos(e.aim+Math.PI/2)*off,e.y+Math.sin(e.aim+Math.PI/2)*off);
-        ctx.lineTo(e.x+Math.cos(e.aim)*L+Math.cos(e.aim+Math.PI/2)*off,e.y+Math.sin(e.aim)*L+Math.sin(e.aim+Math.PI/2)*off);ctx.stroke();}break;
+        ctx.lineTo(e.x+Math.cos(e.aim)*LL+Math.cos(e.aim+Math.PI/2)*off,e.y+Math.sin(e.aim)*LL+Math.sin(e.aim+Math.PI/2)*off);ctx.stroke();}
+      ctx.globalAlpha=.5+k*.5;ctx.lineWidth=3;ctx.beginPath();ctx.arc(e.x+Math.cos(e.aim)*LL,e.y+Math.sin(e.aim)*LL,8,0,TAU);ctx.stroke();break;}
     case 'lock-line':     // Sentinela: linha sólida + marcadores de trava
       ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(e.x,e.y);ctx.lineTo(e.x+Math.cos(e.aim)*L,e.y+Math.sin(e.aim)*L);ctx.stroke();
       for(let i=1;i<=3;i++){const d=e.r+i*90*k;ctx.beginPath();ctx.arc(e.x+Math.cos(e.aim)*d,e.y+Math.sin(e.aim)*d,6,0,TAU);ctx.stroke();}break;
@@ -14092,6 +14096,9 @@ function drawFurnace(e,V,R,flash,pl){
   // bloco pesado (quadrado de cantos cortados)
   ctx.fillStyle=linGrad2('mb.furnace|'+(flash?1:0)+over,-R,-R,R,R,P,S);ctx.strokeStyle=A;ctx.lineWidth=R*.11;
   mbPoly(8,R*1.02,Math.PI/8,.88);ctx.fill();ctx.stroke();
+  // BLINDAGEM = chapas soldadas nos cantos do bloco (somem conforme e.plates cai)
+  ctx.fillStyle=flash?'#fff':'#5a2410';ctx.strokeStyle=A;ctx.lineWidth=2;
+  for(let i=0;i<(e.plateMax||7);i++){if(i>=e.plates)continue;ctx.save();ctx.rotate(i/(e.plateMax||7)*TAU+Math.PI/8);ctx.fillRect(R*.82,-R*.14,R*.22,R*.28);ctx.strokeRect(R*.82,-R*.14,R*.22,R*.28);ctx.restore();}
   // vents: 4 fendas laterais que abrem com o calor
   ctx.fillStyle=flash?'#fff':'#ffb347';
   for(let i=0;i<4;i++){ctx.save();ctx.rotate(i*Math.PI/2);const w=3+heat*4+over*3;ctx.globalAlpha=.55+heat*.45;
@@ -14105,7 +14112,7 @@ function drawFurnace(e,V,R,flash,pl){
   // núcleo quente — expande com pressão da nova (skillCd) e sobreaquece na fase 2
   const press=e.sk&&e.sk.nova&&e.skillCd<1.2?1-e.skillCd/1.2:0;
   mbCore(R*(1+press*.35+over*.15),over?'#fff1b8':V.accent,pl,1);
-  ctx.fillStyle=flash?'#fff':(over?'#fff4d6':'#ffe0a8');ctx.beginPath();ctx.arc(0,0,R*(.30+pl*.08+press*.1),0,TAU);ctx.fill();
+  ctx.fillStyle=flash?'#fff':(over?'#fff4d6':'#ffe0a8');const cq=R*(.30+pl*.08+press*.1);ctx.fillRect(-cq,-cq,cq*2,cq*2);   // núcleo QUADRADO (fornalha)
   ctx.restore();
 }
 function drawSentinel(e,V,R,flash,pl){
@@ -14146,6 +14153,10 @@ function drawBrood(e,V,R,flash,pl){
   for(let i=0;i<3;i++){ctx.save();const a=i/3*TAU+Math.PI/2;ctx.translate(Math.cos(a)*R*.7,Math.sin(a)*R*.7);
     ctx.globalAlpha=.55+swell*.45;mbPoly(6,7+swell*5,0);ctx.fill();ctx.restore();}
   ctx.globalAlpha=1;
+  // BLINDAGEM = membrana segmentada em volta da massa (trechos somem com as placas)
+  ctx.strokeStyle=A;ctx.lineWidth=4;ctx.globalAlpha=.6;
+  for(let i=0;i<(e.plateMax||5);i++){if(i>=e.plates)continue;const a=i/(e.plateMax||5)*TAU+e.ring*.2;ctx.beginPath();ctx.arc(0,0,R*1.02,a+.12,a+TAU/(e.plateMax||5)-.12);ctx.stroke();}
+  ctx.globalAlpha=1;
   // satélites orbitando (6 nós) — exclusivo
   ctx.fillStyle=flash?'#fff':P;ctx.strokeStyle=A;ctx.lineWidth=1.2;
   for(let i=0;i<6;i++){const a=e.spinAng*fast+i/6*TAU;const d=R+18+Math.sin(e.core+i)*4;
@@ -14163,15 +14174,18 @@ function drawDuelist(e,V,R,flash,pl){
   // corpo fino orientado (losango longo)
   ctx.fillStyle=linGrad2('mb.duelist|'+(flash?1:0),-R,0,R,0,S,P);ctx.strokeStyle=A;ctx.lineWidth=R*.08;
   ctx.beginPath();ctx.moveTo(R*1.5,0);ctx.lineTo(0,-R*.55);ctx.lineTo(-R*.9,0);ctx.lineTo(0,R*.55);ctx.closePath();ctx.fill();ctx.stroke();
-  // duas lâminas laterais (ignição na fase 2)
-  ctx.strokeStyle=ign?'#fff':A;ctx.lineWidth=2.5+ign*1.5;ctx.globalAlpha=.85;
-  for(const sgn of [-1,1]){ctx.beginPath();ctx.moveTo(-R*.3,sgn*R*.35);ctx.lineTo(R*1.25,sgn*R*.9);ctx.stroke();
-    if(ign){ctx.globalAlpha=.35;ctx.lineWidth=7;ctx.beginPath();ctx.moveTo(-R*.3,sgn*R*.35);ctx.lineTo(R*1.25,sgn*R*.9);ctx.stroke();ctx.globalAlpha=.85;ctx.lineWidth=4;}}
+  // duas lâminas laterais — DECORATIVAS: dentro de ~1,0R e translúcidas (a hitbox real é a lâmina branca do lunge)
+  ctx.strokeStyle=ign?'#fff':A;ctx.lineWidth=2+ign*1.5;ctx.globalAlpha=.45;
+  for(const sgn of [-1,1]){ctx.beginPath();ctx.moveTo(-R*.3,sgn*R*.35);ctx.lineTo(R*.98,sgn*R*.7);ctx.stroke();
+    if(ign){ctx.globalAlpha=.25;ctx.lineWidth=6;ctx.beginPath();ctx.moveTo(-R*.3,sgn*R*.35);ctx.lineTo(R*.98,sgn*R*.7);ctx.stroke();ctx.globalAlpha=.45;ctx.lineWidth=3.5;}}
   ctx.globalAlpha=1;
+  // BLINDAGEM = 3 chanfros na lâmina principal (somem com as placas)
+  ctx.strokeStyle=A;ctx.lineWidth=3;
+  for(let i=0;i<(e.plateMax||3);i++){if(i>=e.plates)continue;const x=-R*.5+i*R*.45;ctx.beginPath();ctx.moveTo(x,-R*.32);ctx.lineTo(x+R*.18,0);ctx.lineTo(x,R*.32);ctx.stroke();}
   // linhas direcionais
   ctx.strokeStyle=A;ctx.lineWidth=1;ctx.globalAlpha=.5;for(let i=0;i<3;i++){ctx.beginPath();ctx.moveTo(-R*.7+i*8,-R*.15+i*.15*R);ctx.lineTo(R*.6+i*10,-R*.15+i*.15*R);ctx.stroke();}
   ctx.globalAlpha=1;
-  mbCore(R*.8,V.primary,pl,1);ctx.fillStyle=flash?'#fff':'#ffd9e2';ctx.beginPath();ctx.arc(0,0,R*.2,0,TAU);ctx.fill();
+  mbCore(R*.8,V.primary,pl,1);ctx.fillStyle=flash?'#fff':'#ffd9e2';ctx.fillRect(-R*.35,-R*.06,R*.9,R*.12);   // núcleo = fenda longitudinal
 }
 function drawColossus(e,V,R,flash,pl){
   const P=flash?'#fff':V.primary,S=flash?'#fff':V.secondary,A=flash?'#fff':V.accent;
@@ -14211,6 +14225,9 @@ function drawOracle(e,V,R,flash,pl){
   // corpo: olho (amêndoa) — exclusivo
   ctx.fillStyle=linGrad2('mb.oracle|'+(flash?1:0),-R,0,R,0,S,P);ctx.strokeStyle=A;ctx.lineWidth=R*.08;
   ctx.beginPath();ctx.moveTo(-R,0);ctx.quadraticCurveTo(0,-R*.85,R,0);ctx.quadraticCurveTo(0,R*.85,-R,0);ctx.closePath();ctx.fill();ctx.stroke();
+  // BLINDAGEM = cílios/pálpebra: traços acima do olho, somem com as placas
+  ctx.strokeStyle=A;ctx.lineWidth=3;
+  for(let i=0;i<(e.plateMax||5);i++){if(i>=e.plates)continue;const t=(i+.5)/(e.plateMax||5);const x=-R*.8+t*R*1.6,y=-R*.85*Math.sin(t*Math.PI)*.9;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x,y-R*.22);ctx.stroke();}
   // íris/pupila (segue e.aim — sem escrever)
   const px=Math.cos(e.aim)*R*.18,py=Math.sin(e.aim)*R*.18;
   ctx.fillStyle=flash?'#fff':'#3d2e05';ctx.beginPath();ctx.arc(px,py,R*.34,0,TAU);ctx.fill();
@@ -14236,6 +14253,9 @@ function drawLeech(e,V,R,flash,pl){
   ctx.fillStyle=linGrad2('mb.leech|'+(flash?1:0),-R,-R,R,R,P,S);ctx.strokeStyle=A;ctx.lineWidth=R*.07;
   const IRR=[1,.78,.92,1.08,.74,.96,.86];
   ctx.beginPath();for(let i=0;i<7;i++){const an=i/7*TAU;const rr=R*IRR[i]*(.92+beat*.08);ctx[i?'lineTo':'moveTo'](Math.cos(an)*rr,Math.sin(an)*rr);}ctx.closePath();ctx.fill();ctx.stroke();
+  // BLINDAGEM = escamas (pequenos triângulos) na borda do corpo, somem com as placas
+  ctx.fillStyle=flash?'#fff':A;
+  for(let i=0;i<(e.plateMax||4);i++){if(i>=e.plates)continue;const a=i/(e.plateMax||4)*TAU+.5;ctx.save();ctx.rotate(a);ctx.beginPath();ctx.moveTo(R*.7,-6);ctx.lineTo(R*.95,0);ctx.lineTo(R*.7,6);ctx.closePath();ctx.fill();ctx.restore();}
   // núcleo pulsante com contração/expansão; efeito de sucção (anéis para dentro) durante o dreno
   if(drain){ctx.strokeStyle=A;ctx.lineWidth=1.5;for(let i=0;i<3;i++){const kk=(runTime*1.5+i/3)%1;ctx.globalAlpha=kk*.6;ctx.beginPath();ctx.arc(0,0,R*(1.4-kk*1.1),0,TAU);ctx.stroke();}ctx.globalAlpha=1;}
   mbCore(R*.9,V.primary,beat,1);ctx.fillStyle=flash?'#fff':'#e6ffb8';ctx.beginPath();ctx.arc(0,0,R*(.16+beat*.14),0,TAU);ctx.fill();
@@ -14243,27 +14263,87 @@ function drawLeech(e,V,R,flash,pl){
 }
 const MINIBOSS_RENDERERS={herald:drawHerald,furnace:drawFurnace,sentinel:drawSentinel,brood:drawBrood,
   duelist:drawDuelist,colossus:drawColossus,oracle:drawOracle,leech:drawLeech};
+function mbArmorFrac(e){return e.plateMax?e.plates/e.plateMax:1;}
+/* ---- B5-B: hazards de área (desenhados ANTES do corpo; fiéis ao raio lógico) ---- */
+function drawMinibossHazards(e,V){
+  if(!e.hazards||!e.hazards.length)return;
+  for(const h of e.hazards){
+    ctx.save();
+    if(h.kind==='fire'){
+      const k=clamp(h.life/h.max,0,1),born=clamp(h.age/.25,0,1);
+      const rr=h.r*born;
+      // faixa residual escura + núcleo quente + borda pulsante + brasas determinísticas
+      ctx.globalAlpha=.28*k;ctx.fillStyle='#3a1208';ctx.beginPath();ctx.arc(h.x,h.y,rr*1.1,0,TAU);ctx.fill();
+      const rg=radGrad2('mb.fire',0,0,0,0,0,1,'#fff1b8','rgba(255,92,47,0)');
+      ctx.save();ctx.translate(h.x,h.y);ctx.scale(rr,rr);ctx.globalAlpha=(.55+.25*Math.sin(runTime*9+h.x))*k;ctx.fillStyle=rg;ctx.beginPath();ctx.arc(0,0,1,0,TAU);ctx.fill();ctx.restore();
+      ctx.globalAlpha=.9*k;ctx.strokeStyle='#ff7a2f';ctx.lineWidth=2;ctx.setLineDash([5,4]);ctx.lineDashOffset=-runTime*20;ctx.beginPath();ctx.arc(h.x,h.y,rr,0,TAU);ctx.stroke();ctx.setLineDash([]);
+      ctx.fillStyle='#ffd166';for(let i=0;i<5;i++){const a=i*1.257+h.x*.01+runTime*(.6+i*.13);const d=rr*(.25+.5*((i*.37+runTime*.4)%1));ctx.globalAlpha=k*(.9-((i*.37+runTime*.4)%1)*.8);ctx.beginPath();ctx.arc(h.x+Math.cos(a)*d,h.y+Math.sin(a)*d,1.6+(i%2),0,TAU);ctx.fill();}
+    }else if(h.kind==='omen'){
+      const k=clamp(1-h.life/h.fuse,0,1);
+      ctx.globalAlpha=.3+k*.4;ctx.strokeStyle='#ffd166';ctx.lineWidth=2+k*2;ctx.beginPath();ctx.arc(h.x,h.y,h.r*k,0,TAU);ctx.stroke();
+      ctx.globalAlpha=.25;ctx.setLineDash([3,6]);ctx.beginPath();ctx.arc(h.x,h.y,h.r,0,TAU);ctx.stroke();ctx.setLineDash([]);   // raio final sempre visível
+      for(let i=0;i<6;i++){const a=i/6*TAU+runTime*.8;ctx.globalAlpha=.5*k;ctx.beginPath();ctx.moveTo(h.x+Math.cos(a)*h.r*.6*k,h.y+Math.sin(a)*h.r*.6*k);ctx.lineTo(h.x+Math.cos(a)*h.r*k,h.y+Math.sin(a)*h.r*k);ctx.stroke();}
+      if(k>.7){ctx.globalAlpha=(k-.7)/.3*.35;ctx.fillStyle='#ffd166';ctx.beginPath();ctx.arc(h.x,h.y,h.r*.4,0,TAU);ctx.fill();}
+    }else if(h.kind==='pred'){
+      const k=clamp(1-h.life/h.fuse,0,1);
+      // "futuro": olho fino + relógio de anel preenchendo o raio real
+      ctx.globalAlpha=.22;ctx.fillStyle='#ffd166';ctx.beginPath();ctx.arc(h.x,h.y,h.r,0,TAU);ctx.fill();
+      ctx.globalAlpha=.85;ctx.strokeStyle='#fff1b8';ctx.lineWidth=3;ctx.beginPath();ctx.arc(h.x,h.y,h.r,-Math.PI/2,-Math.PI/2+TAU*k);ctx.stroke();
+      ctx.globalAlpha=.6;ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(h.x-h.r*.5,h.y);ctx.quadraticCurveTo(h.x,h.y-h.r*.35,h.x+h.r*.5,h.y);ctx.quadraticCurveTo(h.x,h.y+h.r*.35,h.x-h.r*.5,h.y);ctx.stroke();
+      ctx.fillStyle='#fff1b8';ctx.beginPath();ctx.arc(h.x,h.y,4+6*k,0,TAU);ctx.fill();
+    }else if(h.kind==='slam'){
+      const k=clamp(1-h.life/h.fuse,0,1);
+      if(h.life<=h.fuse-h.delay){   // já anunciado (o 2º anel da fase 2 espera o delay)
+        const kk=clamp((h.age-h.delay)/(h.fuse-h.delay),0,1);
+        // zona inteira sempre marcada (raio REAL) + preenchimento crescendo + rachaduras
+        ctx.globalAlpha=.16+.22*kk;ctx.fillStyle='#ff2f5e';ctx.beginPath();ctx.arc(h.x,h.y,h.r,0,TAU);ctx.fill();
+        ctx.globalAlpha=.9;ctx.strokeStyle='#ff9d3c';ctx.lineWidth=3+3*kk;ctx.beginPath();ctx.arc(h.x,h.y,h.r,0,TAU);ctx.stroke();
+        ctx.globalAlpha=.7*kk;ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.beginPath();ctx.arc(h.x,h.y,h.r*kk,0,TAU);ctx.stroke();
+        ctx.strokeStyle='#ffd0d8';ctx.lineWidth=1.5;ctx.globalAlpha=.5+.5*kk;
+        for(let i=0;i<8;i++){const a=i/8*TAU+.3;ctx.beginPath();ctx.moveTo(h.x+Math.cos(a)*h.r*.15,h.y+Math.sin(a)*h.r*.15);ctx.lineTo(h.x+Math.cos(a+.15)*h.r*.55*kk,h.y+Math.sin(a+.15)*h.r*.55*kk);ctx.lineTo(h.x+Math.cos(a-.05)*h.r*kk,h.y+Math.sin(a-.05)*h.r*kk);ctx.stroke();}
+        // contagem: pulso de alerta no último 0,3 s
+        if(h.life<.3){ctx.globalAlpha=(.3-h.life)/.3*.5;ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(h.x,h.y,h.r,0,TAU);ctx.fill();}
+      }
+    }else if(h.kind==='hunger'){
+      const k=clamp(h.life/3,0,1);
+      ctx.globalAlpha=.18*k;ctx.fillStyle='#a8ff3d';ctx.beginPath();ctx.arc(h.x,h.y,h.r,0,TAU);ctx.fill();
+      ctx.globalAlpha=.7*k;ctx.strokeStyle='#e6ffb8';ctx.lineWidth=2;ctx.setLineDash([8,6]);ctx.lineDashOffset=runTime*25;ctx.beginPath();ctx.arc(h.x,h.y,h.r,0,TAU);ctx.stroke();ctx.setLineDash([]);
+    }
+    ctx.restore();
+  }
+}
 function drawMiniBoss(e){
   const V=drawMinibossBase(e);
   const intro=e.spawnT>0?1-e.spawnT/1.6:1;
   const R=e.r,flash=e.flashT>0;
+  drawMinibossHazards(e,V);
   if(e.telegraphT>0)drawMinibossDashTelegraph(e,V);
+  // SANGUESSUGA: fio do dreno (conexão visual clara, alcance real)
+  if(e.mb&&e.mb.id==='leech'&&e.ms&&player){
+    const range=e.phase===2?520:420;
+    if(e.ms.siphonT>0){
+      ctx.save();ctx.strokeStyle='#a8ff3d';ctx.lineWidth=3;ctx.globalAlpha=.85;ctx.beginPath();
+      for(let i=0;i<=20;i++){const t=i/20;const x=e.x+(player.x-e.x)*t,y=e.y+(player.y-e.y)*t;const w=Math.sin(t*14-runTime*18)*7*(1-Math.abs(t-.5)*2);
+        const nx=-(player.y-e.y),ny=(player.x-e.x),nl=Math.hypot(nx,ny)||1;ctx[i?'lineTo':'moveTo'](x+nx/nl*w,y+ny/nl*w);}
+      ctx.stroke();
+      // glóbulos indo do jogador para o Sanguessuga
+      ctx.fillStyle='#e6ffb8';for(let i=0;i<4;i++){const t=1-((runTime*.9+i*.25)%1);ctx.globalAlpha=.9;ctx.beginPath();ctx.arc(e.x+(player.x-e.x)*t,e.y+(player.y-e.y)*t,4,0,TAU);ctx.fill();}
+      ctx.restore();
+    }else if(e.ms.siphonCd<1.2){   // prestes a drenar: mostra o alcance
+      ctx.save();ctx.globalAlpha=.25*(1-e.ms.siphonCd/1.2);ctx.strokeStyle='#a8ff3d';ctx.lineWidth=2;ctx.setLineDash([10,10]);ctx.beginPath();ctx.arc(e.x,e.y,range,0,TAU);ctx.stroke();ctx.setLineDash([]);ctx.restore();
+    }
+  }
+  // DUELISTA: lâmina ativa (hitbox real: segmento até r+70)
+  if(e.mb&&e.mb.id==='duelist'&&e.ms&&e.ms.slashT>0){
+    ctx.save();ctx.globalAlpha=.9;ctx.strokeStyle='#fff';ctx.lineWidth=5;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(e.x,e.y);ctx.lineTo(e.x+Math.cos(e.aim)*(R+70),e.y+Math.sin(e.aim)*(R+70));ctx.stroke();
+    ctx.globalAlpha=.35;ctx.strokeStyle=V.primary;ctx.lineWidth=16;ctx.stroke();ctx.restore();
+  }
   ctx.save();ctx.globalAlpha=intro;ctx.translate(e.x,e.y);
   const id=e.mb&&e.mb.id;
   const rend=MINIBOSS_RENDERERS[id]||drawHerald;
-  /* blindagem genérica (placas retangulares orbitando) só para quem não
-     integra e.plates no próprio desenho (Sentinela e Colosso integram) */
-  if(id!=='sentinel'&&id!=='colossus'){
-    for(let i=0;i<e.plates;i++){
-      const a=e.spinAng+i*TAU/e.plateMax;
-      const px=Math.cos(a)*(R+16),py=Math.sin(a)*(R+16);
-      ctx.save();ctx.translate(px,py);ctx.rotate(a);
-      ctx.fillStyle=flash?'#fff':V.secondary;ctx.strokeStyle=V.accent;ctx.lineWidth=1.4;
-      ctx.beginPath();ctx.rect(-7,-4,14,8);ctx.fill();ctx.stroke();
-      ctx.restore();
-    }
-  }
-  if(id!=='oracle')ctx.rotate(e.aim);   // o Oráculo não gira: o olho segue a mira pela pupila
+  /* B5-B: SEM placas orbitais genéricas. A blindagem (e.plates, mecânica
+     intacta) é representada por cada renderer do seu jeito (mbArmorFrac). */
+  if(id!=='oracle'&&id!=='brood'&&id!=='leech')ctx.rotate(e.aim);   // formas orgânicas/olho não giram com a mira
   const pl=.5+.5*Math.sin(e.core*2.6);
   rend(e,V,R,flash,pl);
   drawMinibossPhaseRing(e,V);           // arco circular: indiferente à rotação
@@ -20086,6 +20166,29 @@ const DEV={
     if(!DEV_MODE)return null;
     return MINIBOSS.map(m=>DEV.minibossVisual(m.id));
   },
+  /* B5-B: estado mecânico do mini-chefe vivo (puro; inerte fora do DEV) */
+  minibossState(){
+    if(!DEV_MODE)return null;
+    const b=miniBoss;if(!b||b.dead)return null;
+    const ms=b.ms||{};
+    return {id:b.mb.id,phase:b.phase,hp:Math.round(b.hp),maxHp:b.maxHp,plates:b.plates+'/'+b.plateMax,
+      cooldowns:{charge:+b.chargeCd.toFixed(2),burst:+b.burstCd.toFixed(2),summon:+b.summonCd.toFixed(2),skill:+b.skillCd.toFixed(2),
+        omen:ms.omenCd,nova:ms.novaCd,spawn:ms.spawnCd,slam:ms.slamCd,pred:ms.predCd,curse:ms.curseCd,siphon:ms.siphonCd},
+      hazards:(b.hazards||[]).map(h=>({kind:h.kind,r:h.r,life:+h.life.toFixed(2)})),hazardCap:MB_HAZARD_CAP[b.mb.id]||4,
+      summons:mbChildren(b),summonCap:b.mb.id==='brood'?MB_BROOD_CAP:null,
+      regen:{on:!!ms.regenOn,secs:+(ms.regenT||0).toFixed(1)},stance:ms.stance,stanceT:ms.stanceT,
+      combo:{left:ms.combo,chain:ms.chain|0,slashT:ms.slashT,telegraphT:+b.telegraphT.toFixed(2)},
+      siphon:{active:ms.siphonT>0,t:ms.siphonT,drained:Math.round(ms.drained||0),broken:ms.broken|0},
+      escalation:ms.escal|0,sleep:ms.sleep,dashT:b.dashT};
+  },
+  minibossPhase2(){
+    if(!devReady()||!miniBoss||miniBoss.dead)return false;
+    miniBoss.hp=Math.min(miniBoss.hp,Math.floor(miniBoss.maxHp*.5));devTaint();devLog('MINI-CHEFE → 50 % (fase 2 no próximo tick)');return true;
+  },
+  minibossClearHazards(){
+    if(!devReady()||!miniBoss)return false;
+    miniBoss.hazards=[];devTaint();return true;
+  },
   spawnMiniBoss(id){
     if(!devReady())return false;
     const def=MINIBOSS.find(m=>m.id===id);
@@ -21039,7 +21142,7 @@ function devRender(){
   h+='<h4>MINI-CHEFES (8)</h4><div class="dvrow">';
   for(const m of MINIBOSS)
     h+=devBtn('m:'+m.id,m.nm.replace(/^(O|A)\s+/,'').split(' ')[0]);
-  h+=devBtn('clearmini','LIMPAR MINI-CHEFE','warn')+devBtn('boss','CHEFE FINAL','gold')+
+  h+=devBtn('mbstate','ESTADO → LOG')+devBtn('mbp2','FASE 2')+devBtn('mbhaz','LIMPAR HAZARDS')+devBtn('clearmini','LIMPAR MINI-CHEFE','warn')+devBtn('boss','CHEFE FINAL','gold')+
     '</div>';
 
   h+='<h4>PLAYER'+(p?' · '+Math.ceil(p.hp)+'/'+p.maxHp+' HP · ◈'+p.coins:'')+
@@ -21453,6 +21556,9 @@ function devCommand(c){
     case 'bossdbg':    return devLog('BOSS '+JSON.stringify(DEV.bossDebug()));
     case 'msetall':    return DEV.setMoral(devNum('dev-mc',0),devNum('dev-mg',0),devNum('dev-mv',0));
     case 'mrecalc':    return DEV.moralRecalc();
+    case 'mbstate':{const st=DEV.minibossState();devLog(st?('MINI-CHEFE '+st.id+' F'+st.phase+' hp '+st.hp+' haz '+st.hazards.length+'/'+st.hazardCap+' crias '+st.summons+(st.stance?' postura '+st.stance:'')+(st.escalation?' escalada '+st.escalation:'')+(st.siphon.active?' DRENANDO':'')):'sem mini-chefe');return true;}
+    case 'mbp2':       return DEV.minibossPhase2();
+    case 'mbhaz':      return DEV.minibossClearHazards();
     case 'attinsp':{
       const l=DEV.attunement()||[];
       devLog('SINTONIA B4: '+(l.length?l.map(x=>x.id+'='+x.state+'(×'+x.mul+')').join(' · '):'sem módulos'));
