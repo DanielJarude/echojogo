@@ -83,3 +83,11 @@ node audit_pr135/miniboss_mechanical_audit.js            # árvore atual (40 s p
 node audit_pr135/miniboss_mechanical_audit.js /outra 20  # "antes", 20 s
 ```
 
+## B5-B-FIX — HUD
+
+```bash
+# loop REAL do jogo: STATE × DOM por indicador + chamadas efetivas de updateHUD/s
+node audit_pr135/hud_runtime_audit.js
+node audit_pr135/hud_runtime_audit.js /caminho/da/arvore/anterior   # em a27b3d1: DIVERGENTE, 0 chamadas
+```
+

@@ -820,3 +820,9 @@ Confirmado no código: um único `drawMiniBoss` (octógono + aríete + placas, p
 
 Playtest humano do B5-A: diferença visual "leve", todos fáceis, Matriz sem enxame/regen, fogo da Fornalha fraco, AoE do Colosso invisível. B5-B: `updateMiniBoss` vira núcleo comum + `MB_UPDATERS[id]` (8 updaters com mecânica principal, secundária e fase 2 real); dash só Arauto/Colosso, rajada só Arauto/Matriz(F2); hazards com cap (`MB_HAZARD_CAP`) e lifetime: fogo real (Fornalha), presságios escalonados (Arauto), previsão (Oráculo), slam telegrafado 1,1 s (Colosso), fome (Sanguessuga); posturas (Sentinela); slash com hitbox de lâmina e combo (Duelista); proliferação até 12 + regen condicionada (Matriz); siphon rompível (Sanguessuga). Segunda passagem visual removeu placas orbitais e núcleo genéricos. Proxy: assinaturas mecânicas distintas 4/8 → 8/8. HP/dmg/spd/r/plates/recompensa/Diretor/PARADOXO intactos. `npm test` 24 suítes · 1373 checks · 0 falhas. Detalhes: `PR13_5_B5B.md`.
 
+---
+
+## 31. B5-B-FIX — Regressão sistêmica do HUD
+
+Playtest em run real (`a27b3d1`): 9 indicadores do HUD congelados. Causa raiz única: `render()` chamava `renderSpeech()` (inexistente; a função é `speechRender`) → `ReferenceError` por frame dentro do `try` do `loop()` **antes** de `updateHUD()`. Origem objetiva: **`6ccf22f` (B2 — Echo Speech UX)**, não B5-B; presente em todos os commits desde então. Não detectado porque nenhum teste exercitava `render()`/`loop()` e `devmode.test.js` exigia literalmente a string quebrada. Fix: chamada correta + `render()` em `try` próprio (HUD nunca mais cai com o desenho) + `#dashlbl` com restante do Dash. Nova suíte state→DOM pelo loop real (20 checks; 18 falham em `a27b3d1`), `DEV.hudState/hudSnapshot`, `audit_pr135/hud_runtime_audit.js`. `npm test` 25 suítes · 1393 checks · 0 falhas. Efeito colateral: o canal de fala dos Ecos do B2 passa a ser desenhado de fato. Detalhes: `PR13_5_B5B_FIX.md`.
+
