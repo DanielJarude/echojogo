@@ -779,3 +779,26 @@ O Bloco 3 foi executado na ordem obrigatória: **Shop Variety → Item Identity 
 - Stress: **350 execuções** (7 suítes B3-relacionadas × 50) com **0 falhas**: `pr13-5-b3`, `statmods`, `items-build-rework`, `morality`, `pr13-5-b2`, `pr12`, `fracture-director`.
 - Simulações: `audit_pr135/variety3.js` (anti-repeat sem/melhor compras e memória de reroll) e `audit_pr135/economy_sim.js` (perfis A/B/C, N=500, 20 ondas, compra agressiva + 1 reroll se couber).
 - Smoke visual/Electron não executado (ambiente sem GUI); cobertura funcional via harness real.
+
+---
+
+## 25.1 Nota de metodologia — bug do baseline B1
+
+O `economy_sim.js` do Bloco 1 aplicava `p.coinMul` (módulos econômicos) **antes** de `applyMoralTuning(p)`, que reseta esse campo. A renda dos perfis com módulos era subestimada e os "9× de renda / 11× de saldo" reportados para Greed vs Neutro estavam **errados**. Refazendo com a ordem correta sobre a árvore pré-B3 (`b6913e8`): renda C/A **19,1×**, saldo **62×**, CAN_ALL C = 100 %, A = 88 %. Os números do B1 não devem ser citados como baseline; os corrigidos estão em `PR13_5_B3_FIX.md §4.3`.
+
+## 27. B3-FIX — fechamento dos achados
+
+| Achado (§26) | Estado |
+|---|---|
+| Anti-repeat de armas inoperante (`o.id` em pool de índices) | corrigido · 15,9 % → 11,7 % (holdout) |
+| `SHOP_RECENT_MAX=12` arbitrário | 32, derivado de 3 lotes bigShop; uso d0/d1/d2+ medido 50,7/31,6/17,7 % |
+| Echo perde melee×ranged | snapshot + slim + `makeEcho` + echoEq; fallback legado; sem bump SM_VERSION |
+| Auto-picks (`critx`,`dmg2`,`rate2`,`omni`) / `singul` sem custo | price pass individual (7/19 mudaram) |
+| Greed compra menos que Neutro | `moralMarketMul` .18→.14, `shopSurcharge` teto 1,6; compras 1,01×, rerolls 1,06×, earned 2,85× |
+| ESCASSEZ 7 fixo vs base 10+onda | desconto proporcional 0,70 com piso 7 |
+| "LOJA +X%" | texto → "UPGRADES/MÓDULOS +X%" (efeito inalterado) |
+| Sandbox stale `shopRecent` | limpo em `sandboxClearRunState` |
+| Baseline B1 | §25.1 |
+
+Testes: 21 suítes · 1 303 checks · 0 falhas. Detalhes e tabelas: `PR13_5_B3_FIX.md`.
+

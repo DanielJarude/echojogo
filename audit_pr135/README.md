@@ -45,3 +45,16 @@ node audit_pr135/miniboss_audit.js
 
 Os scripts injetam um LCG (`Math.imul`/`1664525`/`1013904223`) em `Math.random` do sandbox,
 com sementes derivadas de cenário/onda/perfil. Reexecutar produz os mesmos números.
+
+## B3-FIX — holdouts (seeds nunca usadas no tuning)
+
+```bash
+# variedade/repetição da loja (1.000 runs × 20 ondas + reroll) contra a árvore indicada
+node audit_pr135/shop_metrics.js "$PWD" 777001
+node audit_pr135/shop_metrics.js "$PWD" 555999
+
+# economia formal (CAN_ALL / CAN_NONE / MEANINGFUL / saldo por onda), perfis A/B/C/C2, N=1000
+node audit_pr135/eco_metrics.js "$PWD" 424242 1000
+node audit_pr135/eco_metrics.js "$PWD" 991337 1000
+```
+O 1º argumento é a raiz ABSOLUTA de uma árvore (`"$PWD"` = a atual; um extract de outro commit serve para o "antes").
