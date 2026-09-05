@@ -1,7 +1,10 @@
 'use strict';
 const fs=require('fs'),path=require('path'),vm=require('vm');
 const ROOT=path.join(__dirname,'..');
-const html=fs.readFileSync(path.join(ROOT,'index.html'),'utf8');
+/* B5-B-FIX.1: fonte normalizada para LF — checkouts Windows (autocrlf) trazem
+   CRLF e quebravam buscas textuais com '\n' literal nas suítes. Toda
+   auditoria textual deve usar `SRC` daqui, nunca reler o arquivo cru. */
+const html=fs.readFileSync(path.join(ROOT,'index.html'),'utf8').replace(/\r\n?/g,'\n');
 const m=html.match(/<script>([\s\S]*?)<\/script>/);
 if(!m)throw new Error('script não encontrado em index.html');
 let src=m[1];
@@ -57,4 +60,4 @@ vm.createContext(sandbox);
 vm.runInContext(src,sandbox,{filename:'index.html'});
 const T=sandbox.__t;
 T.unlockAll();
-module.exports={sandbox,T,vm};
+module.exports={sandbox,T,vm,SRC:html,normalizeSource:s=>String(s).replace(/\r\n?/g,'\n')};

@@ -9,9 +9,8 @@
    ===================================================================== */
 const assert=require('assert');
 const fs=require('fs'),path=require('path'),vm=require('vm');
-const {sandbox,T}=require('../audit_pr135/harness.js');
+const {sandbox,T,SRC,normalizeSource}=require('../audit_pr135/harness.js');   // SRC já normalizado para LF (portável LF/CRLF)
 const X=code=>vm.runInContext(code,sandbox);
-const SRC=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
 let passed=0,failed=0;
 function ok(label,fn){try{fn();passed++;console.log('  ✔ '+label);}catch(e){failed++;console.log('  ✘ '+label+' → '+(e&&e.message||e));}}
 const IDS=['herald','furnace','sentinel','brood','duelist','colossus','oracle','leech'];
@@ -25,7 +24,7 @@ function step(b,secs,posFn){const n=Math.round(secs/DT);const p=T.getPlayer();fo
 const orbit=(p,t)=>{p.x=600+Math.sin(t*.7)*140;p.y=400+Math.cos(t*.9)*90;p.vx=Math.cos(t*.7)*98;p.vy=-Math.sin(t*.9)*81;};
 const far=(p)=>{p.x=100;p.y=100;p.vx=0;p.vy=0;};
 const UPD=SRC.slice(SRC.indexOf('PR13.5 · B5-B — IDENTIDADE MECÂNICA'),SRC.indexOf('PR13.5 · B5-A — IDENTIDADE VISUAL'));
-const upd=id=>{const i=UPD.indexOf('function update'+id[0].toUpperCase()+id.slice(1)+'(');const j=UPD.indexOf('\nfunction ',i+10);return UPD.slice(i,j);};
+const upd=id=>{const i=UPD.indexOf('function update'+id[0].toUpperCase()+id.slice(1)+'(');const j=UPD.indexOf('\nfunction ',i+10);return UPD.slice(i,j);};   // UPD vem de SRC normalizado (LF)
 
 console.log('\nECHO — PR13.5 · B5-B · IDENTIDADE MECÂNICA DOS MINI-CHEFES');
 console.log('---------------------------------------------');
@@ -62,13 +61,48 @@ ok('B5B-4: hazards nunca passam do cap por mini-chefe; crias da Matriz ≤ MB_BR
     const cap=T.MB_HAZARD_CAP[id]||4;assert.ok(hz<=cap,id+' hazards '+hz+'>'+cap);assert.ok(en<=BUD,id+' entidades '+en);
     if(id==='brood')assert.ok(kids<=T.MB_BROOD_CAP,'crias '+kids);}
 });
+/* B5B-5 valida os 5 invariantes EXECUTANDO o jogo (não só lendo texto). A
+   parte textual usa uma regex tolerante a \r?\n e a fonte normalizada do
+   harness — o assert antigo com '\n' literal dava falso negativo em CRLF. */
+function killBlock(src){
+  const m=/if\(e\.type==='miniboss'\)\{\r?\n\s*\/\/ recompensa pesada[^]{0,200}/.exec(src);
+  return m?m[0]:'';
+}
 ok('B5B-5: cleanup — hazards expiram sozinhos (lifetime) e morrem com o chefe; sem hazard eterno',()=>{
-  fresh();const b=spawn('furnace',10,2);step(b,20,orbit);assert.ok(b.hazards.length>0);
-  step(b,12,far);   // parado longe: rastro para de nascer (não se move? ainda anda até o jogador) — checamos que nada tem life>max
-  for(const h of b.hazards)assert.ok(h.life<=h.max+1e-9&&h.life>0);
-  const killSrc=SRC.slice(SRC.indexOf("if(e.type==='miniboss'){\n    // recompensa pesada"),SRC.indexOf("if(e.type==='miniboss'){\n    // recompensa pesada")+200);
-  assert.ok(/e\.hazards=\[\]/.test(killSrc),'abate zera hazards');
+  /* 1) lifetime finito em toda zona criada por qualquer mini-chefe */
+  fresh();const b=spawn('furnace',10,2);step(b,20,orbit);assert.ok(b.hazards.length>0,'rastro presente');
+  for(const h of b.hazards)assert.ok(Number.isFinite(h.life)&&h.life>0&&Number.isFinite(h.max)&&h.life<=h.max+1e-9,'lifetime finito');
+  /* 2) expiram sozinhos: sem novas zonas, tudo some antes de 8 s (max 7) */
+  b.ms.trailT=99;b.ms.novaCd=99;const n0=b.hazards.length;
+  step(b,8,(p,t)=>{far(p);b.x=1100;b.y=400;b.vx=0;b.vy=0;});
+  assert.ok(n0>0&&b.hazards.length===0,'expiraram: '+n0+' → '+b.hazards.length);
+  /* 3) cap remove o MAIS ANTIGO (comportamento, não texto) */
+  b.hazards=[];for(let i=0;i<30;i++)T.mbHazardAdd(b,{kind:'fire',x:i,y:0,r:1,life:5,max:5,tag:i});
+  assert.strictEqual(b.hazards.length,T.MB_HAZARD_CAP.furnace);assert.strictEqual(b.hazards[0].tag,30-T.MB_HAZARD_CAP.furnace,'o mais antigo saiu');assert.strictEqual(b.hazards[b.hazards.length-1].tag,29);
+  /* 4) morrem com o chefe pelo caminho REAL de abate (damageEnemy → killEnemy) */
+  b.hazards=[];for(let i=0;i<5;i++)T.mbHazardAdd(b,{kind:'fire',x:0,y:0,r:1,life:5,max:5});
+  X('curAttacker=player');b.plates=0;X('damageEnemy')(b,1e12,0,0,false);
+  assert.ok(b.dead&&b.hazards.length===0,'abate zera hazards (runtime)');assert.strictEqual(T.getMiniBoss(),null);
+  /* 5) nenhum hazard eterno: todo mbHazardAdd de produção declara life finito; e o bloco de abate zera hazards (texto, portável) */
+  const lifes=[...UPD.matchAll(/mbHazardAdd\(e,\{[^}]*?life:([^,}]+)/g)].map(m=>m[1].trim());
+  assert.ok(lifes.length>=6&&lifes.every(v=>!/Infinity|undefined|null/.test(v)),'life finito em todos: '+lifes.join(' | '));
+  const kb=killBlock(SRC);assert.ok(kb&&/e\.hazards=\[\]/.test(kb),'abate zera hazards (fonte)');
   assert.ok(/function mbHazardAdd[\s\S]*?while\(e\.hazards\.length>=cap\)e\.hazards\.shift\(\)/.test(UPD),'cap por shift do mais antigo');
+});
+ok('B5B-5b: portabilidade — a auditoria textual de B5B-5 dá o MESMO resultado com a fonte em LF e em CRLF; o assert antigo (\\n literal) falharia em CRLF',()=>{
+  const lf=SRC,crlf=SRC.replace(/\n/g,'\r\n');
+  assert.ok(crlf.indexOf('\r\n')>0&&lf.indexOf('\r')<0,'fixtures LF/CRLF válidas');
+  /* novo caminho: igual nos dois */
+  for(const [nm,s] of [['LF',lf],['CRLF',crlf]]){const kb=killBlock(s);assert.ok(kb&&/e\.hazards=\[\]/.test(kb),nm+': bloco de abate encontrado e zera hazards');}
+  /* normalização central do harness devolve LF para qualquer entrada */
+  assert.strictEqual(normalizeSource(crlf),lf);assert.strictEqual(normalizeSource(lf),lf);
+  /* prova do falso negativo antigo: busca com '\n' literal só funciona em LF */
+  const oldNeedle="if(e.type==='miniboss'){\n    // recompensa pesada";
+  assert.ok(lf.indexOf(oldNeedle)>=0,'assert antigo passa em LF');
+  assert.strictEqual(crlf.indexOf(oldNeedle),-1,'assert antigo falharia em CRLF (indexOf -1)');
+  /* as demais buscas por bloco de função também são portáveis */
+  const updOf=(s)=>{const U=s.slice(s.indexOf('PR13.5 · B5-B — IDENTIDADE MECÂNICA'),s.indexOf('PR13.5 · B5-A — IDENTIDADE VISUAL'));const i=U.indexOf('function updateFurnace(');const j=U.search(/\r?\nfunction /g)>=0?U.indexOf('function ',i+10)-1:-1;return U.slice(i,j).replace(/\r/g,'');};
+  assert.strictEqual(updOf(crlf),updOf(lf),'bloco updateFurnace idêntico em LF/CRLF');
 });
 
 /* ================= BROOD ================= */

@@ -7,9 +7,8 @@
    ===================================================================== */
 const assert=require('assert');
 const fs=require('fs'),path=require('path'),vm=require('vm');
-const {sandbox,T}=require('../audit_pr135/harness.js');
+const {sandbox,T,SRC}=require('../audit_pr135/harness.js');   // SRC normalizado para LF (B5-B-FIX.1: portável LF/CRLF)
 const X=code=>vm.runInContext(code,sandbox);
-const SRC=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
 let passed=0,failed=0;
 function ok(label,fn){try{fn();passed++;console.log('  ✔ '+label);}catch(e){failed++;console.log('  ✘ '+label+' → '+(e&&e.message||e));}}
 const $=id=>X('$("'+id+'")');
