@@ -13511,12 +13511,15 @@ function spawnMiniBoss(n,forced){
   /* B3.8: emissão real (só aqui — nunca em preview, pool ou inspetor) */
   try{fractureOnMiniSpawn(def,n);}catch(e){}
   $('bosswrap').classList.add('on');
-  $('bossnm').textContent=def.nm.toUpperCase().replace(/ /g,'   ');
-  $('bossnm').style.color='#ffd9a8';
-  $('bossnm').style.textShadow='0 0 18px '+def.c;
+  /* B5-A: barra e apresentação carregam a assinatura do mini-chefe
+     (símbolo + paleta própria), mantendo a MESMA estrutura de HUD */
+  const V=minibossVisual(def.id);
+  $('bossnm').textContent=V.symbol+'  '+def.nm.toUpperCase().replace(/ /g,'   ')+'  '+V.symbol;
+  $('bossnm').style.color=V.accent;
+  $('bossnm').style.textShadow='0 0 18px '+V.primary;
   $('bosssub').textContent='MINI-CHEFE · ONDA '+n+' · BLINDAGEM '+b.plates+'/'+b.plateMax;
-  $('bossfill').style.background='linear-gradient(90deg,'+def.c+',#ffd166,#ff5c7a)';
-  banner(def.nm,'MINI-CHEFE — '+def.desc);
+  $('bossfill').style.background='linear-gradient(90deg,'+V.secondary+','+V.primary+','+V.accent+')';
+  banner(V.symbol+' '+def.nm,'MINI-CHEFE — '+V.reading);
   shake=Math.max(shake,14);
   AUDIO.bossRoar();
   echoReact('miniboss');
@@ -13547,10 +13550,13 @@ function updateMiniBoss(e,dt){
   // fase 2 abaixo de 50%
   if(e.phase===1&&e.hp<=e.maxHp*.5){
     e.phase=2;e.chargeCd=Math.min(e.chargeCd,1.4);
-    banner('ARAUTO ENFURECIDO','BLINDAGEM COMPROMETIDA — ELE ACELERA');
+    /* B5-A: sinal comum (banner+aro) com assinatura textual/paleta própria;
+       o efeito individual da fase 2 vive no renderer (phaseVisual) */
+    const V2=minibossVisual(e.mb&&e.mb.id);
+    banner(MINIBOSS_PHASE2_TITLE[e.mb&&e.mb.id]||'FASE 2','BLINDAGEM COMPROMETIDA — ELE ACELERA');
     shake=Math.max(shake,14);aberrPeak(.8);
-    spawnRing(e.x,e.y,'#ff9d3c',16,340,.9);
-    spawnShards(e.x,e.y,'#ff9d3c',20,7);
+    spawnRing(e.x,e.y,V2.primary,16,340,.9);
+    spawnShards(e.x,e.y,V2.accent,20,7);
     AUDIO.bossPhase();
   }
   const p=player;
@@ -19993,6 +19999,20 @@ const DEV={
   },
 
 /* --------------------------- MINI-CHEFES ---------------------------- */
+  /* B5-A: inspeção do perfil visual (puro; inerte fora do DEV) */
+  minibossVisual(id){
+    if(!DEV_MODE)return null;
+    const def=MINIBOSS.find(m=>m.id===id);if(!def)return null;
+    const V=MINIBOSS_VISUALS[id];
+    return {id,nm:def.nm,r:def.r,plates:def.plates,silhouette:V.silhouette,feature:V.feature,
+      secondaryFeature:V.secondaryFeature,telegraph:V.telegraph,phaseVisual:V.phaseVisual,spawn:V.spawn,
+      palette:{primary:V.primary,secondary:V.secondary,accent:V.accent},scale:[V.scaleX,V.scaleY],
+      symbol:V.symbol,reading:V.reading,renderer:(MINIBOSS_RENDERERS[id]||{}).name||null};
+  },
+  minibossGallery(){
+    if(!DEV_MODE)return null;
+    return MINIBOSS.map(m=>DEV.minibossVisual(m.id));
+  },
   spawnMiniBoss(id){
     if(!devReady())return false;
     const def=MINIBOSS.find(m=>m.id===id);
