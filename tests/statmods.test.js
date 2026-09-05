@@ -442,10 +442,10 @@ test('Equivalência: pipeline == mutação direta antiga (build completa)',()=>{
 test('Equivalência: crit/critMul/pierce somados (flat) idênticos',()=>{
   const p=run(0);
   T.itemById('olho').apply(p);      // crit+.22 critMul+.40
-  T.UPGRADES.find(u=>u.id==='critx').apply(p); // crit+.14 critMul+.55
+  T.UPGRADES.find(u=>u.id==='critx').apply(p); // crit+.14 critMul+.45 (B3-FIX)
   T.itemById('lente').apply(p);     // pierce+1
   assert.ok(near(p.crit,.05+.22+.14));
-  assert.ok(near(p.critMul,1.8+.40+.55));
+  assert.ok(near(p.critMul,1.8+.40+.45));
   assert.strictEqual(p.pierce,1);
 });
 test('Equivalência: maxHp/HP mantêm o comportamento de estado (não pipeline)',()=>{

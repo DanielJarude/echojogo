@@ -6476,7 +6476,7 @@ const ITEMS=[
  {id:'coracao',nm:'CORAÇÃO SOBRECARREGADO',desc:'+35% CADÊNCIA · +15% DANO RECEBIDO',price:33,color:'#ffb347',
   apply:p=>{smMul(p,'fireRate','module.coracao.rate','CORAÇÃO +35% CADÊNCIA',1.35);
     smMul(p,'dmgTaken','module.coracao.dmgTaken','CORAÇÃO +15% DANO RECEBIDO',1.15);}},
- {id:'iman',nm:'ÍMÃ DE VAZIO',desc:'RAIO DE COLETA ×2.2 · +15% MOEDAS · LOJA +6% · −8% VELOCIDADE',price:26,color:'#c9a9ff',
+ {id:'iman',nm:'ÍMÃ DE VAZIO',desc:'RAIO DE COLETA ×2.2 · +15% MOEDAS · UPGRADES/MÓDULOS +6% · −8% VELOCIDADE',price:26,color:'#c9a9ff',
   apply:p=>{smMul(p,'pickupR','module.iman.pickup','ÍMÃ ×2.2 RAIO COLETA',2.2);
     smMul(p,'coinMul','module.iman.coin','ÍMÃ +15% MOEDAS',1.15);
     p.shopSurcharge=(p.shopSurcharge||1)*1.06;
@@ -6549,7 +6549,7 @@ const ITEMS=[
   apply:p=>{p.drones=(p.drones||0)+2;
     smMul(p,'fireRate','module.colmeia.rate','COLMEIA −8% CADÊNCIA',.92);}},
 
- {id:'usura',nm:'CONTRATO DE USURA',desc:'+45% DE CRÉDITOS · LOJA +12% · INIMIGOS TÊM +10% DE VIDA',
+ {id:'usura',nm:'CONTRATO DE USURA',desc:'+45% DE CRÉDITOS · UPGRADES/MÓDULOS +12% · INIMIGOS TÊM +10% DE VIDA',
   price:30,color:'#ffd166',
   apply:p=>{smMul(p,'coinMul','module.usura.coin','USURA +45% MOEDAS',1.45);
     p.shopSurcharge=(p.shopSurcharge||1)*1.12;
@@ -6674,7 +6674,7 @@ const UPGRADES=[
  /* ---- COMUM ---- */
  {id:'crit', nm:'CÂMARA CRÍTICA',       desc:'+8% DE CHANCE CRÍTICA',           price:16,rar:0,
   apply:p=>smFlat(p,'crit','upgrade.crit.crit','CÂMARA CRÍTICA +8%',.08)},
- {id:'critd',nm:'DETONADOR FOCADO',     desc:'+35% DE DANO CRÍTICO',            price:16,rar:0,
+ {id:'critd',nm:'DETONADOR FOCADO',     desc:'+35% DE DANO CRÍTICO',            price:14,rar:0,   /* B3-FIX: só rende com crit — mais barato */
   apply:p=>smFlat(p,'critMul','upgrade.critd.critd','DETONADOR FOCADO +35%',.35)},
  {id:'rate', nm:'SERVO-GATILHO',        desc:'+12% DE CADÊNCIA DE TIRO',        price:18,rar:0,
   apply:p=>smMul(p,'fireRate','upgrade.rate.rate','SERVO-GATILHO +12% CADÊNCIA',1.12)},
@@ -6695,28 +6695,29 @@ const UPGRADES=[
  /* ---- RARO (desbloqueáveis) ---- */
  {id:'pierce',nm:'PONTA PERFURANTE',    desc:'PROJÉTEIS PERFURAM +1 ALVO',      price:28,rar:2,
   apply:p=>smFlat(p,'pierce','upgrade.pierce.pierce','PONTA PERFURANTE +1',1)},
- {id:'critx',nm:'MIRA CIRÚRGICA',       desc:'+14% CRÍTICO · +55% DANO CRÍTICO',price:34,rar:2,
+ {id:'critx',nm:'MIRA CIRÚRGICA',       desc:'+14% CRÍTICO · +45% DANO CRÍTICO',price:46,rar:2,   /* B3-FIX: deixa de dominar crit+critd (32 por 8%/35%) */
   apply:p=>{smFlat(p,'crit','upgrade.critx.crit','MIRA CIRÚRGICA +14%',.14);
-    smFlat(p,'critMul','upgrade.critx.critd','MIRA CIRÚRGICA +55%',.55);}},
+    smFlat(p,'critMul','upgrade.critx.critd','MIRA CIRÚRGICA +45%',.45);}},
  {id:'vamp', nm:'DRENO SANGUÍNEO',      desc:'ROUBA 5% DO DANO COMO VIDA',      price:32,rar:2,
   apply:p=>p.globalLifesteal=(p.globalLifesteal||0)+.05},
  {id:'sprint',nm:'IMPULSO NEURAL',      desc:'+14% VELOCIDADE · −10% RECARGA DE DASH',price:30,rar:2,
   apply:p=>{smMul(p,'speed','upgrade.sprint.speed','IMPULSO NEURAL +14% VELOCIDADE',1.14);p.dashCdMax*=.90;}},
  /* ---- ÉPICO ---- */
- {id:'dmg2', nm:'REATOR DE ANIQUILAÇÃO',desc:'+32% DE DANO GERAL',              price:52,rar:3,
-  apply:p=>smMul(p,'damage','upgrade.dmg2.damage','REATOR +32% DANO',1.32)},
- {id:'rate2',nm:'GATILHO QUÂNTICO',     desc:'+30% DE CADÊNCIA DE TIRO',        price:50,rar:3,
-  apply:p=>smMul(p,'fireRate','upgrade.rate2.rate','GATILHO QUÂNTICO +30%',1.30)},
- {id:'pierce2',nm:'LANÇA DIMENSIONAL',  desc:'PROJÉTEIS PERFURAM +2 ALVOS',     price:56,rar:3,
+ {id:'dmg2', nm:'REATOR DE ANIQUILAÇÃO',desc:'+28% DE DANO GERAL',              price:58,rar:3,   /* B3-FIX: forte por slot, não por crédito (dmg: 14%/22) */
+  apply:p=>smMul(p,'damage','upgrade.dmg2.damage','REATOR +28% DANO',1.28)},
+ {id:'rate2',nm:'GATILHO QUÂNTICO',     desc:'+26% DE CADÊNCIA DE TIRO',        price:56,rar:3,   /* B3-FIX: idem rate (12%/18) */
+  apply:p=>smMul(p,'fireRate','upgrade.rate2.rate','GATILHO QUÂNTICO +26%',1.26)},
+ {id:'pierce2',nm:'LANÇA DIMENSIONAL',  desc:'PROJÉTEIS PERFURAM +2 ALVOS',     price:50,rar:3,   /* B3-FIX: nicho (inútil p/ melee) — mais barato */
   apply:p=>smFlat(p,'pierce','upgrade.pierce2.pierce','LANÇA DIMENSIONAL +2',2)},
  /* ---- LENDÁRIO ---- */
- {id:'omni', nm:'NÚCLEO ONISCIENTE',    desc:'+22% DANO · +18% CADÊNCIA · +12% CRÍTICO · +30 VIDA',price:88,rar:4,
+ {id:'omni', nm:'NÚCLEO ONISCIENTE',    desc:'+22% DANO · +18% CADÊNCIA · +12% CRÍTICO · +30 VIDA',price:110,rar:4,   /* B3-FIX: universal sem custo → paga o preço da universalidade */
   apply:p=>{smMul(p,'damage','upgrade.omni.damage','NÚCLEO +22% DANO',1.22);
     smMul(p,'fireRate','upgrade.omni.rate','NÚCLEO +18% CADÊNCIA',1.18);
     smFlat(p,'crit','upgrade.omni.crit','NÚCLEO +12% CRÍTICO',.12);
     p.maxHp+=30;p.hp+=30;}},
- {id:'singul',nm:'SINGULARIDADE PESSOAL',desc:'+45% DE DANO · DASH RECARREGA 50% MAIS RÁPIDO',price:92,rar:4,
-  apply:p=>{smMul(p,'damage','upgrade.singul.damage','SINGULARIDADE +45% DANO',1.45);p.dashCdMax*=.50;}}
+ {id:'singul',nm:'SINGULARIDADE PESSOAL',desc:'+45% DE DANO · DASH RECARREGA 50% MAIS RÁPIDO · −12% VIDA MÁXIMA',price:100,rar:4,   /* B3-FIX: canhão de vidro móvel (omni = seguro; singul = agressivo) */
+  apply:p=>{smMul(p,'damage','upgrade.singul.damage','SINGULARIDADE +45% DANO',1.45);p.dashCdMax*=.50;
+    p.maxHp=Math.max(30,Math.round(p.maxHp*.88));p.hp=Math.min(p.hp,p.maxHp);}}
 ];
 /* =====================================================================
    PR 11 — ITEM & BUILD REWORK + SHIELD EXPANSION
@@ -7127,14 +7128,14 @@ const NEW_ITEMS=[
    }}},
   /* ECONOMY BUILD */
   {id:'eco_risco',nm:'APOSTA DE MERCADO',price:38,rar:2,color:'#ffd166',
-   desc:'+40% CRÉDITOS · LOJA +15% · −12% DANO · +12% DANO RECEBIDO',
+   desc:'+40% CRÉDITOS · UPGRADES/MÓDULOS +15% · −12% DANO · +12% DANO RECEBIDO',
    tags:['economy','risk','tradeoff'],
    apply:p=>{smMul(p,'coinMul','item.eco_risco.coin','APOSTA +40% CRÉDITOS',1.40);
      p.shopSurcharge=(p.shopSurcharge||1)*1.15;
      smMul(p,'damage','item.eco_risco.dmg','APOSTA −12% DANO',.88);
      smMul(p,'dmgTaken','item.eco_risco.taken','APOSTA +12% DANO RECEBIDO',1.12);}},
   {id:'eco_divida',nm:'DÍVIDA TEMPORAL',price:42,rar:2,color:'#ffb347',
-   desc:'+55% CRÉDITOS · LOJA +20% · −30% ESCUDO MÁX · +18% DANO RECEBIDO',
+   desc:'+55% CRÉDITOS · UPGRADES/MÓDULOS +20% · −30% ESCUDO MÁX · +18% DANO RECEBIDO',
    tags:['economy','risk','tradeoff','shield'],
    apply:p=>{smMul(p,'coinMul','item.eco_divida.coin','DÍVIDA +55% CRÉDITOS',1.55);
      p.shopSurcharge=(p.shopSurcharge||1)*1.20;
@@ -7174,7 +7175,7 @@ const NEW_ITEMS=[
      if(n>=3&&itemCdReady(p,'trans_conclusao',8)){itemStateSet(p,'trans_conclusao','critLock',1);devProcLog(ctx,'CONCLUSÃO · CRIT');}
    }}},
   {id:'trans_temporal',nm:'MERCADO DE FUTUROS',price:66,rar:4,color:'#ffb347',transformer:true,
-   desc:'TRANSFORMADOR · +55% CRÉDITOS · LOJA +25% · −25% ESCUDO MÁX · ABATE CONVERTE 3 CRÉDITOS',
+   desc:'TRANSFORMADOR · +55% CRÉDITOS · UPGRADES/MÓDULOS +25% · −25% ESCUDO MÁX · ABATE CONVERTE 3 CRÉDITOS',
    tags:['transformer','economy','risk'],
    apply:p=>{smMul(p,'coinMul','item.trans_temporal.coin','FUTUROS +55% CRÉDITOS',1.55);
      p.shopSurcharge=(p.shopSurcharge||1)*1.25;
@@ -7327,10 +7328,22 @@ function shopWaveMul(){
   const w=Math.max(0,wave||1);
   return 1+Math.min(1.0,(w-1)*.05);          // +5%/onda, teto +100%
 }
+/* B3-FIX: a Ganância já paga mEff.shopMul (1+.34g); o "mercado" é um
+   segundo multiplicador na MESMA build. 0.18→0.14 (máx ×1.238) e teto no
+   surcharge dos módulos econômicos, escolhidos por varredura (economy sim):
+   Greed passa a comprar ≥ Neutral sem voltar a comprar tudo. */
+const MORAL_MARKET_K=.14;
+const SHOP_SURCHARGE_CAP=1.6;
 function moralMarketMul(){
   const tg=moralTier(moral.greed||0);
   const g=tg>=3?1.7:(tg>=2?1:(tg>=1?.5:0));
-  return 1+.18*g;                      // B3-C: mercado lucra com a Ganância
+  return 1+MORAL_MARKET_K*g;           // B3-C/FIX: mercado lucra (pouco) com a Ganância
+}
+/* sobrepreço dos módulos econômicos, com teto: empilhar 5 módulos não pode
+   custar mais que ×1.6 na loja (o trade-off continua, o runaway não). */
+function shopSurchargeMul(p){
+  const s=(p&&p.shopSurcharge)||1;
+  return Math.min(SHOP_SURCHARGE_CAP,Math.max(1,s));
 }
 function rerollBaseCost(){
   const w=Math.max(0,wave||1);
@@ -7366,7 +7379,7 @@ function rarTag(r){
     '66;background:'+R.c+'14">'+R.nm+'</span>';
 }
 const repairCost=()=>Math.max(1,Math.round(22*Math.pow(1.5,player.repairs)*mEff.upgMul));
-const _mk=()=>((player&&player.markedUp)||1)*((player&&player.shopPersonal)||1)*((player&&player.shopSurcharge)||1)*moralMarketMul();   // marca do Croupiê · desconto de loja do NÔMADE
+const _mk=()=>((player&&player.markedUp)||1)*((player&&player.shopPersonal)||1)*shopSurchargeMul(player)*moralMarketMul();   // marca do Croupiê · desconto de loja do NÔMADE
 const priceUpg=u=>Math.max(1,Math.round(u.price*mEff.shopMul*mEff.upgMul*_mk()*shopWaveMul()));
 const priceItem=i=>Math.max(1,Math.round(i.price*mEff.shopMul*_mk()*shopWaveMul()));
 /* multiplicador de potência aplicado a upgrades/itens conforme a raridade */
@@ -25441,7 +25454,12 @@ function fractureResoReact(d,info){
      · reroll temporal ligeiramente mais barato na loja (uma vez por visita).
    ===================================================================== */
 const FRACTURE_SCAR_COIN_MUL=.88;   // só nos eventos de Fratura
-const FRACTURE_SCAR_REROLL=7;       // contra os 10 padrão
+const FRACTURE_SCAR_REROLL=7;       // contra os 10 padrão (piso do desconto)
+/* B3-FIX: o reroll base agora cresce com a onda (rerollBaseCost=10+onda).
+   Para manter a IDENTIDADE de ESCASSEZ (≈30% mais barato no 1º reroll da
+   visita, 1×/onda) sem inflar o benefício (7 vs 30 na onda 20), o desconto é
+   proporcional: max(7, round(base×0.70)). Na onda 1 (base 10~11) continua 7. */
+const FRACTURE_SCAR_REROLL_K=.70;
 const FRACTURE_SCAR_RES_BONUS=1;    // +1 resíduo nas oportunidades de Fratura
 /* multiplicador de Créditos para recompensas vindas de evento de Fratura.
    Devolve 1 para qualquer outro Tema e para qualquer fonte que não seja
@@ -25495,7 +25513,7 @@ function fractureShopRerollCost(base){
   if(!(w>0))return v;
   const b=fractureB3();
   if(b&&b.scarUsed['rr'+((typeof wave!=='undefined')?(wave|0):0)])return v;
-  return Math.max(1,Math.min(v,FRACTURE_SCAR_REROLL));
+  return Math.max(1,Math.min(v,Math.max(FRACTURE_SCAR_REROLL,Math.round(v*FRACTURE_SCAR_REROLL_K))));
 }
 function fractureShopRerollUsed(){
   const b=fractureB3();
