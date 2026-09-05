@@ -75,3 +75,11 @@ node audit_pr135/miniboss_visual_audit.js
 node audit_pr135/miniboss_visual_audit.js /caminho/da/arvore/anterior   # "antes"
 ```
 
+## B5-B — Mecânica dos mini-chefes
+
+```bash
+# proxy: pressão/hazards/crias/regen/caps por mini-chefe × wave × fase (não substitui playtest)
+node audit_pr135/miniboss_mechanical_audit.js            # árvore atual (40 s por cenário)
+node audit_pr135/miniboss_mechanical_audit.js /outra 20  # "antes", 20 s
+```
+

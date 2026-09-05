@@ -814,3 +814,9 @@ Fecha o achado B1 "Sintonia existe, mas sem identidade": 5 estados finitos (`ATT
 
 Confirmado no código: um único `drawMiniBoss` (octógono + aríete + placas, paleta do Arauto fixa) servia os 8; a auditoria estrutural do renderer real dava distância **0,00** entre brood×oracle. B5-A introduz `MINIBOSS_VISUALS` (perfil declarativo) + 8 renderers próprios (`MINIBOSS_RENDERERS`), telegraph de investida em 8 estilos **fiéis** (linha reta 760 px em `e.aim`), 8 assinaturas de spawn (1,6 s já existentes), fase 2 com sinal comum + assinatura individual + 8 banners, barra de HP com símbolo/paleta própria. Renderer gameplay-pure e determinístico (0 `Math.random`, 0 DOM, 0 partículas no draw). Zero mudança de balance/seleção/hitbox; PARADOXO intocado. `npm test` 23 suítes · 1349 checks · 0 falhas. Mecânica compartilhada (dash/burst/fase 2 para os 8; `burn`/`slash`/`slam` sem código) registrada para B5-B em `PR13_5_B5A.md §13`.
 
+---
+
+## 30. B5-B — Identidade mecânica, dificuldade e correção visual
+
+Playtest humano do B5-A: diferença visual "leve", todos fáceis, Matriz sem enxame/regen, fogo da Fornalha fraco, AoE do Colosso invisível. B5-B: `updateMiniBoss` vira núcleo comum + `MB_UPDATERS[id]` (8 updaters com mecânica principal, secundária e fase 2 real); dash só Arauto/Colosso, rajada só Arauto/Matriz(F2); hazards com cap (`MB_HAZARD_CAP`) e lifetime: fogo real (Fornalha), presságios escalonados (Arauto), previsão (Oráculo), slam telegrafado 1,1 s (Colosso), fome (Sanguessuga); posturas (Sentinela); slash com hitbox de lâmina e combo (Duelista); proliferação até 12 + regen condicionada (Matriz); siphon rompível (Sanguessuga). Segunda passagem visual removeu placas orbitais e núcleo genéricos. Proxy: assinaturas mecânicas distintas 4/8 → 8/8. HP/dmg/spd/r/plates/recompensa/Diretor/PARADOXO intactos. `npm test` 24 suítes · 1373 checks · 0 falhas. Detalhes: `PR13_5_B5B.md`.
+
