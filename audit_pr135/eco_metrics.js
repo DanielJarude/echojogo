@@ -27,7 +27,7 @@ for(const name of Object.keys(PROFILES)){
     const p=mk(pr);if(T.resetShopVars)T.resetShopVars();
     const modWave=[1,3,5,8,10];
     for(let w=1;w<=20;w++){
-      const mi=modWave.indexOf(w);if(mi>=0&&pr.mods[mi]){T.itemById(pr.mods[mi]).apply(p);T.applyMoralTuning(p);}
+      const mi=modWave.indexOf(w);if(mi>=0&&pr.mods[mi]){const it=T.itemById(pr.mods[mi]);if(p.items.indexOf(it.id)<0)p.items.push(it.id);it.apply(p);T.applyMoralTuning(p);}   /* B4: item registrado em p.items para a Sintonia enxergar */
       const km=(p.coinMul||1)*T.mEff.coinMul;
       const ki=killIncome(w,cap(km));const ev=Math.round(pr.ev*T.mEff.coinMul);
       p.coins+=25+ki+ev;tot.earned+=25+ki+ev;

@@ -32,6 +32,7 @@ src+='\n;globalThis.__t={'+
   'getMoral:()=>moral,setMoral:mm=>{moral=mm;},'+
   'getProg:()=>prog,setProg:p=>{prog=p;},'+
   'getShopOffers:()=>shopOffers,getShopItems:()=>shopItems,getShopGuns:()=>shopGuns,'+
+  'ATTUNE_STATES,ATTUNE_FIELD_ITEMS,attuneFieldMul,smHas,isMoralTuneModId,moralAffinityTagHTML,attunementScore,attunementState,attunementStateFor,attunementMul,attunementInfo,calcAttunementPlan,isAttuneModId,attuneIsEconomic,'+
   'SHOP_RECENT_MAX,SHOP_REPEAT_LAST_W,SHOP_REPEAT_PENULT_W,shopRecentReset,shopRepeatWeight,shopOfferSeen,shopMarkBought,shopWaveMul,rerollBaseCost,incomeCoinCap,moralMarketMul,shopSurchargeMul,MORAL_MARKET_K,SHOP_SURCHARGE_CAP,echoRangeField,echoEqInit,echoEqRefresh,pickWeightedAny,'+
   'getShopRecent:()=>shopRecent.map(e=>({id:e.id,seq:e.seq,now:shopRollSeq,bought:e.bought})),'+
   'smBuildCheckpoint,captureCheckpoint,resumeRun,activateSlot,clearActiveRun,hasActiveRun,getActiveRun:()=>activeRun,'+

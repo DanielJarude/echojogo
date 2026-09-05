@@ -3934,7 +3934,7 @@ function echoRangeField(data,key){
 }
 function makeEcho(data,slot){
   const tr=data.trail;
-  const boost=1+((player&&player.echoBoost)||0);
+  const boost=1+((player&&player.echoBoost)||0)*attuneFieldMul(player,'paradoxo');   // B4
   return echoRelInit({data,slot,x:tr[0][1],y:tr[0][2],vx:0,vy:0,r:13,aim:tr[0][4]||0,
     hp:Math.round(ECHO_HP[slot]*boost),maxHp:Math.round(ECHO_HP[slot]*boost),alive:true,
     shieldMax:ECHO_SHIELD[slot],shield:ECHO_SHIELD[slot],   // começa com escudo cheio
@@ -4566,7 +4566,7 @@ function calcDamageMul(p){
   let mul=smGet(p,'damage');
   if(p.rushT>0)mul*=1.11;                              // WRAITH
   if(p.overheat)mul*=1+.08*(p.heat||0);                // REATOR
-  if(p.lowHpBonus&&p.hp<p.maxHp*.4)mul*=1+p.lowHpBonus;// VINGANÇA
+  if(p.lowHpBonus&&p.hp<p.maxHp*.4)mul*=1+p.lowHpBonus*attuneFieldMul(p,'vinganca');// VINGANÇA (B4: Sintonia)
   if(p.entropy)mul*=1+Math.min(.60,(p.waveKills||0)*.01);// ENTROPIA
   if(p.harvestStack)                                     // REVENANT
     mul*=1+Math.min(.75,(p.harvStacks||0)*p.harvestStack);
@@ -5699,6 +5699,149 @@ function moralAffinityLevel(match){
   return MORAL_AFF_LEVELS[3];
 }
 
+/* =====================================================================
+   PR13.5 · B4 — SINTONIA DINÂMICA DOS MÓDULOS PASSIVOS
+   ---------------------------------------------------------------------
+   "Quanto este módulo combina com a forma como esta run está sendo
+   conduzida." O módulo REAGE à moralidade (lê comp/greed/viol); nunca a
+   altera. Tudo é DERIVADO do trio {módulo, MORAL_AFFINITY, moral} —
+   nada é persistido; Continue/Sandbox recalculam.
+   · score  = match do PR 9 (produto escalar 0..1) — determinístico.
+   · estado = 5 faixas finitas sobre o score (ATTUNE_STATES).
+   · efeito = multiplicador sobre a PARTE BENÉFICA dos modificadores
+     permanentes do PRÓPRIO módulo (module.<id>.*): dano escala dano,
+     escudo escala escudo, alcance longínquo escala alcance longínquo…
+     Trade-offs (mult<1 / add<0 / flat<0) nunca são agravados nem
+     aliviados. Módulos econômicos (coinMul) usam uma banda menor.
+   · módulos cujo efeito é um campo direto (regen, espinhos, execução…)
+     não têm o que multiplicar: para eles fica o bônus temático do PR 9
+     (proteção/créditos/ofensiva), agora escalado pelo mesmo estado.
+   · ids estáveis `attune:<itemId>:<stat>` (stacks 'replace'), excluídos
+     do checkpoint como os `moral:item:*`.
+   ===================================================================== */
+const ATTUNE_STATES=[
+  /* faixas sobre o score (match 0..1). Neutro (1/3) cai em NEUTRA. */
+  {id:'divergent',lab:'DIVERGENTE', c:'#ff8095', min:0,   mul:.90, eco:.95},
+  {id:'unstable', lab:'INSTÁVEL',   c:'#c9a9ff', min:.14, mul:.95, eco:.97},
+  {id:'neutral',  lab:'NEUTRA',     c:'#9db8c8', min:.26, mul:1,   eco:1},
+  {id:'attuned',  lab:'SINTONIZADA',c:'#8ff6ff', min:.50, mul:1.06,eco:1.03},
+  {id:'resonant', lab:'RESSONANTE', c:'#ffd166', min:.78, mul:1.12,eco:1.06}];
+const ATTUNE_NEUTRAL=ATTUNE_STATES[2];
+/* score determinístico 0..1 (null para módulo neutro) */
+function attunementScore(itemId,prof){
+  return calcMoralAffinityMatch(getItemMoralAffinity(itemId),prof||getMoralProfile());
+}
+function attunementStateFor(score){
+  if(score==null)return ATTUNE_NEUTRAL;
+  let st=ATTUNE_STATES[0];
+  for(const s of ATTUNE_STATES)if(score>=s.min-1e-9)st=s;
+  return st;
+}
+function attunementState(itemId,prof){return attunementStateFor(attunementScore(itemId,prof));}
+/* módulo econômico = mexe em coinMul (o B3 acabou de estabilizar isso) */
+function attuneIsEconomic(itemId){
+  return /^(iman|usura|eco_risco|eco_divida|trans_temporal)$/.test(itemId);
+}
+function attuneModId(itemId,stat){return 'attune:'+itemId+':'+stat;}
+function isAttuneModId(id){return typeof id==='string'&&id.indexOf('attune:')===0;}
+/* razão de intensidade aplicada à parte benéfica dos mods do módulo */
+function attunementMul(itemId,prof){
+  const st=attunementState(itemId,prof);
+  return attuneIsEconomic(itemId)?st.eco:st.mul;
+}
+/* modificadores permanentes BENÉFICOS do próprio módulo */
+function attuneBeneficialMods(p,itemId){
+  if(!p||!p.sm)return [];
+  return p.sm.filter(m=>m&&m.dur==null&&!m.cond&&SM_STATS[m.stat]&&
+    (m.id==='module.'+itemId||m.id.indexOf('module.'+itemId+'.')===0)&&
+    attuneModIsBeneficial(m));
+}
+function attuneModIsBeneficial(m){
+  const inv=(m.stat==='dmgTaken'||m.stat==='shieldDelay');   // menor é melhor
+  if(m.type==='mult')return inv?m.value<1:m.value>1;
+  if(m.type==='add'||m.type==='flat')return inv?m.value<0:m.value>0;
+  return false;
+}
+/* plano: para cada módulo com afinidade, um mod `attune:` por stat
+   benéfico que leva o bônus de (1+b) para (1+b·k). Puro — não escreve. */
+function calcAttunementPlan(p,prof){
+  prof=prof||getMoralProfile();
+  const out=[];
+  if(!p||!p.items)return out;
+  for(const id of p.items){
+    if(!getItemMoralAffinity(id))continue;
+    const k=attunementMul(id,prof);
+    if(Math.abs(k-1)<1e-9)continue;
+    const st=attunementState(id,prof);
+    const it=itemById(id),nm=it?it.nm:id;
+    /* agrupa por stat: o bônus do módulo naquele stat vira um só fator */
+    const byStat={};
+    for(const m of attuneBeneficialMods(p,id))(byStat[m.stat]=byStat[m.stat]||[]).push(m);
+    for(const stat in byStat){
+      let mult=1,add=0,flat=0;
+      for(const m of byStat[stat]){if(m.type==='mult')mult*=m.value;else if(m.type==='add')add+=m.value;else flat+=m.value;}
+      if(mult!==1){
+        /* (1+b)→(1+b·k): fator corretivo = (1+b·k)/(1+b) */
+        const b=mult-1,f=(1+b*k)/(1+b);
+        if(Math.abs(f-1)>1e-6)out.push({id:attuneModId(id,stat),stat,type:'mult',value:f,stacks:'replace',
+          label:'SINTONIA '+st.lab+' · '+nm});
+      }
+      if(add!==0){
+        const d=add*(k-1);
+        if(Math.abs(d)>1e-6)out.push({id:attuneModId(id,stat),stat,type:'add',value:d,stacks:'replace',
+          label:'SINTONIA '+st.lab+' · '+nm});
+      }
+      if(flat!==0){
+        const d=flat*(k-1);
+        if(Math.abs(d)>1e-6)out.push({id:attuneModId(id,stat+'.flat'),stat,type:'flat',value:d,stacks:'replace',
+          label:'SINTONIA '+st.lab+' · '+nm});
+      }
+    }
+  }
+  return out;
+}
+/* Módulos cujo efeito principal é um CAMPO direto (regen, espinhos,
+   execução…) não têm mod no pipeline para escalar. Para eles o estado
+   vira um fator lido no ponto de consumo — pelo cache derivado
+   p.attuneMul (recalculado em applyMoralTuning; nunca por frame; nunca
+   salvo). attuneFieldMul(p,itemId) devolve 1 se o módulo não está
+   instalado — o campo continua valendo o que o módulo escreveu. */
+const ATTUNE_FIELD_ITEMS={espinho:1,su_regen:1,su_sorte:1,su_critcura:1,su_exec:1,vinganca:1,
+  condutor:1,ampulheta:1,paradoxo:1,su_vampiro:1,su_dotcrit:1,talisma:0,pirostase:0};
+function attuneFieldMul(p,itemId){
+  p=p||player;
+  const c=p&&p.attuneMul;
+  return (c&&c[itemId]!=null)?c[itemId]:1;
+}
+function calcAttuneFieldCache(p,prof){
+  const out={};
+  if(!p||!p.items)return out;
+  for(const id of p.items){
+    if(!ATTUNE_FIELD_ITEMS[id]||!getItemMoralAffinity(id))continue;
+    const k=attunementMul(id,prof);
+    if(Math.abs(k-1)>1e-9)out[id]=k;
+  }
+  return out;
+}
+/* texto curto para UI: estado + eixo + efeito. Puro. */
+function attunementInfo(itemId,prof){
+  prof=prof||getMoralProfile();
+  const aff=getItemMoralAffinity(itemId);
+  if(!aff)return null;
+  const score=attunementScore(itemId,prof),st=attunementStateFor(score);
+  const axes=moralAffinityAxes(aff);
+  const k=attunementMul(itemId,prof);
+  const pct=Math.round((k-1)*100);
+  const n=prof.normalized;
+  /* motivo resumido: eixo principal do módulo está alto ou baixo no perfil */
+  const main=axes[0];
+  const reason=st.id==='neutral'?'perfil equilibrado'
+    :(st.id==='attuned'||st.id==='resonant')?MORAL_AXIS_LABEL[main]+' ↑'
+    :MORAL_AXIS_LABEL[main]+' baixa';
+  return {id:itemId,score,state:st,axes,mul:k,pct,reason,economic:attuneIsEconomic(itemId),
+    effect:pct===0?'efeito base':(pct>0?'efeito +'+pct+'%':'efeito reduzido: '+pct+'%')};
+}
+
 /* ---- efeitos derivados no Stat Pipeline (ids estáveis, recalculáveis) ---- */
 function moralTuneModId(itemId,stat){return 'moral:item:'+itemId+':'+stat;}
 function isMoralTuneModId(id){return typeof id==='string'&&id.indexOf('moral:item:')===0;}
@@ -5758,9 +5901,14 @@ function applyMoralTuning(p){
   p=p||player;
   if(!p)return false;
   smInit(p);
-  p.sm=p.sm.filter(m=>!isMoralTuneModId(m.id));
-  const plan=calcMoralTuningPlan(p.items||[],getMoralProfile());
+  p.sm=p.sm.filter(m=>!isMoralTuneModId(m.id)&&!isAttuneModId(m.id));
+  const prof=getMoralProfile();
+  const plan=calcMoralTuningPlan(p.items||[],prof);
   for(const mod of plan.mods)p.sm.push(mod);
+  /* B4: intensidade do próprio módulo segue o estado de Sintonia
+     (calculado DEPOIS de limpar os derivados: só vê os mods reais) */
+  for(const mod of calcAttunementPlan(p,prof))p.sm.push(mod);
+  p.attuneMul=calcAttuneFieldCache(p,prof);   // B4: fator dos módulos de campo direto
   smRefresh(p);
   return true;
 }
@@ -5771,8 +5919,8 @@ function countAttunedItems(p){
   const prof=getMoralProfile();
   let n=0;
   for(const id of p.items){
-    const m=calcMoralAffinityMatch(getItemMoralAffinity(id),prof);
-    if(m!=null&&m>=MORAL_BALANCE.affinity.levels.neutral)n++;
+    const st=attunementState(id,prof);
+    if(st.id==='attuned'||st.id==='resonant')n++;
   }
   return n;
 }
@@ -6898,7 +7046,8 @@ function _modBelongsToItem(modId,itemId){
   return (typeof modId==='string')&&(
     modId==='module.'+itemId||modId.indexOf('module.'+itemId+'.')===0||
     modId==='item.'+itemId||modId.indexOf('item.'+itemId+'.')===0||
-    modId==='moral:item:'+itemId+':'||modId.indexOf('moral:item:'+itemId+':')===0);
+    modId==='moral:item:'+itemId+':'||modId.indexOf('moral:item:'+itemId+':')===0||
+    modId.indexOf('attune:'+itemId+':')===0);
 }
 function removeItemStatMods(p,itemId){
   if(!p||!p.sm)return 0;
@@ -11509,7 +11658,7 @@ function updatePickups(dt){
         player.coins+=o.v;sXp();spawnParticles(o.x,o.y,'#ffd166',3,130,.2,2);
         itemEmit('onPickup',{player,type:'coin',value:o.v});
       }else{
-        const heal=o.v*(player.medBoost||1);   // HARDEN: kits curam o dobro
+        const heal=o.v*(1+((player.medBoost||1)-1)*attuneFieldMul(player,'su_vampiro'));   // HARDEN: kits curam o dobro (B4: Sintonia escala o bônus)
         player.hp=Math.min(player.maxHp,player.hp+heal);
         floatText(o.x,o.y-12,'+'+Math.round(heal)+' HP','#7dffc4');
         spawnRing(o.x,o.y,'#7dffc4',5,42,.35);sLvl();
@@ -12449,7 +12598,7 @@ function damageEnemy(e,d,srcx,srcy,crit,isDot){
   if(atk&&atk.critChain&&crit&&!isDot)chainShock(e,d*.5,1,atk);
   if(isDot){                             // dano contínuo não gera ressonância
     // AGULHA RESSONANTE: DoT pode causar crítico
-    if(player&&player.dotCrit&&Math.random()<player.dotCrit){
+    if(player&&player.dotCrit&&Math.random()<player.dotCrit*attuneFieldMul(player,'su_dotcrit')){   // B4
       d*=1.8;
       spawnParticles(e.x,e.y,'#ffd166',3,160,.2,2);
     }
@@ -12525,7 +12674,7 @@ function damageEnemy(e,d,srcx,srcy,crit,isDot){
     spawnParticles(e.x,e.y,'#fff6b0',7,260,.32,3);
     // BISTURI SIMBIÓTICO: cura ao crítico
     if(curAttacker===player&&player&&player.critHeal){
-      player.hp=Math.min(player.maxHp,player.hp+player.critHeal);
+      player.hp=Math.min(player.maxHp,player.hp+player.critHeal*attuneFieldMul(player,'su_critcura'));   // B4
     }
     /* PR 11: hooks de crítico dos itens (build Crit/Status). */
     if(curAttacker===player)itemEmit('onCrit',{target:e,dmg:d,crit:true});
@@ -12538,7 +12687,7 @@ function damageEnemy(e,d,srcx,srcy,crit,isDot){
   if(curAttacker===player)itemEmit('onHit',{target:e,dmg:d,crit});
   // PROTOCOLO DE EXECUÇÃO: execução de alvos abaixo do limiar
   if(player&&player.execThreshold&&e.hp>0&&e.hp<=d&&
-     e.hp<e.maxHp*player.execThreshold&&curAttacker===player){
+     e.hp<e.maxHp*player.execThreshold*attuneFieldMul(player,'su_exec')&&curAttacker===player){   // B4
     e.hp=0;
     player.hp=Math.min(player.maxHp,player.hp+6);
     floatText(e.x,e.y-e.r-20,'EXECUTADO','#ff2f5e');
@@ -12608,10 +12757,10 @@ function killEnemy(e){
     player.waveKills=(player.waveKills||0)+1;              // MOTOR DE ENTROPIA
     if(player.waveKills%12===0)echoReact('killStreak');    // PR 8: fala de sequência
     if(player.killDash&&player.dashCd>0)                   // AMPULHETA QUEBRADA
-      player.dashCd=Math.max(0,player.dashCd-player.dashCdMax*player.killDash);
+      player.dashCd=Math.max(0,player.dashCd-player.dashCdMax*player.killDash*attuneFieldMul(player,'ampulheta'));   // B4
     // DADO VICIADO: chance de cura ao abater
     if(player.healChance&&Math.random()<player.healChance&&player.hp>0){
-      const amt=player.healAmount||14;
+      const amt=(player.healAmount||14)*attuneFieldMul(player,'su_sorte');   // B4
       player.hp=Math.min(player.maxHp,player.hp+amt);
       floatText(player.x,player.y-20,'+'+amt+' HP','#7dffc4');
     }
@@ -14435,7 +14584,7 @@ function updateEnemy(e,dt){
       // COROA DE ESPINHOS: reflete dano de contato
       if(player.thorns){
         const prev=curAttacker;curAttacker=player;
-        damageEnemy(e,e.dmg*player.thorns*3,player.x,player.y,false);
+        damageEnemy(e,e.dmg*player.thorns*3*attuneFieldMul(player,'espinho'),player.x,player.y,false);   // B4
         curAttacker=prev;
         spawnParticles(e.x,e.y,'#ff5c7a',4,180,.25,2.2);
       }
@@ -14617,7 +14766,7 @@ function updatePlayer(dt){
   if(p.recoil>0)p.recoil=Math.max(0,p.recoil-dt*7);
   if(p.rangeFx>0)p.rangeFx=Math.max(0,p.rangeFx-dt*1.1);
   // BULWARK / COMPAIXÃO: regeneração fora de combate
-  const regenTotal=(p.regen||0)+mEff.regen;
+  const regenTotal=(p.regen||0)*attuneFieldMul(p,'su_regen')+mEff.regen;   // B4: Sintonia escala só o regen do módulo
   if(regenTotal>0&&p.hurtT<=0&&p.hp<p.maxHp){
     p.noHitT=(p.noHitT||0)+dt;
     if(p.noHitT>2.5)p.hp=Math.min(p.maxHp,p.hp+regenTotal*dt);
@@ -14811,7 +14960,7 @@ function onProjectileHit(p,e,dmg){
   const src=p.owner;
   if(src===player&&runSt)runSt.hi++;             // PR 8: acerto de projétil (precisão)
   if(d.fx)applyStatus(e,d.fx.k,d.fx.dur,d.fx.pow,src);
-  if(d.chain)chainShock(e,dmg*.78,d.chain+((src&&src.chainBonus)||0),src);
+  if(d.chain)chainShock(e,dmg*.78,d.chain+Math.round(((src&&src.chainBonus)||0)*attuneFieldMul(src,'condutor')),src);   // B4
   if(d.lifesteal&&src===player)
     player.hp=Math.min(player.maxHp,player.hp+dmg*d.lifesteal);
   // PRISMA: divide em fragmentos
@@ -15916,7 +16065,7 @@ function smBuildCheckpoint(reason,waveOverride){
       itemState:player.itemState?JSON.parse(JSON.stringify(player.itemState)):{},
       /* modificadores PERMANENTES do pipeline (temporários ficam de fora;
          PR 9: sintonia moral é DERIVADA — recalculada no resume, nunca salva) */
-      sm:(player.sm||[]).filter(m=>m&&m.dur==null&&!m.cond&&!isMoralTuneModId(m.id))
+      sm:(player.sm||[]).filter(m=>m&&m.dur==null&&!m.cond&&!isMoralTuneModId(m.id)&&!isAttuneModId(m.id))
         .map(m=>({id:m.id,stat:m.stat,type:m.type,value:m.value,
           stacks:m.stacks,label:m.label})),
       /* escolhas e efeitos permanentes da run (bandeiras cruas — o
@@ -16062,7 +16211,7 @@ function resumeRun(){
      o pipeline recalcula os derivados a partir da base imutável — os
      multiplicadores NÃO são reaplicados em cima dos valores finais */
   player.sm=(Array.isArray(q.sm)?q.sm:[])
-    .filter(m=>m&&m.id&&SM_STATS[m.stat]&&!isMoralTuneModId(m.id))
+    .filter(m=>m&&m.id&&SM_STATS[m.stat]&&!isMoralTuneModId(m.id)&&!isAttuneModId(m.id))
     .map(m=>({id:String(m.id),stat:m.stat,
       type:SM_ORDER.indexOf(m.type)>=0?m.type:'mult',
       value:num(m.value,1),stacks:m.stacks||'stack',
