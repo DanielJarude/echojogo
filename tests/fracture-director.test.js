@@ -2537,10 +2537,10 @@ ok('fonte: nenhuma mutação de waveProfile fora do bloco PR13',()=>{
   }
   assert.ok(n>0,'a verificação encontrou escritas para validar');
 });
-ok('npm test continua listando as suítes (18 legadas + PR13 + PR13.5 B2 + PR13.5 B3)',()=>{
+ok('npm test continua listando as suítes (18 legadas + PR13 + PR13.5 B2 + PR13.5 B3 + B3-FIX)',()=>{
   const pkg=JSON.parse(fs.readFileSync(path.join(ROOT,'package.json'),'utf8'));
   const partes=pkg.scripts.test.split('&&').map(s=>s.trim());
-  assert.strictEqual(partes.length,20,'20 suítes no npm test');
+  assert.strictEqual(partes.length,21,'21 suítes no npm test');
 });
 
 /* =====================================================================
