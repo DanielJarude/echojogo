@@ -3892,14 +3892,14 @@ function makePlayer(operatorId,freshMeta){
     dashT:0,dashCd:0,dashCdMax:C.dashCd,dashDx:1,dashDy:0,
     level:1,xp:0,xpNext:20,ghosts:[],hurtT:0,auraSlow:1,invT:0,
     coins:25*M.vault,crit:C.crit,critMul:1.8,pierce:0,aoeMul:1,rangeMul:1,
+    meleeRangeMul:1,rangedRangeMul:1,
     projSpdMul:1,longRangeBonus:0,
     freeRerolls:M.reroll,
     pickupR:170,dmgTakenMul:1,coinMul:1,dashReflect:false,echoBoost:0,
     items:[],upgLog:[],tempPen:0,tempT:0,repairs:0,
     anomalyT:0,visionUntil:-1,regen:0,rushT:0,
     spCd:0,spT:0,spKind:null,spMax:0,
-    meleeRangeMul:1,rangedRangeMul:1,
-    vowPoverty:0,vowBlood:-1,markedUp:1,bigShop:0,slowAura:1,
+    vowPoverty:0,vowBlood:-1,markedUp:1,bigShop:0,slowAura:1,shopSurcharge:1,
     beamT:0,beamRamp:1,beamTarget:null,beamLen:0,recoil:0,swingDir:1};
   /* base imutável dos stats derivados + registro de modificadores (PR 7).
      A base NUNCA é reescrita: os campos derivados são recalculados a
@@ -4864,11 +4864,20 @@ let mEff={shopMul:1,coinMul:1,dmgMul:1,enemySpd:1,enemyAggr:1,upgMul:1,medDrop:0
 let pickups=[], allies=[], beacon=null, evTimer=12, evCount=0, curEv=null;
 let boss=null, miniBoss=null, bossIntel=null, aberr=0, victoryData=null, freezeT=0;
 let shopOffers=[], shopItems=[], shopGuns=[], rerollCost=10, shopLock=null;
+let shopRecent=[], shopRollSeq=0;
 const DOM_NAME={comp:'ALTRUÍSTA',greed:'AVARENTO',viol:'BRUTAL',neutro:'NEUTRO'};
 const DOM_SHORT={comp:'ALTR',greed:'AVAR',viol:'BRUT',neutro:'NEUT'};
 const DOM_COLOR={comp:'#7dffc4',greed:'#ffd166',viol:'#ff5c7a',neutro:'#9db8c8'};
 const TRUST_NAME=['BAIXA','NEUTRA','ALTA'];
 
+/* ---- B3-C: retorno decrescente de créditos (soft cap) ----
+   Ganância ainda multiplica, mas o produto mEff.coinMul × coinMul de
+   módulos não cresce linearmente até o infinito: até ×2 fica intacto;
+   acima disso a curva achatada (só 8% do excedente vira crédito). */
+function incomeCoinCap(x){
+  if(!(x>0))return 1;
+  return x<=2?x:2+(x-2)*.08;
+}
 /* 4 tiers: 0 neutro · 1 desperto (3) · 2 dominante (6) · 3 consumido (10) */
 function moralTier(v){return v>=10?3:(v>=6?2:(v>=3?1:0));}
 function moralDom(m){
@@ -5786,13 +5795,14 @@ function moralShopWeight(item){
   if(!aff)return 1;
   return 1+MORAL_BALANCE.shopBias*moralTuneFactor(calcMoralAffinityMatch(aff,getMoralProfile()));
 }
-function pickWeightedMoral(list,waveN){
+function pickWeightedMoral(list,waveN,repW){
+  const w=o=>rarityWeight(o.rar||0,waveN)*moralShopWeight(o)*(repW?repW(o):1);
   let tot=0;
-  for(const o of list)tot+=rarityWeight(o.rar||0,waveN)*moralShopWeight(o);
+  for(const o of list)tot+=w(o);
   if(tot<=0)return list[randi(0,list.length-1)];
   let r=Math.random()*tot;
   for(const o of list){
-    r-=rarityWeight(o.rar||0,waveN)*moralShopWeight(o);
+    r-=w(o);
     if(r<=0)return o;
   }
   return list[list.length-1];
@@ -6451,9 +6461,10 @@ const ITEMS=[
  {id:'coracao',nm:'CORAÇÃO SOBRECARREGADO',desc:'+35% CADÊNCIA · +15% DANO RECEBIDO',price:33,color:'#ffb347',
   apply:p=>{smMul(p,'fireRate','module.coracao.rate','CORAÇÃO +35% CADÊNCIA',1.35);
     smMul(p,'dmgTaken','module.coracao.dmgTaken','CORAÇÃO +15% DANO RECEBIDO',1.15);}},
- {id:'iman',nm:'ÍMÃ DE VAZIO',desc:'RAIO DE COLETA ×2.2 · +30% MOEDAS · −8% VELOCIDADE',price:26,color:'#c9a9ff',
+ {id:'iman',nm:'ÍMÃ DE VAZIO',desc:'RAIO DE COLETA ×2.2 · +15% MOEDAS · LOJA +6% · −8% VELOCIDADE',price:26,color:'#c9a9ff',
   apply:p=>{smMul(p,'pickupR','module.iman.pickup','ÍMÃ ×2.2 RAIO COLETA',2.2);
-    smMul(p,'coinMul','module.iman.coin','ÍMÃ +30% MOEDAS',1.3);
+    smMul(p,'coinMul','module.iman.coin','ÍMÃ +15% MOEDAS',1.15);
+    p.shopSurcharge=(p.shopSurcharge||1)*1.06;
     smMul(p,'speed','module.iman.speed','ÍMÃ −8% VELOCIDADE',.92);}},
  {id:'placa',nm:'PLACA ABLATIVA',desc:'+55 VIDA MÁXIMA · +15% ESCUDO MÁX · −12% VELOCIDADE · −10% REGEN ESCUDO',price:30,color:'#8ff6ff',
   apply:p=>{p.maxHp+=55;p.hp+=55;smMul(p,'speed','module.placa.speed','PLACA −12% VELOCIDADE',.88);
@@ -6523,10 +6534,11 @@ const ITEMS=[
   apply:p=>{p.drones=(p.drones||0)+2;
     smMul(p,'fireRate','module.colmeia.rate','COLMEIA −8% CADÊNCIA',.92);}},
 
- {id:'usura',nm:'CONTRATO DE USURA',desc:'+80% DE CRÉDITOS · INIMIGOS TÊM +12% DE VIDA',
+ {id:'usura',nm:'CONTRATO DE USURA',desc:'+45% DE CRÉDITOS · LOJA +12% · INIMIGOS TÊM +10% DE VIDA',
   price:30,color:'#ffd166',
-  apply:p=>{smMul(p,'coinMul','module.usura.coin','USURA +80% MOEDAS',1.80);
-    p.enemyHpTax=(p.enemyHpTax||0)+.12;}},
+  apply:p=>{smMul(p,'coinMul','module.usura.coin','USURA +45% MOEDAS',1.45);
+    p.shopSurcharge=(p.shopSurcharge||1)*1.12;
+    p.enemyHpTax=(p.enemyHpTax||0)+.10;}},
 
  {id:'ressonador',nm:'RESSONADOR DUPLO',desc:'RESSONÂNCIA COM ECOS: +90% DE RAIO E DANO · RECARGA MAIS RÁPIDA',
   price:48,color:'#8ff6ff',
@@ -6577,7 +6589,7 @@ const ITEMS=[
   apply:p=>{p.regen=(p.regen||0)+2.2;p.maxHp+=25;p.hp+=25;}},
 
  {id:'su_sorte',nm:'DADO VICIADO',rar:2,
-  desc:'25% DE CHANCE DE CURAR 14 HP AO ABATER · +12% DE SORTE',
+  desc:'25% DE CHANCE DE CURAR 14 HP AO ABATER',
   price:40,color:'#7dffc4',
   apply:p=>{p.healChance=(p.healChance||0)+.25;p.healAmount=(p.healAmount||14);}},
 
@@ -7100,17 +7112,19 @@ const NEW_ITEMS=[
    }}},
   /* ECONOMY BUILD */
   {id:'eco_risco',nm:'APOSTA DE MERCADO',price:38,rar:2,color:'#ffd166',
-   desc:'+65% CRÉDITOS · −12% DANO · +10% DANO RECEBIDO',
+   desc:'+40% CRÉDITOS · LOJA +15% · −12% DANO · +12% DANO RECEBIDO',
    tags:['economy','risk','tradeoff'],
-   apply:p=>{smMul(p,'coinMul','item.eco_risco.coin','APOSTA +65% CRÉDITOS',1.65);
+   apply:p=>{smMul(p,'coinMul','item.eco_risco.coin','APOSTA +40% CRÉDITOS',1.40);
+     p.shopSurcharge=(p.shopSurcharge||1)*1.15;
      smMul(p,'damage','item.eco_risco.dmg','APOSTA −12% DANO',.88);
-     smMul(p,'dmgTaken','item.eco_risco.taken','APOSTA +10% DANO RECEBIDO',1.10);}},
+     smMul(p,'dmgTaken','item.eco_risco.taken','APOSTA +12% DANO RECEBIDO',1.12);}},
   {id:'eco_divida',nm:'DÍVIDA TEMPORAL',price:42,rar:2,color:'#ffb347',
-   desc:'+100% CRÉDITOS · −30% ESCUDO MÁX · +14% DANO RECEBIDO',
+   desc:'+55% CRÉDITOS · LOJA +20% · −30% ESCUDO MÁX · +18% DANO RECEBIDO',
    tags:['economy','risk','tradeoff','shield'],
-   apply:p=>{smMul(p,'coinMul','item.eco_divida.coin','DÍVIDA +100% CRÉDITOS',2.0);
+   apply:p=>{smMul(p,'coinMul','item.eco_divida.coin','DÍVIDA +55% CRÉDITOS',1.55);
+     p.shopSurcharge=(p.shopSurcharge||1)*1.20;
      smMul(p,'shieldMax','item.eco_divida.max','DÍVIDA −30% ESCUDO MÁX',.70);
-     smMul(p,'dmgTaken','item.eco_divida.taken','DÍVIDA +14% DANO RECEBIDO',1.14);}},
+     smMul(p,'dmgTaken','item.eco_divida.taken','DÍVIDA +18% DANO RECEBIDO',1.18);}},
   /* TRANSFORMADORES */
   {id:'trans_fratura',nm:'LÂMINA DE RUPTURA',price:64,rar:4,color:'#8ff6ff',transformer:true,
    desc:'TRANSFORMADOR · ROMPER ESCUDO → PRÓXIMA RAJADA PERFURA ALVOS por 3s',
@@ -7145,13 +7159,14 @@ const NEW_ITEMS=[
      if(n>=3&&itemCdReady(p,'trans_conclusao',8)){itemStateSet(p,'trans_conclusao','critLock',1);devProcLog(ctx,'CONCLUSÃO · CRIT');}
    }}},
   {id:'trans_temporal',nm:'MERCADO DE FUTUROS',price:66,rar:4,color:'#ffb347',transformer:true,
-   desc:'TRANSFORMADOR · +90% CRÉDITOS · −25% ESCUDO MÁX · ABATE CONVERTE 5 POÇÕES',
+   desc:'TRANSFORMADOR · +55% CRÉDITOS · LOJA +25% · −25% ESCUDO MÁX · ABATE CONVERTE 3 CRÉDITOS',
    tags:['transformer','economy','risk'],
-   apply:p=>{smMul(p,'coinMul','item.trans_temporal.coin','FUTUROS +90% CRÉDITOS',1.90);
+   apply:p=>{smMul(p,'coinMul','item.trans_temporal.coin','FUTUROS +55% CRÉDITOS',1.55);
+     p.shopSurcharge=(p.shopSurcharge||1)*1.25;
      smMul(p,'shieldMax','item.trans_temporal.max','FUTUROS −25% ESCUDO MÁX',.75);},
    hooks:{onKill(ctx){
      const p=ctx.player;if(!itemCdReady(p,'trans_temporal',3.5))return;
-     p.coins+=5;floatText(p.x,p.y-24,'+5 ◈','#ffb347');
+     p.coins+=3;floatText(p.x,p.y-24,'+3 ◈','#ffb347');
    }}},
   {id:'trans_espectral',nm:'ESPECTRO DE DASH',price:72,rar:4,color:'#c56bff',transformer:true,
    desc:'TRANSFORMADOR · DASH → CRIT + PERFURAÇÃO 4s · +25% CD DASH',
@@ -7253,17 +7268,71 @@ const RARITY=[
 function rarityWeight(r,waveN){
   const R=RARITY[r];
   if(r===0)return R.w;
-  const unlockWave=[0,1,4,8,13][r];
+  const unlockWave=[0,1,3,8,13][r];
   if(waveN<unlockWave)return 0;
   return R.w*(1+Math.min(1.8,(waveN-unlockWave)*.14));
 }
-function pickWeighted(list,waveN){
+/* ---- PR13.5 B3-A: variedade leve na loja ---- */
+const SHOP_RECENT_MAX=12;
+const SHOP_REPEAT_LAST_W=.42;        // último item NÃO comprado: peso ~0.42
+const SHOP_REPEAT_PENULT_W=.72;      // penúltimo item NÃO comprado: peso ~0.72
+function shopRecentReset(){shopRecent=[];shopRollSeq=0;}
+function shopOfferSeen(id){
+  if(id==null)return;
+  shopRecent.push({id:String(id),seq:shopRollSeq,bought:false});
+  while(shopRecent.length>SHOP_RECENT_MAX)shopRecent.shift();
+}
+function shopMarkBought(id){
+  if(id==null)return;
+  for(let i=shopRecent.length-1;i>=0;i--){
+    if(shopRecent[i].id===String(id)){shopRecent[i].bought=true;return;}
+  }
+}
+function shopRepeatWeight(id){
+  for(let i=shopRecent.length-1;i>=0;i--){
+    const e=shopRecent[i];
+    if(e.id!==String(id))continue;
+    if(e.bought)return 1;                    // comprado nunca é penalizado
+    const d=shopRollSeq-e.seq;
+    if(d===0)return SHOP_REPEAT_LAST_W;
+    if(d===1)return SHOP_REPEAT_PENULT_W;
+    return 1;
+  }
+  return 1;
+}
+function shopWaveMul(){
+  const w=Math.max(0,wave||1);
+  return 1+Math.min(1.0,(w-1)*.05);          // +5%/onda, teto +100%
+}
+function moralMarketMul(){
+  const tg=moralTier(moral.greed||0);
+  const g=tg>=3?1.7:(tg>=2?1:(tg>=1?.5:0));
+  return 1+.18*g;                      // B3-C: mercado lucra com a Ganância
+}
+function rerollBaseCost(){
+  const w=Math.max(0,wave||1);
+  return Math.max(8,Math.round(10+w*1.0));   // decisão econômica ao longo da run
+}
+function pickWeighted(list,waveN,repW){
+  const w=o=>rarityWeight(o.rar||0,waveN)*(repW?repW(o):1);
   let tot=0;
-  for(const o of list)tot+=rarityWeight(o.rar||0,waveN);
+  for(const o of list)tot+=w(o);
   if(tot<=0)return list[randi(0,list.length-1)];
   let r=Math.random()*tot;
   for(const o of list){
-    r-=rarityWeight(o.rar||0,waveN);
+    r-=w(o);
+    if(r<=0)return o;
+  }
+  return list[list.length-1];
+}
+function pickWeightedAny(list,repW){
+  const w=o=>(repW?repW(o):1);
+  let tot=0;
+  for(const o of list)tot+=w(o);
+  if(tot<=0)return list[randi(0,list.length-1)];
+  let r=Math.random()*tot;
+  for(const o of list){
+    r-=w(o);
     if(r<=0)return o;
   }
   return list[list.length-1];
@@ -7274,9 +7343,9 @@ function rarTag(r){
     '66;background:'+R.c+'14">'+R.nm+'</span>';
 }
 const repairCost=()=>Math.max(1,Math.round(22*Math.pow(1.5,player.repairs)*mEff.upgMul));
-const _mk=()=>((player&&player.markedUp)||1)*((player&&player.shopPersonal)||1);   // marca do Croupiê · desconto de loja do NÔMADE
-const priceUpg=u=>Math.max(1,Math.round(u.price*mEff.shopMul*mEff.upgMul*_mk()));
-const priceItem=i=>Math.max(1,Math.round(i.price*mEff.shopMul*_mk()));
+const _mk=()=>((player&&player.markedUp)||1)*((player&&player.shopPersonal)||1)*((player&&player.shopSurcharge)||1)*moralMarketMul();   // marca do Croupiê · desconto de loja do NÔMADE
+const priceUpg=u=>Math.max(1,Math.round(u.price*mEff.shopMul*mEff.upgMul*_mk()*shopWaveMul()));
+const priceItem=i=>Math.max(1,Math.round(i.price*mEff.shopMul*_mk()*shopWaveMul()));
 /* multiplicador de potência aplicado a upgrades/itens conforme a raridade */
 function rarPower(o){return RARITY[o.rar||0].mul;}
 
@@ -7596,6 +7665,7 @@ function lockCfgFor(kind,id,label){
   return {locked:isLocked(kind,id),toggle:()=>toggleLock(kind,id,label)};
 }
 function rollShop(){
+  shopRollSeq++;
   // ---- UPGRADES ----
   const lockU=(shopLock&&shopLock.kind==='upg')
     ? UPGRADES.find(u=>u.id===shopLock.id) : null;
@@ -7605,7 +7675,7 @@ function rollShop(){
   const nOff=player.bigShop?6:3;      // ARQUIVO PROIBIDO expande a loja
   shopOffers=lockU?[lockU]:[];
   while(shopOffers.length<nOff&&pool.length){
-    const pick=pickWeighted(pool,wave);      // raridade pesa no sorteio
+    const pick=pickWeighted(pool,wave,o=>shopRepeatWeight(o.id));  // B3-A: raridade + variedade
     shopOffers.push(pool.splice(pool.indexOf(pick),1)[0]);
   }
   // ---- MÓDULOS PASSIVOS ----
@@ -7616,7 +7686,7 @@ function rollShop(){
     (sandboxRun||isItemUnlocked(i.id)));
   shopItems=lockI?[lockI]:[];
   while(shopItems.length<2&&ip.length){
-    const pick=pickWeightedMoral(ip,wave);   // PR 9: viés pequeno p/ sintonia
+    const pick=pickWeightedMoral(ip,wave,o=>shopRepeatWeight(o.id));   // PR 9: sintonia + B3-A variedade
     shopItems.push(ip.splice(ip.indexOf(pick),1)[0]);
   }
   // ---- ARMAS AVANÇADAS ----
@@ -7624,8 +7694,14 @@ function rollShop(){
     ? shopLock.id : null;
   const wp=shopWeaponPool().filter(i=>player.owned.indexOf(i)<0&&i!==lockG);
   shopGuns=lockG!==null?[lockG]:[];
-  while(shopGuns.length<2&&wp.length)
-    shopGuns.push(wp.splice(randi(0,wp.length-1),1)[0]);
+  while(shopGuns.length<2&&wp.length){
+    const pick=pickWeightedAny(wp,o=>shopRepeatWeight(o.id)); // B3-A: menos armas repetidas
+    shopGuns.push(wp.splice(wp.indexOf(pick),1)[0]);
+  }
+  /* B3-A: registra a oferta desta visita (compra marca como comprado) */
+  for(const u of shopOffers)shopOfferSeen(u.id);
+  for(const it of shopItems)shopOfferSeen(it.id);
+  for(const wi of shopGuns)shopOfferSeen(WEAPONS[wi].id);
   // a trava expira se o item já foi adquirido de outra forma
   if(shopLock){
     if(shopLock.kind==='item'&&ownsItem(shopLock.id))shopLock=null;
@@ -7685,7 +7761,7 @@ function openShop(){
     return;
   }
   state='shop';firing=false;curEv=null;
-  rerollCost=10;rollShop();renderShop();
+  rerollCost=rerollBaseCost();rollShop();renderShop();
   modalEl.classList.add('on');
   sfx(523,.14,'sine',.04,0);setTimeout(()=>sfx(784,.2,'sine',.04,0),110);
   /* B3.13: emissão uma vez por ABERTURA REAL da loja — delta 0, sem farm.
@@ -7707,7 +7783,7 @@ function renderShopOp(){
       '<span style="color:'+RC.c+'">'+u.nm+'</span>'+rarTag(u.rar),u.desc,
       '<div class="cprice">◈ '+pr+(mEff.upgMul<1?' (DESCONTO EMPÁTICO)':'')+'</div>',
       poor,()=>{
-        player.coins-=pr;u.apply(player);player.upgLog.push(u.nm);
+        player.coins-=pr;u.apply(player);player.upgLog.push(u.nm);shopMarkBought(u.id);
         if(isLocked('upg',u.id))shopLock=null;
         shopOffers.splice(shopOffers.indexOf(u),1);
         toast('UPGRADE: '+u.nm);sLvl();renderShop();
@@ -7745,7 +7821,7 @@ function renderShopOp(){
         if(player.owned.length>=player.maxSlots){
           openSlotPicker(wi,pr);          // arsenal cheio: escolher slot
         }else{
-          player.coins-=pr;
+          player.coins-=pr;shopMarkBought(WEAPONS[wi].id);
           grantWeapon(wi);
           player.upgLog.push('ARMA: '+d.nm);
           if(isLocked('gun',wi))shopLock=null;
@@ -7770,7 +7846,7 @@ function renderShopOp(){
       '<span style="color:'+it.color+'">'+it.nm+'</span>'+rarTag(it.rar),
       itemDescParts(it).body+moralAffinityTagHTML(it.id,true),
       '<div class="cprice">◈ '+pr+'</div>',poor,()=>{
-        player.coins-=pr;giveItem(it,false);
+        player.coins-=pr;giveItem(it,false);shopMarkBought(it.id);
         if(isLocked('item',it.id))shopLock=null;
         shopItems.splice(shopItems.indexOf(it),1);renderShop();
         checkpointShopPurchase();       // PR 7.5: compra concluída → checkpoint
@@ -8305,6 +8381,7 @@ forge(){
     'mas o alcance dela cai <b>30%</b> para sempre.',[0,0,2],'',false,()=>{
       wd.dmg=Math.round(wd.dmg*1.45*10)/10;
       wd.range=Math.round((wd.range||600)*.70);
+      if(wd.melee)wd.reach=Math.round((wd.reach||wd.range)*.70);
       player.upgLog.push('FORJA: '+wd.nm);
       spawnRing(player.x,player.y,'#ff9d3c',10,150,.7);
       toast(wd.nm+' TEMPERADA · +45% DANO / −30% ALCANCE');
@@ -12217,7 +12294,7 @@ function trySpecial(){
     }
     case 'cache':{
       // NÔMADE: caixa de suprimentos
-      const c2=Math.round(120*mEff.coinMul*player.coinMul);
+      const c2=Math.round(120*incomeCoinCap(mEff.coinMul*player.coinMul));
       player.coins+=c2;
       player.hp=Math.min(player.maxHp,player.hp+35);
       const pool=UPGRADES.filter(u=>sandboxRun||isUpgUnlocked(u.id));
@@ -12563,7 +12640,7 @@ function killEnemy(e){
     },i*110);
     for(let i=projectiles.length-1;i>=0;i--)
       if(projectiles[i].team==='enemy')projectiles.splice(i,1);
-    const bonus=Math.round(120*mEff.coinMul*player.coinMul);
+    const bonus=Math.round(120*incomeCoinCap(mEff.coinMul*player.coinMul));
     player.coins+=bonus;
     player.hp=Math.min(player.maxHp,player.hp+40);
     floatText(e.x,e.y-40,'◈ +'+bonus+' · +40 HP','#ffd166');
@@ -12597,7 +12674,7 @@ function killEnemy(e){
   // créditos — escalados pela Ganância e por módulos
   const base=e.type==='tank'?9:(e.type==='shooter'?4:2);
   const bounty=e.ambushBounty?3:1;         // recompensa tripla da emboscada
-  let coins=Math.round(base*mEff.coinMul*player.coinMul*bounty);
+  let coins=Math.round(base*incomeCoinCap(mEff.coinMul*player.coinMul)*bounty);
   if(e.ambushBounty)floatText(e.x,e.y-e.r-20,'◈ ×3 EMBOSCADA','#ffd166');
   if(Math.random()<.35)coins++;
   while(coins>0){
@@ -15828,7 +15905,10 @@ function smBuildCheckpoint(reason,waveOverride){
       entropy:!!player.entropy,killDash:player.killDash||0,
       revives:player.revives||0,thorns:player.thorns||0,
       harvestHeal:player.harvestHeal||0,harvestStack:player.harvestStack||0,
-      decayPerWave:player.decayPerWave||0,shopPersonal:player.shopPersonal||1,
+      decayPerWave:player.decayPerWave||0,shopPersonal:player.shopPersonal||1,shopSurcharge:player.shopSurcharge||1,
+      /* B3-A: histórico leve de variedade — preservado no Continue */
+      shopRecent:shopRecent.map(e=>({id:String(e.id),seq:e.seq|0,bought:!!e.bought})),
+      shopRollSeq:shopRollSeq|0,
       /* status/econômicos (módulos elementais, eventos e operadores) */
       longRangeBonus:player.longRangeBonus||0,
       burnSpread:!!player.burnSpread,
@@ -15991,6 +16071,21 @@ function resumeRun(){
   player.harvestStack=num(q.harvestStack,0);
   player.decayPerWave=num(q.decayPerWave,0);
   player.shopPersonal=num(q.shopPersonal,1);
+  player.shopSurcharge=Math.max(1,num(q.shopSurcharge,1));
+  /* B3-A: restaura o histórico de variedade (sem ele um reroll pós-Continue
+     perderia a memória de “já vi sem comprar”); save antigo cai em vazio. */
+  {
+    shopRecent=[];
+    if(Array.isArray(q.shopRecent)){
+      for(const e of q.shopRecent){
+        if(!e||e.id==null)continue;
+        shopRecent.push({id:String(e.id),seq:Math.max(0,e.seq|0),bought:!!e.bought});
+      }
+      while(shopRecent.length>SHOP_RECENT_MAX)shopRecent.shift();
+    }
+    shopRollSeq=Math.max((q.shopRollSeq|0),0);
+    if(!shopRollSeq&&shopRecent.length)shopRollSeq=shopRecent.length;
+  }
   /* status/econômicos — fallback: o que o operador já definiu no makePlayer */
   player.longRangeBonus=num(q.longRangeBonus,player.longRangeBonus||0);
   player.burnSpread=!!q.burnSpread||!!player.burnSpread;
@@ -16193,7 +16288,7 @@ function resetRunWorld(){
   moral={comp:0,greed:0,viol:0};
   _lastTier={c:0,g:0,v:0};_wasConflict=0;
   applyMoral();
-  rerollCost=10;shopLock=null;modalEl.classList.remove('on');
+  rerollCost=rerollBaseCost();shopRecentReset();shopLock=null;modalEl.classList.remove('on');
   scheduleBeacon();
   recorder=[];recAcc=0;
   runStReset();   // PR 8: run nova começa com métricas de personalidade zeradas
@@ -19168,7 +19263,7 @@ function clearRunEntities(){
   wave=0;kills=0;wavePause=2.2;waveActive=false;waveCleared=false;
   runTime=0;fracT=0;shake=0;aberr=0;resoFlash=0;freezeT=0;
   curAttacker=null;recorder=null;recAcc=0;
-  shopOffers.length=0;shopItems.length=0;shopGuns.length=0;rerollCost=10;shopLock=null;
+  shopOffers.length=0;shopItems.length=0;shopGuns.length=0;rerollCost=rerollBaseCost();shopLock=null;shopRecentReset();
   // 2. fecha todos os overlays/modais que possam estar abertos
   document.getElementById('pause-menu').classList.remove('on');
   modalEl.classList.remove('on');
