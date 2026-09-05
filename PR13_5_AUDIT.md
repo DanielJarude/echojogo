@@ -703,3 +703,44 @@ Métricas que devem ser repetidas antes/depois das mudanças:
 - **B4:** Comunicar e (possivelmente) ampliar sintonia; suportar propriedade despertada.
 - **B5:** Diferenciar minibosses (renderer+skills), corrigir `burn`/`slash`, manter O PARADOXO como boss separado; **não** implementar adaptação (PR16).
 - **B6:** Guardrails acima + reexecução das métricas.
+
+---
+
+## 23. B2 — implementação
+
+Este bloco implementou somente **B2-A (Echo Speech UX)** e **B2-B (Melee × Ranged Range)**. Nada de B3+, economia, Sintonia, bosses ou versão.
+
+### B2-A — achados corrigidos
+- ❌ 1,1s fixos → ✅ `echoSpeechDuration(texto, prioridade)`, dinâmico (mín 1,6s, máx 5,0s; curta ~1,8–2,1s; longa/crítica ~3,3–4,5s).
+- ❌ cooldown global único 8s → ✅ cooldown por prioridade (`LOW 8s · NORMAL 6s · HIGH 4s · CRITICAL 1,2s`) + anti-spam por frase; `_echoSpeakCd` ficou como alias de compatibilidade para telas/testes legados, mas **não bloqueia mais o fluxo real**.
+- ❌ sem fila → ✅ fila curta (`ECHO_SPEECH_QUEUE_MAX = 3` aguardando + 1 ativa).
+- ❌ sem prioridade → ✅ `LOW/NORMAL/HIGH/CRITICAL`; mapeamento em `ECHO_REACT_PRI` (Dissonância `CRITICAL`; miniboss/bossDeath/dissonanceEnd/trustLow/lowHp/shieldBreak `HIGH`).
+- ❌ overwrite → ✅ preempção documentada: `CRITICAL` substitui qualquer; `HIGH` preempta `LOW`; `LOW/NORMAL` nunca apagam superior.
+- ❌ mesmo array dos danos → ✅ `speechActive`/`speechQueue` + `speechRender()` separados de `ftexts`; `floatText` de dano intocado.
+- ✅ limpeza em `resetRunWorld`, `clearRunEntities`, `sandboxClearRunState`, `openShop`, `openEvent`, `onPlayerDeath`; nenhuma persistência de estado visual de fala no Save/Continue.
+- ✅ Sandbox/DEV: `DEV.forceSpeak(slot, priority)` com `speechClear()` antes; nada persiste.
+
+### B2-B — decisões arquiteturais
+- Novos stats no **mesmo Stat Modifier Pipeline**: `meleeRange` (→ `p.meleeRangeMul`) e `rangedRange` (→ `p.rangedRangeMul`).
+- `range` legado permanece em `SM_STATS` apenas como compatibilidade (`p.rangeMul` para Echo replay/saves antigos); **não é mais consumido pelo combate do jogador**.
+- `srcRangeMul(src,kind)`: jogador usa `meleeRange`/`rangedRange`; unidades legadas/Echo com apenas `rangeMul` usam fallback.
+- `weaponRange`: melee usa `def.reach`; ranged/beam usa `def.range`.
+- Migração de save antigo: `migrateLegacyRangeMods` clona `stat:'range'` para `meleeRange`+`rangedRange` no `Continue` (saves novos já gravam os 3 modificadores).
+- Itens/upgrades migrados via `smRangeBoth` (mantém `range` legado + melee + ranged): `luneta`, `estilhaco`, `ESTABILIZADOR DE FASE`, `BOBINA DE LONGO CURSO`. Preços/raridades/descrições **inalterados**.
+- Forja: quando tempera arma melee, também reduz `def.reach` (era base de alcance; mantém a semântica).
+- **Armas:** 7 melee · 1 beam · 19 ranged; nenhuma híbrida. A classificação usa metadata existente `melee`/`beam` (não heurística por nome).
+- **UI:** TAB mostra `ALCANCE C.A CORPO` e `ALCANCE LONGÍNQUO`; HUD/loja/anél de alcance usam `weaponRange` (tipo correto).
+- **Echo:** continua usando `e.rangeMul` (fallback) — comportamento de alcance do Echo e `analyzeEchoData` **não** foram alterados.
+- **Inimigos/boss/miniboss e AI detection:** **não** foram migrados para `meleeRange`/`rangedRange`; permanecem com distâncias próprias.
+
+### Compatibilidade e regressões
+- `SM_VERSION = 3` e `FRACTURE_STATE_VERSION = 1` **inalterados**.
+- `npm test` final: 19 suítes · 0 falhas (18 legadas + PR13.5 B2). Soma dos contadores: **1 258 checks · 0 falhas** (1 235 baseline + 23 checks novos).
+- Suítes relacionadas executadas **50×** sem falha: `pr13-5-b2`, `personality`, `relationship`, `statmods`, `devmode`, `fracture-director`, `arsenal`.
+- Smoke visual/Electron não executado (ambiente de linha de comando; nenhuma GUI); cobertura funcional via harness real.
+
+---
+
+## 24. Limites de escopo
+
+Este documento registra a auditoria B1 **e** a implementação B2 **e** a implementação B3 (seção 25). B3 **alterou** economia da run, variedade da loja e parte da identidade dos itens. **Não** alterou Sintonia, bosses, Fracture Director (além de compatibilidade), facções, versão, PR ou merge.

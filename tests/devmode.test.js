@@ -833,11 +833,12 @@ ok('Existem breakpoints para 1600x900 e 1366x768',()=>{
   assert(styleBlock.indexOf('@media(max-height:800px)')>=0,'breakpoint 768p');
 });
 
-ok('Textos flutuantes e falas dos Ecos ficaram maiores',()=>{
+ok('Textos flutuantes de dano e falas dos Echos têm camadas separadas',()=>{
   assert(/const FTEXT_SIZE=13;/.test(rawSrc),'FTEXT_SIZE deve ser 13px');
-  assert(/const FTEXT_SPEAK=15;/.test(rawSrc),'falas devem usar 15px');
-  assert(/floatText\(e\.x,e\.y-e\.r-34,txt,color\|\|e\.hue\|\|'#8ff6ff',FTEXT_SPEAK\)/
-    .test(rawSrc),'echoSpeak deve usar o corpo maior');
+  assert(/const FTEXT_SPEAK=15;/.test(rawSrc),'falas continuam com corpo legível');
+  assert(/function echoSpeechDuration/.test(rawSrc),'duração dinâmica central');
+  assert(/function speechRender/.test(rawSrc),'render dedicado de fala');
+  assert(/renderSpeech\(\);/.test(rawSrc),'fala desenhada pelo canal separado');
 });
 
 /* ===================================================================

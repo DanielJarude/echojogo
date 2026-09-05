@@ -1491,8 +1491,18 @@ const WEAPONS=[
    sdesc:'Estocada longa que perfura a linha inteira e CORRÓI armadura.'}
 ];
 /* alcance efetivo da arma para uma unidade (aplica o multiplicador da build) */
+/* multiplicador de alcance para um tipo explícito. O jogador usa
+   meleeRangeMul/rangedRangeMul (SM_STATS). Ecos DEV/unidades legadas que
+   ainda só possuem rangeMul continuam funcionando pelo fallback. */
+function srcRangeMul(src,kind){
+  if(!src)return 1;
+  const v=kind==='melee'?src.meleeRangeMul:src.rangedRangeMul;
+  if(v!=null&&isFinite(+v))return +v;
+  return (src.rangeMul!=null&&isFinite(+src.rangeMul))?+src.rangeMul:1;
+}
 function weaponRange(def,src){
-  return (def.range||600)*((src&&src.rangeMul)||1);
+  const base=def.melee?(def.reach||def.range||600):(def.range||600);
+  return base*srcRangeMul(src,def.melee?'melee':'ranged');
 }
 /* rótulo curto de alcance para HUD e loja */
 function rangeLabel(px){
@@ -2542,7 +2552,8 @@ function sheetRender(force){
     '<div class="srow"><span class="k">DPS ESTIMADO</span><span class="v">'+fmtStat(wDps,0)+'</span></div>'+
     sheetStatRow('crit','CRÍTICO',fmtPct(smGet(p,'crit')))+
     sheetStatRow('critMul','DANO CRÍT.',fmtMult(smGet(p,'critMul')))+
-    sheetStatRow('range','ALCANCE',fmtMult(smGet(p,'range')),'· '+fmtStat(weaponRange(w,p),0)+'px')+
+    sheetStatRow('meleeRange','ALCANCE C.A CORPO',fmtMult(smGet(p,'meleeRange')),'· '+fmtStat(weaponRange(w,p),0)+'px')+
+    sheetStatRow('rangedRange','ALCANCE LONGÍNQUO',fmtMult(smGet(p,'rangedRange')),'· '+fmtStat(weaponRange(w,p),0)+'px')+
     sheetStatRow('projSpd','VEL. PROJÉTIL',fmtMult(smGet(p,'projSpd')))+
     sheetStatRow('aoe','ÁREA',fmtMult(smGet(p,'aoe')))+
     sheetStatRow('pierce','PERFURAÇÃO','+'+fmtStat(smGet(p,'pierce'),0))+
@@ -2981,6 +2992,7 @@ function sandboxRestart(){
 function sandboxClearRunState(){
   enemies=[];projectiles=[];xporbs=[];parts=[];ftexts=[];pickups=[];allies=[];
   swings=[];arcs=[];beacon=null;boss=null;miniBoss=null;
+  speechClear();
   $('bosswrap').classList.remove('on');$('endwrap').classList.remove('on');
   echoes=[];
 }
@@ -3886,6 +3898,7 @@ function makePlayer(operatorId,freshMeta){
     items:[],upgLog:[],tempPen:0,tempT:0,repairs:0,
     anomalyT:0,visionUntil:-1,regen:0,rushT:0,
     spCd:0,spT:0,spKind:null,spMax:0,
+    meleeRangeMul:1,rangedRangeMul:1,
     vowPoverty:0,vowBlood:-1,markedUp:1,bigShop:0,slowAura:1,
     beamT:0,beamRamp:1,beamTarget:null,beamLen:0,recoil:0,swingDir:1};
   /* base imutável dos stats derivados + registro de modificadores (PR 7).
@@ -3894,7 +3907,7 @@ function makePlayer(operatorId,freshMeta){
   p._smBase={
     dmg:C.dmg, rate:C.rate, crit:C.crit, critMul:1.8,
     speed:C.speed*(1+.05*M.spd), pickupR:170, coinMul:1, dmgTaken:1,
-    range:1, projSpd:1, aoe:1, pierce:0,
+    range:1, meleeRange:1, rangedRange:1, projSpd:1, aoe:1, pierce:0,
     /* PR 11: base imutável do Shield entra no mesmo pipeline */
     shieldMax:C.shieldMax||0, shieldRegen:C.shieldRegen||0,
     shieldDelay:C.shieldDelay||0
@@ -4374,7 +4387,9 @@ const SM_STATS={
   fireRate:{set:(p,v)=>p.fireRateMul=v,base:o=>o.rate,      cl:[null,null], lab:'CADÊNCIA'},
   crit   :{set:(p,v)=>p.crit=v,        base:o=>o.crit,      cl:[0,1],       lab:'CRÍTICO'},
   critMul:{set:(p,v)=>p.critMul=v,     base:o=>o.critMul,   cl:[0,null],    lab:'DANO CRÍT.'},
-  range  :{set:(p,v)=>p.rangeMul=v,    base:o=>o.range,     cl:[null,null], lab:'ALCANCE'},
+  range  :{set:(p,v)=>p.rangeMul=v,    base:o=>o.range,     cl:[null,null], lab:'ALCANCE'},/* legado: ainda mantém p.rangeMul p/ Echo replay/saves antigos */
+  meleeRange:{set:(p,v)=>p.meleeRangeMul=v, base:o=>o.meleeRange,cl:[null,null], lab:'ALCANCE C.A CORPO'},
+  rangedRange:{set:(p,v)=>p.rangedRangeMul=v,base:o=>o.rangedRange,cl:[null,null], lab:'ALCANCE LONGÍNQUO'},
   projSpd:{set:(p,v)=>p.projSpdMul=v,  base:o=>o.projSpd,   cl:[null,null], lab:'VEL. PROJÉTIL'},
   aoe    :{set:(p,v)=>p.aoeMul=v,      base:o=>o.aoe,       cl:[null,null], lab:'ÁREA'},
   speed  :{set:(p,v)=>p.speed=v,       base:o=>o.speed,     cl:[null,null], lab:'VELOCIDADE'},
@@ -4502,6 +4517,33 @@ function smBreakdown(p,stat){
   }
   return {stat,lab:S.lab,base,final:smGet(p,stat),lines};
 }
+/* ---- B2-B: migração de modifiers legados de "range" ----
+   Um save antigo pode conter modificadores stat:'range' (antes o alcance era
+   genérico). Ao restaurar, clonamos cada um para meleeRange e rangedRange
+   mantendo o original (range) como legado para Echo replay/telemetria. */
+function migrateLegacyRangeMods(p){
+  p=smInit(p||player);
+  if(!p||!Array.isArray(p.sm))return 0;
+  if(p.sm.some(m=>m&&(m.stat==='meleeRange'||m.stat==='rangedRange')))return 0;
+  const legacy=p.sm.filter(m=>m&&m.stat==='range'&&!(m.id||'').indexOf('.ranged')>=0&&!(m.id||'').indexOf('.melee')>=0);
+  let n=0;
+  for(const m of legacy){
+    const melee=Object.assign({},m,{id:m.id+'.melee',stat:'meleeRange',label:(m.label||m.id)+' · C.A CORPO'});
+    const ranged=Object.assign({},m,{id:m.id+'.ranged',stat:'rangedRange',label:(m.label||m.id)+' · LONGÍNQUO'});
+    p.sm.push(melee,ranged);
+    n+=2;
+  }
+  if(n)smRefresh(p);
+  return n;
+}
+/* aplica um multiplicador de alcance às DUAS semânticas (migração fiel do
+   antigo "range" universal) e mantém o stat legado para compatibilidade. */
+function smRangeBoth(p,baseId,label,value){
+  smMul(p,'range',baseId+'.legacy',label,value);
+  smMul(p,'meleeRange',baseId+'.melee',label+' · C.A CORPO',value);
+  smMul(p,'rangedRange',baseId+'.ranged',label+' · LONGÍNQUO',value);
+}
+
 /* multiplicador de dano usado pelo tiro — única fonte de verdade.
    Reúne a base+modificadores persistidos (via pipeline, incluindo a
    Maldição do Oráculo) e os bônus condicionais dinâmicos de combate. */
@@ -5404,7 +5446,7 @@ function echoesEvaluate(ctx,opts){
   if(best&&best.r.value!==0&&!opts.silent){
     const line=pickRelationLine(best.echo,{type:best.r.type,reason:best.r.reason,
       state:echoRelState(best.echo).id,event:opts.event});
-    echoSpeak(best.echo,line.txt,best.r.value>0?'#8ff6ff':'#ff8095');
+    echoSpeak(best.echo,line.txt,best.r.value>0?'#8ff6ff':'#ff8095','high');
   }
   return out;
 }
@@ -5855,7 +5897,7 @@ function echoSetDis(e,st){
       toast('ECHO·0'+e.slot+' — SINAL INSTÁVEL');
       const l=pickRelationLine(e,{type:'reject',reason:'moral_violence',
         state:echoRelState(e).id,event:'trustLow'});
-      echoSpeak(e,l.txt,'#ffd166');
+      echoSpeak(e,l.txt,'#ffd166','high');
       spawnRing(e.x,e.y,'#ffd166',6,70,.4);
     }
   }else if(st==='fracturing'){
@@ -5893,7 +5935,7 @@ function echoSetDis(e,st){
     evSetFlag('dis_reconciliado');
     const l=pickRelationLine(e,{type:'approve',reason:'reconciliation',
       state:echoRelState(e).id,event:'dissonanceEnd'});
-    echoSpeak(e,l.txt,'#8ff6ff');
+    echoSpeak(e,l.txt,'#8ff6ff','high');
     spawnRing(e.x,e.y,e.hue,8,140,.6);
   }
   return true;
@@ -6130,23 +6172,179 @@ const ECHO_LINES={
   ]
 };
 let _echoSpeakCd=0;
-const ECHO_SPEAK_INTERVAL=8;  // mínimo 8s entre falas
-function echoSpeak(e,txt,color){
-  if(!e||!e.alive)return;
-  if(_echoSpeakCd>0)return;
-  _echoSpeakCd=ECHO_SPEAK_INTERVAL;
-  floatText(e.x,e.y-e.r-34,txt,color||e.hue||'#8ff6ff',FTEXT_SPEAK);
-  AUDIO.tone(rand(600,800),.08,'sine',.018,120);
+const ECHO_SPEAK_INTERVAL=8;  // mínimo 8s entre falas (legado/compatibilidade)
+/* ---- B2-A: camada central de apresentação das falas do Echo ----
+   A fala deixa de viver no array de dano. Tem prioridade, cooldown por
+   prioridade, fila curta e duração derivada do texto. */
+const SPEECH_PRI={low:0,normal:1,high:2,critical:3};
+const ECHO_SPEECH_QUEUE_MAX=3;            // 1 ativa + 3 aguardando
+const SPEECH_CD={low:8,normal:6,high:4,critical:1.2};
+let _speechClock=0;
+let speechActive=null;
+let speechQueue=[];
+const _speechCd={low:0,normal:0,high:0,critical:0};
+const _speechPhrase=Object.create(null);
+function speechPri(v){
+  if(typeof v==='string')return v in SPEECH_PRI?SPEECH_PRI[v]:SPEECH_PRI.normal;
+  if(typeof v==='number')return clamp(Math.round(v),0,3);
+  return SPEECH_PRI.normal;
 }
+function echoSpeechDuration(txt,pri){
+  const p=speechPri(pri);
+  const s=String(txt||'');
+  const chars=s.length;
+  const words=(s.trim().match(/\S+/g)||[]).length;
+  let d;
+  if(chars<=10)d=1.8;
+  else if(chars<=18)d=2.1;
+  else if(chars<=26)d=2.5;
+  else if(chars<=34)d=3.0;
+  else d=3.3;
+  d+=Math.min(.10*words,1.0);             // palavras extra ganham leitura
+  if(p>=SPEECH_PRI.critical)d+=1.2;
+  else if(p>=SPEECH_PRI.high)d+=.45;
+  return clamp(d,1.6,5.0);
+}
+function speechCdLeft(pri){return _speechCd[pri]>0?_speechCd[pri]:0;}
+function speechPhraseOk(txt,pri){
+  const s=String(txt||'').toUpperCase().replace(/\s+/g,' ').trim().slice(0,80);
+  if(!s)return false;
+  const cd=pri>=SPEECH_PRI.critical?2.5:6;
+  const last=_speechPhrase[s];
+  if(last!=null&&_speechClock-last<cd)return false;
+  _speechPhrase[s]=_speechClock;
+  const k=Object.keys(_speechPhrase);
+  if(k.length>128){for(const key of k)if(_speechClock-_speechPhrase[key]>30)delete _speechPhrase[key];}
+  return true;
+}
+function speechStart(entry){
+  speechActive=entry;
+  _speechCd[entry.pri]=SPEECH_CD[entry.pri]||1;
+  /* compat: testes legados leem o cooldown global; o jogo real não usa
+     mais esse valor como bloqueio (fala crítica/bypass segue pela fila). */
+  _echoSpeakCd=Math.max(_echoSpeakCd,ECHO_SPEAK_INTERVAL);
+}
+function speechEnqueue(entry){
+  speechQueue.push(entry);
+  speechQueue.sort((a,b)=>b.pri-a.pri||a.t-b.t);
+  if(speechQueue.length>ECHO_SPEECH_QUEUE_MAX){
+    speechQueue.length=ECHO_SPEECH_QUEUE_MAX;  // descarta a mais antiga de menor prioridade
+  }
+}
+function speechClear(){
+  speechActive=null;
+  speechQueue.length=0;
+  _speechClock=0;
+  for(const k in _speechPhrase)delete _speechPhrase[k];
+  for(const k in _speechCd)_speechCd[k]=0;
+  _echoSpeakCd=0;
+}
+function speechTick(dt){
+  _speechClock+=dt;
+  if(_echoSpeakCd>0)_echoSpeakCd-=dt;
+  for(const k in _speechCd)if(_speechCd[k]>0)_speechCd[k]=Math.max(0,_speechCd[k]-dt);
+  if(speechActive){
+    speechActive.t+=dt;
+    if(speechActive.t>=speechActive.life)speechActive=null;
+  }
+  if(!speechActive&&speechQueue.length&&speechCdLeft(speechQueue[0].pri)<=0){
+    const n=speechQueue.shift();
+    speechStart(n);
+  }
+}
+function speechRender(){
+  if(!speechActive)return;
+  const a=speechActive;
+  const src=a.src;
+  const x=(src&&src.alive&&src.x!=null)?src.x:(a.x||0);
+  const y=(src&&src.alive&&src.y!=null)?src.y:(a.y||0);
+  const r=(src&&src.alive&&src.r!=null)?src.r:12;
+  const px=a.pri>=SPEECH_PRI.critical?17:(a.pri>=SPEECH_PRI.high?16:15);
+  ctx.save();
+  ctx.font=px+'px Consolas,monospace';
+  ctx.textAlign='center';
+  const alpha=clamp((a.life-a.t)/.45,0,1);
+  ctx.globalAlpha=alpha;
+  const maxW=236;
+  const words=String(a.txt||'').split(/\s+/);
+  const lines=[];let cur='';
+  for(const wd of words){
+    const test=cur?cur+' '+wd:wd;
+    if(ctx.measureText(test).width>maxW&&cur){lines.push(cur);cur=wd;}
+    else cur=test;
+  }
+  if(cur)lines.push(cur);
+  const lh=px+6;
+  let wid=0;for(const ln of lines)wid=Math.max(wid,ctx.measureText(ln).width);
+  const bh=lines.length*lh+10;
+  const yy=y-r-40;
+  ctx.fillStyle='rgba(5,10,16,.82)';
+  ctx.fillRect(x-wid/2-8,yy-bh+4,wid+16,bh);
+  ctx.strokeStyle=a.color||'#8ff6ff';
+  ctx.globalAlpha=alpha*.55;
+  ctx.lineWidth=1.2;
+  ctx.strokeRect(x-wid/2-8,yy-bh+4,wid+16,bh);
+  ctx.globalAlpha=alpha;
+  ctx.lineJoin='round';
+  ctx.strokeStyle='rgba(0,0,0,.92)';
+  ctx.lineWidth=3;
+  ctx.fillStyle=a.color||'#8ff6ff';
+  let ty=yy-6;
+  for(const ln of lines){
+    ctx.strokeText(ln,x,ty);
+    ctx.fillText(ln,x,ty);
+    ty+=lh;
+  }
+  ctx.restore();
+}
+function echoSpeak(e,txt,color,pri){
+  if(!e||!e.alive)return false;
+  const p=speechPri(pri);
+  const s=String(txt||'').trim();
+  if(!s)return false;
+  if(!speechPhraseOk(s,p))return false;
+  const entry={src:e,x:e.x,y:e.y,color:color||e.hue||'#8ff6ff',txt:s,pri:p,
+    t:0,life:echoSpeechDuration(s,p)};
+  if(p>=SPEECH_PRI.critical){
+    /* CRITICAL substitui qualquer fala e limpa filas triviais. */
+    speechActive=entry;
+    speechQueue=speechQueue.filter(q=>q.pri>=SPEECH_PRI.high);
+    speechStart(entry);
+    return true;
+  }
+  if(speechActive&&p>speechActive.pri){
+    if(p>=SPEECH_PRI.high&&speechActive.pri<=SPEECH_PRI.low){
+      speechActive=entry;               // HIGH preempta LOW/ambiental
+      speechStart(entry);
+      return true;
+    }
+  }
+  /* anti-spam: fala de mesma prioridade (ou inferior) enquanto uma fala
+     dessa categoria ainda está em cooldown é descartada — a fila é para
+     conteúdos relevantes (HIGH/CRITICAL), não para repetição. */
+  if(speechActive&&p<=speechActive.pri&&speechCdLeft(p)>0&&p<SPEECH_PRI.critical)return false;
+  if(speechActive&&p<speechActive.pri)return false;
+  if(!speechActive&&speechCdLeft(p)<=0){
+    speechStart(entry);
+    return true;
+  }
+  speechEnqueue(entry);
+  return true;
+}
+const ECHO_REACT_PRI={
+  dissonance:'critical',dissonanceEnd:'high',miniboss:'high',bossDeath:'high',
+  trustLow:'high',lowHp:'high',shieldBreak:'high',
+  waveStart:'normal',killStreak:'normal',playerHurt:'normal',
+  echoHit:'normal',resonance:'normal',trustHigh:'normal'};
 function echoReact(event,data){
-  if(!echoes.length)return;
-  if(_echoSpeakCd>0)return;
+  if(!echoes.length)return false;
   const live=echoes.filter(e=>e.alive&&!e.hostile&&echoAllied(e));
-  if(!live.length)return;
+  if(!live.length)return false;
   const lines=ECHO_LINES[event];
-  if(!lines||!lines.length)return;
-  // apenas 35% de chance por evento para evitar spam
-  if(Math.random()>.35)return;
+  if(!lines||!lines.length)return false;
+  // apenas 35% de chance por evento para evitar spam (o cooldown central
+  // por prioridade/frase agora é a autoridade de frequência).
+  if(Math.random()>.35)return false;
   const e=live[randi(0,live.length-1)];
   // PR 8: a VOZ é da personalidade quando existir para o evento;
   // o pool genérico permanece como fallback (Echo sem .ps, evento sem pool).
@@ -6160,7 +6358,7 @@ function echoReact(event,data){
     event==='miniboss'?'#ffd166':
     event==='bossDeath'?'#ff4df0':
     '#bffbff';
-  echoSpeak(e,txt,col);
+  return echoSpeak(e,txt,col,ECHO_REACT_PRI[event]||'normal');
 }
 
 /* --------------- PAPÉIS TÁTICOS DOS ECOS --------------- */
@@ -6268,14 +6466,16 @@ const ITEMS=[
  {id:'paradoxo',nm:'PARADOXO ECOANTE',desc:'ECOS +55% DANO E +45% VIDA · −20% VIDA MÁXIMA DO JOGADOR',price:42,color:'#ff4df0',
   apply:p=>{p.echoBoost+=.55;p.maxHp=Math.max(30,Math.round(p.maxHp*.8));
     p.hp=Math.min(p.hp,p.maxHp);buffEchoes();}},
- {id:'luneta',nm:'LUNETA DE VÁCUO',desc:'+70% DE ALCANCE · +18% DANO ALÉM DE 400px · −20% CADÊNCIA',price:38,color:'#8ff6ff',
-  apply:p=>{smMul(p,'range','module.luneta.range','LUNETA +70% ALCANCE',1.70);
-    p.longRangeBonus=(p.longRangeBonus||0)+.18;
-    smMul(p,'fireRate','module.luneta.rate','LUNETA −20% CADÊNCIA',.80);}},
- {id:'estilhaco',nm:'CÂMARA DE ESTILHAÇO',desc:'−35% DE ALCANCE · +45% DANO · +20% CADÊNCIA',price:36,color:'#ffb347',
-  apply:p=>{smMul(p,'range','module.estilhaco.range','ESTILHAÇO −35% ALCANCE',.65);
-    smMul(p,'damage','module.estilhaco.damage','ESTILHAÇO +45% DANO',1.45);
-    smMul(p,'fireRate','module.estilhaco.rate','ESTILHAÇO +20% CADÊNCIA',1.20);}},
+ {id:'luneta',nm:'LUNETA DE VÁCUO',desc:'+70% ALCANCE LONGÍNQUO · +30% DANO ALÉM DE 400px · −18% CADÊNCIA · −8% ALCANCE C.A CORPO',price:38,rar:2,color:'#8ff6ff',
+  apply:p=>{smMul(p,'rangedRange','module.luneta.range','LUNETA +70% ALCANCE LONGÍNQUO',1.70);
+    smMul(p,'meleeRange','module.luneta.melee','LUNETA −8% ALCANCE C.A CORPO',.92);
+    p.longRangeBonus=(p.longRangeBonus||0)+.30;
+    smMul(p,'fireRate','module.luneta.rate','LUNETA −18% CADÊNCIA',.82);}},
+ {id:'estilhaco',nm:'CÂMARA DE ESTILHAÇO',desc:'−40% ALCANCE LONGÍNQUO · +20% ALCANCE C.A CORPO · +40% DANO · +15% CADÊNCIA',price:36,rar:2,color:'#ffb347',
+  apply:p=>{smMul(p,'rangedRange','module.estilhaco.range','ESTILHAÇO −40% ALCANCE LONGÍNQUO',.60);
+    smMul(p,'meleeRange','module.estilhaco.melee','ESTILHAÇO +20% ALCANCE C.A CORPO',1.20);
+    smMul(p,'damage','module.estilhaco.damage','ESTILHAÇO +40% DANO',1.40);
+    smMul(p,'fireRate','module.estilhaco.rate','ESTILHAÇO +15% CADÊNCIA',1.15);}},
 
  /* ============ MÓDULOS DE SINERGIA COM EFEITOS DE STATUS ============ */
  {id:'pirostase',nm:'PIRÓSTASE',desc:'STATUS +60% DE POTÊNCIA · QUEIMA PROPAGA AO MORRER · −10% VIDA MÁX.',
@@ -6452,8 +6652,8 @@ const UPGRADES=[
  {id:'rate', nm:'SERVO-GATILHO',        desc:'+12% DE CADÊNCIA DE TIRO',        price:18,rar:0,
   apply:p=>smMul(p,'fireRate','upgrade.rate.rate','SERVO-GATILHO +12% CADÊNCIA',1.12)},
  {id:'hp',   nm:'BLINDAGEM MODULAR',    desc:'+25 DE VIDA MÁXIMA E CURA 25',    price:18,rar:0,apply:p=>{p.maxHp+=25;p.hp=Math.min(p.maxHp,p.hp+25);}},
- {id:'range',nm:'ESTABILIZADOR DE FASE',desc:'+25% DE ALCANCE DE TODAS AS ARMAS',price:15,rar:0,
-  apply:p=>smMul(p,'range','upgrade.range.range','ESTABILIZADOR +25% ALCANCE',1.25)},
+ {id:'range',nm:'ESTABILIZADOR DE FASE',desc:'+18% DE ALCANCE (CORPO A CORPO E LONGÍNQUO)',price:15,rar:0,
+  apply:p=>smRangeBoth(p,'upgrade.range.range','ESTABILIZADOR +18% ALCANCE',1.18)},
  {id:'magnet',nm:'BOBINA COLETORA',     desc:'+45% DE RAIO DE COLETA',          price:12,rar:0,
   apply:p=>smMul(p,'pickupR','upgrade.magnet.pickup','BOBINA COLETORA +45%',1.45)},
  /* ---- INCOMUM ---- */
@@ -6462,9 +6662,9 @@ const UPGRADES=[
  {id:'dash', nm:'CAPACITOR DE DASH',    desc:'−15% DE RECARGA DO DASH',         price:16,rar:1,apply:p=>p.dashCdMax*=.85},
  {id:'aoe',  nm:'AMPLIFICADOR DE CAMPO',desc:'+25% DE ÁREA DE EXPLOSÃO',        price:20,rar:1,
   apply:p=>smMul(p,'aoe','upgrade.aoe.aoe','AMPLIFICADOR +25% ÁREA',1.25)},
- {id:'range2',nm:'BOBINA DE LONGO CURSO',desc:'+35% DE ALCANCE · +8% VELOCIDADE DE PROJÉTIL',price:24,rar:1,
-  apply:p=>{smMul(p,'range','upgrade.range2.range','LONGO CURSO +35% ALCANCE',1.35);
-    smMul(p,'projSpd','upgrade.range2.projSpd','LONGO CURSO +8% PROJÉTIL',1.08);}},
+ {id:'range2',nm:'BOBINA DE LONGO CURSO',desc:'+32% ALCANCE LONGÍNQUO · +14% VELOCIDADE DE PROJÉTIL',price:24,rar:1,
+  apply:p=>{smMul(p,'rangedRange','upgrade.range2.range','LONGO CURSO +32% ALCANCE LONGÍNQUO',1.32);
+    smMul(p,'projSpd','upgrade.range2.projSpd','LONGO CURSO +14% PROJÉTIL',1.14);}},
  /* ---- RARO (desbloqueáveis) ---- */
  {id:'pierce',nm:'PONTA PERFURANTE',    desc:'PROJÉTEIS PERFURAM +1 ALVO',      price:28,rar:2,
   apply:p=>smFlat(p,'pierce','upgrade.pierce.pierce','PONTA PERFURANTE +1',1)},
@@ -7473,6 +7673,7 @@ function openSlotPicker(wi,price){
   mClose.onclick=()=>{renderShop();};
 }
 function openShop(){
+  speechClear();               // B2-A: modal de loja não mantém fala órfã
   // VOTO DE POBREZA: a loja é pulada por completo
   if(player.vowPoverty){
     player.vowPoverty=0;
@@ -7702,6 +7903,7 @@ function spawnBeacon(){
   sfx(660,.3,'sine',.045,-220);
 }
 function openEvent(kind){
+  speechClear();               // B2-A: fala não fica atrás do modal de decisão
   state='event';firing=false;curEv=kind;
   modalEl.classList.add('on');
   mSect.style.display='none';mRow2.innerHTML='';mReroll.style.display='none';
@@ -11720,7 +11922,7 @@ function fireMelee(src,def,team,mul){
   if(src===player&&consumeCritLock(src))_crit=true;
   const crit=_crit;
   const cm=crit?(src.critMul||1.8):1;
-  const reach=def.reach*(src.rangeMul||1);
+  const reach=def.reach*srcRangeMul(src,'melee');
   const half=def.arc/2;
   const dmg=def.dmg*mul*cm;
   const dir=(src.swingDir=-(src.swingDir||1));
@@ -11810,7 +12012,7 @@ function fireMelee(src,def,team,mul){
 /* ---- [5] FEIXE DE SINGULARIDADE: laser sustentado com dano escalonado ---- */
 function fireBeam(src,def,team,mul,dt){
   curAttacker=src;
-  const range=def.range*(src.rangeMul||1);
+  const range=def.range*srcRangeMul(src,'ranged');
   const ux=Math.cos(src.aim),uy=Math.sin(src.aim);
   const ox=src.x+ux*(src.r+6),oy=src.y+uy*(src.r+6);
   let best=null,bd=range;
@@ -11873,7 +12075,7 @@ function fireWeaponFrom(src,def,team,mul){
   if(src===player&&consumeCritLock(src))_crit=true;
   const crit=_crit;
   const cm=crit?(src.critMul||1.8):1;
-  const rng=src.rangeMul||1,aoeM=src.aoeMul||1,
+  const rng=srcRangeMul(src,'ranged'),aoeM=src.aoeMul||1,
         pier=src.pierce+effectivePierceItem(src);
   for(let i=0;i<def.count;i++){
     const off=def.count>1?(i-(def.count-1)/2)*def.spread:0;
@@ -15824,6 +16026,7 @@ function resumeRun(){
       if(qDelay!==player._smBase.shieldDelay)player._smBase.shieldDelay=qDelay;
     }
   }
+  migrateLegacyRangeMods(player);   // B2-B: saves antigos de alcance genérico
   smRefresh(player);
   applyMoralTuning(player);   // PR 9: sintonia derivada — recalculada, nunca duplicada
   /* Ecos do slot com a confiança do checkpoint */
@@ -15876,6 +16079,7 @@ function onPlayerDeath(){
   if(wave>prog.best)prog.best=wave;
   checkUnlocks();saveProg();
   state='fracture';fracT=0;shake=18;
+  speechClear();               // B2-A: morte encerra a camada de fala efêmera
   spawnParticles(player.x,player.y,'#9ff3ff',50,520,1,4);
   spawnRing(player.x,player.y,'#46e0ff',10,260,.8);
   spawnRing(player.x,player.y,'#ff4df0',4,180,1.1);
@@ -15975,6 +16179,7 @@ function resetRunWorld(){
   wave=0;kills=0;wavePause=2.2;waveActive=false;waveCleared=false;
   document.getElementById('pause-menu').classList.remove('on');
   enemies=[];projectiles=[];xporbs=[];parts=[];ftexts=[];
+  speechClear();
   swings=[];arcs=[];curAttacker=null;resoFlash=0;
   pickups=[];allies=[];beacon=null;curEv=null;evCount=0;
   /* PR 10.5: memória de eventos nova + limpeza de acontecimentos de arena */
@@ -17245,6 +17450,7 @@ function render(){
     ctx.fillText(f.txt,f.x,f.y-f.t*30);
   }
   ctx.globalAlpha=1;
+  renderSpeech();
   ctx.restore();
   ctx.restore();
 
@@ -17454,7 +17660,7 @@ function loop(now){
   if(state==='play'){
     const sdt=dt;
     runTime+=sdt;
-    if(_echoSpeakCd>0)_echoSpeakCd-=sdt;
+    speechTick(sdt);
     updatePlayer(sdt);
     for(const e of echoes)updateEcho(e,sdt);
     for(let i=0;i<enemies.length;i++)updateEnemy(enemies[i],sdt);
@@ -18954,6 +19160,7 @@ function clearRunEntities(){
   swings.length=0;
   parts.length=0;
   ftexts.length=0;
+  speechClear();
   boss=null;miniBoss=null;bossIntel=null;beacon=null;curEv=null;
   stopArenaEvent(false);arenaEv=null;arenaEvWave=-9;microT=26;_aeInterfT=0;
   echoes.length=0;
@@ -19405,15 +19612,15 @@ const DEV={
     devTaint();devLog('COOLDOWN DE PAPEL ZERADO');
     return true;
   },
-  forceSpeak(slot){
+  forceSpeak(slot,priority){
     if(!devReady())return false;
     const e=DEV.echo(slot);if(!e||!e.alive)return false;
-    _echoSpeakCd=0;
+    speechClear();
     const keys=Object.keys(ECHO_LINES);
     const k=keys[randi(0,keys.length-1)];
     const lines=ECHO_LINES[k];
-    echoSpeak(e,lines[randi(0,lines.length-1)],e.hue);
-    devTaint();devLog('FALA FORÇADA ('+k+')');
+    echoSpeak(e,lines[randi(0,lines.length-1)],e.hue,priority||'normal');
+    devTaint();devLog('FALA FORÇADA ('+k+') '+(priority||'normal'));
     return k;
   },
   /* Dissonância usa a MESMA função de produção (enterDissonance). */
@@ -19523,7 +19730,7 @@ const DEV={
     if(!ap)return false;
     relFeedback(e,ap);
     const l=pickRelationLine(e,{type:r.type,reason:r.reason,state:echoRelState(e).id});
-    echoSpeak(e,l.txt,approve?'#8ff6ff':'#ff8095');
+    echoSpeak(e,l.txt,approve?'#8ff6ff':'#ff8095','high');
     devTaint();devLog('REAÇÃO FORÇADA '+r.type+' ('+ap.trust.toFixed(1)+' CONF)');
     return ap;
   },
@@ -21695,7 +21902,7 @@ const EQ_FX_HANDLERS={
     spawnRing(e.x,e.y,'#ff4df0',5,90,.5);
     if(typeof echoSpeak==='function'&&typeof randi==='function'){
       const L=['EU CONHEÇO ESTE ROSTO.','A MÁSCARA SORRI PRIMEIRO.','ISSO TAMBÉM SOU EU.'];
-      echoSpeak(e,L[randi(0,L.length-1)],'#ff4df0');
+      echoSpeak(e,L[randi(0,L.length-1)],'#ff4df0','high');
     }
   },
   nascimentoDuplo(e,def,pl){
@@ -25092,7 +25299,7 @@ function fractureResoReact(d,info){
     const txt=pool[Math.floor(pick()*pool.length)%pool.length];
     const alvo=echoes.filter(e=>e&&e.alive&&echoAllied(e))[0]||
       echoes.filter(e=>e&&e.alive)[0];
-    if(alvo)echoSpeak(alvo,txt,key==='ruptured'?'#ff2f5e':'#8ff6ff');
+    if(alvo)echoSpeak(alvo,txt,key==='ruptured'?'#ff2f5e':'#8ff6ff',key==='ruptured'?'critical':'high');
     fractureHistPush({t:'reso_line',w:w,d:0,s:key});
   }catch(e){return false;}
   return true;
@@ -26145,7 +26352,7 @@ function fractureEchoSpeakPick(key){
     ((fractureRun?fractureRun.seed>>>0:1)^Math.imul(w+1,0x9E3779B1)^
      Math.imul(fractureHash32(key),0x85EBCA6B))>>>0));
   const txt=pool[Math.floor(rng()*pool.length)%pool.length];
-  try{echoSpeak(alvo,txt,'#8ff6ff');}catch(e){return false;}
+  try{echoSpeak(alvo,txt,'#8ff6ff','high');}catch(e){return false;}
   return true;
 }
 function fractureEchoOnReveal(){return fractureEchoSpeakPick('reveal');}

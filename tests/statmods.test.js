@@ -339,10 +339,11 @@ test('Redução de shieldMax só CLAMPA o shield atual (nunca enche de graça)',
 test('Módulos empilham no pipeline com valores corretos',()=>{
   const p=run(0);                       // VECTOR dmg=1
   const it=T.itemById('nucleo'); it.apply(p);     // ×1.30
-  const it2=T.itemById('estilhaco');it2.apply(p); // ×1.45, −35% range, +20% rate
-  assert.ok(near(p.dmgMul,1*1.30*1.45));
-  assert.ok(near(p.rangeMul,.65));
-  assert.ok(near(p.fireRateMul,1.20));
+  const it2=T.itemById('estilhaco');it2.apply(p); // ×1.40, ×0.60 rangedRange, ×1.20 meleeRange, ×1.15 rate
+  assert.ok(near(p.dmgMul,1*1.30*1.40));
+  assert.ok(near(p.rangedRangeMul,.60));
+  assert.ok(near(p.meleeRangeMul,1.20));
+  assert.ok(near(p.fireRateMul,1.15));
   assert.strictEqual(p.items.length,0,'giveItem não usado — sem inventário');
 });
 test('Upgrades aplicam stat via pipeline',()=>{
@@ -466,10 +467,13 @@ test('Equivalência: save de Echo lê os mesmos campos derivados',()=>{
   T.itemById('estilhaco').apply(p);
   T.UPGRADES.find(u=>u.id==='rate').apply(p);
   const rd={dmgMul:p.dmgMul,frMul:p.fireRateMul,crit:p.crit,critMul:p.critMul,
-    pierce:p.pierce,aoeMul:p.aoeMul,rangeMul:p.rangeMul,projSpdMul:p.projSpdMul};
-  assert.ok(near(rd.dmgMul,1*1.30*1.45));
-  assert.ok(near(rd.frMul,1.20*1.12));
-  assert.ok(near(rd.rangeMul,.65));
+    pierce:p.pierce,aoeMul:p.aoeMul,rangeMul:p.rangeMul,projSpdMul:p.projSpdMul,
+    rangedRangeMul:p.rangedRangeMul,meleeRangeMul:p.meleeRangeMul};
+  assert.ok(near(rd.dmgMul,1*1.30*1.40));
+  assert.ok(near(rd.frMul,1.15*1.12));
+  assert.ok(near(rd.rangeMul,1));
+  assert.ok(near(rd.rangedRangeMul,.60));
+  assert.ok(near(rd.meleeRangeMul,1.20));
   // todos os campos consumidos por makeEcho/saveEchoes existem e são finitos
   for(const k of Object.keys(rd))assert.ok(isFinite(rd[k]),k);
 });

@@ -8,6 +8,8 @@ let src=m[1];
 src+='\n;globalThis.__t={'+
   'ECHO_LINES,PERSONALITIES,MORAL_AFFINITY,MORAL_BALANCE,ITEMS,UPGRADES,WEAPONS,MINIBOSS,'+
   'SM_STATS,SM_ORDER,UNLOCKS,BASE_WEAPONS,BASE_ITEMS,BASE_UPGRADES,CHARS,ECHO_SPEAK_INTERVAL,'+
+  'SPEECH_PRI,ECHO_SPEECH_QUEUE_MAX,echoSpeechDuration,speechClear,speechTick,'+
+  'speechActive:()=>speechActive,speechQueue:()=>speechQueue,'+
   'FTEXT_SPEAK,FTEXT_SIZE,FTEXT_MAX,MAX_WAVE,MINI_WAVES,MORAL_AFF_LEVELS,EV_KINDS,WAVE_KEYS,'+
   'makePlayer,startRun,setChar,itemById,itemTags,itemHasTag,rollShop,pickWeighted,pickWeightedMoral,'+
   'rarityWeight,moralShopWeight,shopWeaponPool,isItemUnlocked,isUpgUnlocked,isWeaponUnlocked,'+
@@ -15,7 +17,7 @@ src+='\n;globalThis.__t={'+
   'getMoralProfile,calcMoralAffinityMatch,getItemMoralAffinity,moralTuneFactor,moralAffinityLevel,'+
   'applyMoralTuning,countAttunedItems,smGet,smRefresh,smBreakdown,calcDamageMul,'+
   'smMul,smAdd,smFlat,smAddPct,smRemoveId,smRemoveSource,'+
-  'fireMelee,fireBeam,fireWeaponFrom,updateProjectiles,weaponRange,'+
+  'fireMelee,fireBeam,fireWeaponFrom,updateProjectiles,weaponRange,srcRangeMul,migrateLegacyRangeMods,'+
   'getProjectiles:()=>projectiles,setProjectiles:a=>{projectiles=a;},'+
   'getSwings:()=>swings,setSwings:a=>{swings=a;},'+
   'getEnemies:()=>enemies,setEnemies:a=>{enemies=a;},'+
