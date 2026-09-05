@@ -13525,7 +13525,7 @@ function spawnMiniBoss(n,forced){
 function miniBossHUD(){
   if(!miniBoss||miniBoss.dead)return;
   $('bossfill').style.width=clamp(miniBoss.hp/miniBoss.maxHp*100,0,100)+'%';
-  $('bosssub').textContent='MINI-CHEFE · FASE '+miniBoss.phase+
+  $('bosssub').textContent='MINI-CHEFE · FASE '+miniBoss.phase+(miniBoss.phase===2?' ▲':'')+
     ' · BLINDAGEM '+miniBoss.plates+'/'+miniBoss.plateMax;
 }
 function clearMiniBossHUD(){
@@ -13839,73 +13839,357 @@ function updateMiniBoss(e,dt){
     }
   }
 }
-function drawMiniBoss(e){
-  const intro=e.spawnT>0?1-e.spawnT/1.6:1;
-  const R=e.r,flash=e.flashT>0;
-  // sombra
-  ctx.save();ctx.globalAlpha=.34*intro;ctx.fillStyle='#000';
-  ctx.beginPath();ctx.ellipse(e.x,e.y+R*.4,R*.95,R*.5,0,0,TAU);ctx.fill();ctx.restore();
-  // telegrafia da investida
-  if(e.telegraphT>0){
-    const k=1-e.telegraphT/(e.phase===2?.62:.85);
-    ctx.save();
-    ctx.globalAlpha=.30+k*.45;
-    ctx.strokeStyle='#ff5c7a';ctx.lineWidth=3+k*4;
-    ctx.setLineDash([16,12]);ctx.lineDashOffset=-runTime*40;
-    ctx.beginPath();ctx.moveTo(e.x,e.y);
-    ctx.lineTo(e.x+Math.cos(e.aim)*760,e.y+Math.sin(e.aim)*760);
-    ctx.stroke();ctx.setLineDash([]);
-    ctx.restore();
-  }
-  ctx.save();ctx.globalAlpha=intro;ctx.translate(e.x,e.y);
-  // placas de blindagem orbitando
-  for(let i=0;i<e.plates;i++){
-    const a=e.spinAng+i*TAU/e.plateMax;
-    const px=Math.cos(a)*(R+16),py=Math.sin(a)*(R+16);
-    ctx.save();ctx.translate(px,py);ctx.rotate(a);
-    ctx.fillStyle=flash?'#fff':'#8a5216';
-    ctx.strokeStyle='#ffd166';ctx.lineWidth=1.4;
-    ctx.beginPath();ctx.rect(-7,-4,14,8);ctx.fill();ctx.stroke();
-    ctx.restore();
-  }
-  ctx.rotate(e.aim);
-  // casco octogonal pesado
-  const g=linGrad2('mb|'+(flash?1:0),-R,-R,R,R,
-    flash?'#fff':'#ff9d3c',flash?'#fff':'#5c2a06');
-  ctx.fillStyle=g;ctx.strokeStyle=flash?'#fff':'#ffd166';ctx.lineWidth=R*.10;
+/* =====================================================================
+   PR13.5 · B5-A — IDENTIDADE VISUAL DOS MINI-CHEFES
+   ---------------------------------------------------------------------
+   Antes: um único renderer (octógono + placas retangulares + aríete +
+   núcleo) com a paleta do Arauto fixa para os 8. Agora cada mini-chefe
+   tem um perfil declarativo (MINIBOSS_VISUALS) + um renderer próprio.
+   REGRAS: o renderer é gameplay-pure (só lê e/ao ctx); nenhuma hitbox,
+   stat, timer ou mecânica muda; toda variação vem de runTime/e.t/e.core/
+   e.ring/e.spinAng/fase (determinística — sem Math.random no draw);
+   partículas só pelas funções com cap (spawnRing/Particles/Shards) e só
+   fora do draw (elas continuam no update, como antes).
+   ===================================================================== */
+const MINIBOSS_VISUALS={
+  herald  :{silhouette:'vertical-crowned', primary:'#ff9d3c',secondary:'#5c2a06',accent:'#ffd166',
+            feature:'crown',   secondaryFeature:'broken-halo',   scaleX:.86,scaleY:1.12,
+            telegraph:'radial-omen',  phaseVisual:'halo-shatter',  spawn:'omen-pulses',   symbol:'◈',
+            reading:'PRESENÇA · ANÚNCIO · PRESSÁGIO'},
+  furnace :{silhouette:'heavy-block',       primary:'#ff5c2f',secondary:'#3a1208',accent:'#ffb347',
+            feature:'vents',   secondaryFeature:'fissures',      scaleX:1.14,scaleY:.92,
+            telegraph:'heat-bloom',   phaseVisual:'core-overheat', spawn:'heat-shimmer',  symbol:'▣',
+            reading:'CALOR · PRESSÃO · INSTABILIDADE'},
+  sentinel:{silhouette:'plated-symmetric',  primary:'#8ff6ff',secondary:'#123a44',accent:'#e8ffff',
+            feature:'plates',  secondaryFeature:'containment-lines',scaleX:1,scaleY:1,
+            telegraph:'lock-line',    phaseVisual:'plates-open',   spawn:'lock-in',       symbol:'⬢',
+            reading:'DEFESA · CONTROLE · BLOQUEIO'},
+  brood   :{silhouette:'clustered-mass',    primary:'#39d98a',secondary:'#0e3d26',accent:'#bfffdc',
+            feature:'satellites',secondaryFeature:'pods',         scaleX:1.06,scaleY:1.06,
+            telegraph:'pod-swell',    phaseVisual:'satellites-accelerate',spawn:'pods-hatch',symbol:'⁂',
+            reading:'ENXAME · REPRODUÇÃO · MULTIPLICAÇÃO'},
+  duelist :{silhouette:'thin-blade',        primary:'#ff3d68',secondary:'#3a0a16',accent:'#ffc2d1',
+            feature:'blades',  secondaryFeature:'afterimage',     scaleX:1.35,scaleY:.55,
+            telegraph:'narrow-lunge', phaseVisual:'blades-ignite', spawn:'blink-in',      symbol:'⟋',
+            reading:'PRECISÃO · VELOCIDADE · DUELO'},
+  colossus:{silhouette:'massive-rings',     primary:'#ff2f5e',secondary:'#2a0b14',accent:'#ff9d3c',
+            feature:'heavy-rings',secondaryFeature:'thick-plates',scaleX:1.1,scaleY:1.1,
+            telegraph:'ground-crack', phaseVisual:'stress-fractures',spawn:'ground-rise', symbol:'◍',
+            reading:'MASSA · PESO · IMPACTO'},
+  oracle  :{silhouette:'eye-orbits',        primary:'#ffd166',secondary:'#3d2e05',accent:'#fff1b8',
+            feature:'eye',     secondaryFeature:'concentric-rings',scaleX:1,scaleY:1,
+            telegraph:'prophecy-arc', phaseVisual:'rings-multiply',spawn:'eye-open',      symbol:'◉',
+            reading:'PREVISÃO · MALDIÇÃO · TEMPORALIDADE'},
+  leech   :{silhouette:'asymmetric-tendrils',primary:'#a8ff3d',secondary:'#1f3a06',accent:'#e6ffb8',
+            feature:'tendrils',secondaryFeature:'suction-core',   scaleX:.95,scaleY:1.05,
+            telegraph:'siphon-thread',phaseVisual:'pulse-intensify',spawn:'unfurl',       symbol:'≈',
+            reading:'DRENO · FOME · ABSORÇÃO'}
+};
+function minibossVisual(id){return MINIBOSS_VISUALS[id]||MINIBOSS_VISUALS.herald;}
+const MINIBOSS_PHASE2_TITLE={herald:'O HALO SE ROMPE',furnace:'NÚCLEO SOBREAQUECIDO',sentinel:'PLACAS ABERTAS',
+  brood:'A MATRIZ ACELERA',duelist:'LÂMINAS ACESAS',colossus:'FRATURAS DE STRESS',oracle:'OS ANÉIS SE MULTIPLICAM',leech:'A FOME CRESCE'};
+/* helpers puros (só desenham) */
+function mbPoly(n,R,rot,sq){
   ctx.beginPath();
-  for(let i=0;i<8;i++){const an=i/8*TAU;
-    ctx[i?'lineTo':'moveTo'](Math.cos(an)*R,Math.sin(an)*R);}
-  ctx.closePath();ctx.fill();ctx.stroke();
-  // aríete frontal
-  ctx.fillStyle=flash?'#fff':'#3d1c04';
-  ctx.beginPath();
-  ctx.moveTo(R*1.42,0);ctx.lineTo(R*.62,-R*.44);ctx.lineTo(R*.62,R*.44);
-  ctx.closePath();ctx.fill();
-  ctx.strokeStyle='#ffd166';ctx.lineWidth=2;ctx.stroke();
-  // núcleo pulsante
-  const pl=.5+.5*Math.sin(e.core*2.6);
-  const gs=glowSprite('#ffd166'),gr=R*(.5+pl*.22);
-  ctx.globalCompositeOperation='lighter';
-  ctx.globalAlpha=.75*intro;
+  for(let i=0;i<n;i++){const an=rot+i/n*TAU;const rr=sq&&(i%2)?R*sq:R;
+    ctx[i?'lineTo':'moveTo'](Math.cos(an)*rr,Math.sin(an)*rr);}
+  ctx.closePath();
+}
+function mbCore(R,color,pl,alpha){
+  const gs=glowSprite(color),gr=R*(.5+pl*.22);
+  ctx.globalCompositeOperation='lighter';ctx.globalAlpha=.75*alpha;
   ctx.drawImage(gs,-gr,-gr,gr*2,gr*2);
-  ctx.globalCompositeOperation='source-over';
-  ctx.globalAlpha=intro;
-  ctx.fillStyle=flash?'#fff':'#ffe9a8';
-  ctx.beginPath();ctx.arc(0,0,R*(.26+pl*.08),0,TAU);ctx.fill();
-  // anel de fase 2
-  if(e.phase===2){
-    ctx.strokeStyle='rgba(255,92,122,.75)';ctx.lineWidth=2;
-    ctx.beginPath();ctx.arc(0,0,R+30,e.ring,e.ring+4.2);ctx.stroke();
+  ctx.globalCompositeOperation='source-over';ctx.globalAlpha=alpha;
+}
+/* base compartilhada: sombra (elíptica pela silhueta) + aro de surgimento
+   com a assinatura de cada um. Devolve o perfil visual. */
+function drawMinibossBase(e){
+  const V=minibossVisual(e.mb&&e.mb.id),R=e.r,intro=e.spawnT>0?1-e.spawnT/1.6:1;
+  ctx.save();ctx.globalAlpha=.34*intro;ctx.fillStyle='#000';
+  ctx.beginPath();ctx.ellipse(e.x,e.y+R*.4,R*.95*V.scaleX,R*.5*V.scaleY,0,0,TAU);ctx.fill();ctx.restore();
+  if(e.spawnT>0)drawMinibossSpawn(e,V);
+  return V;
+}
+function drawMinibossSpawn(e,V){
+  const k=e.spawnT/1.6,R=e.r;   // 1 → 0
+  ctx.save();ctx.globalAlpha=k;ctx.strokeStyle=V.primary;ctx.lineWidth=3;
+  switch(V.spawn){
+    case 'omen-pulses':   // 3 pulsos concêntricos defasados
+      for(let i=0;i<3;i++){const kk=((1-k)+i*.33)%1;ctx.globalAlpha=k*(1-kk);
+        ctx.beginPath();ctx.arc(e.x,e.y,R+220*kk,0,TAU);ctx.stroke();}break;
+    case 'heat-shimmer':  // quadrados girando, encolhendo
+      ctx.translate(e.x,e.y);ctx.rotate(k*2);
+      for(let i=0;i<3;i++){const s=(R+40+i*36)*(.5+k*.8);ctx.globalAlpha=k*(.7-i*.2);ctx.strokeRect(-s,-s,s*2,s*2);}break;
+    case 'lock-in':       // 4 colchetes fechando sobre o corpo
+      ctx.translate(e.x,e.y);
+      for(let i=0;i<4;i++){ctx.save();ctx.rotate(i*Math.PI/2);const d=R+20+160*k;
+        ctx.beginPath();ctx.moveTo(d,-d*.35);ctx.lineTo(d,d*.35);ctx.stroke();ctx.restore();}break;
+    case 'pods-hatch':    // pequenos círculos convergindo para o centro
+      for(let i=0;i<6;i++){const a=i/6*TAU,d=(R+40)+180*k;ctx.beginPath();ctx.arc(e.x+Math.cos(a)*d,e.y+Math.sin(a)*d,8,0,TAU);ctx.stroke();}break;
+    case 'blink-in':      // linha horizontal que se abre
+      ctx.lineWidth=2+4*k;ctx.beginPath();ctx.moveTo(e.x-R*2.2*(1-k*.5),e.y);ctx.lineTo(e.x+R*2.2*(1-k*.5),e.y);ctx.stroke();break;
+    case 'ground-rise':   // aro achatado no chão
+      ctx.beginPath();ctx.ellipse(e.x,e.y+R*.4,(R+200*k)*1.1,(R+200*k)*.45,0,0,TAU);ctx.stroke();break;
+    case 'eye-open':      // pálpebra abrindo
+      ctx.translate(e.x,e.y);ctx.beginPath();const h=(R+60)*(1-k);
+      ctx.moveTo(-R-60,0);ctx.quadraticCurveTo(0,-h,R+60,0);ctx.quadraticCurveTo(0,h,-R-60,0);ctx.stroke();break;
+    case 'unfurl':        // fios saindo do centro
+      ctx.translate(e.x,e.y);
+      for(let i=0;i<5;i++){const a=i*1.26+.4;ctx.beginPath();ctx.moveTo(0,0);
+        ctx.quadraticCurveTo(Math.cos(a+.6)*R,Math.sin(a+.6)*R,Math.cos(a)*(R+160*(1-k)),Math.sin(a)*(R+160*(1-k)));ctx.stroke();}break;
+    default:ctx.beginPath();ctx.arc(e.x,e.y,R+200*k,0,TAU);ctx.stroke();
   }
   ctx.restore();
-  // aro de surgimento
-  if(e.spawnT>0){
-    ctx.save();ctx.globalAlpha=e.spawnT/1.6;
-    ctx.strokeStyle='#ff9d3c';ctx.lineWidth=3;
-    ctx.beginPath();ctx.arc(e.x,e.y,R+200*(e.spawnT/1.6),0,TAU);ctx.stroke();
+}
+/* telegrafia da investida — geometria FIEL ao ataque (linha reta na
+   direção e.aim, dano por contato durante o dash); só o estilo muda. */
+function drawMinibossDashTelegraph(e,V){
+  const k=1-e.telegraphT/(e.phase===2?.62:.85);
+  ctx.save();ctx.globalAlpha=.30+k*.45;ctx.strokeStyle=V.accent;
+  const L=760;
+  switch(V.telegraph){
+    case 'narrow-lunge':  // Duelista: fio fino + duas farpas paralelas
+      ctx.lineWidth=1.5+k*1.5;
+      for(const off of [-6,0,6]){ctx.beginPath();ctx.moveTo(e.x+Math.cos(e.aim+Math.PI/2)*off,e.y+Math.sin(e.aim+Math.PI/2)*off);
+        ctx.lineTo(e.x+Math.cos(e.aim)*L+Math.cos(e.aim+Math.PI/2)*off,e.y+Math.sin(e.aim)*L+Math.sin(e.aim+Math.PI/2)*off);ctx.stroke();}break;
+    case 'lock-line':     // Sentinela: linha sólida + marcadores de trava
+      ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(e.x,e.y);ctx.lineTo(e.x+Math.cos(e.aim)*L,e.y+Math.sin(e.aim)*L);ctx.stroke();
+      for(let i=1;i<=3;i++){const d=e.r+i*90*k;ctx.beginPath();ctx.arc(e.x+Math.cos(e.aim)*d,e.y+Math.sin(e.aim)*d,6,0,TAU);ctx.stroke();}break;
+    case 'ground-crack':  // Colosso: faixa larga e pesada
+      ctx.lineWidth=8+k*10;ctx.globalAlpha=.18+k*.3;ctx.beginPath();ctx.moveTo(e.x,e.y);ctx.lineTo(e.x+Math.cos(e.aim)*L,e.y+Math.sin(e.aim)*L);ctx.stroke();break;
+    case 'radial-omen':   // Arauto: linha tracejada + sinais radiais no corpo
+      ctx.lineWidth=3+k*4;ctx.setLineDash([16,12]);ctx.lineDashOffset=-runTime*40;
+      ctx.beginPath();ctx.moveTo(e.x,e.y);ctx.lineTo(e.x+Math.cos(e.aim)*L,e.y+Math.sin(e.aim)*L);ctx.stroke();ctx.setLineDash([]);
+      for(let i=0;i<8;i++){const a=i/8*TAU;ctx.beginPath();ctx.moveTo(e.x+Math.cos(a)*(e.r+20),e.y+Math.sin(a)*(e.r+20));ctx.lineTo(e.x+Math.cos(a)*(e.r+20+18*k),e.y+Math.sin(a)*(e.r+20+18*k));ctx.stroke();}break;
+    case 'heat-bloom':    // Fornalha: linha grossa quente com brilho crescente
+      ctx.lineWidth=5+k*6;ctx.globalAlpha=.25+k*.4;ctx.beginPath();ctx.moveTo(e.x,e.y);ctx.lineTo(e.x+Math.cos(e.aim)*L,e.y+Math.sin(e.aim)*L);ctx.stroke();break;
+    case 'prophecy-arc':  // Oráculo: linha + pequenos arcos "previstos" ao longo
+      ctx.lineWidth=2;ctx.setLineDash([4,10]);ctx.beginPath();ctx.moveTo(e.x,e.y);ctx.lineTo(e.x+Math.cos(e.aim)*L,e.y+Math.sin(e.aim)*L);ctx.stroke();ctx.setLineDash([]);
+      for(let i=1;i<=4;i++){const d=e.r+i*120*k;ctx.beginPath();ctx.arc(e.x+Math.cos(e.aim)*d,e.y+Math.sin(e.aim)*d,14,e.aim-1,e.aim+1);ctx.stroke();}break;
+    case 'siphon-thread': // Sanguessuga: fio ondulado
+      ctx.lineWidth=2.5;ctx.beginPath();
+      for(let i=0;i<=24;i++){const d=i/24*L,w=Math.sin(i*.9+runTime*10)*8*(1-i/24);
+        const x=e.x+Math.cos(e.aim)*d+Math.cos(e.aim+Math.PI/2)*w,y=e.y+Math.sin(e.aim)*d+Math.sin(e.aim+Math.PI/2)*w;ctx[i?'lineTo':'moveTo'](x,y);}
+      ctx.stroke();break;
+    case 'pod-swell':     // Matriz: linha pontilhada grossa
+    default:
+      ctx.lineWidth=3+k*3;ctx.setLineDash([6,10]);ctx.lineDashOffset=-runTime*30;ctx.beginPath();ctx.moveTo(e.x,e.y);ctx.lineTo(e.x+Math.cos(e.aim)*L,e.y+Math.sin(e.aim)*L);ctx.stroke();ctx.setLineDash([]);
+  }
+  ctx.restore();
+}
+/* sinal COMUM de escalada (fase 2): aro giratório fino + a assinatura
+   individual desenhada dentro de cada renderer. */
+function drawMinibossPhaseRing(e,V){
+  if(e.phase!==2)return;
+  ctx.strokeStyle=V.accent;ctx.globalAlpha=.75;ctx.lineWidth=2;
+  ctx.beginPath();ctx.arc(0,0,e.r+30,e.ring,e.ring+4.2);ctx.stroke();ctx.globalAlpha=1;
+}
+/* ---------------- renderers individuais (em espaço local) ---------------- */
+function drawHerald(e,V,R,flash,pl){
+  const P=flash?'#fff':V.primary,S=flash?'#fff':V.secondary,A=flash?'#fff':V.accent;
+  ctx.save();ctx.scale(V.scaleX,V.scaleY);
+  // halo incompleto (rompe na fase 2 em 4 fragmentos)
+  ctx.strokeStyle=A;ctx.lineWidth=3;ctx.globalAlpha=.8;
+  if(e.phase===2){for(let i=0;i<4;i++){const a=e.ring*.7+i*Math.PI/2;ctx.beginPath();ctx.arc(0,0,R+22,a,a+.9);ctx.stroke();}}
+  else{ctx.beginPath();ctx.arc(0,0,R+22,-Math.PI*.85+e.ring*.3,Math.PI*.55+e.ring*.3);ctx.stroke();}
+  ctx.globalAlpha=1;
+  // corpo cerimonial vertical (hexágono alongado)
+  ctx.fillStyle=linGrad2('mb.herald|'+(flash?1:0),0,-R,0,R,P,S);ctx.strokeStyle=A;ctx.lineWidth=R*.09;
+  mbPoly(6,R,Math.PI/2);ctx.fill();ctx.stroke();
+  // coroa: 5 antenas no topo
+  ctx.strokeStyle=A;ctx.lineWidth=3;
+  for(let i=-2;i<=2;i++){const a=-Math.PI/2+i*.32,len=R*(i===0?.75:.5)+Math.sin(e.core*2+i)*3;
+    ctx.beginPath();ctx.moveTo(Math.cos(a)*R*.9,Math.sin(a)*R*.9);ctx.lineTo(Math.cos(a)*(R*.9+len),Math.sin(a)*(R*.9+len));ctx.stroke();}
+  // sinais radiais (pulsam antes da rajada — lê burstCd sem alterar)
+  const bk=e.burstCd<.9?1-e.burstCd/.9:0;
+  if(bk>0){ctx.globalAlpha=bk*.8;for(let i=0;i<9;i++){const a=i/9*TAU+e.spinAng*.5;ctx.beginPath();ctx.moveTo(Math.cos(a)*R*.55,Math.sin(a)*R*.55);ctx.lineTo(Math.cos(a)*(R*.55+10*bk),Math.sin(a)*(R*.55+10*bk));ctx.stroke();}ctx.globalAlpha=1;}
+  mbCore(R,V.accent,pl,1);ctx.fillStyle=flash?'#fff':'#ffe9a8';ctx.beginPath();ctx.arc(0,0,R*(.26+pl*.08),0,TAU);ctx.fill();
+  ctx.restore();
+}
+function drawFurnace(e,V,R,flash,pl){
+  const P=flash?'#fff':V.primary,S=flash?'#fff':V.secondary,A=flash?'#fff':V.accent;
+  const heat=.5+.5*Math.sin(e.core*1.4);const over=e.phase===2?1:0;
+  ctx.save();ctx.scale(V.scaleX,V.scaleY);
+  // bloco pesado (quadrado de cantos cortados)
+  ctx.fillStyle=linGrad2('mb.furnace|'+(flash?1:0)+over,-R,-R,R,R,P,S);ctx.strokeStyle=A;ctx.lineWidth=R*.11;
+  mbPoly(8,R*1.02,Math.PI/8,.88);ctx.fill();ctx.stroke();
+  // vents: 4 fendas laterais que abrem com o calor
+  ctx.fillStyle=flash?'#fff':'#ffb347';
+  for(let i=0;i<4;i++){ctx.save();ctx.rotate(i*Math.PI/2);const w=3+heat*4+over*3;ctx.globalAlpha=.55+heat*.45;
+    ctx.fillRect(R*.55,-w/2,R*.5,w);ctx.restore();}
+  ctx.globalAlpha=1;
+  // fissuras internas (fixas — determinísticas)
+  ctx.strokeStyle=flash?'#fff':'#ffd166';ctx.lineWidth=1.5+over;ctx.globalAlpha=.5+heat*.5;
+  for(let i=0;i<5;i++){const a=i*1.257+.3;ctx.beginPath();ctx.moveTo(Math.cos(a)*R*.3,Math.sin(a)*R*.3);
+    ctx.lineTo(Math.cos(a+.35)*R*.6,Math.sin(a+.35)*R*.6);ctx.lineTo(Math.cos(a+.2)*R*.85,Math.sin(a+.2)*R*.85);ctx.stroke();}
+  ctx.globalAlpha=1;
+  // núcleo quente — expande com pressão da nova (skillCd) e sobreaquece na fase 2
+  const press=e.sk&&e.sk.nova&&e.skillCd<1.2?1-e.skillCd/1.2:0;
+  mbCore(R*(1+press*.35+over*.15),over?'#fff1b8':V.accent,pl,1);
+  ctx.fillStyle=flash?'#fff':(over?'#fff4d6':'#ffe0a8');ctx.beginPath();ctx.arc(0,0,R*(.30+pl*.08+press*.1),0,TAU);ctx.fill();
+  ctx.restore();
+}
+function drawSentinel(e,V,R,flash,pl){
+  const P=flash?'#fff':V.primary,S=flash?'#fff':V.secondary,A=flash?'#fff':V.accent;
+  const open=e.phase===2?1:0;   // fase 2: placas reposicionam (abrem)
+  const guard=e.shieldUpState==='active'?1:0;
+  // placas externas simétricas (8), postura fechada/aberta — substitui as placas retangulares genéricas
+  for(let i=0;i<e.plateMax;i++){
+    if(i>=e.plates)continue;   // blindagem destruída = placa some (mesmo dado de antes)
+    const a=i*TAU/e.plateMax+(open?e.spinAng*.4:0);
+    const d=R+12+open*14-guard*6;
+    ctx.save();ctx.rotate(a);ctx.translate(d,0);
+    ctx.fillStyle=flash?'#fff':S;ctx.strokeStyle=A;ctx.lineWidth=1.6;
+    ctx.beginPath();ctx.moveTo(-4,-R*.28);ctx.lineTo(8,-R*.18);ctx.lineTo(8,R*.18);ctx.lineTo(-4,R*.28);ctx.closePath();ctx.fill();ctx.stroke();
     ctx.restore();
   }
+  // linhas de contenção entre placas
+  ctx.strokeStyle=A;ctx.globalAlpha=.35+guard*.4;ctx.lineWidth=1;
+  mbPoly(e.plateMax,R+12+open*14,open?e.spinAng*.4:0);ctx.stroke();ctx.globalAlpha=1;
+  // corpo: hexágono simétrico
+  ctx.fillStyle=linGrad2('mb.sentinel|'+(flash?1:0),-R,-R,R,R,P,S);ctx.strokeStyle=A;ctx.lineWidth=R*.09;
+  mbPoly(6,R*.92,0);ctx.fill();ctx.stroke();
+  // escudo interno (losango) — visível sempre, mais forte quando ativo
+  ctx.strokeStyle=A;ctx.lineWidth=2;ctx.globalAlpha=.5+guard*.5;mbPoly(4,R*.55,0);ctx.stroke();ctx.globalAlpha=1;
+  mbCore(R*.9,V.primary,pl*.6,1);ctx.fillStyle=flash?'#fff':'#e8ffff';ctx.beginPath();ctx.arc(0,0,R*.2,0,TAU);ctx.fill();
+}
+function drawBrood(e,V,R,flash,pl){
+  const P=flash?'#fff':V.primary,S=flash?'#fff':V.secondary,A=flash?'#fff':V.accent;
+  const fast=e.phase===2?2.2:1;   // fase 2: satélites aceleram
+  const swell=e.sk&&e.sk.swarmSpawn&&e.skillCd<1?1-e.skillCd:0;   // bolsas incham antes do spawn
+  ctx.save();ctx.scale(V.scaleX,V.scaleY);
+  // massa segmentada: 5 lóbulos em volta do núcleo
+  ctx.fillStyle=linGrad2('mb.brood|'+(flash?1:0),-R,-R,R,R,P,S);ctx.strokeStyle=A;ctx.lineWidth=R*.07;
+  for(let i=0;i<5;i++){const a=i/5*TAU+e.ring*.2;const d=R*.45,rr=R*.55*(1+swell*.18);
+    ctx.beginPath();ctx.arc(Math.cos(a)*d,Math.sin(a)*d,rr,0,TAU);ctx.fill();ctx.stroke();}
+  // bolsas geométricas (pods) — 3 pequenos hexágonos
+  ctx.fillStyle=flash?'#fff':A;
+  for(let i=0;i<3;i++){ctx.save();const a=i/3*TAU+Math.PI/2;ctx.translate(Math.cos(a)*R*.7,Math.sin(a)*R*.7);
+    ctx.globalAlpha=.55+swell*.45;mbPoly(6,7+swell*5,0);ctx.fill();ctx.restore();}
+  ctx.globalAlpha=1;
+  // satélites orbitando (6 nós) — exclusivo
+  ctx.fillStyle=flash?'#fff':P;ctx.strokeStyle=A;ctx.lineWidth=1.2;
+  for(let i=0;i<6;i++){const a=e.spinAng*fast+i/6*TAU;const d=R+18+Math.sin(e.core+i)*4;
+    ctx.beginPath();ctx.arc(Math.cos(a)*d,Math.sin(a)*d,5+(i%2)*2,0,TAU);ctx.fill();ctx.stroke();}
+  mbCore(R*.8,V.accent,pl,1);ctx.fillStyle=flash?'#fff':'#dfffe9';ctx.beginPath();ctx.arc(0,0,R*(.22+pl*.06+swell*.06),0,TAU);ctx.fill();
+  ctx.restore();
+}
+function drawDuelist(e,V,R,flash,pl){
+  const P=flash?'#fff':V.primary,S=flash?'#fff':V.secondary,A=flash?'#fff':V.accent;
+  const ign=e.phase===2?1:0;
+  // afterimage curto (determinístico: 2 cópias atrás, por velocidade)
+  const sp=Math.hypot(e.vx,e.vy);const trail=Math.min(1,sp/300)+(e.dashT>0?1:0);
+  for(let i=1;i<=2&&trail>0;i++){ctx.save();ctx.globalAlpha=.18*trail/i;ctx.translate(-i*10*trail,0);
+    ctx.fillStyle=P;ctx.beginPath();ctx.moveTo(R*1.5,0);ctx.lineTo(-R*.9,-R*.5);ctx.lineTo(-R*.9,R*.5);ctx.closePath();ctx.fill();ctx.restore();}
+  // corpo fino orientado (losango longo)
+  ctx.fillStyle=linGrad2('mb.duelist|'+(flash?1:0),-R,0,R,0,S,P);ctx.strokeStyle=A;ctx.lineWidth=R*.08;
+  ctx.beginPath();ctx.moveTo(R*1.5,0);ctx.lineTo(0,-R*.55);ctx.lineTo(-R*.9,0);ctx.lineTo(0,R*.55);ctx.closePath();ctx.fill();ctx.stroke();
+  // duas lâminas laterais (ignição na fase 2)
+  ctx.strokeStyle=ign?'#fff':A;ctx.lineWidth=2.5+ign*1.5;ctx.globalAlpha=.85;
+  for(const sgn of [-1,1]){ctx.beginPath();ctx.moveTo(-R*.3,sgn*R*.35);ctx.lineTo(R*1.25,sgn*R*.9);ctx.stroke();
+    if(ign){ctx.globalAlpha=.35;ctx.lineWidth=7;ctx.beginPath();ctx.moveTo(-R*.3,sgn*R*.35);ctx.lineTo(R*1.25,sgn*R*.9);ctx.stroke();ctx.globalAlpha=.85;ctx.lineWidth=4;}}
+  ctx.globalAlpha=1;
+  // linhas direcionais
+  ctx.strokeStyle=A;ctx.lineWidth=1;ctx.globalAlpha=.5;for(let i=0;i<3;i++){ctx.beginPath();ctx.moveTo(-R*.7+i*8,-R*.15+i*.15*R);ctx.lineTo(R*.6+i*10,-R*.15+i*.15*R);ctx.stroke();}
+  ctx.globalAlpha=1;
+  mbCore(R*.8,V.primary,pl,1);ctx.fillStyle=flash?'#fff':'#ffd9e2';ctx.beginPath();ctx.arc(0,0,R*.2,0,TAU);ctx.fill();
+}
+function drawColossus(e,V,R,flash,pl){
+  const P=flash?'#fff':V.primary,S=flash?'#fff':V.secondary,A=flash?'#fff':V.accent;
+  const stress=e.phase===2?1:0,dormant=e.sleepPhase==='dormant'?1:0;
+  ctx.save();ctx.scale(V.scaleX,V.scaleY);
+  // anéis pesados (3) — pouca ornamentação, muita massa
+  for(let i=0;i<3;i++){ctx.strokeStyle=i===2?A:S;ctx.lineWidth=R*(.12-i*.02);ctx.globalAlpha=.9-i*.15;
+    ctx.beginPath();ctx.arc(0,0,R*(1.05-i*.22),0,TAU);ctx.stroke();}
+  ctx.globalAlpha=1;
+  // placas grossas (usa e.plates/plateMax — blindagem real)
+  for(let i=0;i<e.plateMax;i++){if(i>=e.plates)continue;const a=i*TAU/e.plateMax+e.spinAng*.15;
+    ctx.save();ctx.rotate(a);ctx.fillStyle=flash?'#fff':S;ctx.strokeStyle=A;ctx.lineWidth=2;
+    ctx.beginPath();ctx.rect(R*.78,-R*.14,R*.32,R*.28);ctx.fill();ctx.stroke();ctx.restore();}
+  // corpo maciço
+  ctx.fillStyle=linGrad2('mb.colossus|'+(flash?1:0),-R,-R,R,R,P,S);ctx.strokeStyle=A;ctx.lineWidth=R*.12;
+  mbPoly(10,R*.72,0);ctx.fill();ctx.stroke();
+  // fase 2: fraturas de stress no corpo
+  if(stress){ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.globalAlpha=.6+.3*Math.sin(e.core*3);
+    for(let i=0;i<4;i++){const a=i*1.57+.5;ctx.beginPath();ctx.moveTo(Math.cos(a)*R*.2,Math.sin(a)*R*.2);ctx.lineTo(Math.cos(a+.4)*R*.5,Math.sin(a+.4)*R*.5);ctx.lineTo(Math.cos(a+.25)*R*.7,Math.sin(a+.25)*R*.7);ctx.stroke();}
+    ctx.globalAlpha=1;}
+  // impacto visual no movimento: leve achatamento pelo passo (determinístico)
+  mbCore(R*.7,dormant?'#b080ff':V.accent,pl*(dormant?.4:1),1);
+  ctx.fillStyle=flash?'#fff':(dormant?'#d9c8ff':'#ffd0d8');ctx.beginPath();ctx.arc(0,0,R*(.18+pl*.05),0,TAU);ctx.fill();
+  ctx.restore();
+}
+function drawOracle(e,V,R,flash,pl){
+  const P=flash?'#fff':V.primary,S=flash?'#fff':V.secondary,A=flash?'#fff':V.accent;
+  const rings=e.phase===2?5:3;   // fase 2: anéis se multiplicam
+  const curse=e.sk&&e.sk.curse&&e.skillCd<1.5?1-e.skillCd/1.5:0;   // carga da maldição
+  // anéis concêntricos + órbitas
+  ctx.strokeStyle=A;
+  for(let i=0;i<rings;i++){ctx.lineWidth=1.2;ctx.globalAlpha=.35+.1*i;const rr=R*(1.05+i*.16);
+    ctx.beginPath();ctx.arc(0,0,rr,0,TAU);ctx.stroke();
+    // marca temporal orbitando cada anel
+    const a=e.ring*(1+i*.35)*(i%2?-1:1);ctx.fillStyle=A;ctx.beginPath();ctx.arc(Math.cos(a)*rr,Math.sin(a)*rr,3,0,TAU);ctx.fill();}
+  ctx.globalAlpha=1;
+  // corpo: olho (amêndoa) — exclusivo
+  ctx.fillStyle=linGrad2('mb.oracle|'+(flash?1:0),-R,0,R,0,S,P);ctx.strokeStyle=A;ctx.lineWidth=R*.08;
+  ctx.beginPath();ctx.moveTo(-R,0);ctx.quadraticCurveTo(0,-R*.85,R,0);ctx.quadraticCurveTo(0,R*.85,-R,0);ctx.closePath();ctx.fill();ctx.stroke();
+  // íris/pupila (segue e.aim — sem escrever)
+  const px=Math.cos(e.aim)*R*.18,py=Math.sin(e.aim)*R*.18;
+  ctx.fillStyle=flash?'#fff':'#3d2e05';ctx.beginPath();ctx.arc(px,py,R*.34,0,TAU);ctx.fill();
+  mbCore(R*.7,V.accent,pl,1);
+  ctx.fillStyle=flash?'#fff':'#fff1b8';ctx.beginPath();ctx.arc(px,py,R*(.14+pl*.05+curse*.08),0,TAU);ctx.fill();
+  // arcos de "previsão" ao carregar a maldição
+  if(curse>0){ctx.strokeStyle=A;ctx.lineWidth=2;ctx.globalAlpha=curse*.8;
+    for(let i=0;i<3;i++){ctx.beginPath();ctx.arc(0,0,R*(1.6+i*.25)*curse,e.aim-.5,e.aim+.5);ctx.stroke();}ctx.globalAlpha=1;}
+}
+function drawLeech(e,V,R,flash,pl){
+  const P=flash?'#fff':V.primary,S=flash?'#fff':V.secondary,A=flash?'#fff':V.accent;
+  const drain=e.drainT>0?1:0,ph2=e.phase===2?1:0;
+  const beat=.5+.5*Math.sin(e.core*(2+ph2*1.5));   // pulsação (intensifica na fase 2)
+  ctx.save();ctx.scale(V.scaleX,V.scaleY);
+  // tentáculos geométricos (5, assimétricos) — exclusivo
+  ctx.strokeStyle=A;ctx.lineWidth=3;ctx.lineCap='round';
+  const TENT=[[.2,1.15],[1.1,.9],[2.3,1.25],[3.6,.8],[4.7,1.05]];
+  for(let i=0;i<5;i++){const a=TENT[i][0]+Math.sin(e.core*.8+i)*.15,len=R*TENT[i][1]*(1+drain*.25);
+    ctx.globalAlpha=.7+beat*.3;ctx.beginPath();ctx.moveTo(Math.cos(a)*R*.6,Math.sin(a)*R*.6);
+    ctx.quadraticCurveTo(Math.cos(a+.5)*len*.8,Math.sin(a+.5)*len*.8,Math.cos(a+.2)*len*1.3,Math.sin(a+.2)*len*1.3);ctx.stroke();}
+  ctx.globalAlpha=1;
+  // corpo assimétrico (blob de 7 lados irregular, fixo)
+  ctx.fillStyle=linGrad2('mb.leech|'+(flash?1:0),-R,-R,R,R,P,S);ctx.strokeStyle=A;ctx.lineWidth=R*.07;
+  const IRR=[1,.78,.92,1.08,.74,.96,.86];
+  ctx.beginPath();for(let i=0;i<7;i++){const an=i/7*TAU;const rr=R*IRR[i]*(.92+beat*.08);ctx[i?'lineTo':'moveTo'](Math.cos(an)*rr,Math.sin(an)*rr);}ctx.closePath();ctx.fill();ctx.stroke();
+  // núcleo pulsante com contração/expansão; efeito de sucção (anéis para dentro) durante o dreno
+  if(drain){ctx.strokeStyle=A;ctx.lineWidth=1.5;for(let i=0;i<3;i++){const kk=(runTime*1.5+i/3)%1;ctx.globalAlpha=kk*.6;ctx.beginPath();ctx.arc(0,0,R*(1.4-kk*1.1),0,TAU);ctx.stroke();}ctx.globalAlpha=1;}
+  mbCore(R*.9,V.primary,beat,1);ctx.fillStyle=flash?'#fff':'#e6ffb8';ctx.beginPath();ctx.arc(0,0,R*(.16+beat*.14),0,TAU);ctx.fill();
+  ctx.restore();
+}
+const MINIBOSS_RENDERERS={herald:drawHerald,furnace:drawFurnace,sentinel:drawSentinel,brood:drawBrood,
+  duelist:drawDuelist,colossus:drawColossus,oracle:drawOracle,leech:drawLeech};
+function drawMiniBoss(e){
+  const V=drawMinibossBase(e);
+  const intro=e.spawnT>0?1-e.spawnT/1.6:1;
+  const R=e.r,flash=e.flashT>0;
+  if(e.telegraphT>0)drawMinibossDashTelegraph(e,V);
+  ctx.save();ctx.globalAlpha=intro;ctx.translate(e.x,e.y);
+  const id=e.mb&&e.mb.id;
+  const rend=MINIBOSS_RENDERERS[id]||drawHerald;
+  /* blindagem genérica (placas retangulares orbitando) só para quem não
+     integra e.plates no próprio desenho (Sentinela e Colosso integram) */
+  if(id!=='sentinel'&&id!=='colossus'){
+    for(let i=0;i<e.plates;i++){
+      const a=e.spinAng+i*TAU/e.plateMax;
+      const px=Math.cos(a)*(R+16),py=Math.sin(a)*(R+16);
+      ctx.save();ctx.translate(px,py);ctx.rotate(a);
+      ctx.fillStyle=flash?'#fff':V.secondary;ctx.strokeStyle=V.accent;ctx.lineWidth=1.4;
+      ctx.beginPath();ctx.rect(-7,-4,14,8);ctx.fill();ctx.stroke();
+      ctx.restore();
+    }
+  }
+  if(id!=='oracle')ctx.rotate(e.aim);   // o Oráculo não gira: o olho segue a mira pela pupila
+  const pl=.5+.5*Math.sin(e.core*2.6);
+  rend(e,V,R,flash,pl);
+  drawMinibossPhaseRing(e,V);           // arco circular: indiferente à rotação
+  ctx.restore();
+  // ---- overlays de estado já existentes (mecânica intacta; cores por perfil) ----
   // SENTINELA: escudo defensivo visual
   if(e.shieldUpState==='telegraph'){
     ctx.save();ctx.globalAlpha=.4+.3*Math.sin(runTime*12);
@@ -13916,9 +14200,9 @@ function drawMiniBoss(e){
   }else if(e.shieldUpState==='active'){
     ctx.save();ctx.globalAlpha=.5+.2*Math.sin(runTime*6);
     ctx.strokeStyle='#8ff6ff';ctx.lineWidth=4;
-    ctx.beginPath();ctx.arc(e.x,e.y,R+16,0,TAU);ctx.stroke();
+    mbPolyAt(e.x,e.y,8,R+16,runTime*.3);ctx.stroke();   // B5-A: escudo hexagonal (era círculo)
     ctx.globalAlpha=.12;ctx.fillStyle='#8ff6ff';
-    ctx.beginPath();ctx.arc(e.x,e.y,R+16,0,TAU);ctx.fill();
+    mbPolyAt(e.x,e.y,8,R+16,runTime*.3);ctx.fill();
     ctx.restore();
   }else if(e.shieldUpState==='vulnerable'){
     ctx.save();ctx.globalAlpha=.35;
@@ -13965,6 +14249,11 @@ function drawMiniBoss(e){
       ctx.restore();
     }
   }
+}
+function mbPolyAt(x,y,n,R,rot){
+  ctx.beginPath();
+  for(let i=0;i<n;i++){const an=rot+i/n*TAU;ctx[i?'lineTo':'moveTo'](x+Math.cos(an)*R,y+Math.sin(an)*R);}
+  ctx.closePath();
 }
 function spawnWave(n){
   waveCleared=false;
