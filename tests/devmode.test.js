@@ -838,7 +838,12 @@ ok('Textos flutuantes de dano e falas dos Echos têm camadas separadas',()=>{
   assert(/const FTEXT_SPEAK=15;/.test(rawSrc),'falas continuam com corpo legível');
   assert(/function echoSpeechDuration/.test(rawSrc),'duração dinâmica central');
   assert(/function speechRender/.test(rawSrc),'render dedicado de fala');
-  assert(/renderSpeech\(\);/.test(rawSrc),'fala desenhada pelo canal separado');
+  /* B5-B-FIX: este assert exigia a string 'renderSpeech();' — uma chamada a
+     uma função INEXISTENTE (a real é speechRender), e por isso travou o bug
+     que congelava o HUD. Agora exige a chamada correta dentro de render(). */
+  const _r=rawSrc.slice(rawSrc.indexOf('function render(){'),rawSrc.indexOf('function loop(now){'));
+  assert(/\bspeechRender\(\);/.test(_r),'fala desenhada pelo canal separado (speechRender) dentro de render()');
+  assert(!/\brenderSpeech\(\);/.test(rawSrc),'nenhuma chamada a renderSpeech (não existe)');
 });
 
 /* ===================================================================
