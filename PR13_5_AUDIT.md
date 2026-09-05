@@ -802,3 +802,9 @@ O `economy_sim.js` do Bloco 1 aplicava `p.coinMul` (módulos econômicos) **ante
 
 Testes: 21 suítes · 1 303 checks · 0 falhas. Detalhes e tabelas: `PR13_5_B3_FIX.md`.
 
+---
+
+## 28. B4 — Sintonia dinâmica dos módulos passivos
+
+Fecha o achado B1 "Sintonia existe, mas sem identidade": 5 estados finitos (`ATTUNE_STATES`, DIVERGENTE ×0,90 … RESSONANTE ×1,12; econômicos ×0,95 … ×1,06) sobre o score determinístico do PR 9; a parte **benéfica** dos modificadores do próprio módulo passa a escalar pelo estado via `attune:<id>:<stat>` no Stat Pipeline (trade-offs intactos); módulos de campo direto usam `p.attuneMul` lido no consumo; bônus temático do PR 9 mantido. Loja/TAB/tooltip mostram estado + motivo + efeito (preview puro). Sintonia lê moralidade e nunca escreve. Save/Continue e Sandbox recalculam (nada persistido; `SM_VERSION` 3). Economia revalidada (A idêntico; C +0,6 % renda, CAN_ALL 65→69,6 %). `npm test` 22 suítes · 1331 checks · 0 falhas. Detalhes, tabela dos 57 módulos e métricas antes/depois: `PR13_5_B4.md`.
+

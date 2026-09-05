@@ -58,3 +58,12 @@ node audit_pr135/eco_metrics.js "$PWD" 424242 1000
 node audit_pr135/eco_metrics.js "$PWD" 991337 1000
 ```
 O 1º argumento é a raiz ABSOLUTA de uma árvore (`"$PWD"` = a atual; um extract de outro commit serve para o "antes").
+
+## B4 — Sintonia
+
+```bash
+# matriz moral × 57 módulos: estados, efeito real por módulo, duplicatas, transições
+node audit_pr135/attunement_audit.js            # árvore atual
+node audit_pr135/attunement_audit.js /caminho/de/outra/arvore   # "antes"
+```
+
