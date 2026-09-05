@@ -808,3 +808,9 @@ Testes: 21 suítes · 1 303 checks · 0 falhas. Detalhes e tabelas: `PR13_5_B3_F
 
 Fecha o achado B1 "Sintonia existe, mas sem identidade": 5 estados finitos (`ATTUNE_STATES`, DIVERGENTE ×0,90 … RESSONANTE ×1,12; econômicos ×0,95 … ×1,06) sobre o score determinístico do PR 9; a parte **benéfica** dos modificadores do próprio módulo passa a escalar pelo estado via `attune:<id>:<stat>` no Stat Pipeline (trade-offs intactos); módulos de campo direto usam `p.attuneMul` lido no consumo; bônus temático do PR 9 mantido. Loja/TAB/tooltip mostram estado + motivo + efeito (preview puro). Sintonia lê moralidade e nunca escreve. Save/Continue e Sandbox recalculam (nada persistido; `SM_VERSION` 3). Economia revalidada (A idêntico; C +0,6 % renda, CAN_ALL 65→69,6 %). `npm test` 22 suítes · 1331 checks · 0 falhas. Detalhes, tabela dos 57 módulos e métricas antes/depois: `PR13_5_B4.md`.
 
+---
+
+## 29. B5-A — Identidade visual dos mini-chefes
+
+Confirmado no código: um único `drawMiniBoss` (octógono + aríete + placas, paleta do Arauto fixa) servia os 8; a auditoria estrutural do renderer real dava distância **0,00** entre brood×oracle. B5-A introduz `MINIBOSS_VISUALS` (perfil declarativo) + 8 renderers próprios (`MINIBOSS_RENDERERS`), telegraph de investida em 8 estilos **fiéis** (linha reta 760 px em `e.aim`), 8 assinaturas de spawn (1,6 s já existentes), fase 2 com sinal comum + assinatura individual + 8 banners, barra de HP com símbolo/paleta própria. Renderer gameplay-pure e determinístico (0 `Math.random`, 0 DOM, 0 partículas no draw). Zero mudança de balance/seleção/hitbox; PARADOXO intocado. `npm test` 23 suítes · 1349 checks · 0 falhas. Mecânica compartilhada (dash/burst/fase 2 para os 8; `burn`/`slash`/`slam` sem código) registrada para B5-B em `PR13_5_B5A.md §13`.
+

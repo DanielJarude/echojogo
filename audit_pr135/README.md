@@ -67,3 +67,11 @@ node audit_pr135/attunement_audit.js            # árvore atual
 node audit_pr135/attunement_audit.js /caminho/de/outra/arvore   # "antes"
 ```
 
+## B5-A — Visual dos mini-chefes
+
+```bash
+# matriz de identidade, assinatura de primitivas do renderer real, distância entre pares, pureza, custo
+node audit_pr135/miniboss_visual_audit.js
+node audit_pr135/miniboss_visual_audit.js /caminho/da/arvore/anterior   # "antes"
+```
+
