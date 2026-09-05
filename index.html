@@ -2590,8 +2590,11 @@ function sheetRender(force){
     for(const id of p.items){
       const it=itemById(id);if(!it)continue;
       const st=itemHumanState(p,id);
+      const ai=attunementInfo(id);   // B4: estado de Sintonia na pílula (puro)
+      const aTag=ai&&ai.state.id!=='neutral'
+        ?' <span class="bstate" style="color:'+ai.state.c+'">'+ai.state.lab+(ai.pct?' '+(ai.pct>0?'+':'')+ai.pct+'%':'')+'</span>':'';
       h+='<span class="bpill'+(it.transformer?' tr':'')+'" data-itip="'+id+'" style="color:'+it.color+'">'+
-        (it.transformer?'◆ ':'')+it.nm+(st?' <span class="bstate">'+st+'</span>':'')+'</span>';
+        (it.transformer?'◆ ':'')+it.nm+aTag+(st?' <span class="bstate">'+st+'</span>':'')+'</span>';
     }
   }else h+='<span class="bpill" style="opacity:.5;cursor:default">NENHUM MÓDULO INSTALADO</span>';
   h+='</div></div>';
@@ -5937,8 +5940,10 @@ function moralAffinityTagHTML(itemId,showCurrent){
     '<span style="color:'+MORAL_AXIS_COLOR[a]+'">'+MORAL_AXIS_LABEL[a]+'</span>').join(' / ');
   let s='<div class="cmoral">SINTONIA: '+axes;
   if(showCurrent&&player){
-    const lv=moralAffinityLevel(calcMoralAffinityMatch(aff,getMoralProfile()));
-    s+=' · ATUAL: <b style="color:'+lv.c+'">'+lv.lab+'</b>';
+    /* B4: preview PURO com a moralidade atual — estado, motivo e efeito */
+    const info=attunementInfo(itemId);
+    s+=' · <b style="color:'+info.state.c+'">'+info.state.lab+'</b>'+
+      '<br><span style="opacity:.8">'+info.reason+' · '+info.effect+'</span>';
   }
   return s+'</div>';
 }
@@ -6805,9 +6810,11 @@ function giveItem(it,free){
   toast((free?'SAQUEADO: ':'INSTALADO: ')+it.nm);
   const _aff=getItemMoralAffinity(it.id);
   if(_aff){
-    const _lv=moralAffinityLevel(calcMoralAffinityMatch(_aff,getMoralProfile()));
-    if(_lv.id==='attuned'||_lv.id==='harmonic')
-      toast('SINTONIA '+_lv.lab+' · O MÓDULO RESPONDE AO SEU PERFIL');
+    const _st=attunementState(it.id);
+    if(_st.id==='attuned'||_st.id==='resonant')
+      toast('SINTONIA '+_st.lab+' · O MÓDULO RESPONDE AO SEU PERFIL');
+    else if(_st.id==='divergent')
+      toast('SINTONIA DIVERGENTE · O MÓDULO RENDE MENOS COM ESTE PERFIL');
   }
   floatText(player.x,player.y-32,it.nm,it.color);
   spawnRing(player.x,player.y,it.color,10,115,.6);sLvl();
@@ -19007,7 +19014,7 @@ function itemTipHTML(it){
       syn.map(s=>'<span>'+s+'</span>').join('')+'</span>';
   }
   if(it.transformer)h+='<div class="tcard-tr">◆ TRANSFORMADOR — muda como a run é jogada</div>';
-  h+=moralAffinityTagHTML(it.id,false);
+  h+=moralAffinityTagHTML(it.id,!!player);   // B4: estado atual/projetado + motivo (puro)
   h+=lockLineFor('i',it.id);
   return h;
 }
@@ -20288,6 +20295,23 @@ const DEV={
     return DEV.setMoral(p[0],p[1],p[2]);
   },
   /* Força o recálculo completo do perfil + sintonia (inspeção). */
+  /* PR13.5 B4 — inspector de Sintonia (somente DEV; puro) */
+  attunement(id){
+    if(!DEV_MODE)return null;
+    const prof=getMoralProfile();
+    const one=(iid)=>{
+      const it=itemById(iid);if(!it)return null;
+      const info=attunementInfo(iid,prof);
+      const active=!!(player&&player.items.indexOf(iid)>=0);
+      const mods=active?player.sm.filter(m=>m.id.indexOf('attune:'+iid+':')===0||m.id.indexOf('moral:item:'+iid+':')===0)
+        .map(m=>({id:m.id,stat:m.stat,type:m.type,value:+(+m.value).toFixed(4)})):[];
+      return {id:iid,nm:it.nm,aff:getItemMoralAffinity(iid),moral:{comp:moral.comp,greed:moral.greed,viol:moral.viol},
+        score:info?+info.score.toFixed(3):null,state:info?info.state.lab:'NEUTRA',mul:info?info.mul:1,
+        economic:!!(info&&info.economic),active,mods};
+    };
+    if(id)return one(id);
+    return (player?player.items:[]).map(one).filter(Boolean);
+  },
   moralRecalc(){
     if(!devReady())return false;
     _moralProfCache=null;_moralProfKey='';
@@ -20784,7 +20808,7 @@ function devRender(){
       devBtn('mp:mix_cv','MIX C/V')+devBtn('mp:zero','ZERAR','warn')+'</div>'+
       '<div class="dvrow" style="margin-top:5px">'+
       devBtn('msimc','ESCOLHA +2 COMP')+devBtn('msimg','ESCOLHA +2 GANÂ')+
-      devBtn('msimv','ESCOLHA +2 VIOL')+devBtn('mitems','ITENS → LOG')+'</div>'+
+      devBtn('msimv','ESCOLHA +2 VIOL')+devBtn('mitems','ITENS → LOG')+devBtn('attinsp','SINTONIA B4 → LOG')+'</div>'+
       devMoralInspectorHTML();
   }
 
@@ -21047,6 +21071,11 @@ function devCommand(c){
     case 'bossdbg':    return devLog('BOSS '+JSON.stringify(DEV.bossDebug()));
     case 'msetall':    return DEV.setMoral(devNum('dev-mc',0),devNum('dev-mg',0),devNum('dev-mv',0));
     case 'mrecalc':    return DEV.moralRecalc();
+    case 'attinsp':{
+      const l=DEV.attunement()||[];
+      devLog('SINTONIA B4: '+(l.length?l.map(x=>x.id+'='+x.state+'(×'+x.mul+')').join(' · '):'sem módulos'));
+      return true;
+    }
     case 'msimc':      return DEV.simulateMoralChoice('comp',2);
     case 'msimg':      return DEV.simulateMoralChoice('greed',2);
     case 'msimv':      return DEV.simulateMoralChoice('viol',2);
