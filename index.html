@@ -855,7 +855,7 @@
     <div id="lvl">NV 1 · 0/20</div>
   </div>
   <div id="dashwrap">
-    <span class="lbl">DASH [ESPAÇO]</span>
+    <span class="lbl" id="dashlbl">DASH [ESPAÇO]</span>
     <div id="dashbar"><div id="dashfill"></div></div>
   </div>
   <div id="spwrap">
@@ -4759,7 +4759,7 @@ const $=id=>document.getElementById(id);
 const hpfill=$('hpfill'),hpnum=$('hpnum'),waveEl=$('wave'),timerEl=$('timer'),
   xpfill=$('xpfill'),lvlEl=$('lvl'),chip1=$('chip1'),chip2=$('chip2'),
   shfill=$('shfill'),shnum=$('shnum'),shbar=$('shbar'),
-  dashfill=$('dashfill'),dashwrap=$('dashwrap'),bannerEl=$('banner'),
+  dashfill=$('dashfill'),dashwrap=$('dashwrap'),dashlbl=$('dashlbl'),bannerEl=$('banner'),
   toastsEl=$('toasts'),overlay=$('overlay'),ovBody=$('ov-body'),
   ovGo=$('ov-go'),ovEchos=$('ov-echos'),ovFrac=$('ov-frac-lines'),
   ovTitle=$('ov-title'),ovSub=$('ov-sub');
@@ -4833,6 +4833,7 @@ function updateHUD(force){
   const dr=player.dashCd>0?1-player.dashCd/player.dashCdMax:1;
   dashfill.style.width=(dr*100)+'%';
   dashwrap.classList.toggle('ready',player.dashCd<=0);
+  if(dashlbl)dashlbl.textContent=player.dashCd>0?'DASH '+fmtSec(player.dashCd):'DASH [ESPAÇO]';   // B5-B-FIX: quanto falta
   // ---- HUD do especial ----
   const C=curChar(),spw=$('spwrap');
   if(spw&&C.sp){
@@ -4856,7 +4857,6 @@ function updateHUD(force){
   // busca por SLOT (e não por índice): o Modo DEV pode criar só o Echo·02
   setChip(chip1,1,echoes.find(e=>e&&e.slot===1)||null);
   setChip(chip2,2,echoes.find(e=>e&&e.slot===2)||null);
-  coinsEl.textContent='◈ '+player.coins;
   coinsEl.textContent='◈ '+fmtCompact(player.coins);
   /* PR 11.5: HUD mostra só o PERFIL dominante — percentuais de moralidade
      e tiers ficam no Registro de Combate (TAB) e na pausa (§15). */
@@ -18186,7 +18186,8 @@ function render(){
     ctx.fillText(f.txt,f.x,f.y-f.t*30);
   }
   ctx.globalAlpha=1;
-  renderSpeech();
+  speechRender();   /* B5-B-FIX: era renderSpeech() — ReferenceError abortava o frame
+                       ANTES de updateHUD() (HUD congelado desde o B2) */
   ctx.restore();
   ctx.restore();
 
@@ -18494,7 +18495,10 @@ function loop(now){
     if(f.t<f.life)ftexts[_fw++]=f;
   }
   ftexts.length=_fw;
-  render();
+  /* B5-B-FIX: o HUD é atualizado num try próprio — uma exceção no render()
+     (como a que congelou 9 indicadores) nunca mais leva o HUD junto. */
+  try{render();}
+  catch(err){if(errGuard++<8)console.error('[ECHO] erro no render (HUD segue):',err);}
   hudAcc+=dt;
   updateHUD();
   /* PR 11.5 §108: o registro só re-renderiza quando aberta e sob demanda
@@ -20166,6 +20170,35 @@ const DEV={
     if(!DEV_MODE)return null;
     return MINIBOSS.map(m=>DEV.minibossVisual(m.id));
   },
+  /* B5-B-FIX: estado real que o HUD deveria mostrar (puro; inerte fora do DEV) */
+  hudState(){
+    if(!DEV_MODE||!player)return null;
+    const C=curChar();
+    return {hp:Math.max(0,Math.ceil(player.hp)),hpMax:player.maxHp,shield:Math.max(0,Math.ceil(player.shield)),shieldMax:player.shieldMax,
+      dashCd:+player.dashCd.toFixed(2),dashReady:player.dashCd<=0,special:C.sp?{name:C.sp.nm,cd:+(player.spCd||0).toFixed(2),active:+(player.spT||0).toFixed(2),ready:(player.spCd||0)<=0&&!(player.spT>0)}:null,
+      credits:player.coins,sync:{level:player.level,xp:Math.floor(player.xp),next:player.xpNext},wave:Math.max(1,wave),runTime:+runTime.toFixed(2),kills};
+  },
+  /* compara STATE × DOM campo a campo — força um updateHUD e lê o DOM */
+  hudSnapshot(){
+    if(!DEV_MODE||!player)return null;
+    hudAcc=1;updateHUD(true);
+    const st=DEV.hudState();
+    const txt=id=>{const el=$(id);return el?String(el.textContent):'';};
+    const num=s=>{const m=String(s).replace(/\./g,'').match(/-?\d+/);return m?+m[0]:NaN;};
+    const rows={
+      hp:{state:st.hp,dom:num(txt('hpnum').split('/')[0])},
+      hpMax:{state:st.hpMax,dom:num(txt('hpnum').split('/')[1])},
+      shield:{state:st.shield,dom:num(txt('shnum').split('/')[0])},
+      credits:{state:'◈ '+fmtCompact(st.credits),dom:txt('coinsp')},   // o HUD usa o formato compacto por design (1.2K)
+      wave:{state:st.wave,dom:num(txt('wave'))},
+      kills:{state:st.kills,dom:num(txt('timer').split('ABATES')[1]||'')},
+      runTime:{state:fmtTime(runTime),dom:txt('timer').split(' · ')[0]},
+      dash:{state:st.dashReady?'READY':fmtSec(player.dashCd),dom:st.dashReady?(dashwrap.classList.contains('ready')?'READY':'?'):txt('dashlbl').replace('DASH ','')},
+      sync:{state:'NV '+st.sync.level+' · '+st.sync.xp+'/'+st.sync.next,dom:txt('lvl')}};
+    for(const k in rows)rows[k].ok=String(rows[k].state)===String(rows[k].dom)||(typeof rows[k].state==='number'&&rows[k].state===rows[k].dom);
+    rows.ok=Object.keys(rows).every(k=>rows[k].ok!==false);
+    return rows;
+  },
   /* B5-B: estado mecânico do mini-chefe vivo (puro; inerte fora do DEV) */
   minibossState(){
     if(!DEV_MODE)return null;
@@ -21142,7 +21175,7 @@ function devRender(){
   h+='<h4>MINI-CHEFES (8)</h4><div class="dvrow">';
   for(const m of MINIBOSS)
     h+=devBtn('m:'+m.id,m.nm.replace(/^(O|A)\s+/,'').split(' ')[0]);
-  h+=devBtn('mbstate','ESTADO → LOG')+devBtn('mbp2','FASE 2')+devBtn('mbhaz','LIMPAR HAZARDS')+devBtn('clearmini','LIMPAR MINI-CHEFE','warn')+devBtn('boss','CHEFE FINAL','gold')+
+  h+=devBtn('hudsnap','HUD × STATE')+devBtn('mbstate','ESTADO → LOG')+devBtn('mbp2','FASE 2')+devBtn('mbhaz','LIMPAR HAZARDS')+devBtn('clearmini','LIMPAR MINI-CHEFE','warn')+devBtn('boss','CHEFE FINAL','gold')+
     '</div>';
 
   h+='<h4>PLAYER'+(p?' · '+Math.ceil(p.hp)+'/'+p.maxHp+' HP · ◈'+p.coins:'')+
@@ -21556,6 +21589,7 @@ function devCommand(c){
     case 'bossdbg':    return devLog('BOSS '+JSON.stringify(DEV.bossDebug()));
     case 'msetall':    return DEV.setMoral(devNum('dev-mc',0),devNum('dev-mg',0),devNum('dev-mv',0));
     case 'mrecalc':    return DEV.moralRecalc();
+    case 'hudsnap':{const r=DEV.hudSnapshot();devLog(r?('HUD '+(r.ok?'OK':'DIVERGENTE')+' · '+Object.keys(r).filter(k=>k!=='ok').map(k=>k+':'+(r[k].ok?'✓':r[k].state+'≠'+r[k].dom)).join(' ')):'sem player');return true;}
     case 'mbstate':{const st=DEV.minibossState();devLog(st?('MINI-CHEFE '+st.id+' F'+st.phase+' hp '+st.hp+' haz '+st.hazards.length+'/'+st.hazardCap+' crias '+st.summons+(st.stance?' postura '+st.stance:'')+(st.escalation?' escalada '+st.escalation:'')+(st.siphon.active?' DRENANDO':'')):'sem mini-chefe');return true;}
     case 'mbp2':       return DEV.minibossPhase2();
     case 'mbhaz':      return DEV.minibossClearHazards();
