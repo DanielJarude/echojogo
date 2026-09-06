@@ -605,6 +605,19 @@ Sandbox existentes · esquema de save de `fracRun`/`fracDisc` (só aditivo) ·
   `npm test` vermelho (2 falhas diretas + 2 latentes). **Fora do escopo do B1**
   (não mexer em produção/testes). Precisa de decisão do dono (alinhar em 0.8.0
   ou reverter para 0.7.0) antes de um bloco que exija suíte verde.
+  - **✅ RESOLVIDA (PR14 · B1-FIX):**
+    - **Causa:** o release "0.8.0-alpha" bumpou `package.json` mas deixou
+      `ECHO_VERSION` (runtime, `index.html`) e 4 asserções de teste em
+      `0.7.0-alpha` — duas fontes de verdade independentes ficaram divergentes.
+    - **Decisão:** versão oficial permanece **0.8.0-alpha** (não reverter).
+    - **Correção (mínima, só consistência):** `ECHO_VERSION` → `0.8.0-alpha`
+      (`index.html`); literais/regex de versão atualizados em
+      `tests/devmode.test.js`, `tests/fracture-director.test.js` e
+      `tests/pr13-5-b6-balance.test.js`. Documentação histórica (PR13.5,
+      RELATORIO_B6_PR12) **preservada** em 0.7.0-alpha por descrever contexto
+      anterior. `SM_VERSION=3` e `FRACTURE_STATE_VERSION=1` intocados; zero
+      mudança de gameplay.
+    - **Resultado `npm test`:** **0 falhas** (todas as suítes verdes).
 - **DT-2 — Beacon único:** só 1 beacon por vez limita coexistência de "evento
   comum + presença de facção" na mesma janela. Se a presença reusar `beacon`,
   precisará de política de prioridade/coexistência (avaliar no B2).

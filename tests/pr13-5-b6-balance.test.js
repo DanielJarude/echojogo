@@ -427,8 +427,8 @@ ok('B6-I1: SM_VERSION continua 3 e o wrapper do save segue v3 (B6 não mexeu em 
 });
 
 ok('B6-I2: version do jogo sem bump',()=>{
-  assert.strictEqual(require('../package.json').version,'0.7.0-alpha');
-  assert.ok(/const ECHO_VERSION\s*=\s*['"]0\.7\.0-alpha['"]/.test(SRCN));
+  assert.strictEqual(require('../package.json').version,'0.8.0-alpha');
+  assert.ok(/const ECHO_VERSION\s*=\s*['"]0\.8\.0-alpha['"]/.test(SRCN));
 });
 
 ok('B6-I3: CONTINUE — o piso do dash sobrevive ao ciclo checkpoint → resume',()=>{

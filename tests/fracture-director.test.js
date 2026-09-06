@@ -4450,7 +4450,7 @@ ok('B5-11: versão do jogo, SM_VERSION e versão do estado do Diretor intactas',
   assert.strictEqual(t.FRACTURE_STATE_VERSION,1,
     'versão do estado do Diretor mudou sem necessidade');
   const pkg=JSON.parse(fs.readFileSync(path.join(ROOT,'package.json'),'utf8'));
-  assert.strictEqual(pkg.version,'0.7.0-alpha','versão do pacote mudou');
+  assert.strictEqual(pkg.version,'0.8.0-alpha','versão do pacote mudou');
 });
 
 ok('B5-12: as 12 assinaturas são alcançáveis e nenhuma domina o conjunto',()=>{
