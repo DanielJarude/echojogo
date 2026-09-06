@@ -4882,6 +4882,26 @@ let mEff={shopMul:1,coinMul:1,dmgMul:1,enemySpd:1,enemyAggr:1,upgMul:1,medDrop:0
   rerollMul:1,enemyHp:1,playerDmgTaken:1,echoPower:1,regen:0,conflict:0};
 let pickups=[], allies=[], beacon=null, evTimer=12, evCount=0, curEv=null;
 let boss=null, miniBoss=null, bossIntel=null, aberr=0, victoryData=null, freezeT=0;
+/* VFX de vitória do chefe: callbacks atrasados são parte da celebração, mas
+   precisam morrer junto com a run. Sem este registro, sair imediatamente
+   após a vitória recriava partículas depois de clearRunEntities(). */
+let bossVictoryTimers=[];
+function clearBossVictoryTimers(){
+  for(const entry of bossVictoryTimers)clearTimeout(entry.id);
+  bossVictoryTimers.length=0;
+}
+function scheduleBossVictoryTimer(fn,delay){
+  const entry={id:null};
+  entry.id=setTimeout(()=>{
+    const i=bossVictoryTimers.indexOf(entry);
+    if(i>=0)bossVictoryTimers.splice(i,1);
+    /* sair/reiniciar invalida a celebração; não reacenda efeitos fora da run */
+    if(state!=='victory')return;
+    fn();
+  },delay);
+  bossVictoryTimers.push(entry);
+  return entry.id;
+}
 let shopOffers=[], shopItems=[], shopGuns=[], rerollCost=10, shopLock=null;
 let shopRecent=[], shopRollSeq=0;
 const DOM_NAME={comp:'ALTRUÍSTA',greed:'AVARENTO',viol:'BRUTAL',neutro:'NEUTRO'};
@@ -15885,6 +15905,7 @@ function resolveEnding(){
 
 function onVictory(){
   if(state==='victory')return;
+  clearBossVictoryTimers();
   /* PR 11.5 §90: vitória no laboratório NÃO registra final/variante/memória. */
   if(sandboxRun){sandboxVictory();return;}
   state='victory';firing=false;
@@ -15900,7 +15921,7 @@ function onVictory(){
   enemies.length=0;projectiles.length=0;beacon=null;
   shake=26;aberr=1;
   for(let i=0;i<9;i++){
-    setTimeout(()=>{
+    scheduleBossVictoryTimer(()=>{
       const x=ARENA.w/2+rand(-260,260),y=ARENA.h/2+rand(-200,200);
       spawnRing(x,y,i%2?'#ff4df0':'#46e0ff',10,rand(180,420),.9);
       spawnShards(x,y,i%2?'#ff4df0':'#46e0ff',14,7);
@@ -15952,9 +15973,10 @@ function onVictory(){
     rels:ending.ctx.echoes.map(e=>({slot:e.slot,rel:e.rel,trust:e.trust})),
     dis:{count:ending.ctx.disCount,ruptured:ending.ctx.disRuptured,
       reconciled:ending.ctx.disReconciled}};
-  setTimeout(showVictory,1250);
+  scheduleBossVictoryTimer(showVictory,1250);
 }
 function showVictory(){
+  if(state!=='victory'||!victoryData)return;
   ovExitMenu(false);                         // botão sandbox nunca vaza pro jogo real
   ovMenuVisible(false);
   const v=victoryData,E=ENDINGS[v.key];
@@ -16909,6 +16931,7 @@ function hideOverlay(){
    resetRunWorld: parte comum (limpeza total do mundo) usada por
    startRun (run nova) e resumeRun (continuar um checkpoint). */
 function resetRunWorld(){
+  clearBossVictoryTimers();
   if(sheetOpen)sheetHide();              // PR 11.5: ficha nunca atravessa runs
   sheetBrk=Object.create(null);_sheetSig='';
   state='play';runTime=0;fracT=0;shake=0;
@@ -19891,6 +19914,7 @@ document.getElementById('p-abort').addEventListener('click',abortRun);
 /* ---- PR 7.5: limpeza comum de fim de partida (usada ao sair para menus) ---- */
 function clearRunEntities(){
   // 1. interrompe a partida e limpa TODAS as entidades ativas da run
+  clearBossVictoryTimers();
   releaseAllInput();
   enemies.length=0;
   projectiles.length=0;
