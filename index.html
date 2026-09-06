@@ -15405,6 +15405,90 @@ function enemiesNear(x,y,rad){
   }
   return n;
 }
+/* =====================================================================
+   B3-FIX §4 — AUTOPRESERVAÇÃO E POSICIONAMENTO DOS ECOS
+   ---------------------------------------------------------------------
+   Playtest: um Eco avançou direto na horda e se matou. A autopreservação
+   antiga só existia para tier 0 (desconfiança) + hurt. Esta camada leve dá
+   a TODOS os Ecos aliados uma noção de "estou tentando sobreviver", SEM:
+   buff de HP/Shield, invulnerabilidade, teleporte, nerf de inimigo ou
+   passividade. É puramente uma correção do ALVO DE MOVIMENTO (tx,ty):
+
+     A. DISTÂNCIA IDEAL — recua se um inimigo está perto demais; melee ainda
+        engaja de perto; ranged mantém folga.
+     B. ESTADO DEFENSIVO — HP relativo e escudo quebrado aumentam a
+        preferência por recuar (quanto mais vulnerável, mais espaço).
+     C. RISCO LOCAL — densidade de inimigos próximos + peso extra p/
+        boss/miniboss, num ÚNICO passo O(inimigos) por Eco.
+     D. RECUO — foge da direção média das ameaças, com viés leve para perto
+        do jogador (região mais segura).
+     E. PERSONALIDADE/PAPEL importam — AGRESSIVO/IMPULSIVO toleram mais
+        risco; CAUTELOSO/PRECISO recuam antes; RESILIENTE aguenta mais.
+     F. NÃO toca em Dissonância/hostil — updateEcho já retorna antes desses
+        estados; a guarda abaixo é redundância defensiva.
+   Não é IA perfeita — é um companheiro que evita a morte boba. */
+function echoSurvivalTol(e){
+  const P=e&&e.pers;
+  let tol=1;
+  if(P){
+    if(P.id==='aggressive')tol=1.35;
+    else if(P.id==='impulsive')tol=1.5;      // aceita risco (mas há piso: recua no limite)
+    else if(P.id==='cautious')tol=0.7;
+    else if(P.id==='precise')tol=0.8;
+    else if(P.id==='resilient')tol=1.2;
+    else if(P.id==='opportunist')tol=1.0;
+  }
+  /* GUARDIÃO (slot 1) segura a linha um pouco mais; DISRUPTOR (slot 2) é médio */
+  if(e&&e.slot===1)tol*=1.1;
+  const tier=(typeof trustTier==='function')?trustTier(e):1;
+  tol*=tier===2?1.1:(tier===0?0.9:1);         // confia mais → coopera mais tempo
+  return Math.max(.5,Math.min(2,tol));
+}
+function echoSurvivalAdjust(e,tx,ty){
+  if(!e||!e.alive||e.hostile)return {x:tx,y:ty};   // Dissonância intocada (F)
+  if(typeof enemies==='undefined'||!enemies.length)return {x:tx,y:ty};
+  const DANGER=210;                                 // raio de avaliação de risco local
+  let cnt=0,nd=1e18,ndx=0,ndy=0,cx=0,cy=0,cw=0;
+  for(const en of enemies){
+    if(en.dead||en.spawnT>0)continue;
+    const dx=e.x-en.x,dy=e.y-en.y,d2=dx*dx+dy*dy;
+    if(d2>DANGER*DANGER)continue;
+    const d=Math.sqrt(d2)||1;
+    cnt++;
+    const wgt=(typeof boss!=='undefined'&&en===boss)?3:
+      ((typeof miniBoss!=='undefined'&&en===miniBoss)||en.type==='miniboss')?2:1;
+    cx+=dx/d*wgt;cy+=dy/d*wgt;cw+=wgt;              // direção média de fuga
+    if(d2<nd){nd=d2;ndx=dx;ndy=dy;}
+  }
+  if(!cnt)return {x:tx,y:ty};
+  const near=Math.sqrt(nd)||1;
+  const tol=echoSurvivalTol(e);
+  const hpR=e.maxHp>0?e.hp/e.maxHp:1;
+  const shBroken=(e.shieldMax>0&&(e.shield||0)<=0);
+  let vuln=0;
+  if(hpR<.5)vuln+=(.5-hpR)*2;                       // 0..1
+  if(shBroken)vuln+=.35;
+  vuln=clamp(vuln,0,1.2);
+  /* melee quer chegar perto; ranged mantém folga. Vulnerabilidade amplia a folga. */
+  const w=clamp((e.curW!=null?e.curW:0),0,WEAPONS.length-1);
+  const wd=WEAPONS[w];const melee=!!(wd&&wd.melee);
+  const minDist=((melee?46:124)+vuln*(melee?58:120))/tol;
+  const crowded=cnt>=3;
+  let need=0;
+  if(near<minDist)need=Math.max(need,(minDist-near)/minDist);
+  if(crowded&&vuln>.2)need=Math.max(need,.5+vuln*.3);
+  need=clamp(need,0,1);
+  if(need<=0)return {x:tx,y:ty};
+  let fx=cw>0?cx/cw:(ndx/near),fy=cw>0?cy/cw:(ndy/near);
+  const fl=Math.hypot(fx,fy)||1;fx/=fl;fy/=fl;
+  const pdx=player.x-e.x,pdy=player.y-e.y,pl=Math.hypot(pdx,pdy)||1;
+  fx=fx*.7+(pdx/pl)*.3;fy=fy*.7+(pdy/pl)*.3;        // viés leve para o jogador
+  const fl2=Math.hypot(fx,fy)||1;fx/=fl2;fy/=fl2;
+  const step=90+vuln*90;
+  let rx=clamp(e.x+fx*step,e.r,ARENA.w-e.r),ry=clamp(e.y+fy*step,e.r,ARENA.h-e.r);
+  const bx=lerp(tx,rx,need),by=lerp(ty,ry,need);
+  return {x:isFinite(bx)?bx:tx,y:isFinite(by)?by:ty};
+}
 function updateEcho(e,dt){
   if(!e.alive)return;
   regenEchoShield(e,dt);            // escudo regenera (suspenso durante a ruptura)
@@ -15495,6 +15579,11 @@ function updateEcho(e,dt){
 
   const rate=(beyond?(tier===2?5.8:4.2):(e.slot===1?16:3+9*e.stab))*(e.auraSlow||1);
   e.auraSlow=1;
+  /* B3-FIX §4: autopreservação corrige o ALVO (não a velocidade nem stats).
+     Aplica-se enquanto o Eco está engajando/perseguindo em combate real. */
+  const _sv=echoSurvivalAdjust(e,tx,ty);
+  e.repositioning=(Math.abs(_sv.x-tx)>1||Math.abs(_sv.y-ty)>1);  // marca leve p/ DEV
+  tx=_sv.x;ty=_sv.y;
   e.x+=(tx-e.x)*Math.min(1,rate*dt);
   e.y+=(ty-e.y)*Math.min(1,rate*dt);
   if(e.slot===2){
