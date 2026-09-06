@@ -20570,6 +20570,33 @@ function devSetPausePolicy(v){
    ===================================================================== */
 const DEV={
 
+/* ---------- B3-FIX §21: PLAYTEST DE FACÇÃO / ECHO (só DEV MODE) ---------- */
+  /* força a presença física de uma facção (ÂNCORA/CONSÓRCIO) para inspeção
+     visual. NÃO persiste, NÃO altera afinidade/meta, respeita o cap. */
+  forceFactionPresence(faction){
+    if(!devReady())return false;
+    if(typeof factionPresenceDevForce!=='function')return false;
+    const ok=factionPresenceDevForce(faction);
+    devTaint();devLog('PRESENÇA FORÇADA: '+faction+(ok?' OK':' RECUSADA'));
+    return ok;
+  },
+  /* inspetor read-only do estado da presença física. */
+  factionPresenceState(){
+    if(typeof factionPresenceEntitySnapshot!=='function')return null;
+    return factionPresenceEntitySnapshot();
+  },
+  /* inspetor read-only de autopreservação dos Ecos (não altera gameplay). */
+  echoRisk(){
+    if(typeof echoes==='undefined')return [];
+    return echoes.filter(e=>e&&e.alive).map(e=>({
+      slot:e.slot,pers:(e.pers&&e.pers.id)||'—',
+      hp:Math.round((e.hp/Math.max(1,e.maxHp))*100)+'%',
+      shieldBroken:!!(e.shieldMax>0&&(e.shield||0)<=0),
+      repositioning:!!e.repositioning,
+      tol:(typeof echoSurvivalTol==='function')?Math.round(echoSurvivalTol(e)*100)/100:1
+    }));
+  },
+
 /* ------------------------------- ONDAS ------------------------------ */
   /* Valida e pula direto para a onda pedida sem corromper a run. */
   goToWave(n){
