@@ -20969,6 +20969,33 @@ const DEV={
     devTaint();devLog('LOJA REROLADA');
     return true;
   },
+  /* B5.5: inspetor do projected stat impact — roda o MESMO preview do
+     card para qualquer item/upgrade, sem mutar nada (read-only; não
+     taint: igual a hudState/minibossState). Inerte fora do DEV. */
+  shopPreview(id){
+    if(!devReady())return false;
+    const it=itemById(id),u=UPGRADES.find(x=>x.id===id);
+    if(!it&&!u)return false;
+    const rows=it?shopItemPreview(it):shopUpgPreview(u);
+    return {kind:it?'item':'upgrade',id:rows?'ok':'erro',rows:rows||[],
+      display:previewDisplayRows(rows)};
+  },
+  /* B5.5: inspetor da economia meta — estado do slot, custo total restante
+     e fator de decaimento atual. Read-only (não taint). */
+  metaEconomy(){
+    if(!devReady())return false;
+    let spent=0,total=0;
+    for(const m of META_SHOP){
+      total+=m.cost*m.max;
+      spent+=m.cost*Math.min(m.max,m.lvl()|0);
+    }
+    return {mem:meta.mem|0,wins:meta.wins|0,
+      decay:+metaVictoryDecay().toFixed(3),
+      totalCost:total,spent:spent,remaining:Math.max(0,total-spent),
+      progress:total?+(Math.min(1,spent/total)).toFixed(3):1,
+      shop:META_SHOP.map(m=>({id:m.id,cost:m.cost,lvl:m.lvl()|0,max:m.max})),
+      endings:meta.endings.slice()};
+  },
 
 /* ---------------------------- OPERADORES ---------------------------- */
   /* Troca o operador da PRÓXIMA run — trocar no meio da run corromperia
