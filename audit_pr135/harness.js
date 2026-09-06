@@ -44,11 +44,36 @@ src+='\n;globalThis.__t={'+
   'setShopLock:v=>{shopLock=v;},'+
   'setSandboxRun:v=>{sandboxRun=v;},'+
   'resetShopVars:()=>{shopOffers=[];shopItems=[];shopGuns=[];rerollCost=rerollBaseCost();shopLock=null;shopRecentReset();},'+
+  /* B5.5: preview de stats, economia meta e ganchos de vitória */
+  'shopItemPreview,shopUpgPreview,shopImpactHTML,previewDisplayRows,'+
+  'smPreviewCarrier,smPreviewDryRun,smPreviewRows,shopEffectChip,previewStatValue,'+
+  'PREVIEW_STATS,metaVictoryDecay,onVictory,showVictory,loadMeta,saveMeta,'+
+  'META_SHOP,renderShopOp,grantWeapon,'+
+  'getVictoryData:()=>victoryData,setVictoryData:v=>{victoryData=v;},'+
+  'getBossVictoryTimers:()=>bossVictoryTimers,'+
+  'getDevTainted:()=>devTainted,setDevTainted:v=>{devTainted=v;},'+
+  'getFracRun:()=>fracRun,'+
   'grantItemInternal,itemStateInit,updateHUD,getMeta:()=>meta'+
   '};';
 function makeStyle(){const store={};return new Proxy(store,{get(t,k){return k in t?t[k]:'';},set(t,k,v){t[k]=String(v);return true;}});}
 function ctx2d(){const grad={addColorStop(){}};const numProps=new Set(['globalAlpha','lineWidth','shadowBlur','font','fillStyle','strokeStyle','lineCap','textAlign','imageSmoothingEnabled']);return new Proxy({},{get(t,k){if(k==='canvas')return{width:0,height:0};if(k==='measureText')return()=>({width:0});if(k==='getImageData')return()=>({data:new Uint8ClampedArray(4)});if(k==='createLinearGradient'||k==='createRadialGradient'||k==='createPattern')return()=>grad;if(numProps.has(k))return 1;return(...args)=>{const L=globalThis.__ctxLog;if(L)L.push([k,args]);};},set(t,k,v){const L=globalThis.__ctxLog;if(L)L.push(['set:'+k,[v]]);return true;}});}
-function makeEl(id){const el={id:id||'',children:[],dataset:{},value:'',width:0,height:0,_cls:new Set(),isConnected:true,offsetWidth:0,offsetHeight:0,textContent:'',innerHTML:'',className:'',title:'',style:makeStyle()};el.classList={add:(...c)=>c.forEach(x=>el._cls.add(x)),remove:(...c)=>c.forEach(x=>el._cls.delete(x)),contains:c=>el._cls.has(c),toggle:(c,f)=>{if(f===undefined){if(el._cls.has(c)){el._cls.delete(c);return false;}el._cls.add(c);return true;}if(f)el._cls.add(c);else el._cls.delete(c);return !!f;}};el.appendChild=c=>{el.children.push(c);return c;};el.remove=()=>{};el.addEventListener=()=>{};el.removeEventListener=()=>{};el.querySelector=()=>null;el.querySelectorAll=()=>[];el.closest=()=>null;el.focus=()=>{};el.blur=()=>{};el.setAttribute=(k,v)=>{el.dataset[k]=v;};el.getAttribute=k=>el.dataset[k];el.getContext=()=>ctx2d();return el;}
+function makeEl(id){const el={id:id||'',children:[],dataset:{},value:'',width:0,height:0,_cls:new Set(),isConnected:true,offsetWidth:0,offsetHeight:0,textContent:'',className:'',title:'',style:makeStyle(),_html:''};
+Object.defineProperty(el,'innerHTML',{get(){return el._html;},set(v){el._html=String(v);/* semântica browser: limpar innerHTML remove os filhos */if(el._html==='')el.children.length=0;}});
+el.classList={add:(...c)=>c.forEach(x=>el._cls.add(x)),remove:(...c)=>c.forEach(x=>el._cls.delete(x)),contains:c=>el._cls.has(c),toggle:(c,f)=>{if(f===undefined){if(el._cls.has(c)){el._cls.delete(c);return false;}el._cls.add(c);return true;}if(f)el._cls.add(c);else el._cls.delete(c);return !!f;}};
+el.appendChild=c=>{el.children.push(c);return c;};
+el.remove=()=>{};
+el._ev={};el.addEventListener=(t,fn)=>{(el._ev[t]=el._ev[t]||[]).push(fn);};   /* B5.5: registra p/ simular clique */
+el.removeEventListener=()=>{};
+el.querySelector=()=>null;
+el.querySelectorAll=()=>[];
+el.closest=()=>null;
+el.focus=()=>{};
+el.blur=()=>{};
+el.setAttribute=(k,v)=>{el.dataset[k]=v;};
+el.getAttribute=k=>el.dataset[k];
+el.getContext=()=>ctx2d();
+Object.defineProperty(el,'lastChild',{get:()=>el.children.length?el.children[el.children.length-1]:null});
+return el;}
 const elements=new Map();
 const document={hidden:false,title:'',body:makeEl('body'),documentElement:makeEl('html'),fullscreenElement:null,webkitFullscreenElement:null,createElement:()=>makeEl(''),getElementById:id=>{if(!elements.has(id))elements.set(id,makeEl(id));return elements.get(id);},querySelectorAll:()=>[],addEventListener:()=>{},removeEventListener:()=>{},hasFocus:()=>true,exitFullscreen:()=>Promise.resolve()};
 const window={innerWidth:1280,innerHeight:720,devicePixelRatio:1,screen:{availWidth:1280,availHeight:720},addEventListener:()=>{},removeEventListener:()=>{},matchMedia:()=>({addEventListener:()=>{},addListener:()=>{}}),AudioContext:undefined,webkitAudioContext:undefined,open:()=>({close(){}}),getGamepads:()=>[],echoDesktop:undefined};
