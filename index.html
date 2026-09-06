@@ -29269,6 +29269,110 @@ function factionPresenceUpdateEntity(dt){
 
 /* draw (B3-Q): world-space leve. Símbolo + cor + forma distinta + pulso
    controlado. Sem partículas por frame, sem filtros caros. */
+/* =====================================================================
+   B3-FIX §8/§9/§10 — IDENTIDADE VISUAL PRÓPRIA DA PRESENÇA DE FACÇÃO
+   ---------------------------------------------------------------------
+   Playtest: o NÓ DE CONTENÇÃO da Âncora "parecia só mais um beacon". Regra
+   nova: uma presença de facção deve ser reconhecível ANTES de ler o nome, e
+   claramente ≠ evento comum. O beacon usa: anel pulsante + disco preenchido +
+   rótulo. Aqui abandonamos essa gramática e damos a CADA facção uma ESTRUTURA
+   própria (silhueta distinta mesmo em grayscale):
+
+   · ÂNCORA (⬡) — ESTRUTURA DE CONTENÇÃO ancorada ao chão: base/pés fixos,
+     dupla moldura hexagonal concêntrica, escoras de contenção radiais e um
+     núcleo estabilizado. Movimento disciplinado (contra-rotação mínima).
+   · CONSÓRCIO (◈) — CACHE orbital de extração: losango-cofre central com
+     compartimentos, colchetes de armazenamento e cacos de recurso ORBITANDO
+     em torno (assimetria de máquina oportunista). Giro contínuo.
+
+   A cor é APOIO, não a única identidade. Sem partículas sem cap, sem loop
+   pesado — desenho procedural O(1) por frame. */
+function fpDrawAnchor(e,col,p,fade){
+  /* NÓ DE CONTENÇÃO — ancorado, ordenado, geométrico. */
+  const R=e.r;
+  ctx.save();
+  /* base ancorada ao solo: três pés fixos (não gira → sensação de estrutura) */
+  ctx.strokeStyle=col;ctx.globalAlpha=(.35+fade*.5);ctx.lineWidth=2.4;
+  ctx.shadowColor=col;ctx.shadowBlur=8;
+  for(let i=0;i<3;i++){
+    const a=Math.PI/2+i*TAU/3;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a)*R*.5,Math.sin(a)*R*.5);
+    ctx.lineTo(Math.cos(a)*R*1.05,Math.sin(a)*R*1.05);
+    ctx.stroke();
+  }
+  /* escoras de contenção — 6 traços radiais curtos e regulares */
+  ctx.globalAlpha=(.25+p*.35)*(.5+fade*.5);ctx.lineWidth=1.6;
+  for(let i=0;i<6;i++){
+    const a=-Math.PI/2+i*TAU/6;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a)*R*.72,Math.sin(a)*R*.72);
+    ctx.lineTo(Math.cos(a)*(R*.92+p*4),Math.sin(a)*(R*.92+p*4));
+    ctx.stroke();
+  }
+  /* dupla moldura hexagonal concêntrica (contra-rotação mínima = disciplina) */
+  const wob=Math.sin(e.pulse*.6)*.04;
+  for(let k=0;k<2;k++){
+    ctx.save();ctx.rotate(wob*(k?-1:1));
+    ctx.globalAlpha=(k?.5:.85)*(.5+fade*.5);ctx.lineWidth=k?1.6:2.6;
+    ctx.shadowBlur=k?4:10+p*6;
+    const rr=k?R*.46:R*.66;
+    ctx.beginPath();
+    for(let i=0;i<6;i++){const a=-Math.PI/2+i*TAU/6;
+      const px=Math.cos(a)*rr,py=Math.sin(a)*rr;
+      if(i===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);}
+    ctx.closePath();ctx.stroke();
+    ctx.restore();
+  }
+  /* núcleo estabilizado: quadrado + ponto (leitura "travado/estável") */
+  ctx.globalAlpha=.55+p*.4;ctx.fillStyle=col;ctx.shadowBlur=10;
+  const c=R*.14;
+  ctx.fillRect(-c,-c,c*2,c*2);
+  ctx.globalAlpha=1;ctx.fillStyle='#04121c';
+  ctx.beginPath();ctx.arc(0,0,c*.5,0,TAU);ctx.fill();
+  ctx.restore();
+}
+function fpDrawConsortium(e,col,p,fade){
+  /* CACHE TEMPORAL — cofre central + cacos de recurso orbitando (máquina). */
+  const R=e.r;
+  ctx.save();
+  /* colchetes de armazenamento em 4 cantos (estático → base de "depósito") */
+  ctx.strokeStyle=col;ctx.globalAlpha=(.3+fade*.5);ctx.lineWidth=2;
+  ctx.shadowColor=col;ctx.shadowBlur=6;
+  const br=R*.95,bl=R*.34;
+  for(let i=0;i<4;i++){
+    const sx=(i&1?1:-1),sy=(i&2?1:-1);
+    ctx.beginPath();
+    ctx.moveTo(sx*br,sy*br-sy*bl);
+    ctx.lineTo(sx*br,sy*br);
+    ctx.lineTo(sx*br-sx*bl,sy*br);
+    ctx.stroke();
+  }
+  /* cacos de recurso ORBITANDO — assimetria oportunista (giro contínuo) */
+  ctx.globalAlpha=.5+p*.4;ctx.fillStyle=col;ctx.shadowBlur=8;
+  for(let i=0;i<3;i++){
+    const a=e.pulse*1.4+i*TAU/3;
+    const orb=R*(.82+.12*Math.sin(e.pulse*2+i));
+    const ox=Math.cos(a)*orb,oy=Math.sin(a)*orb,s=R*.12;
+    ctx.beginPath();
+    ctx.moveTo(ox,oy-s);ctx.lineTo(ox+s,oy);ctx.lineTo(ox,oy+s);ctx.lineTo(ox-s,oy);
+    ctx.closePath();ctx.fill();
+  }
+  /* cofre-losango central com compartimento interno (giro lento) */
+  ctx.save();ctx.rotate(e.pulse*.45);
+  ctx.globalAlpha=.9*(.5+fade*.5);ctx.lineWidth=2.6;ctx.shadowBlur=10+p*6;
+  const rr=R*.6;
+  ctx.beginPath();ctx.moveTo(0,-rr);ctx.lineTo(rr*.72,0);
+  ctx.lineTo(0,rr);ctx.lineTo(-rr*.72,0);ctx.closePath();ctx.stroke();
+  /* linha divisória do compartimento (leitura "cofre/armazém") */
+  ctx.globalAlpha=.6*(.5+fade*.5);ctx.lineWidth=1.4;
+  ctx.beginPath();ctx.moveTo(-rr*.72,0);ctx.lineTo(rr*.72,0);ctx.stroke();
+  ctx.fillStyle=col;ctx.globalAlpha=.5+p*.4;ctx.shadowBlur=8;
+  ctx.beginPath();ctx.moveTo(0,-rr*.34);ctx.lineTo(rr*.24,0);
+  ctx.lineTo(0,rr*.34);ctx.lineTo(-rr*.24,0);ctx.closePath();ctx.fill();
+  ctx.restore();
+  ctx.restore();
+}
 function factionPresenceDrawEntity(){
   const e=factionPresenceEntity;
   if(!e)return;
@@ -29279,45 +29383,36 @@ function factionPresenceDrawEntity(){
   const p=.5+.5*Math.sin(e.pulse*3);
   const fade=clamp(e.ttl/Math.max(1,e.ttlMax),0,1);
   ctx.save();
-  /* anel externo pulsante */
-  ctx.strokeStyle=col;ctx.globalAlpha=(.3+p*.45)*(.4+fade*.6);ctx.lineWidth=2;
-  ctx.shadowColor=col;ctx.shadowBlur=18;
-  ctx.beginPath();ctx.arc(e.x,e.y,e.r+p*10,0,TAU);ctx.stroke();
-  /* raio de interação, discreto */
-  ctx.globalAlpha=.10;ctx.beginPath();ctx.arc(e.x,e.y,e.interactR,0,TAU);ctx.stroke();
-  ctx.globalAlpha=.12;ctx.fillStyle=col;
-  ctx.beginPath();ctx.arc(e.x,e.y,e.r,0,TAU);ctx.fill();
+  /* marca de solo hexagonal/quadrada — NÃO é o anel+disco do beacon: é uma
+     "pegada" de estrutura instalada na arena (telegrafa presença física). */
+  ctx.globalAlpha=.10*(.5+fade*.5);ctx.fillStyle=col;
+  if(e.faction==='anchor'){
+    ctx.beginPath();
+    for(let i=0;i<6;i++){const a=-Math.PI/2+i*TAU/6,rr=e.r*1.1;
+      const px=e.x+Math.cos(a)*rr,py=e.y+Math.sin(a)*rr;
+      if(i===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);}
+    ctx.closePath();ctx.fill();
+  }else{
+    ctx.save();ctx.translate(e.x,e.y);ctx.rotate(Math.PI/4);
+    const s=e.r*.9;ctx.fillRect(-s,-s,s*2,s*2);ctx.restore();
+  }
+  /* raio de interação: tracejado discreto (≠ anel sólido do beacon) */
+  ctx.globalAlpha=.14;ctx.strokeStyle=col;ctx.lineWidth=1;
+  if(ctx.setLineDash)ctx.setLineDash([5,6]);
+  ctx.beginPath();ctx.arc(e.x,e.y,e.interactR,0,TAU);ctx.stroke();
+  if(ctx.setLineDash)ctx.setLineDash([]);
   ctx.globalAlpha=1;ctx.shadowBlur=0;
   ctx.save();ctx.translate(e.x,e.y);
-  if(e.faction==='anchor'){
-    /* ⬡ hexágono de contenção: geometria fechada, estável, com núcleo */
-    ctx.rotate(Math.sin(e.pulse*.6)*.05);
-    ctx.strokeStyle=col;ctx.lineWidth=2.2;ctx.shadowColor=col;ctx.shadowBlur=10+p*8;
-    ctx.beginPath();
-    for(let i=0;i<6;i++){const a=-Math.PI/2+i*TAU/6,rr=e.r*.62;
-      const px=Math.cos(a)*rr,py=Math.sin(a)*rr;
-      if(i===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);}
-    ctx.closePath();ctx.stroke();
-    ctx.fillStyle=col;ctx.globalAlpha=.5+p*.4;
-    ctx.beginPath();ctx.arc(0,0,4.4,0,TAU);ctx.fill();
-    ctx.globalAlpha=1;ctx.shadowBlur=0;
-  }else{
-    /* ◈ losango de extração: giro lento, faces de recurso */
-    ctx.rotate(e.pulse*.5);
-    ctx.strokeStyle=col;ctx.lineWidth=2.2;ctx.shadowColor=col;ctx.shadowBlur=10+p*8;
-    const rr=e.r*.66;
-    ctx.beginPath();ctx.moveTo(0,-rr);ctx.lineTo(rr*.7,0);
-    ctx.lineTo(0,rr);ctx.lineTo(-rr*.7,0);ctx.closePath();ctx.stroke();
-    ctx.fillStyle=col;ctx.globalAlpha=.5+p*.4;
-    ctx.beginPath();ctx.moveTo(0,-rr*.4);ctx.lineTo(rr*.28,0);
-    ctx.lineTo(0,rr*.4);ctx.lineTo(-rr*.28,0);ctx.closePath();ctx.fill();
-    ctx.globalAlpha=1;ctx.shadowBlur=0;
-  }
+  if(e.faction==='anchor')fpDrawAnchor(e,col,p,fade);
+  else fpDrawConsortium(e,col,p,fade);
   ctx.restore();
-  /* rótulo legível: símbolo + nome (nunca só cor — §13 da UI) */
-  ctx.fillStyle=col;ctx.globalAlpha=.4+fade*.6;
+  /* rótulo legível: símbolo + nome + tag "PRESENÇA DE FACÇÃO" (distingue de
+     evento comum, que usa só o nome do sinal). */
+  ctx.fillStyle=col;ctx.globalAlpha=.45+fade*.55;
   ctx.font='11px Consolas,monospace';ctx.textAlign='center';
-  ctx.fillText(lab.sym+' '+lab.nm,e.x,e.y-e.r-12);
+  ctx.fillText(lab.sym+' '+lab.nm,e.x,e.y-e.r-24);
+  ctx.globalAlpha=.35+fade*.35;ctx.font='8px Consolas,monospace';
+  ctx.fillText('▣ PRESENÇA DE FACÇÃO',e.x,e.y-e.r-13);
   ctx.globalAlpha=1;
   ctx.restore();
 }
