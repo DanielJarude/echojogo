@@ -1499,7 +1499,15 @@ const WEAPONS=[
    knock:420,lifesteal:.10,
    sdesc:'Soco curtíssimo que ARREMESSA o alvo e rouba 10% do dano.'},
 
-  {id:'glaive',nm:'ALABARDA DE VÁCUO',  interval:.62,speed:0,dmg:55,count:1,spread:0,jitter:0,life:.26,pr:0,color:'#c56bff',kick:-70,
+  /* B6: interval .62 → .72. A ALABARDA acumulava o maior dano por golpe
+     entre as melee (55), o maior alcance útil (reach 158 × arc 1.15) E
+     corrosão (+14%/camada, até +72% de vulnerabilidade). O resultado era
+     2,35× o valor mediano do arsenal e 2,24× a mediana das armas rar3 —
+     dominante mesmo dentro da própria classe (1,64× a mediana melee).
+     Só a cadência foi tocada: dano, alcance, arco e corrosão continuam
+     intactos, então a IDENTIDADE (estocada longa e corrosiva) é a mesma;
+     ela apenas não é mais a resposta certa para toda situação. */
+  {id:'glaive',nm:'ALABARDA DE VÁCUO',  interval:.72,speed:0,dmg:55,count:1,spread:0,jitter:0,life:.26,pr:0,color:'#c56bff',kick:-70,
    melee:true,reach:158,arc:1.15,range:158,price:80,tag:'CORPO A CORPO',sprite:'glaive',
    fx:{k:'corrode',dur:4,pow:.14},
    sdesc:'Estocada longa que perfura a linha inteira e CORRÓI armadura.'}
@@ -12734,6 +12742,9 @@ function trySpecial(){
   }
   buildWeaponHUD();
 }
+/* B6: piso de recarga do dash. MESMO valor que resumeRun já impunha ao
+   carregar um save — ver comentário em tryDash(). */
+const DASH_CD_MIN=.2;
 function tryDash(){
   if(!player||state!=='play')return;
   if(wave<=player.vowBlood){            // VOTO DE SANGUE bloqueia o dash
@@ -12753,7 +12764,18 @@ function tryDash(){
   let _dashMul=1;
   if(player&&itemStateGet(player,'fs_cinetica','dashT',0)>0)
     _dashMul=itemStateGet(player,'fs_cinetica','dashCdMul',1)||1;
-  player.dashCd=player.dashCdMax*_dashMul;
+  /* B6 · PISO DE RECARGA DO DASH (DASH_CD_MIN)
+     O dash concede i-frames de .17s (§13116). Sem piso, o produto de
+     dash(×.85) + sprint(×.90) + singularidade(×.50) + recompensas de
+     nível(×.92) leva dashCdMax a ~.06s: o uptime de invulnerabilidade
+     passa de 70% e o jogador vira intocável — inviabiliza o conteúdo.
+     O piso NÃO é um número novo: é exatamente o mesmo .2 que resumeRun
+     já aplicava ao carregar um save (§16927). O que havia era uma
+     INCOERÊNCIA — a run ao vivo não respeitava o limite que o Continue
+     impunha, então recarregar o jogo NERFAVA a build. Agora os dois
+     caminhos concordam. Builds de mobilidade seguem fortes: .2s ainda é
+     ~10× mais rápido que o VECTOR base (2.1s) e mantém 46% de uptime. */
+  player.dashCd=Math.max(DASH_CD_MIN,player.dashCdMax*_dashMul);
   itemEmit('onDash',{player});
   bumpProg('dashes');
   if(runSt)runSt.dsh++;                    // PR 8: dash — sinal de impulso/reposição
