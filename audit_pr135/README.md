@@ -40,6 +40,28 @@ node audit_pr135/miniboss_audit.js
 - `speech_metrics.js` — comprimento/WPM das linhas de fala por fonte.
 - `range_audit.js` — tabela das 27 armas e consumidores de `rangeMul`.
 - `miniboss_audit.js` — matriz de habilidades dos 8 minibosses.
+- `b6_run_sim.js` — proxy determinístico de uma run completa (B6).
+- `b6_balance_audit.js` — tabelas agregadas de balanceamento (B6).
+
+## B6 — balanceamento final
+
+```bash
+# curva da run baseline (ondas 1-20 + PARADOXO)
+node audit_pr135/b6_run_sim.js
+
+# auditoria completa (armas, builds x operadores, temas, mini-chefes,
+# Paradoxo, sobrevivencia, itens/Attunement)
+node audit_pr135/b6_balance_audit.js 20260905 1000 all
+
+# um bloco por vez: weapons | items | themes | miniboss | paradox |
+#                   survival | builds | all
+node audit_pr135/b6_balance_audit.js 20260905 1000 weapons
+```
+
+`b6_run_sim.js` e o comentario no topo dele documentam os coeficientes
+heuristicos (SKILL, HEAL_PER_WAVE, UPTIME por classe) e as limitacoes do
+proxy. Eles sao IGUAIS para todas as linhas das tabelas, entao valem para
+comparacao relativa — nunca como dificuldade absoluta. Ver `PR13_5_B6.md`.
 
 ## RNG
 
