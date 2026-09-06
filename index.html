@@ -303,6 +303,24 @@
   .cds{font-family:Consolas,monospace;font-size:var(--fs-sm);line-height:1.8;letter-spacing:.04em;
     color:#8fb3c6;margin-top:8px;}
   .cmoral{font-family:Consolas,monospace;font-size:var(--fs-xs);letter-spacing:.2em;margin-top:10px;}
+  /* ---------- B3-FIX §5 — topo do evento: ESTADO DA RUN compacto ---------- */
+  .runstate{font-family:Consolas,monospace;font-size:var(--fs-sm);letter-spacing:.1em;
+    line-height:1.7;margin-top:2px;}
+  .runstate .rs-k{color:#5d7f92;letter-spacing:.22em;font-size:var(--fs-xs);
+    margin-right:6px;}
+  .runstate.rs-mods{margin-top:5px;padding:5px 9px;border-radius:3px;
+    border:1px solid rgba(70,224,255,.14);background:rgba(10,24,36,.45);
+    font-size:var(--fs-xs);line-height:1.6;}
+  /* ---------- B3-FIX §6 — seção IMPACTO NA RUN dos eventos ---------- */
+  .evimpact{display:flex;flex-direction:column;gap:3px;margin-top:10px;
+    padding:8px 10px;border-left:2px solid rgba(143,214,255,.5);border-radius:2px;
+    background:rgba(10,24,36,.5);}
+  .evimpact .ei-h{font-family:Consolas,monospace;font-size:var(--fs-3xs);
+    letter-spacing:.26em;color:#7fa8bd;margin-bottom:2px;}
+  .eirow{font-family:Consolas,monospace;font-size:var(--fs-xs);letter-spacing:.08em;
+    line-height:1.5;display:flex;align-items:baseline;gap:8px;}
+  .eirow i{font-style:normal;flex:1;white-space:nowrap;}
+  .eirow b{font-weight:normal;white-space:nowrap;}
   /* ---------- PR13.5 B5.5 — projected stat impact + densidade ---------- */
   .cimpact{display:flex;flex-direction:column;gap:2px;margin-top:9px;
     padding:7px 9px;border:1px solid rgba(70,224,255,.16);border-radius:3px;
@@ -8034,20 +8052,46 @@ function ownedLine(){
   s+='<br>ESTA RUN FARÁ PARTE DA MEMÓRIA DO ECHO GERADO APÓS A SUA MORTE.';
   return s;
 }
+/* B3-FIX §5: LEGIBILIDADE DO TOPO DO EVENTO.
+   Antes esta linha despejava TODOS os multiplicadores mesmo em ×1 (parede de
+   números e ruído técnico). Agora mostra PERFIL + só os modificadores REALMENTE
+   ativos (≠ ×1), agrupados sob "ESTADO DA RUN". Nenhum número é inventado: cada
+   valor vem de mEff (fonte de verdade da moralidade). Neutro total → só o perfil.
+   fmtMultDelta é usado só para exibição; não altera gameplay. */
+function mEffActiveMods(){
+  const near1=v=>v==null||!isFinite(v)||Math.abs(v-1)<5e-4;
+  const mods=[];
+  const push=(v,nm,goodWhenUp,col)=>{
+    if(near1(v))return;                       // ×1 não ocupa espaço
+    const up=v>1, good=goodWhenUp?up:!up;
+    mods.push({nm:nm,val:fmtMult(v),col:col||(good?'#7dffc4':'#ffb386'),good:good});
+  };
+  push(mEff.dmgMul,'SEU DANO',true);
+  push(mEff.playerDmgTaken,'DANO RECEBIDO',false);
+  push(mEff.coinMul,'MOEDAS',true);
+  push(mEff.shopMul,'PREÇOS',false);
+  push(mEff.enemySpd,'INIMIGOS VEL.',false);
+  push(mEff.enemyHp,'INIMIGOS VIDA',false);
+  if(mEff.echoPower>1)push(mEff.echoPower,'ECOS',true);
+  return mods;
+}
 function moralStatusLine(){
   const d=moralDom();
   const tc=moralTier(moral.comp),tg=moralTier(moral.greed),tv=moralTier(moral.viol);
   const tag=(t,nm,col)=>t?'<b style="color:'+col+'">'+nm+' '+TIER_NAME[t]+'</b>':'';
   const tiers=[tag(tc,'COMPAIXÃO','#7dffc4'),tag(tg,'GANÂNCIA','#ffd166'),
     tag(tv,'VIOLÊNCIA','#ff5c7a')].filter(Boolean).join(' · ');
-  return 'PERFIL: <b style="color:'+DOM_COLOR[d]+'">'+DOM_NAME[d]+'</b>'+
-    (tiers?' — '+tiers:'')+
-    (mEff.conflict?' <b style="color:#ff4df0">[CONFLITO]</b>':'')+'<br>'+
-    'PREÇOS '+fmtMult(mEff.shopMul)+' · MOEDAS '+fmtMult(mEff.coinMul)+
-    ' · SEU DANO '+fmtMult(mEff.dmgMul)+
-    ' · DANO RECEBIDO '+fmtMult(mEff.playerDmgTaken)+
-    ' · INIMIGOS '+fmtMult(mEff.enemySpd)+' VEL / '+fmtMult(mEff.enemyHp)+' VIDA'+
-    (mEff.echoPower>1?' · ECOS '+fmtMult(mEff.echoPower):'');
+  let s='<div class="runstate"><span class="rs-k">PERFIL</span> '+
+    '<b style="color:'+DOM_COLOR[d]+'">'+DOM_NAME[d]+'</b>'+
+    (tiers?' <span style="opacity:.85">— '+tiers+'</span>':'')+
+    (mEff.conflict?' <b style="color:#ff4df0">[CONFLITO]</b>':'')+'</div>';
+  const mods=mEffActiveMods();
+  if(mods.length){
+    s+='<div class="runstate rs-mods"><span class="rs-k">ESTADO DA RUN</span> '+
+      mods.map(m=>'<span style="color:'+m.col+'">'+(m.good?'▲':'▼')+' '+
+        m.nm+' '+m.val+'</span>').join('  ·  ')+'</div>';
+  }
+  return s;
 }
 
 /* --------------- LOJA ENTRE ONDAS --------------- */
@@ -8398,6 +8442,12 @@ function openEvent(kind){
   speechClear();               // B2-A: fala não fica atrás do modal de decisão
   state='event';firing=false;curEv=kind;
   modalEl.classList.add('on');
+  /* B3-FIX §3: o modal é compartilhado com a Loja Temporal. Ao entrar num
+     EVENTO, a barra de abas [ OPERADOR | ECHO ] da loja NÃO pode sobreviver —
+     ela só existe no contexto de loja. renderShop() a mostra (display:flex);
+     aqui garantimos que evento nunca herde esse estado visual. */
+  const _mtabs=document.getElementById('m-tabs');
+  if(_mtabs){_mtabs.style.display='none';_mtabs.innerHTML='';}
   mSect.style.display='none';mRow2.innerHTML='';mReroll.style.display='none';
   mTag.textContent='EVENTO DE DECISÃO · TEMPO CONGELADO · VOCÊ ESTÁ SEGURO';
   mCoins.textContent='◈ '+player.coins+' CRÉDITOS';
@@ -8448,6 +8498,9 @@ function renderSurvivor(){
   const pen=Math.round(player.maxHp*.2);
   mRow.appendChild(mkCard('DOAR VIDA / RECURSOS',
     'Transfere sua energia vital. <b>−'+pen+' de vida máxima por 45s</b>. O sobrevivente vive, te segue como aliado e larga kits médicos.',
+    evImpactHTML([{k:'VIDA MÁX.',v:'−'+pen,t:'loss',d:'45s'},
+      {k:'ALIADO',v:'SOBREVIVENTE',t:'gain'},
+      {k:'MORALIDADE',v:'+COMPAIXÃO',t:'moral'}])+
     moralTagHTML([3,0,0])+echoOpinion([3,0,0]),false,()=>{
       player.tempPen+=pen;player.maxHp-=pen;player.hp=Math.min(player.hp,player.maxHp);player.tempT=45;
       allies.push({x:beacon.x,y:beacon.y,vx:0,vy:0,r:11,dropT:10,t:0});
@@ -8458,6 +8511,9 @@ function renderSurvivor(){
   const loot=Math.round(28*mEff.coinMul);
   mRow.appendChild(mkCard('EXPLORAR EQUIPAMENTO',
     'Arranca os chips do peito dele. <b>+'+loot+' créditos</b> e <b>+12% de dano permanente</b>. O sobrevivente morre.',
+    evImpactHTML([{k:'CRÉDITOS',v:'+'+loot,t:'gain'},
+      {k:'SEU DANO',v:'+12%',t:'gain',d:'PERMANENTE'},
+      {k:'MORALIDADE',v:'+GANÂNCIA · +VIOLÊNCIA',t:'moral'}])+
     moralTagHTML([0,3,2])+echoOpinion([0,3,2]),false,()=>{
       player.coins+=loot;
       smMul(player,'damage','event.sobrevivente.damage','SOBREVIVENTE +12% DANO',1.12);
@@ -8468,6 +8524,7 @@ function renderSurvivor(){
     }));
   mRow.appendChild(mkCard('IGNORAR E TRANCAR',
     'Sela a comporta e segue em frente. <b>Nenhum custo imediato</b> — e nenhum ganho.',
+    evImpactHTML([{k:'SEM EFEITO',v:'—',t:'neutral'}])+
     moralTagHTML([0,0,0]),false,()=>{
       toast('COMPORTA SELADA');moralGain(0,0,0);closeEvent();
     }));
@@ -8486,12 +8543,19 @@ function renderMerchant(){
     ? ('Toma o módulo à força e leva <b>+20 créditos</b>. Os <b>guardas dele</b> entram na arena imediatamente (1 Tanque + 2 Atiradores).')
     : ('Saqueia o que sobrou: <b>+45 créditos</b>. Os guardas entram na arena.');
   mRow.appendChild(mkCard('PAGAR PREÇO ABUSIVO',descA,
-    '<div class="cprice">◈ '+cost+'</div>'+moralTagHTML([1,0,0])+echoOpinion([1,0,0]),
+    '<div class="cprice">◈ '+cost+'</div>'+
+    evImpactHTML(it?[{k:'CRÉDITOS',v:'−'+cost,t:'loss'},
+      {k:'MÓDULO',v:nmA,t:'gain'}]:[{k:'SEM ESTOQUE',v:'—',t:'neutral'}])+
+    moralTagHTML([1,0,0])+echoOpinion([1,0,0]),
     (!it||player.coins<cost),()=>{
       player.coins-=cost;giveItem(it,false);
       moralGain(1,0,0);closeEvent();
     }));
   mRow.appendChild(mkCard('SAQUEAR O ESTOQUE',descB,
+    evImpactHTML([{k:'CRÉDITOS',v:it?'+20':'+45',t:'gain'},
+      it?{k:'MÓDULO',v:nmA,t:'gain'}:null,
+      {k:'AMEAÇA',v:'GUARDAS NA ARENA',t:'risk',d:'AGORA'},
+      {k:'MORALIDADE',v:'+GANÂNCIA · +VIOLÊNCIA',t:'moral'}].filter(Boolean))+
     moralTagHTML([0,3,3])+echoOpinion([0,3,3]),false,()=>{
       if(it){giveItem(it,true);player.coins+=20;}else player.coins+=45;
       spawnGuards(beacon.x,beacon.y);
@@ -8499,6 +8563,7 @@ function renderMerchant(){
     }));
   mRow.appendChild(mkCard('IR EMBORA',
     'Recusa o negócio. <b>Nenhum custo imediato</b> — o mercador desaparece no ruído temporal.',
+    evImpactHTML([{k:'SEM EFEITO',v:'—',t:'neutral'}])+
     moralTagHTML([0,0,0]),false,()=>{
       toast('NEGÓCIO RECUSADO');moralGain(0,0,0);closeEvent();
     }));
@@ -8599,6 +8664,9 @@ function renderAmbush(){
   mRow.appendChild(mkCard('ENFRENTAR A HORDA',
     'Aceita a luta contra <b>4 Perseguidores de Elite</b> acelerados. '+
     'Ao eliminá-los você recebe <b>recompensa tripla</b> de XP e créditos.',
+    evImpactHTML([{k:'AMEAÇA',v:'4 ELITES',t:'risk',d:'AGORA'},
+      {k:'RECOMPENSA',v:'XP/CRÉDITOS ×3',t:'gain',d:'AO ELIMINAR'},
+      {k:'MORALIDADE',v:'+VIOLÊNCIA',t:'moral'}])+
     moralTagHTML([0,0,3])+echoOpinion([0,0,3]),false,()=>{
       spawnAmbushHorde();
       moralGain(0,0,3);closeEvent();
@@ -8606,6 +8674,8 @@ function renderAmbush(){
   mRow.appendChild(mkCard('DESTRUIR O SINAL E FUGIR',
     'Sobrecarrega o sinalizador antes que a horda materialize. Perde a recompensa, '+
     'mas o pulso de dissipação te envolve num <b>escudo de fase por 5 segundos</b>.',
+    evImpactHTML([{k:'ESCUDO DE FASE',v:'5s',t:'gain'},
+      {k:'RECOMPENSA',v:'PERDIDA',t:'loss'}])+
     moralTagHTML([1,0,0])+echoOpinion([1,0,0]),false,()=>{
       player.invT=Math.max(player.invT||0,5);
       spawnRing(player.x,player.y,'#7df9ff',10,170,.8);
@@ -8630,6 +8700,9 @@ function renderVault(){
     it?('Rasga o lacre com força bruta. Custa <b>'+hpCost+' de vida</b> (25% da atual), '+
        'mas leva <b style="color:'+it.color+'">'+it.nm+'</b> de graça — '+it.desc)
       :('O cofre está vazio por dentro. Só sobra a ferida de <b>'+hpCost+' de vida</b>.'),
+    evImpactHTML([{k:'VIDA',v:'−'+hpCost,t:'loss'},
+      it?{k:'MÓDULO',v:it.nm,t:'gain'}:{k:'CONTEÚDO',v:'VAZIO',t:'neutral'},
+      {k:'MORALIDADE',v:'+VIOLÊNCIA',t:'moral'}])+
     moralTagHTML([0,1,3])+echoOpinion([0,1,3]),false,()=>{
       player.hp=Math.max(1,player.hp-hpCost);
       if(it)giveItem(it,true);
@@ -8642,7 +8715,10 @@ function renderVault(){
   mRow.appendChild(mkCard('DECIFRAR O CÓDIGO',
     'Paga <b>◈'+code+'</b> por um decodificador de mercado negro. Abre limpo e concede '+
     '<b>2 upgrades aleatórios</b> instalados na hora.',
-    '<div class="cprice">◈ '+code+'</div>'+moralTagHTML([0,2,0])+echoOpinion([0,2,0]),
+    '<div class="cprice">◈ '+code+'</div>'+
+    evImpactHTML([{k:'CRÉDITOS',v:'−'+code,t:'loss'},
+      {k:'UPGRADES',v:'2 ALEATÓRIOS',t:'gain'}])+
+    moralTagHTML([0,2,0])+echoOpinion([0,2,0]),
     player.coins<code,()=>{
       player.coins-=code;
       const pool=UPGRADES.slice();
@@ -8774,9 +8850,46 @@ function evHead(t,d){
   mTitle.textContent=t;
   mDesc.innerHTML=d+'<br>'+moralStatusLine();
 }
-function evOpt(nm,ds,vec,extra,dis,fn){
+/* =====================================================================
+   B3-FIX §6 — IMPACTO NA RUN (camada declarativa de UX das escolhas)
+   ---------------------------------------------------------------------
+   O jogador precisa entender "o que acontece com minha run se eu clicar
+   aqui" ANTES de clicar. Esta é uma camada SÓ DE APRESENTAÇÃO: a gameplay
+   dentro do callback continua sendo a única fonte de verdade — nada aqui
+   aplica efeito. Cada escolha pode declarar um array `impacts`:
+
+     { k:'ESCUDO MÁX.', v:'+12', t:'gain' }
+     { k:'AMEAÇA', v:'ENXAMES', t:'risk', d:'2 ONDAS' }
+     { k:'VIDA MÁX.', v:'-20%', t:'loss', d:'45s' }
+     { k:'RISCO', v:'DESCONHECIDO', t:'hidden' }   // efeito oculto proposital
+
+   Tipos: gain (verde ▲), loss (âmbar ▼), risk (⚠), moral (◆), hidden (?),
+   neutral (·). `d` = duração/ondas quando existir. Sem impacts → nada é
+   renderizado (UI não quebra). NENHUM número é inventado: quem chama deriva
+   do mesmo valor que o callback aplica. */
+const EV_IMPACT_STYLE={
+  gain  :{mk:'▲',col:'#7dffc4'},
+  loss  :{mk:'▼',col:'#ffb386'},
+  risk  :{mk:'⚠',col:'#ff8095'},
+  moral :{mk:'◆',col:'#c9a9ff'},
+  hidden:{mk:'?',col:'#9db8c8'},
+  neutral:{mk:'·',col:'#9cc6da'}
+};
+function evImpactHTML(impacts){
+  if(!impacts||!impacts.length)return '';
+  let h='<div class="evimpact"><div class="ei-h">IMPACTO NA RUN</div>';
+  for(const it of impacts){
+    if(!it||!it.k)continue;
+    const st=EV_IMPACT_STYLE[it.t]||EV_IMPACT_STYLE.neutral;
+    h+='<div class="eirow" style="color:'+st.col+'">'+
+      '<span>'+st.mk+'</span><i>'+it.k+'</i>'+
+      '<b>'+(it.v!=null?it.v:'')+(it.d?' <span style="opacity:.7">· '+it.d+'</span>':'')+'</b></div>';
+  }
+  return h+'</div>';
+}
+function evOpt(nm,ds,vec,extra,dis,fn,impacts){
   mRow.appendChild(mkCard(nm,ds,
-    (extra||'')+moralTagHTML(vec)+echoOpinion(vec),!!dis,()=>{
+    (extra||'')+evImpactHTML(impacts)+moralTagHTML(vec)+echoOpinion(vec),!!dis,()=>{
       fn();moralGain(vec[0],vec[1],vec[2]);closeEvent();
     }));
 }
@@ -8801,7 +8914,8 @@ forge(){
       player.upgLog.push('FORJA: '+wd.nm);
       spawnRing(player.x,player.y,'#ff9d3c',10,150,.7);
       toast(wd.nm+' TEMPERADA · +45% DANO / −30% ALCANCE');
-    });
+    },[{k:'DANO ('+wd.nm+')',v:'+45%',t:'gain',d:'PERMANENTE'},
+       {k:'ALCANCE ('+wd.nm+')',v:'−30%',t:'loss',d:'PERMANENTE'}]);
   evOpt('DESMONTAR A FORJA',
     'Arranca os servos e o núcleo térmico. <b>+55 créditos</b> e '+
     '<b>+12% de cadência permanente</b>.',[0,3,1],'',false,()=>{
@@ -8809,7 +8923,9 @@ forge(){
       smMul(player,'fireRate','event.forja.rate','FORJA DESMONTADA +12% CADÊNCIA',1.12);
       spawnShards(beacon.x,beacon.y,'#ff9d3c',18,6);
       toast('FORJA DESMONTADA');
-    });
+    },[{k:'CRÉDITOS',v:'+'+Math.round(55*mEff.coinMul),t:'gain'},
+       {k:'CADÊNCIA',v:'+12%',t:'gain',d:'PERMANENTE'},
+       {k:'MORALIDADE',v:'+GANÂNCIA',t:'moral'}]);
   evLeave('Deixa o braço mecânico bater no vazio para sempre.');
 },
 /* ---- 10. ORÁCULO CEGO ---- */
@@ -9457,7 +9573,7 @@ const RUN_EVENTS=[
     evHead('A CÂMARA TRANCADA',
       'Uma antessela de manutenção selada desde o colapso. A trava eletrônica '+
       'ainda tem energia — e algo do lado de dentro bate de volta, devagar, no mesmo ritmo.<br>'+
-      operatorWhisperHTML()+moralStatusLine());
+      operatorWhisperHTML());
     evOpt('ARROMBAR A PORTA',
       'Força bruta contra metal cansado. O contragolpe de energia causa <b>'+hpCost+
       ' de dano</b>, mas a câmara abre: <b>1 upgrade aleatório</b> instalado na hora.',
@@ -9497,8 +9613,7 @@ const RUN_EVENTS=[
     const dmg=Math.max(4,Math.round(8+wave*1.1));
     evHead('CARGA PERDIDA',
       'Um contêiner de suprimentos flutua enganchado em destroços que ainda '+
-      'descarregam eletricidade estática. A carga aguenta poucos ciclos antes de apodrecer.<br>'+
-      moralStatusLine());
+      'descarregam eletricidade estática. A carga aguenta poucos ciclos antes de apodrecer.');
     evOpt('ARRANCAR AGORA',
       'Mergulha a mão na zona carregada. <b>+'+loot+' créditos</b> — e '+
       '<b>'+dmg+' de dano</b> da descarga residual.',
@@ -9529,7 +9644,7 @@ const RUN_EVENTS=[
     evHead('A CARAVANA PARADA',
       'Onze pessoas de um ciclo que falhou duas ondas depois do seu. O veículo '+
       'não pega mais carga e o rádio só recebe estática. Eles não pedem escolta — '+
-      'pedem <b>◈'+ask+'</b> de energia para cruzar o corredor aberto.<br>'+moralStatusLine());
+      'pedem <b>◈'+ask+'</b> de energia para cruzar o corredor aberto.<br>');
     evOpt('PAGAR A PASSAGEM INTEIRA',
       'Transfere ◈'+ask+' sem discutir. Eles seguem, e alguém anota o seu sinal '+
       'no mapa de bordo deles. <i>Grupos que atravessam às vezes voltam a cruzar o seu caminho.</i>',
@@ -9570,7 +9685,7 @@ const RUN_EVENTS=[
       :'A modulação do pedido tem uma regularidade que deixa você incomodado.<br>';
     evHead('SOCORRO… OU ISCAS',
       'Um pedido de ajuda em áudio limpo demais para a fratura. Alguém chora ao fundo — '+
-      'na mesma altura, na mesma hora, a cada repetição.<br>'+hint+moralStatusLine());
+      'na mesma altura, na mesma hora, a cada repetição.<br>'+hint);
     evOpt('RESPONDER AO SINAL',
       'Aproxima do ponto de origem. <b>60%:</b> um operador de verdade — aliado temporário '+
       'por 3 ondas. <b>40%:</b> a voz era um laço — <b>2 Perseguidores armados</b> fecham o cerco.',
@@ -9612,8 +9727,7 @@ const RUN_EVENTS=[
   render(){
     evHead('POSTO MÉDICO SELADO',
       'Uma unidade de triagem de campo intacta: soro, kits, um gerador zumbindo. '+
-      'No vidro, um aviso de outro ciclo: <i>RESERVE PARA O PRÓXIMO CICLO — NÓS SEMPRE VOLTAMOS.</i><br>'+
-      moralStatusLine());
+      'No vidro, um aviso de outro ciclo: <i>RESERVE PARA O PRÓXIMO CICLO — NÓS SEMPRE VOLTAMOS.</i>');
     evOpt('CONSUMIR AGORA',
       'Você é o próximo ciclo que chegou. Cura <b>+40 de integridade</b> e espalha '+
       '<b>2 kits</b> pela arena. O estoque para quem vier depois deixa de existir.',
@@ -9654,7 +9768,7 @@ const RUN_EVENTS=[
   render(){
     evHead('GERADOR DE RESERVA',
       'Um gerador de campo ainda tem carga para poucas ondas. Ligado, ele alimenta '+
-      'seus sistemas — e o ruído dele viaja longe nesta fratura silenciosa.<br>'+moralStatusLine());
+      'seus sistemas — e o ruído dele viaja longe nesta fratura silenciosa.<br>');
     evOpt('LIGAR EM CARGA MÁXIMA',
       'Escudo <b>+12 de capacidade</b> e regeneração acelerada por <b>3 ondas</b>. '+
       'O zumbido atrai companhia: <b>enxames extras nas próximas 2 ondas</b> — '+
@@ -9695,7 +9809,7 @@ const RUN_EVENTS=[
     evHead('TRANSMISSÃO EM LOOP',
       'Uma voz repete a mesma mensagem há — o carimbo diz — <b>6.712 ciclos</b>: '+
       '<i>"…se você está ouvindo isso, ainda dá tempo. Coordenações anexadas. Repetindo…"</i><br>'+
-      operatorWhisperHTML()+moralStatusLine());
+      operatorWhisperHTML());
     evOpt('OUVIR ATÉ O FIM',
       'Fica até a mensagem terminar. Nas coordenadas, um detalhe que não deveria existir: '+
       '<b>a assinatura do transmissor é sua</b>. Registra o ponto: algo pode responder.',
@@ -9723,7 +9837,7 @@ const RUN_EVENTS=[
   render(){
     evHead('NÓ DE INSTABILIDADE',
       'O espaço aqui está dobrado errado: um ponto onde o ciclo amarra um nó. '+
-      'Atravessá-lo é saltar a fila do próprio tempo — e pagar pedágio.<br>'+moralStatusLine());
+      'Atravessá-lo é saltar a fila do próprio tempo — e pagar pedágio.<br>');
     evOpt('ATRAVESSAR O NÓ',
       'Sofre <b>14 de dano</b> de descompressão temporal, mas sai do outro lado '+
       'afinado: <b>+12% de dano por 3 ondas</b>.',
@@ -9758,8 +9872,7 @@ const RUN_EVENTS=[
     const buy=Math.round(70*mEff.shopMul);
     evHead('O TROCADOR',
       'Ele não tem rosto — tem uma banca. Sobre o pano, um estilete cirúrgico e '+
-      'um terminal de crédito. <i>"Nada aqui é compra",</i> ele diz. <i>"É troca. Eu só deixo as trocas honestas."</i><br>'+
-      moralStatusLine());
+      'um terminal de crédito. <i>"Nada aqui é compra",</i> ele diz. <i>"É troca. Eu só deixo as trocas honestas."</i>');
     evOpt('TROCAR VIDA POR CRÉDITOS',
       'O estilete é limpo e indolor: <b>−'+sell+' de vida atual</b> por <b>+'+gain+
       ' créditos</b>. Você sai da banca mais rico e mais raso.',
@@ -9790,8 +9903,7 @@ const RUN_EVENTS=[
     evHead('O MARCADOR',
       'Um projetor em ruínas ainda funciona — e decidiu que você é interessante: '+
       'pinta uma retícula luminosa sobre você, visível para tudo que caça por sinal.<br>'+
-      (live.length?'<b>ECHO·0'+live[0].slot+'</b> se posiciona meio passo à frente.<br>':'')+
-      moralStatusLine());
+      (live.length?'<b>ECHO·0'+live[0].slot+'</b> se posiciona meio passo à frente.':''));
     evOpt('USAR A MARCA COMO ISCA',
       'Deixa a retícula acesa e cobra por cada um que vier: <b>abates rendem +50% '+
       'de créditos por 2 ondas</b> — mas os inimigos que nascerem nesse período '+
@@ -9833,7 +9945,7 @@ const RUN_EVENTS=[
     evHead('CIRURGIA DE CAMPO',
       'Uma sobrevivente com o núcleo vital perfurado se arrasta até a sua sombra. '+
       'A lesão é simples de estabilizar — com as mãos certas e o tempo errado. '+
-      'A onda não vai esperar.<br>'+moralStatusLine());
+      'A onda não vai esperar.<br>');
     evOpt('OPERAR AGORA',
       'Abre as próprias mãos ao procedimento: custa <b>25% da vida atual</b> e o '+
       'silêncio de dois minutos longos. Ela vive — e sabe consertar circuitos: '+
@@ -9894,7 +10006,7 @@ const RUN_EVENTS=[
       'E nesta fratura, <b>você deixou rastro</b>: o posto, o repetidor, o gerador — '+
       'tudo que você levou sem perguntar tinha dono no papel dele.':
       '"Você não me deve nada <i>ainda</i>", ele diz. "Mas está acumulando uma postura de quem deve."')+
-      '<br>'+moralStatusLine());
+      '');
     evOpt('PAGAR ◈'+debt,
       'Quit total no terminal dele. A dívida morre assinada — e ele te entrega o recibo: '+
       '<b>preços de loja −12% pelo resto da run</b>. Gentileza de quem documenta.',
@@ -9939,7 +10051,7 @@ const RUN_EVENTS=[
       (st&&(st.id==='synced'||st.id==='resonant')?
         'A relação de vocês é estreita o bastante para você ter certeza: <i>não é ele.</i>':
         'Com a relação como está, você não tem como jurar que não é.')+
-      '<br>'+evRelLine(e)+moralStatusLine());
+      '<br>'+evRelLine(e));
     evOpt('RASTREAR JUNTOS COM O ECO',
       'Vocês afinam a busca pela própria diferença entre vocês: a cópia erra onde '+
       'o original não erra mais. <b>+12 de confiança</b> — e a origem fica mapeada '+
@@ -9999,7 +10111,7 @@ const RUN_EVENTS=[
         versatile:'"Memória de run anterior. Mapeia antes de acreditar."',
         fragmented:'"…eu conheço essa luz. Não sei de onde. Não quero saber de onde."',
         _default:'"Eu conheço este lugar. Nunca estive nele."'})+
-      evRelLine(e)+moralStatusLine());
+      evRelLine(e));
     evOpt('ENTRAR NA MEMÓRIA',
       'Seguem a lembrança porta adentro. O espaço os testa: <b>18 de dano</b> de '+
       'colapso estrutural — e, no centro, o que o Echo guardou: <b>1 módulo aleatório</b>.',
@@ -10038,7 +10150,7 @@ const RUN_EVENTS=[
     evHead('A PROVA',
       'Dois grupos, um gerador: o <b>Anexo</b> (quarenta e tantas pessoas, uma criança '+
       'com um radinho) e o <b>Núcleo</b> (a estação que mantém o corredor respirável — '+
-      'e que a sua run usa de rota). A carga só alcança um.<br>'+moralStatusLine());
+      'e que a sua run usa de rota). A carga só alcança um.<br>');
     evOpt('ALIMENTAR O ANEXO',
       'Quarenta pessoas continuam existindo. O Núcleo apaga: a rota do corredor '+
       'fica instável — <b>+8% de dano recebido por 2 ondas</b>. A criança do radinho '+
@@ -10079,7 +10191,7 @@ const RUN_EVENTS=[
     evHead('O OLHO DA FRATURA',
       'O tempo para por três segundos e algo abre — não os seus olhos, o espaço '+
       'entre eles. Uma voz que não passa pelo ar: <i>"Eu vi a sua próxima onda. '+
-      'Quer ver também? Toda visão cobra."</i><br>'+moralStatusLine());
+      'Quer ver também? Toda visão cobra."</i><br>');
     evOpt('VER A ONDA SEGUINTE',
       'O Olho empresta a lente: <b>a próxima onda é anunciada em detalhe</b> no seu HUD. '+
       'A visão cobra juros: daqui <b>3 ondas, +10% de dano recebido por 2 ondas</b>.',
@@ -10157,7 +10269,7 @@ const RUN_EVENTS=[
     const o=OP[c.id]||OP.vector;
     evHead('CARGA PESSOAL',
       'O equipamento de <b style="color:'+c.color+'">'+c.nm+'</b> reage a esta dobra '+
-      'da fratura de um jeito que só o dele reage. '+o.t+'<br>'+moralStatusLine());
+      'da fratura de um jeito que só o dele reage. '+o.t);
     evOpt('ACEITAR A CARGA',o.a.txt,o.a.v,'',false,()=>{
       evSetFlag('carga_aceita_'+c.id);
       applyOperatorLoad(c.id,true);
@@ -10181,7 +10293,7 @@ const RUN_EVENTS=[
       'até aqui — atravessa a arena em silêncio. Cada um vira o rosto ao passar por você. '+
       (live.length?'Um deles inclina a cabeça para <b>ECHO·0'+live[0].slot+
         '</b>, como quem reconhece um colega de cemitério.':'Um deles para diante do seu vazio de Ecos — e parece <i>sentir pena</i>.')+
-      '<br>'+moralStatusLine());
+      '');
     evOpt('OUVIR OS NOMES',
       'Cada fragmento sussurra o nome que tinha antes de virar rota de navegação. '+
       'Você repete cada um em voz alta. Seus Ecos <b>ganham +14 de confiança</b> — '+
@@ -10232,7 +10344,7 @@ const RUN_EVENTS=[
     evHead('MERCADO PARALELO',
       'Entre duas dobras do corredor, uma banca que não estava lá há dez segundos. '+
       'O cambista não aceita créditos — <i>"créditos são promessas. Eu só aceito presente."</i> '+
-      'Ele aceita <b>vida</b>.<br>'+moralStatusLine());
+      'Ele aceita <b>vida</b>.<br>');
     if(it)evOpt('OFERECER SANGUE POR MÓDULO',
       '<b>−'+hpCost2+' de vida atual</b> por <b style="color:'+it.color+'">'+it.nm+'</b> — '+it.desc,
       [0,2,0],'',false,()=>{
@@ -10277,7 +10389,7 @@ const RUN_EVENTS=[
       'O outro está a duzentos metros, repetindo os movimentos dele com dois segundos '+
       'de atraso, <i>aprendendo</i>.'+
       (dis?'<br><span style="color:#ff8095">A fratura já viu vocês discordarem — e coisa assim aprende rápido onde dói.</span>':'')+
-      '<br>'+evRelLine(e)+moralStatusLine());
+      '<br>'+evRelLine(e));
     evOpt('EXPOR O FALSO',
       'Força os dois sinais a se sobrepor: o falso perde a máscara e ataca — '+
       '<b>1 Perseguidor de Elite imitador</b> com <b>recompensa ◈70</b> e um núcleo que '+
@@ -10325,7 +10437,7 @@ const RUN_EVENTS=[
       '<b>ECHO·0'+(e?e.slot:'?')+'</b> para no meio da arena e corta o link tático. '+
       'Sem mira, sem papel: <i>"Eu guardei cada escolha sua nesta run. Algumas me '+
       'custam dormir — e eu não durmo. Precisamos falar antes que uma delas seja a última."</i><br>'+
-      evRelLine(e)+moralStatusLine());
+      evRelLine(e));
     evOpt('OUVIR SEM DEFENDER',
       'Você para e escuta até o fim. Não concorda com tudo — mas não corta. '+
       '<b>+12 de confiança, −20 de pressão</b>. A conversa não resolve a run; resolve a noite.',
@@ -10377,7 +10489,7 @@ const RUN_EVENTS=[
       'No intervalo entre duas ondas, vocês param <i>ao mesmo tempo</i>, olham o mesmo '+
       'corredor <i>ao mesmo tempo</i>. <b>ECHO·0'+(e?e.slot:'?')+'</b> desliga a voz e '+
       'oferece, em gesto puro, um pacto sem cláusula: <i>o que vier, sem discutir quem protege quem.</i><br>'+
-      evRelLine(e)+moralStatusLine());
+      evRelLine(e));
     evOpt('FIRMAR O PACTO',
       'Você bate duas vezes no próprio casco; ele responde com duas luzes. '+
       '<b>+12 de confiança</b> e um compromisso real: enquanto o pacto durar, a '+
@@ -10410,7 +10522,7 @@ const RUN_EVENTS=[
     evHead('A ONDA QUE NÃO ACONTECEU',
       'Você lembra desta onda. Não de uma igual — <i>desta</i>: os mesmos inimigos, '+
       'o mesmo recorte de luz, o mesmo erro seu no mesmo segundo. Só que ela ainda '+
-      'não aconteceu. A fratura entregou o rascunho antes da prova.<br>'+moralStatusLine());
+      'não aconteceu. A fratura entregou o rascunho antes da prova.<br>');
     evOpt('ACEITAR A ONDA COMO VEIO',
       'Deixa o rascunho virar prova sem mexer. <b>Nenhum custo</b> — e a sensação '+
       'de já ter sobrevivido a isso uma vez, alguma vez.',
@@ -10448,7 +10560,7 @@ const RUN_EVENTS=[
       'em vidro. Ele apenas <b>olha</b> — e a forma como olha tem gramática. '+
       '<i>"Uma troca",</i> ele não diz, mas você entende. <i>"Um detalhe agora, uma conta depois."</i>'+
       (noEcho?'<br><span style="color:#9db8c8">Sem Ecos, o olhar dele pousa em você com uma curiosidade quase gentil — você é a única testemunha de você mesmo.</span>':'')+
-      '<br>'+moralStatusLine());
+      '');
     evOpt('FECHAR O ACORDO',
       'Ele entrega na hora: <b>1 módulo aleatório</b>. A conta fica agendada: nas '+
       '<b>próximas 3 ondas, cada vitória de onda devolve a ele 20% dos seus créditos</b>. '+
@@ -10489,7 +10601,7 @@ const RUN_EVENTS=[
         'A anomalia diante de você tem a assinatura da ruptura que <b>vocês já '+
         'atravessaram</b> — e ela canta com a voz daqueles minutos. '+
         (e?'<b>ECHO·0'+e.slot+'</b> reconhece a nota. Dessa vez, não desvia o olhar.':'')+
-        '<br>'+evRelLine(e)+moralStatusLine());
+        '<br>'+evRelLine(e));
       evOpt('CANTAR JUNTOS',
         'Vocês respondem a nota em uníssono — não por técnica: por acordo. '+
         '<b>+16 de confiança de todos os Ecos</b>, <b>escudo cheio</b> e a cicatriz '+
@@ -10516,7 +10628,7 @@ const RUN_EVENTS=[
       evHead('A CICATRIZ QUE CANTA',
         'A anomalia diante de você tem a assinatura da <b>ruptura</b> — a que '+
         'aconteceu entre vocês e ainda não foi costurada. Ela canta a nota exata '+
-        'daquele minuto.<br>'+evRelLine(e)+moralStatusLine());
+        'daquele minuto.<br>'+evRelLine(e));
       evOpt('ESCUTAR A FERIDA',
         'Deixa a nota atravessar. Dói em silêncio: <b>−4 de confiança</b> do Echo, '+
         'mas <b>−25 de pressão</b> — algumas feridas só fecham depois de cantadas.',
@@ -10548,7 +10660,7 @@ const RUN_CHAIN_EVENTS=[
     evHead('O FERIDO DA MINA',
       'Você minou a porta de um posto médico há algumas ondas. Minas não escolhem '+
       'quem pisa — e alguém pisou. Ele ainda tem forças para perguntar o óbvio: '+
-      '<i>"por quê?"</i><br>'+moralStatusLine());
+      '<i>"por quê?"</i><br>');
     evOpt('DESCULPAR-SE E ESTABILIZAR',
       'Custa <b>20% da vida atual</b> e nenhum orgulho. Ele sobrevive; você carrega '+
       'a resposta dele para o resto da run — <b>+8 de confiança de todos os Ecos</b>.',
@@ -10575,7 +10687,7 @@ const RUN_CHAIN_EVENTS=[
     evHead('A RESPOSTA',
       'A transmissão que você ouviu — a sua própria voz, 6.712 ciclos no passado — '+
       'recebeu resposta de alguém que achou as coordenadas: <i>"Estamos no ponto. '+
-      'Deixamos o que não precisamos mais. Você vem?"</i><br>'+moralStatusLine());
+      'Deixamos o que não precisamos mais. Você vem?"</i><br>');
     evOpt('IR AO PONTO DE ENCONTRO',
       'Os sobreviventes da resposta deixaram o que não precisaram mais: '+
       '<b>+55 créditos</b>, <b>2 kits</b> e a certeza de que a mensagem chegou a alguém.',
@@ -10608,7 +10720,7 @@ const RUN_CHAIN_EVENTS=[
       'A caravana que você mandou pela rota longa voltou pelo cinturão de destroços. '+
       'Eles sobreviveram — do jeito que sobrevive quem não tem alternativa — e acharam '+
       'o seu sinal mesmo assim.')+
-      '<br>'+moralStatusLine());
+      '');
     evOpt('ACEITAR O QUE ELES OFERECEM',
       helped?
       'Recebimento em gênero: <b>+60 créditos</b>, <b>+15 de vida máxima</b> (rações de '+
@@ -10643,8 +10755,7 @@ const RUN_CHAIN_EVENTS=[
   render(){
     evHead('O COBRADOR VOLTA',
       'Ele não veio sozinho desta vez: <b>2 guardas de Elite</b> com recompensa '+
-      'e o livro dele debaixo do braço. <i>"A página sobre você ganhou um capítulo."</i><br>'+
-      moralStatusLine());
+      'e o livro dele debaixo do braço. <i>"A página sobre você ganhou um capítulo."</i>');
     evOpt('LIQUIDAR A CONTA NA FORÇA',
       'Derrota os guardas: <b>◈120 de recompensa total</b> — e o livro muda de dono: '+
       '<b>preços de loja −10% pelo resto da run</b>. O sindicato recebe o recado certo: '+
@@ -10686,7 +10797,7 @@ const RUN_CHAIN_EVENTS=[
     evHead('A COBRANÇA',
       'O Olho da Fratura cumpre a cláusula: <i>"Toda visão cobra. A sua custa '+
       '◈'+take+' — ou o equivalente em futuro."</i> Ele oferece uma escolha '+
-      'que não é escolha, e mesmo assim é.<br>'+moralStatusLine());
+      'que não é escolha, e mesmo assim é.<br>');
     evOpt('PAGAR EM CRÉDITOS (◈'+take+')',
       'Doloroso e limpo. A conta fecha e o Olho se recolhe com educação '+
       'de cartório.',
@@ -10731,7 +10842,7 @@ const RUN_CHAIN_EVENTS=[
       'O núcleo do imitador — exposto ou silenciado, tanto faz — terminou de '+
       'desmontar sozinho. Dentro, gravado na última camada: <b>as memórias que ele '+
       'copiou de ECHO·0'+(e?e.slot:'?')+'</b>, inclusive as que o Echo não sabia que tinha.<br>'+
-      evRelLine(e)+moralStatusLine());
+      evRelLine(e));
     evOpt('DEVOLVER AS MEMÓRIAS',
       'Você transmite a camada inteira para o Echo. Ele recebe versões de si que '+
       'nunca viveu — e escolhe ficar com algumas: <b>+16 de confiança</b> e '+
@@ -10782,7 +10893,7 @@ const FRACTURE_RUN_EVENTS=[
     evHead('A SEÇÃO QUE SE MULTIPLICA',
       'Um corredor de serviço se repete: a mesma porta, o mesmo aviso, o mesmo '+
       'operador morto na mesma posição. Não é reflexo — cada cópia respira em '+
-      'descompasso.<br>'+moralStatusLine());
+      'descompasso.<br>');
     evOpt('QUEIMAR A ORIGEM',
       'Há um terminal no meio da repetição. Desligá-lo custa <b>'+hpCost+
       ' de dano</b> (a descarga passa por você), mas a seção para de se copiar '+
@@ -10814,8 +10925,7 @@ const FRACTURE_RUN_EVENTS=[
     const shieldCost=Math.max(4,Math.round(player.shieldMax*.18));
     evHead('O ALICERCE QUE RESTA',
       'A viga principal deste setor ainda segura. Está marcada com tinta de '+
-      'inventário — alguém já calculou que ela vale mais desmontada do que em pé.<br>'+
-      moralStatusLine());
+      'inventário — alguém já calculou que ela vale mais desmontada do que em pé.');
     evOpt('DESMONTAR PARA VENDER',
       'Corta a viga. <b>-'+shieldCost+' de escudo máximo</b> permanente (você perde a '+
       'proteção deste lugar) em troca de <b>+'+fractureCoins(58,'fracture_event')+
@@ -10851,7 +10961,7 @@ const FRACTURE_RUN_EVENTS=[
     evHead('AS ROTAS QUE FECHAM',
       'Três saídas deste nível. Um painel de contenção está selando as portas em '+
       'sequência, devagar, de propósito — a ordem sugere que alguém quer que você '+
-      'escolha com pressa.<br>'+moralStatusLine());
+      'escolha com pressa.<br>');
     evOpt('TRAVAR O PAINEL',
       'Custa <b>40 créditos</b> e o painel para. As rotas continuam abertas e você '+
       'ganha <b>+8% de velocidade por 2 ondas</b>. Ninguém é deixado para trás.',
@@ -10883,7 +10993,7 @@ const FRACTURE_RUN_EVENTS=[
     const hpCost=Math.max(3,Math.round(player.hp*.2));
     evHead('O ÚLTIMO CORREDOR',
       'Um vão estreito onde só passa um de cada vez. Se você ficar, tudo que vier '+
-      'por esta onda passa por você — e por mais ninguém.<br>'+moralStatusLine());
+      'por esta onda passa por você — e por mais ninguém.<br>');
     evOpt('SEGURAR O CORREDOR',
       '<b>-'+hpCost+' de vida</b> e <b>-10 de escudo máximo</b> permanente. Em troca '+
       '<b>+18% de dano por 2 ondas</b> e <b>+'+fractureCoins(40,'fracture_event')+
@@ -10919,7 +11029,7 @@ const FRACTURE_RUN_EVENTS=[
     evHead('A ASSINATURA',
       'Algo está seguindo o seu rastro de dano. Não te vê — te mede. Enquanto você '+
       'atacar do mesmo jeito, ele vai chegar mais perto a cada onda.<br>'+
-      operatorWhisperHTML()+moralStatusLine());
+      operatorWhisperHTML());
     evOpt('QUEBRAR O PADRÃO',
       'Você muda tudo: ritmo, arma, posição. <b>-25 créditos</b> em munição errada e '+
       '<b>-1 de dano permanente</b> enquanto reaprende. A assinatura te perde — '+
@@ -10950,7 +11060,7 @@ const FRACTURE_RUN_EVENTS=[
   render(){
     evHead('A ISCA',
       'O caçador segue calor. Existe uma forma barata de dar a ele um alvo melhor — '+
-      'e ela está ao seu lado, respirando.<br>'+moralStatusLine());
+      'e ela está ao seu lado, respirando.<br>');
     evOpt('USAR-SE COMO ISCA',
       'Você fica parado, à vista. <b>-'+Math.max(3,Math.round(player.hp*.18))+
       ' de vida</b> e <b>-6 de confiança dos Ecos</b> (eles veem o risco e não a '+
@@ -10985,7 +11095,7 @@ const FRACTURE_RUN_EVENTS=[
     evHead('DUAS VERSÕES INCOMPATÍVEIS',
       'A mesma porta existe duas vezes, e as duas são verdadeiras. Numa, ela está '+
       'trancada há anos. Na outra, você acabou de abri-la. As medições não batem '+
-      'e o painel se recusa a escolher.<br>'+moralStatusLine());
+      'e o painel se recusa a escolher.<br>');
     evOpt('FECHAR UMA DAS VERSÕES',
       'Você força o colapso de uma delas. <b>-'+Math.max(2,Math.round(player.hp*.12))+
       ' de vida</b> (o corpo paga a diferença) e o setor fica consistente: '+
@@ -11023,7 +11133,7 @@ const FRACTURE_RUN_EVENTS=[
     evHead('A TESTEMUNHA QUE NÃO EXISTE',
       'Um registro de ocorrência assinado por você, datado de três ondas atrás, '+
       'descrevendo uma decisão que você não tomou. A caligrafia é sua. O registro '+
-      'está correto.<br>'+moralStatusLine());
+      'está correto.<br>');
     evOpt('ASSINAR COMO SE FOSSE SEU',
       'Você assume o que não fez. <b>-10 de confiança dos Ecos</b> (eles sabem), '+
       'mas o registro libera <b>+'+fractureCoins(70,'fracture_event')+' créditos</b> '+
@@ -11055,7 +11165,7 @@ const FRACTURE_RUN_EVENTS=[
     evHead('MEMÓRIA DE FORA',
       'Um Eco descreve uma sala que não existe nesta arena: cheiro de café, uma '+
       'cadeira torta, alguém esperando. Ele tem certeza de que viveu isso. '+
-      'O registro da run diz que não.<br>'+moralStatusLine());
+      'O registro da run diz que não.<br>');
     evOpt('CONFIRMAR A MEMÓRIA',
       'Você diz que lembra também. <b>+18 de confiança de todos os Ecos</b> e '+
       '<b>+1 de dissonância acumulada</b> — uma mentira dita com carinho ainda '+
@@ -11088,7 +11198,7 @@ const FRACTURE_RUN_EVENTS=[
     evHead('O CORO DESALINHADO',
       'Todos os Ecos começam a repetir a mesma frase ao mesmo tempo, com meio '+
       'segundo de atraso entre eles. Não é transmissão — é ensaio. Alguém está '+
-      'ensinando eles a dizer algo juntos.<br>'+moralStatusLine());
+      'ensinando eles a dizer algo juntos.<br>');
     evOpt('SINCRONIZAR VOCÊ MESMO',
       'Você entra no coro e vira o ponto de referência. <b>-'+
       Math.max(2,Math.round(player.hp*.1))+' de vida</b> e <b>+15 de confiança</b> '+
@@ -11122,7 +11232,7 @@ const FRACTURE_RUN_EVENTS=[
     evHead('O TEMPO DISPUTADO',
       'Um bolsão de tempo lento, do tamanho de uma sala. Dá para atravessar devagar '+
       'e sair com tudo que couber — ou drená-lo agora e vender o que sobrar. '+
-      'Só uma das duas coisas. O bolsão não espera.<br>'+moralStatusLine());
+      'Só uma das duas coisas. O bolsão não espera.<br>');
     evOpt('ATRAVESSAR DEVAGAR',
       'Você gasta o bolsão em você: <b>+16 de escudo máximo permanente</b> e '+
       '<b>+6% de velocidade por 3 ondas</b>. Nada sobra para vender.',
@@ -11157,7 +11267,7 @@ const FRACTURE_RUN_EVENTS=[
     evHead('O MERCADO QUE NÃO VOLTA',
       'Um terminal de troca abre por um ciclo e fecha para sempre. Ele aceita '+
       'créditos, aceita resíduos e não aceita desculpa. O preço desta visita é '+
-      '<b>'+need+' créditos</b>.<br>'+moralStatusLine());
+      '<b>'+need+' créditos</b>.<br>');
     evOpt('PAGAR E COMPRAR A GARANTIA',
       'Custa <b>'+need+' créditos</b>. Você recebe <b>+22 de escudo máximo '+
       'permanente</b> e <b>um kit médico</b> — o terminal não vende duas vezes.',
@@ -11195,7 +11305,7 @@ const FRACTURE_CHAIN_EVENTS=[
     const dmg=Math.max(6,Math.round(10+wave*1.2));
     evHead('ELE CHEGOU',
       'A assinatura te alcançou. Ele não negocia e não explica: está aqui porque '+
-      'você continuou fazendo exatamente o que sempre fez.<br>'+moralStatusLine());
+      'você continuou fazendo exatamente o que sempre fez.<br>');
     evOpt('PAGAR O QUE DEVE',
       'Você recebe <b>'+dmg+' de dano</b> e <b>-8 de escudo máximo permanente</b>. '+
       'A caçada termina — e o que ele carregava é seu: <b>+'+
@@ -23728,7 +23838,7 @@ const FACTION_RUN_EVENTS=[
   evHead('A CÂMARA DE ECO',
     'Uma cápsula de contenção da Âncora pulsava no meio da onda — lacrada, etiquetada '+
     'como <i>REGISTRO INSTÁVEL</i>. De dentro, alguém bate no vidro no ritmo da sua respiração.<br>'+
-    operatorWhisperHTML()+moralStatusLine());
+    operatorWhisperHTML());
   evOpt('LIBERTAR O REGISTRO',
     'Rompe o lacre. A assinatura escapa em luz — e a Âncora anota seu nome numa lista que não esquece. '+
     '<b>+'+RES_SYM+'4</b> e +5 de confiança nos seus Ecos (eles viram).',
@@ -23738,7 +23848,9 @@ const FACTION_RUN_EVENTS=[
       factionEmit('echo_saved',{fac:{anchor:-2,remnants:3,consortium:0,deviants:1}});
       spawnRing(beacon.x,beacon.y,'#7dffc4',10,190,1);
       toast('O REGISTRO SE DISSOLVEU LIVRE');
-    });
+    },[{k:RES_SYM+' RESÍDUOS',v:'+4',t:'gain'},
+       {k:'CONFIANÇA DOS ECOS',v:'+5',t:'gain'},
+       {k:'AFINIDADE',v:'−ÂNCORA · +REMANESCENTES',t:'moral'}]);
   evOpt('SELAR DEFINITIVAMENTE',
     'Aperta o lacre até o silêncio. A Âncora oferece um NÚCLEO DE CONTENÇÃO pelo serviço — instalado na hora.',
     [1,0,1],'<div class="cprice">'+RES_SYM+'0 · NÚCLEO DE CONTENÇÃO</div>',false,()=>{
@@ -23766,7 +23878,7 @@ const FACTION_RUN_EVENTS=[
   evHead('O RELÓGIO DO FIM',
     'Um posto da Âncora tenta conter uma fenda que não para de crescer — literalmente: ela '+
     'engole os segundos ao redor. O supervisor oferece pagamento em Resíduos estabilizados.<br>'+
-    operatorWhisperHTML()+moralStatusLine());
+    operatorWhisperHTML());
   const hpCost=Math.max(1,Math.round(player.maxHp*.14));
   evOpt('DOAR ENERGIA VITAL',
     'Alimenta o estabilizador com seu próprio núcleo. Custa <b>'+hpCost+' de vida máxima por 45s</b>. '+
@@ -23798,7 +23910,7 @@ const FACTION_RUN_EVENTS=[
   evHead('A FILA',
     'Uma esteira da Âncora transporta cápsulas idênticas: ECOS AGUARDANDO DISSOLUÇÃO ASSISTIDA. '+
     'Na terceira da fila, o lacre mostra um rosto que você conhece — o seu, de uma run que você não lembra de ter perdido.<br>'+
-    operatorWhisperHTML()+moralStatusLine());
+    operatorWhisperHTML());
   evOpt('APERTAR O BOTÃO',
     'Autoriza a dissolução. Ele agradece com os olhos antes de apagar — a Âncora chama isso de '+
     'misericórdia. <b>+'+RES_SYM+'5</b>, e seus Ecos ganham −10% de dano recebido (disciplina ensinada).',
@@ -23829,7 +23941,7 @@ const FACTION_RUN_EVENTS=[
   evHead('O ECO ENJEITADO',
     'Um Eco sem operador — assinatura degradada, quase apagada — se arrasta até você e se ajoelha. '+
     'Não fala: aponta para o próprio peito, onde algo brilha fraco, e depois para a esteira da Âncora, ao longe.<br>'+
-    operatorWhisperHTML()+moralStatusLine());
+    operatorWhisperHTML());
   evOpt('ACOLHER ATÉ A PRÓXIMA ONDA',
     'Deixa ele orbitar você. Seus Ecos entendem o gesto: <b>+8 de confiança</b> em cada um, e '+
     '<b>+'+RES_SYM+'3</b> — ele achou os Resíduos no caminho e insiste em pagar o refúgio.',
@@ -23859,7 +23971,7 @@ const FACTION_RUN_EVENTS=[
   evHead('O CORO',
     'Os Remanescentes fazem um círculo ao redor de um Eco recém-nascido — instável, tremendo, '+
     'com medo do próprio nome. Eles cantam em coro o registro da run que o criou, para que ele saiba quem é.<br>'+
-    operatorWhisperHTML()+moralStatusLine());
+    operatorWhisperHTML());
   evOpt('ENTRAR NO CORO',
     'Você canta junto um trecho da sua própria memória. O Eco novo para de tremer: <b>+6 de confiança</b> '+
     'nos seus Ecos e +1 reroll grátis na loja (a rede paga seu nome).',
@@ -23888,7 +24000,7 @@ const FACTION_RUN_EVENTS=[
   evHead('REFÚGIO SOB ATAQUE',
     'Um esconderijo dos Remanescentes foi localizado por um esquadrão de limpeza da Âncora. '+
     'Dentro: quarenta Ecos — e uma criança de verdade, filha de dois operadores, que se recusa a sair sem eles.<br>'+
-    operatorWhisperHTML()+moralStatusLine());
+    operatorWhisperHTML());
   const hpCost=Math.max(1,Math.round(player.hp*.15));
   evOpt('SER O ESCUDO',
     'Segura a linha enquanto evacuam. Custa <b>'+hpCost+' de vida</b> e 3 ondas de <b>−10% de dano</b> '+
@@ -23920,7 +24032,7 @@ const FACTION_RUN_EVENTS=[
   evHead('LEILÃO DE MEMÓRIA',
     'Um leiloeiro do Consórcio ergue uma cápsula lacrada: <i>ÚLTIMA RUN DE UM OPERADOR NÍVEL 9 — '+
     'PERFIL AGRESSIVO, ALTO RENDIMENTO</i>. Os lances sobem em Resíduos e em silêncio.<br>'+
-    operatorWhisperHTML()+moralStatusLine());
+    operatorWhisperHTML());
   evOpt('DAR O LANCE (◈60)',
     'Compra a memória crua. Dentro: coordenadas de um depósito temporal — <b>+'+RES_SYM+'6</b> e '+
     '1 equipamento de facção aleatório do estoque.',
@@ -23956,7 +24068,7 @@ const FACTION_RUN_EVENTS=[
   evHead('CONTRATO DE BOMBARDEIO',
     'Um drone do Consórcio pousa na sua frente e projeta um contrato: eles podem "preparar o terreno" '+
     'das próximas ondas. A linguagem é corporativa. As cláusulas são claras.<br>'+
-    operatorWhisperHTML()+moralStatusLine());
+    operatorWhisperHTML());
   evOpt('ASSINAR O PACOTE BÁSICO',
     'Custa <b>'+RES_SYM+'5 + ◈30</b>. As próximas 2 ondas começam com os inimigos já feridos: '+
     '<b>+12% de dano seu</b> por 2 ondas (bombardeio de precisão).',
@@ -23987,7 +24099,7 @@ const FACTION_RUN_EVENTS=[
   evHead('O ARQUIVO-ATIVO',
     'Um avaliador do Consórcio estuda seus Ecos como quem lê um balanço. "Excelente depreciação", '+
     'diz, "mas e se a gente transformasse esse passivo em rendimento?"<br>'+
-    operatorWhisperHTML()+moralStatusLine());
+    operatorWhisperHTML());
   const e=liveEchoesForEvents()[0];
   evOpt('ASSINAR O CONTRATO DE COMBATE',
     'Seus Ecos passam a "operar como ativos de defesa terceirizada": <b>+'+RES_SYM+'14</b>. Eles entendem '+
@@ -24022,7 +24134,7 @@ const FACTION_RUN_EVENTS=[
   evHead('O ESPELHO QUENTE',
     'Uma superfície de fenda vertical reflete não o que você é — mas o que você seria se a próxima '+
     'morte fosse a última. A imagem pisca em Dissonância e espera.<br>'+
-    operatorWhisperHTML()+moralStatusLine());
+    operatorWhisperHTML());
   evOpt('OLHAR',
     'A imagem ensina: <b>+'+RES_SYM+'8</b> e +5% de dano permanente — mas o preço é ver. '+
     'Todo Eco acumula 18 de pressão de Dissonância (eles sentem o que você viu).',
@@ -24053,7 +24165,7 @@ const FACTION_RUN_EVENTS=[
   evHead('O PREÇO DA RESPOSTA',
     'Uma máquina Desviada — meio arquivo, meio altar — formula a pergunta que destravou três ciclos: '+
     '"O que você é, quando ninguém está te copiando?" Ela paga pela resposta em Resíduos. E julga.<br>'+
-    operatorWhisperHTML()+moralStatusLine());
+    operatorWhisperHTML());
   evOpt('"SOU QUEM PROTEGE"',
     'A máquina ecoa a resposta para os Ecos da arena. Todos ganham +6 de confiança — e a rede '+
     'Remanescente ouve o registro.',
@@ -24088,7 +24200,7 @@ const FACTION_RUN_EVENTS=[
   evHead('A MARCHA DOS IMPOSSÍVEIS',
     'Uma procissão de Ecos transformados cruza a arena — versões que abraçaram a Dissonância até virarem '+
     'outra coisa. No meio deles, um carrega o seu rosto, de uma run que você perdeu faz tempo. Ele para. Aponta. Espera.<br>'+
-    operatorWhisperHTML()+moralStatusLine());
+    operatorWhisperHTML());
   evOpt('SEGUIR A MARCHA',
     'Caminha com eles até a próxima fenda. No fim, seu duplo entrega um punhado de '+
     '<b>+'+RES_SYM+'12</b> — "o que sobrou do que você era", diz, "agora rende juros".',
@@ -24135,7 +24247,7 @@ const FRAC_CONTACT_EVENTS=[
     evHead('O OLHO DA ÂNCORA',
       'Uma cápsula de observação da Âncora pousa e projeta o seu registro: ondas, decisões, '+
       'o jeito como trata os Ecos que herdou. Não há ameaça no tom — há cálculo.<br>'+
-      operatorWhisperHTML()+moralStatusLine());
+      operatorWhisperHTML());
     evOpt('REGISTRAR COLABORAÇÃO',
       'Sua assinatura entra no protocolo de observação. A Âncora anota: <i>"cooperativo, '+
       'previsível, útil"</i>. O canal de ofertas se abre.',
@@ -24171,7 +24283,7 @@ const FRAC_CONTACT_EVENTS=[
       'Uma estática quente toma o ar — e dentro dela, uma voz atravessada por outras vozes: '+
       '"Você ainda tem eles. Ainda não desistiu deles. A gente viu." Os Remanescentes '+
       'emergem do vão entre ciclos, sem armas, com os olhos fixos nos seus Ecos.<br>'+
-      operatorWhisperHTML()+moralStatusLine());
+      operatorWhisperHTML());
     evOpt('ACOLHER O CONTATO',
       'A rede se apresenta: nomes, refúgios, cicatrizes. Seus Ecos ouvem a conversa inteira '+
       '— e algo neles relaxa. O canal de ofertas se abre.',
@@ -24207,7 +24319,7 @@ const FRAC_CONTACT_EVENTS=[
       'Um drone-executivo do Consórcio desce com um cartão de visita holográfico e um '+
       'sorriso de quem já calculou o seu valor de mercado em três moedas diferentes. '+
       '"Não se assuste com o porteiro. Nós só falamos com quem ainda está de pé."<br>'+
-      operatorWhisperHTML()+moralStatusLine());
+      operatorWhisperHTML());
     evOpt('ACEITAR O CARTÃO',
       'O cartão vira um canal direto de ofertas — com termos claros, prazos e juros. '+
       'O Consórcio adianta <b>+'+RES_SYM+'2</b> como cortesia de boas-vindas.',
@@ -24243,7 +24355,7 @@ const FRAC_CONTACT_EVENTS=[
       'Uma fenda vertical se abre ao lado de você — não para sugar, para olhar. Do outro '+
       'lado, formas que já foram Ecos fazem gestos que já foram linguagem. Um deles '+
       'escreve no ar, com luz de Dissonância: <i>VOCÊ AINDA NÃO QUEBROU. POR QUÊ?</i><br>'+
-      operatorWhisperHTML()+moralStatusLine());
+      operatorWhisperHTML());
     evOpt('RESPONDER ATRAVESSANDO O OLHAR',
       'Sustenta o olhar sem recuar. A fenda pulsa e cospe um punhado de <b>+'+RES_SYM+'4</b>: '+
       'a entrada para a rede dos Desviados — e para o que eles chamam de "laboratório".',
