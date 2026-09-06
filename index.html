@@ -28379,11 +28379,470 @@ function fractureKitBoot(){
    de seção legado, que pode ser renomeado ou movido por um merge e
    fazer o detector acusar falsamente escritas legítimas. */
 
+/* ==================== PR14·bloco fp1.js ==================== */
+/* =====================================================================
+   PR 14 — PRESENÇA DE FACÇÃO · B2 — FUNDAÇÃO ARQUITETURAL
+   ---------------------------------------------------------------------
+   Documentado em PR14_B2_FACTION_PRESENCE_FOUNDATION.md.
+
+   O QUE É: a camada estrutural (sem gameplay visual) que o B3 usará para
+   manifestar facções fisicamente na arena. Aqui só existe:
+     · contrato de dados serializável (fpMakePresence);
+     · estado runtime próprio (factionPresenceRun) — separado de fracRun
+       e de fractureRun;
+     · scheduler DETERMINÍSTICO (RNG do Diretor, nunca RNG global);
+     · emissor real de faction_reaction (resolve a DT-4);
+     · política de coexistência com o beacon singleton (DT-2);
+     · cap de 1 presença ativa (DT-3 parte 1) + tag opcional em allies;
+     · lifecycle + cleanup + Save/Continue + Sandbox isolados.
+
+   REGRA CENTRAL (do B1): FACÇÃO ≠ FRACTURE THEME. Este bloco LÊ o Diretor
+   (seed/wave/estado) para AGENDAR, mas NUNCA escreve fractureRun, nunca
+   toca o Tema, a composição, a Intensidade ou o budget. A única saída
+   para o Diretor é fractureEmit('faction_reaction', …) — que por contrato
+   tem i:0 (não muda Intensidade) e só registra histórico.
+
+   B2 é fundação: NÃO spawna presença visual, NÃO altera afinidade, NÃO
+   concede recursos. Só decide/registra intenção determinística.
+   ===================================================================== */
+
+/* ---- taxonomia mínima (B2-C): só o necessário para o B3 diferenciar.
+   Mais tipos entram quando houver comportamento real que os exija. ---- */
+const FACTION_PRESENCE_KINDS=['signal','emissary'];
+const FACTION_PRESENCE_KIND_SET=(function(){const o={};
+  for(const k of FACTION_PRESENCE_KINDS)o[k]=true;return o;})();
+/* estados do lifecycle (B2-P). B2 usa scheduled/resolved/expired; active
+   fica reservado para o B3 (quando existir entidade na arena). */
+const FACTION_PRESENCE_STATES=['scheduled','active','resolved','expired'];
+const FACTION_PRESENCE_STATE_SET=(function(){const o={};
+  for(const s of FACTION_PRESENCE_STATES)o[s]=true;return o;})();
+
+/* ---- regras de segurança (B2-E / B2-K / B2-I) — nada de número mágico ---- */
+const FACTION_PRESENCE_ACTIVE_CAP=1;    // no máximo 1 presença ATIVA por vez
+const FACTION_PRESENCE_HIST_MAX=24;     // teto do histórico (anti-crescimento)
+const FACTION_PRESENCE_COOLDOWN=2;      // ondas mínimas entre agendamentos
+const FACTION_PRESENCE_MIN_WAVE=2;      // não agenda antes desta onda
+
+/* ---- contrato de dados (B2-B): objeto PLANO e serializável.
+   Sem DOM, sem closures, sem funções, sem ciclos. Campos mínimos. ---- */
+function fpValidFaction(id){
+  return typeof id==='string'&&
+    Object.prototype.hasOwnProperty.call(FRACTION_BY_ID,id);
+}
+function fpMakePresence(o){
+  o=o||{};
+  const faction=fpValidFaction(o.faction)?o.faction:null;
+  const kind=FACTION_PRESENCE_KIND_SET[o.kind]?o.kind:'signal';
+  const state=FACTION_PRESENCE_STATE_SET[o.state]?o.state:'scheduled';
+  return {
+    id:Math.max(1,Math.round(Number(o.id))||1),   // serial da run
+    faction:faction,
+    kind:kind,
+    state:state,
+    wave:clamp(Math.round(Number(o.wave))||0,0,MAX_WAVE),
+    seed:(Math.round(Number(o.seed))||0)>>>0,       // seed determinística da decisão
+    reason:String(o.reason==null?'':o.reason).slice(0,24)
+  };
+}
+
+/* ---- estado runtime (B2-D): próprio, run-scoped. Não duplica afinidade,
+   resíduos, moralidade nem Tema. ---- */
+function factionPresenceFresh(){
+  return {
+    v:1,
+    serial:0,          // contador de ids
+    active:null,       // presença ativa (cap=1) ou null
+    scheduled:null,    // intenção agendada aguardando ativação (B3)
+    lastWave:0,        // última onda em que agendou (cooldown)
+    history:[]         // histórico compacto (cap FACTION_PRESENCE_HIST_MAX)
+  };
+}
+let factionPresenceRun=null;
+
+/* ---- RNG determinístico (B2-H): reusa o gerador do Diretor sobre a SEED
+   da run + a onda. Mesma (seed, wave) ⇒ mesma decisão. NUNCA RNG global. */
+function fpDeterministicSeed(w){
+  let base=0;
+  try{
+    if(typeof fractureGetSeed==='function')base=(fractureGetSeed()>>>0);
+  }catch(e){base=0;}
+  if(!base)base=0x5EED14;   // fallback estável (sem run do Diretor)
+  return fractureHash32((base^(Math.imul(((w|0)+1),0x9E3779B1)))>>>0);
+}
+function fpRng(w){return fractureRng(fpDeterministicSeed(w));}
+
+/* ---- seleção de facção (B2-L): candidatas elegíveis, ponderadas por um
+   viés SUAVE de afinidade — mas nunca "maior afinidade sempre aparece".
+   Afinidade é só LIDA (B2-M); jamais escrita aqui. A ponderação garante
+   variedade: facções diferentes podem sair na mesma run. ---- */
+function fpEligibleFactions(){
+  const out=[];
+  for(const id of FACTION_IDS){
+    if(!fpValidFaction(id))continue;
+    out.push(id);
+  }
+  return out;
+}
+function fpAffinityWeight(id){
+  /* peso base 1; afinidade desloca DE FORMA SUAVE em [0.5 .. 1.5].
+     Lê fracRun.aff sem modificar. Sem run de facção ⇒ peso neutro. */
+  let aff=0;
+  try{if(typeof getFactionAffinity==='function')aff=getFactionAffinity(id)|0;}catch(e){aff=0;}
+  const norm=clamp(aff,-100,100)/100;      // -1..+1
+  return 1+norm*0.5;                        // 0.5..1.5
+}
+function fpPickFaction(rng){
+  const elig=fpEligibleFactions();
+  if(!elig.length)return null;
+  const weights=elig.map(fpAffinityWeight);
+  let total=0;for(const w of weights)total+=w;
+  if(!(total>0))return elig[0];
+  let r=(typeof rng==='function'?rng():0.5)*total;
+  for(let i=0;i<elig.length;i++){r-=weights[i];if(r<=0)return elig[i];}
+  return elig[elig.length-1];
+}
+
+/* ---- histórico (B2-K): compacto e limitado. ---- */
+function fpHistPush(entry){
+  const fp=factionPresenceRun;if(!fp)return;
+  if(fp.history.length>=FACTION_PRESENCE_HIST_MAX)fp.history.shift();
+  fp.history.push({id:entry.id|0,faction:entry.faction||null,
+    kind:entry.kind||'signal',wave:clamp(entry.wave|0,0,MAX_WAVE),
+    state:FACTION_PRESENCE_STATE_SET[entry.state]?entry.state:'scheduled'});
+}
+
+/* ---- coexistência com o beacon singleton (B2-F).
+   Escolha de menor risco: NÃO transformar beacon em array. A presença tem
+   estado próprio; quando (no B3) precisar do beacon físico, pede reserva.
+   Enquanto houver um beacon de EVENTO vivo, a presença não o toma — os 12
+   eventos de facção e os eventos comuns continuam intactos. ---- */
+function fpBeaconInUse(){
+  try{return typeof beacon!=='undefined'&&beacon!=null;}catch(e){return false;}
+}
+function canUseBeaconForFactionPresence(){
+  /* só quando não há beacon vivo E não há presença ativa segurando um */
+  if(fpBeaconInUse())return false;
+  const fp=factionPresenceRun;
+  if(fp&&fp.active&&fp.active._beacon)return false;
+  return true;
+}
+
+/* ---- emissor de faction_reaction (B2-J / DT-4).
+   Payload MÍNIMO. Determinístico. Gated no Sandbox (não polui o Diretor de
+   teste com reações que só fazem sentido na run real). NUNCA altera Tema:
+   o contrato de faction_reaction é i:0 (só histórico). ---- */
+function fpEmitFactionReaction(p,reason){
+  if(typeof fractureEmit!=='function')return null;
+  if(!p||!p.faction)return null;
+  let affState='neutra';
+  try{if(typeof getFactionState==='function'){const st=getFactionState(p.faction);
+    if(st&&st.id)affState=st.id;}}catch(e){affState='neutra';}
+  return fractureEmit('faction_reaction',{
+    wave:p.wave|0,
+    source:'presence',
+    faction:p.faction,
+    kind:p.kind,
+    affinityState:affState,
+    reason:String(reason||p.reason||'agendada').slice(0,24)
+  });
+}
+
+/* ---- scheduler determinístico (B2-H / B2-I).
+   Decide, para a onda n, se uma presença é AGENDADA. Só intenção: não
+   spawna nada visual (isso é B3). Determinístico por (seed, wave). Não lê
+   Intensidade para balance (respeita a guarda de arquitetura do PR13).
+   Retorna a presença agendada ou null. ---- */
+function factionPresenceSchedule(n){
+  const fp=factionPresenceRun;
+  if(!fp)return null;
+  n=clamp(Math.round(Number(n))||0,0,MAX_WAVE);
+  if(n<FACTION_PRESENCE_MIN_WAVE)return null;
+  /* cap: nunca mais de 1 ativa; não substitui silenciosamente (B2-E) */
+  if(fp.active)return null;
+  /* uma intenção por onda: não duplica na mesma wave (B2-K) */
+  if(fp.scheduled&&fp.scheduled.wave===n)return fp.scheduled;
+  /* cooldown entre agendamentos (B2-I) */
+  if(fp.lastWave&&(n-fp.lastWave)<FACTION_PRESENCE_COOLDOWN)return null;
+  const rng=fpRng(n);
+  /* portão determinístico: ~40% das ondas elegíveis geram intenção. B2 NÃO
+     ajusta essa frequência (tuning é B6); só precisa ser determinística. */
+  if(rng()>=0.40)return null;
+  const faction=fpPickFaction(rng);
+  if(!faction)return null;
+  const kind=FACTION_PRESENCE_KINDS[Math.floor(rng()*FACTION_PRESENCE_KINDS.length)]||'signal';
+  fp.serial=(fp.serial|0)+1;
+  const p=fpMakePresence({id:fp.serial,faction:faction,kind:kind,
+    state:'scheduled',wave:n,seed:fpDeterministicSeed(n),reason:'scheduler'});
+  fp.scheduled=p;
+  fp.lastWave=n;
+  fpHistPush(p);
+  return p;
+}
+
+/* ---- lifecycle mínimo (B2-P). update/draw completos ficam para o B3. ---- */
+function factionPresenceActivate(p){
+  const fp=factionPresenceRun;
+  if(!fp||!p)return null;
+  if(fp.active)return null;                 // cap=1
+  p.state='active';
+  fp.active=p;
+  if(fp.scheduled&&fp.scheduled.id===p.id)fp.scheduled=null;
+  return p;
+}
+function factionPresenceResolve(reason){
+  const fp=factionPresenceRun;
+  if(!fp||!fp.active)return false;
+  const p=fp.active;p.state='resolved';
+  fpHistPush(p);
+  fp.active=null;
+  return true;
+}
+function factionPresenceExpire(reason){
+  const fp=factionPresenceRun;
+  if(!fp)return false;
+  let any=false;
+  if(fp.active){fp.active.state='expired';fpHistPush(fp.active);fp.active=null;any=true;}
+  if(fp.scheduled){fp.scheduled.state='expired';fp.scheduled=null;any=true;}
+  return any;
+}
+/* cleanup total: chamado no fim/reset de run (evita tim_ers órfãos e o
+   tipo de vazamento corrigido no Paradoxo). Não deixa nada pendurado. */
+function factionPresenceCleanup(){
+  const fp=factionPresenceRun;
+  if(!fp)return false;
+  fp.active=null;fp.scheduled=null;
+  return true;
+}
+
+/* ---- ciclo de vida da run (B2-P / B2-N) ---- */
+function factionPresenceBeginRun(){
+  factionPresenceRun=factionPresenceFresh();
+  return factionPresenceRun;
+}
+function factionPresenceEndRun(){
+  factionPresenceCleanup();
+  factionPresenceRun=null;
+  return true;
+}
+function factionPresenceForgetRun(){factionPresenceRun=null;return true;}
+
+/* ---- Save/Continue (B2-N): estado mínimo aditivo em cp.presence.
+   SM_VERSION continua 3 (campo opcional). Save antigo (sem cp.presence)
+   cai em fresh. Não serializa timers/closures. Determinístico: o scheduled
+   é reconstruível, mas persistir o serial/lastWave/history evita duplicar
+   reação e mantém o cooldown coerente no Continue. ---- */
+function factionPresencePack(){
+  const fp=factionPresenceRun;
+  if(!fp)return null;
+  return {v:1,
+    serial:fp.serial|0,
+    lastWave:clamp(fp.lastWave|0,0,MAX_WAVE),
+    active:fp.active?fpMakePresence(fp.active):null,
+    scheduled:fp.scheduled?fpMakePresence(fp.scheduled):null,
+    history:fp.history.slice(-FACTION_PRESENCE_HIST_MAX)
+      .map(h=>({id:h.id|0,faction:fpValidFaction(h.faction)?h.faction:null,
+        kind:FACTION_PRESENCE_KIND_SET[h.kind]?h.kind:'signal',
+        wave:clamp(h.wave|0,0,MAX_WAVE),
+        state:FACTION_PRESENCE_STATE_SET[h.state]?h.state:'scheduled'}))};
+}
+function factionPresenceUnpack(cp){
+  const p=(cp&&cp.presence&&typeof cp.presence==='object')?cp.presence:null;
+  factionPresenceRun=factionPresenceFresh();
+  if(!p)return factionPresenceRun;           // save antigo → default seguro
+  const fp=factionPresenceRun;
+  fp.serial=Math.max(0,Math.round(Number(p.serial))||0);
+  fp.lastWave=clamp(Math.round(Number(p.lastWave))||0,0,MAX_WAVE);
+  fp.active=(p.active&&fpValidFaction(p.active.faction))?fpMakePresence(p.active):null;
+  fp.scheduled=(p.scheduled&&fpValidFaction(p.scheduled.faction))?fpMakePresence(p.scheduled):null;
+  if(Array.isArray(p.history))
+    fp.history=p.history.filter(h=>h&&typeof h==='object')
+      .slice(-FACTION_PRESENCE_HIST_MAX)
+      .map(h=>({id:Math.round(Number(h.id))||0,
+        faction:fpValidFaction(h.faction)?h.faction:null,
+        kind:FACTION_PRESENCE_KIND_SET[h.kind]?h.kind:'signal',
+        wave:clamp(Math.round(Number(h.wave))||0,0,MAX_WAVE),
+        state:FACTION_PRESENCE_STATE_SET[h.state]?h.state:'scheduled'}));
+  return fp;
+}
+
+/* ---- Sandbox (B2-O): contexto isolado. Estado próprio no laboratório;
+   nada é gravado (captureCheckpoint já recusa em sandbox). ---- */
+function factionPresenceSandboxContextStart(){
+  if(typeof sandboxRun==='undefined'||!sandboxRun)return false;
+  factionPresenceRun=factionPresenceFresh();
+  return true;
+}
+function factionPresenceSandboxTearDown(){
+  factionPresenceRun=null;
+  return true;
+}
+
+/* ---- snapshot read-only (B2-T): consumido pelo helper DEV. ---- */
+function factionPresenceSnapshot(){
+  const fp=factionPresenceRun;
+  if(!fp)return null;
+  return {serial:fp.serial|0,lastWave:fp.lastWave|0,
+    cap:FACTION_PRESENCE_ACTIVE_CAP,
+    active:fp.active?fpMakePresence(fp.active):null,
+    scheduled:fp.scheduled?fpMakePresence(fp.scheduled):null,
+    histLen:fp.history.length,
+    history:fp.history.slice(-8)};
+}
+
+/* ---- tag opcional em allies (B2-G / DT-3 parte 2).
+   Retrocompatível: aliados antigos continuam válidos sem os campos.
+   Só ANOTA origem; não altera comportamento ofensivo/defensivo. ---- */
+function fpTagAlly(ally,faction,presenceId){
+  if(!ally||typeof ally!=='object')return ally;
+  if(fpValidFaction(faction)){
+    ally.faction=faction;
+    ally.origin='faction';
+    if(presenceId!=null)ally.presenceId=Math.max(1,Math.round(Number(presenceId))||1);
+  }
+  return ally;
+}
+
+/* ---- DEV helper read-only (B2-T). Não altera nada; só inspeciona. ---- */
+function factionPresenceDevText(){
+  const s=factionPresenceSnapshot();
+  if(!s)return 'PRESENÇA DE FACÇÃO: SEM RUN ATIVA.';
+  const fmt=p=>p?(p.faction+'/'+p.kind+' @w'+p.wave+' ['+p.state+']'):'—';
+  let out='PRESENÇA DE FACÇÃO (B2 · fundação)\n';
+  out+='  cap: '+s.cap+'   serial: '+s.serial+'   lastWave: '+s.lastWave+'\n';
+  out+='  ativa:     '+fmt(s.active)+'\n';
+  out+='  agendada:  '+fmt(s.scheduled)+'\n';
+  out+='  história:  '+s.histLen+' registro(s)';
+  return out;
+}
+function factionPresenceDevSection(){
+  if(!document||typeof document.getElementById!=='function')return;
+  if(!(typeof DEV_MODE!=='undefined'&&DEV_MODE))return;
+  const el=document.getElementById('devpanel');
+  if(!el)return;
+  let sec=document.getElementById('faction-presence-dev-section');
+  if(!sec){sec=document.createElement('div');
+    sec.id='faction-presence-dev-section';el.appendChild(sec);}
+  let h='<h4 style="margin-top:10px">PR 14 · PRESENÇA DE FACÇÃO</h4>';
+  h+='<div style="font-family:Consolas,monospace;font-size:10px;line-height:1.7;'+
+    'color:#9db8c8;white-space:pre-wrap">'+
+    (typeof escDev==='function'?escDev(factionPresenceDevText()):factionPresenceDevText())+'</div>';
+  sec.innerHTML=h;
+}
+
+/* ---- BOOT do kit de presença: integra por monkey-patch (mesmo padrão do
+   Diretor). Nada é costurado dentro das funções de run/onda/save. ---- */
+function factionPresenceKitBoot(){
+  if(factionPresenceKitBoot.done)return;factionPresenceKitBoot.done=true;
+  /* 1. checkpoint: cp.presence */
+  try{
+    const _bc=smBuildCheckpoint;smBuildCheckpoint=function(reason,waveOverride){
+      const cp=_bc.apply(this,arguments);
+      try{if(cp&&typeof cp==='object')cp.presence=factionPresencePack();}catch(e){}
+      return cp;
+    };
+  }catch(e){}
+  /* 2. slot: nada vaza entre Save 1/2/3 */
+  try{
+    const _as=activateSlot;activateSlot=function(i){
+      const r=_as.apply(this,arguments);
+      try{factionPresenceForgetRun();}catch(e){}
+      return r;
+    };
+    const _cs=smClearSlotSave;smClearSlotSave=function(){
+      const r=_cs.apply(this,arguments);
+      try{factionPresenceForgetRun();}catch(e){}
+      return r;
+    };
+  }catch(e){}
+  /* 3. início de run: estado fresco ANTES do 1º checkpoint */
+  try{
+    const _st=startRun;startRun=function(opts){
+      try{factionPresenceBeginRun();}catch(e){}
+      return _st.apply(this,arguments);
+    };
+    /* 4. Continue: restaura ANTES do spawnWave da retomada */
+    const _rs=resumeRun;resumeRun=function(){
+      try{factionPresenceUnpack(hasActiveRun()?activeRun:null);}catch(e){}
+      return _rs.apply(this,arguments);
+    };
+    /* 5. fim de run: estado run-scoped morre (cleanup total) */
+    const _pd=onPlayerDeath;onPlayerDeath=function(){
+      const r=_pd.apply(this,arguments);
+      try{factionPresenceEndRun();}catch(e){}
+      return r;
+    };
+    const _ov=onVictory;onVictory=function(){
+      const r=_ov.apply(this,arguments);
+      try{factionPresenceEndRun();}catch(e){}
+      return r;
+    };
+    const _sv=showVictory;showVictory=function(){
+      const r=_sv.apply(this,arguments);
+      try{factionPresenceEndRun();}catch(e){}
+      return r;
+    };
+  }catch(e){}
+  /* 6. ondas: agenda (só intenção) na fronteira de onda. Gated no Sandbox:
+     lá o estado é isolado e não precisa agendar reação de run real. Durante
+     resumeRun (smRestoring) NÃO agenda: a onda retomada já foi consolidada. */
+  try{
+    const _sw=spawnWave;spawnWave=function(n){
+      const r=_sw.apply(this,arguments);
+      try{
+        if(factionPresenceRun&&!(typeof smRestoring!=='undefined'&&smRestoring)&&
+           !(typeof sandboxRun!=='undefined'&&sandboxRun)){
+          const p=factionPresenceSchedule(n);
+          if(p)fpEmitFactionReaction(p,'agendada');
+        }
+      }catch(e){}
+      return r;
+    };
+  }catch(e){}
+  /* 7. Sandbox: contexto próprio, nada persiste */
+  try{
+    const _ss=sandboxStart;sandboxStart=function(){
+      const r=_ss.apply(this,arguments);
+      if(r){try{factionPresenceSandboxContextStart();}catch(e){}}
+      return r;
+    };
+    const _sr=sandboxRestart;sandboxRestart=function(){
+      const r=_sr.apply(this,arguments);
+      try{factionPresenceSandboxContextStart();}catch(e){}
+      return r;
+    };
+    const _se=sandboxEndToSetup;sandboxEndToSetup=function(){
+      const r=_se.apply(this,arguments);
+      try{factionPresenceSandboxTearDown();}catch(e){}
+      return r;
+    };
+    const _sx=sandboxExit;sandboxExit=function(m){
+      const r=_sx.apply(this,arguments);
+      try{factionPresenceSandboxTearDown();}catch(e){}
+      return r;
+    };
+    const _sc=sandboxCloseSetup;sandboxCloseSetup=function(){
+      const r=_sc.apply(this,arguments);
+      try{factionPresenceSandboxTearDown();}catch(e){}
+      return r;
+    };
+  }catch(e){}
+  /* 8. DEV MODE: seção read-only no painel */
+  try{
+    const _dr=devRender;devRender=function(){
+      const r=_dr.apply(this,arguments);
+      try{factionPresenceDevSection();}catch(e){}
+      return r;
+    };
+  }catch(e){}
+}
+/* ==================== PR14·fim fp1.js ==================== */
+
 /* =====================================================================
    BOOT
    ===================================================================== */
 fracKitBoot();
 fractureKitBoot();   // PR 13: Diretor de Fratura (fundação)
+factionPresenceKitBoot();   // PR 14: Presença de Facção (fundação B2)
 
 /* ---- expõe o namespace no console apenas em build de desenvolvimento ---- */
 if(IS_DEV_BUILD){
