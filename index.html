@@ -28837,12 +28837,429 @@ function factionPresenceKitBoot(){
 }
 /* ==================== PR14·fim fp1.js ==================== */
 
+/* ==================== PR14·bloco fp2.js ==================== */
+/* =====================================================================
+   PR 14 — PRESENÇA DE FACÇÃO · B3 — PRIMEIRA PRESENÇA FÍSICA NA ARENA
+   ---------------------------------------------------------------------
+   Documentado em PR14_B3_FACTION_PRESENCE_PHYSICAL.md.
+
+   O QUE É: transforma a INTENÇÃO agendada pelo B2 (fp.scheduled) numa
+   ENTIDADE FÍSICA EFÊMERA REAL na arena — mas só para provar a arquitetura,
+   com apenas 2 facções: ⬡ A ÂNCORA (contenção/defesa) e ◈ O CONSÓRCIO
+   (recurso/oportunidade). REMANESCENTES e DESVIADOS ficam para o B4.
+
+   COMO: reusa TODA a fundação do B2. Não cria scheduler paralelo, não
+   recalcula facção — apenas ativa a decisão já produzida (fp.scheduled)
+   quando a facção é fisicamente elegível. A entidade é SEPARADA do beacon
+   singleton (menor risco: não vira array, não destrói eventos antigos) e
+   pede coexistência via canUseBeaconForFactionPresence (B2-F).
+
+   REGRA CENTRAL (do B1): FACÇÃO ≠ FRACTURE THEME. Nada aqui escreve
+   fractureRun, toca o Tema, a composição, a Intensidade ou o budget.
+   Nenhuma unidade entra em enemies[] (não é inimigo). Afinidade é só LIDA
+   (nuance visual/textual) — nunca +aff/-aff automático.
+
+   EFEITOS (conservadores, one-shot, com limite):
+     · ÂNCORA  → restaura uma fração LIMITADA do Escudo (estabilização
+       defensiva). Só escudo, nunca HP; one-shot; sem buff permanente.
+     · CONSÓRCIO → concede um pouco de ⧗ Resíduos (recurso EXISTENTE, via
+       addResidues). one-shot; sem nova moeda; sem economia infinita.
+   ===================================================================== */
+
+/* ---- facções fisicamente elegíveis no B3 (só 2). As outras 2 continuam
+   sendo agendadas pelo B2, mas NÃO manifestam entidade — isso é B4. ---- */
+const FACTION_PRESENCE_PHYSICAL=['anchor','consortium'];
+const FACTION_PRESENCE_PHYSICAL_SET=(function(){const o={};
+  for(const id of FACTION_PRESENCE_PHYSICAL)o[id]=true;return o;})();
+function fpIsPhysical(id){return !!FACTION_PRESENCE_PHYSICAL_SET[id];}
+
+/* ---- constantes de segurança/balance (nada de número mágico espalhado).
+   Frequência NÃO é tunada aqui (isso é B6); só precisa ser conservadora. */
+const FACTION_PRESENCE_TTL=32;              // segundos de vida da entidade
+const FACTION_PRESENCE_ENTITY_R=30;        // raio visual
+const FACTION_PRESENCE_INTERACT_R=58;      // raio de interação (+player.r)
+const FACTION_PRESENCE_MARGIN=150;         // margem de spawn dentro da arena
+const FACTION_PRESENCE_MIN_PLAYER_DIST=300;// nunca nasce sobre o player
+const FACTION_PRESENCE_MIN_BEACON_DIST=170;// nunca nasce sobre o beacon
+const FACTION_PRESENCE_ANCHOR_SHIELD=0.5;  // fração do shieldMax restaurada
+const FACTION_PRESENCE_CONSORTIUM_RES=4;   // ⧗ concedidos (one-shot)
+
+/* ---- identidade visual (B3-E): símbolo + cor + forma. Nomes sustentados
+   pelo lore existente (Âncora: contenção; Consórcio: resíduos têm valor). */
+const FACTION_PRESENCE_LABEL={
+  anchor    :{nm:'NÓ DE CONTENÇÃO',sym:'⬡',col:'#8fd6ff',
+              title:'PRESENÇA DA ÂNCORA'},
+  consortium:{nm:'CACHE TEMPORAL', sym:'◈',col:'#ffd166',
+              title:'PRESENÇA DO CONSÓRCIO'}
+};
+
+/* ---- entidade física efêmera. Objeto plano, dedicado; NÃO é beacon, NÃO
+   é ally, NÃO entra em enemies[]. Cap = 1 (só uma por vez). ---- */
+let factionPresenceEntity=null;
+
+/* posição determinística (B3-C): função da SEED da presença. Não usa RNG
+   global. Evita player e beacon; nunca fora da arena. Mesma presença ⇒
+   mesma sequência de rng ⇒ mesma posição (dado o mesmo estado de mundo). */
+function fpEntityPos(p){
+  const base=fpDeterministicSeed(((p.wave|0)*131+(p.id|0))>>>0);
+  const rng=fractureRng(base);
+  const mx=FACTION_PRESENCE_MARGIN,my=FACTION_PRESENCE_MARGIN;
+  let x=mx+rng()*(ARENA.w-2*mx), y=my+rng()*(ARENA.h-2*my);
+  for(let i=0;i<8;i++){
+    let ok=true;
+    if(typeof player!=='undefined'&&player){
+      const dx=x-player.x,dy=y-player.y;
+      if(dx*dx+dy*dy<FACTION_PRESENCE_MIN_PLAYER_DIST*FACTION_PRESENCE_MIN_PLAYER_DIST)ok=false;
+    }
+    if(ok&&typeof beacon!=='undefined'&&beacon){
+      const dx=x-beacon.x,dy=y-beacon.y;
+      if(dx*dx+dy*dy<FACTION_PRESENCE_MIN_BEACON_DIST*FACTION_PRESENCE_MIN_BEACON_DIST)ok=false;
+    }
+    if(ok)break;
+    x=mx+rng()*(ARENA.w-2*mx);
+    y=my+rng()*(ARENA.h-2*my);
+  }
+  return {x:clamp(x,mx,ARENA.w-mx),y:clamp(y,my,ARENA.h-my)};
+}
+
+/* constrói a entidade física a partir de uma presença lógica (B2). Só para
+   facção fisicamente elegível. Respeita o cap (1). Reserva o beacon de forma
+   LÓGICA (B2-F) sem transformá-lo em array: se um beacon de evento está vivo,
+   a entidade apenas coexiste separada — nunca o toma nem o destrói. */
+function factionPresenceBuildEntity(p,opts){
+  opts=opts||{};
+  if(!p||!fpIsPhysical(p.faction))return null;
+  if(factionPresenceEntity)return null;                 // cap físico = 1
+  const pos=fpEntityPos(p);
+  const useBeacon=(typeof canUseBeaconForFactionPresence==='function')
+    ?canUseBeaconForFactionPresence():false;
+  factionPresenceEntity={
+    presenceId:p.id|0,faction:p.faction,kind:p.kind,
+    x:pos.x,y:pos.y,r:FACTION_PRESENCE_ENTITY_R,
+    interactR:FACTION_PRESENCE_INTERACT_R,
+    ttl:FACTION_PRESENCE_TTL,ttlMax:FACTION_PRESENCE_TTL,
+    state:'active',beacon:!!useBeacon,pulse:0,consumed:false
+  };
+  return factionPresenceEntity;
+}
+/* ativa a intenção agendada (B2 activate) e materializa a entidade + feedback.
+   silent:true pula o banner (usado na reconstrução do Continue). */
+function factionPresenceSpawnFromScheduled(silent){
+  const fp=factionPresenceRun;
+  if(!fp||!fp.scheduled)return null;
+  const p=fp.scheduled;
+  if(!fpIsPhysical(p.faction))return null;               // B4 cuidará das outras
+  if(fp.active||factionPresenceEntity)return null;       // cap = 1
+  if(typeof factionPresenceActivate==='function')factionPresenceActivate(p);
+  const e=factionPresenceBuildEntity(fp.active||p);
+  if(!e)return null;
+  if(!silent)fpEntityAnnounce(e);
+  return e;
+}
+/* reconstrução determinística no Continue: se há presença ATIVA física e
+   nenhuma entidade em memória, recria no mesmo ponto (não reconcede nada,
+   não reemite reação — só o corpo físico volta). */
+function factionPresenceRebuildEntity(){
+  const fp=factionPresenceRun;
+  if(!fp||!fp.active||factionPresenceEntity)return null;
+  if(!fpIsPhysical(fp.active.faction))return null;
+  return factionPresenceBuildEntity(fp.active);
+}
+
+/* feedback curto (B3-K): banner ao ativar, respeitando a UI existente. */
+function fpEntityAnnounce(e){
+  if(!e)return;
+  const lab=FACTION_PRESENCE_LABEL[e.faction];if(!lab)return;
+  try{if(typeof banner==='function')banner(lab.sym+' '+lab.title,'APROXIME-SE PARA INTERAGIR');}catch(x){}
+  try{if(typeof AUDIO!=='undefined'&&AUDIO&&AUDIO.tone)AUDIO.tone(560,.28,'sine',.04,-160);}catch(x){}
+}
+
+/* rótulo de estado de afinidade (B3-I): SÓ LEITURA, para nuance de texto. */
+function fpEntityAffinityLabel(faction){
+  try{
+    if(typeof getFactionState==='function'){
+      const st=getFactionState(faction);
+      if(st&&st.nm)return String(st.nm).slice(0,18);
+      if(st&&st.id)return String(st.id).slice(0,18);
+    }
+  }catch(e){}
+  return 'NEUTRA';
+}
+
+/* interação one-shot (B3-H/B3-J): aplica o efeito da facção UMA vez, resolve
+   a presença (B2) e limpa a entidade. Sem farm: consumida na hora. */
+function factionPresenceInteract(){
+  const e=factionPresenceEntity;
+  if(!e||e.consumed)return false;
+  e.consumed=true;
+  const lab=FACTION_PRESENCE_LABEL[e.faction]||{nm:'PRESENÇA',col:'#e8fbff'};
+  let msg='';
+  if(e.faction==='anchor'){
+    /* estabilização defensiva: fração LIMITADA do Escudo. Só escudo, nunca
+       HP; não vira buff permanente. Sem escudo disponível ⇒ sem efeito. */
+    if(typeof player!=='undefined'&&player&&player.shieldMax>0){
+      const amt=Math.max(1,Math.round(player.shieldMax*FACTION_PRESENCE_ANCHOR_SHIELD));
+      const before=player.shield||0;
+      player.shield=clamp(before+amt,0,player.shieldMax);
+      if(player.shieldDelayT!=null)player.shieldDelayT=0;   // libera regen
+      const gained=Math.round(player.shield-before);
+      msg='ESCUDO ESTABILIZADO +'+gained;
+      try{if(typeof floatText==='function')floatText(e.x,e.y-20,'+'+gained+' ESCUDO',lab.col);}catch(x){}
+    }else{
+      msg='NADA A ESTABILIZAR';
+    }
+  }else if(e.faction==='consortium'){
+    /* oportunidade de recurso: ⧗ Resíduos EXISTENTES, via API central. */
+    let got=0;
+    try{if(typeof addResidues==='function'&&addResidues(FACTION_PRESENCE_CONSORTIUM_RES,'faction_presence',e.x,e.y))got=FACTION_PRESENCE_CONSORTIUM_RES;}catch(x){got=0;}
+    msg=got>0?('⧗ +'+got+' RESÍDUOS'):'CACHE VAZIO';
+  }
+  if(typeof factionPresenceResolve==='function')factionPresenceResolve('interact');
+  factionPresenceEntity=null;
+  try{
+    if(typeof toast==='function')
+      toast(lab.nm+' · '+msg+' · '+fpEntityAffinityLabel(e.faction));
+    if(typeof spawnRing==='function')spawnRing(e.x,e.y,lab.col,8,120,.6);
+    if(typeof AUDIO!=='undefined'&&AUDIO&&AUDIO.tone)AUDIO.tone(720,.2,'sine',.04,180);
+  }catch(x){}
+  return true;
+}
+
+/* update (B3-P): só quando há entidade. Early-return caso contrário. TTL,
+   proximidade e expiração. Sem allocations por frame. */
+function factionPresenceUpdateEntity(dt){
+  const e=factionPresenceEntity;
+  if(!e)return;
+  if(!factionPresenceRun){factionPresenceEntity=null;return;}  // run acabou
+  e.pulse+=dt;e.ttl-=dt;
+  if(typeof player!=='undefined'&&player){
+    const rr=e.interactR+player.r;
+    if(dist2(e.x,e.y,player.x,player.y)<rr*rr){factionPresenceInteract();return;}
+  }
+  if(e.ttl<=0){
+    if(typeof factionPresenceExpire==='function')factionPresenceExpire('ttl');
+    factionPresenceEntity=null;
+    try{if(typeof toast==='function')toast('PRESENÇA DE FACÇÃO DISSIPADA');}catch(x){}
+  }
+}
+
+/* draw (B3-Q): world-space leve. Símbolo + cor + forma distinta + pulso
+   controlado. Sem partículas por frame, sem filtros caros. */
+function factionPresenceDrawEntity(){
+  const e=factionPresenceEntity;
+  if(!e)return;
+  if(typeof ctx==='undefined'||!ctx)return;
+  if(typeof inView==='function'&&!inView(e.x,e.y,120))return;
+  const lab=FACTION_PRESENCE_LABEL[e.faction]||{sym:'?',col:'#e8fbff'};
+  const col=lab.col;
+  const p=.5+.5*Math.sin(e.pulse*3);
+  const fade=clamp(e.ttl/Math.max(1,e.ttlMax),0,1);
+  ctx.save();
+  /* anel externo pulsante */
+  ctx.strokeStyle=col;ctx.globalAlpha=(.3+p*.45)*(.4+fade*.6);ctx.lineWidth=2;
+  ctx.shadowColor=col;ctx.shadowBlur=18;
+  ctx.beginPath();ctx.arc(e.x,e.y,e.r+p*10,0,TAU);ctx.stroke();
+  /* raio de interação, discreto */
+  ctx.globalAlpha=.10;ctx.beginPath();ctx.arc(e.x,e.y,e.interactR,0,TAU);ctx.stroke();
+  ctx.globalAlpha=.12;ctx.fillStyle=col;
+  ctx.beginPath();ctx.arc(e.x,e.y,e.r,0,TAU);ctx.fill();
+  ctx.globalAlpha=1;ctx.shadowBlur=0;
+  ctx.save();ctx.translate(e.x,e.y);
+  if(e.faction==='anchor'){
+    /* ⬡ hexágono de contenção: geometria fechada, estável, com núcleo */
+    ctx.rotate(Math.sin(e.pulse*.6)*.05);
+    ctx.strokeStyle=col;ctx.lineWidth=2.2;ctx.shadowColor=col;ctx.shadowBlur=10+p*8;
+    ctx.beginPath();
+    for(let i=0;i<6;i++){const a=-Math.PI/2+i*TAU/6,rr=e.r*.62;
+      const px=Math.cos(a)*rr,py=Math.sin(a)*rr;
+      if(i===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);}
+    ctx.closePath();ctx.stroke();
+    ctx.fillStyle=col;ctx.globalAlpha=.5+p*.4;
+    ctx.beginPath();ctx.arc(0,0,4.4,0,TAU);ctx.fill();
+    ctx.globalAlpha=1;ctx.shadowBlur=0;
+  }else{
+    /* ◈ losango de extração: giro lento, faces de recurso */
+    ctx.rotate(e.pulse*.5);
+    ctx.strokeStyle=col;ctx.lineWidth=2.2;ctx.shadowColor=col;ctx.shadowBlur=10+p*8;
+    const rr=e.r*.66;
+    ctx.beginPath();ctx.moveTo(0,-rr);ctx.lineTo(rr*.7,0);
+    ctx.lineTo(0,rr);ctx.lineTo(-rr*.7,0);ctx.closePath();ctx.stroke();
+    ctx.fillStyle=col;ctx.globalAlpha=.5+p*.4;
+    ctx.beginPath();ctx.moveTo(0,-rr*.4);ctx.lineTo(rr*.28,0);
+    ctx.lineTo(0,rr*.4);ctx.lineTo(-rr*.28,0);ctx.closePath();ctx.fill();
+    ctx.globalAlpha=1;ctx.shadowBlur=0;
+  }
+  ctx.restore();
+  /* rótulo legível: símbolo + nome (nunca só cor — §13 da UI) */
+  ctx.fillStyle=col;ctx.globalAlpha=.4+fade*.6;
+  ctx.font='11px Consolas,monospace';ctx.textAlign='center';
+  ctx.fillText(lab.sym+' '+lab.nm,e.x,e.y-e.r-12);
+  ctx.globalAlpha=1;
+  ctx.restore();
+}
+
+/* snapshot read-only da camada física (B3-X), consumido pelo DEV. */
+function factionPresenceEntitySnapshot(){
+  const e=factionPresenceEntity;
+  if(!e)return null;
+  return {presenceId:e.presenceId|0,faction:e.faction,kind:e.kind,
+    x:Math.round(e.x),y:Math.round(e.y),ttl:Math.round(e.ttl*10)/10,
+    beacon:!!e.beacon,consumed:!!e.consumed};
+}
+/* limpa a entidade física (cleanup — B3-S). Idempotente, sem timers órfãos. */
+function factionPresenceEntityClear(){factionPresenceEntity=null;return true;}
+
+/* DEV helper read-only + force-spawn para playtest (B3-X). Só em DEV_MODE.
+   Não persiste, não altera afinidade, não concede meta. */
+function factionPresenceDevForce(faction){
+  if(!(typeof DEV_MODE!=='undefined'&&DEV_MODE))return false;
+  if(!fpIsPhysical(faction))return false;
+  const fp=factionPresenceRun;
+  if(!fp)return false;
+  if(fp.active||factionPresenceEntity)return false;      // respeita o cap
+  fp.serial=(fp.serial|0)+1;
+  const w=(typeof wave!=='undefined')?(wave|0):1;
+  const p=fpMakePresence({id:fp.serial,faction:faction,kind:'emissary',
+    state:'scheduled',wave:w,seed:fpDeterministicSeed(w),reason:'dev'});
+  fp.scheduled=p;
+  const e=factionPresenceSpawnFromScheduled(false);
+  return !!e;
+}
+function factionPresencePhysDevSection(){
+  if(!document||typeof document.getElementById!=='function')return;
+  if(!(typeof DEV_MODE!=='undefined'&&DEV_MODE))return;
+  const el=document.getElementById('devpanel');
+  if(!el)return;
+  let sec=document.getElementById('faction-presence-phys-dev-section');
+  if(!sec){sec=document.createElement('div');
+    sec.id='faction-presence-phys-dev-section';el.appendChild(sec);}
+  const s=factionPresenceEntitySnapshot();
+  const txt=s?('ENTIDADE: '+s.faction+'/'+s.kind+' @('+s.x+','+s.y+') ttl '+s.ttl+
+    's'+(s.beacon?' [beacon]':'')+(s.consumed?' [consumida]':'')):'ENTIDADE: nenhuma';
+  let h='<h4 style="margin-top:10px">PR 14 · PRESENÇA FÍSICA (B3)</h4>';
+  h+='<div style="font-family:Consolas,monospace;font-size:10px;line-height:1.7;'+
+    'color:#9db8c8;white-space:pre-wrap">'+
+    (typeof escDev==='function'?escDev(txt):txt)+'</div>';
+  if(typeof devBtn==='function'){
+    h+='<div class="dvrow" style="margin-top:6px;flex-wrap:wrap">'+
+      devBtn('fp:force:anchor','⬡ FORÇAR ÂNCORA')+
+      devBtn('fp:force:consortium','◈ FORÇAR CONSÓRCIO')+'</div>';
+  }
+  sec.innerHTML=h;
+}
+function factionPresencePhysDevCommand(c){
+  if(!(typeof DEV_MODE!=='undefined'&&DEV_MODE))return false;
+  c=String(c||'');
+  if(c.indexOf('force:')===0){
+    const ok=factionPresenceDevForce(c.slice(6));
+    try{if(typeof devLog==='function')devLog('FP FORCE '+c.slice(6)+(ok?' → OK':' RECUSADO'));}catch(e){}
+    return ok;
+  }
+  return false;
+}
+
+/* ---- BOOT do kit físico: integra por monkey-patch, DEPOIS do kit B2
+   (a ordem importa: o hook de spawnWave do B2 agenda antes; este ativa). */
+function factionPresencePhysicalKitBoot(){
+  if(factionPresencePhysicalKitBoot.done)return;factionPresencePhysicalKitBoot.done=true;
+  /* 1. ondas: ativa a intenção agendada (fp.scheduled) em entidade física.
+     Gated: não durante restore (a onda retomada é reconstruída) nem no
+     Sandbox (lá o estado é isolado e o B2 nem agenda). */
+  try{
+    const _sw=spawnWave;spawnWave=function(n){
+      const r=_sw.apply(this,arguments);
+      try{
+        if(factionPresenceRun&&!(typeof smRestoring!=='undefined'&&smRestoring)&&
+           !(typeof sandboxRun!=='undefined'&&sandboxRun)){
+          factionPresenceSpawnFromScheduled(false);
+        }
+      }catch(e){}
+      return r;
+    };
+  }catch(e){}
+  /* 2. update: engatado no updateAllies (só roda em state==='play'). */
+  try{
+    const _ua=updateAllies;updateAllies=function(dt){
+      const r=_ua.apply(this,arguments);
+      try{factionPresenceUpdateEntity(dt);}catch(e){}
+      return r;
+    };
+  }catch(e){}
+  /* 3. draw: engatado no drawWorldExtras (world-space). */
+  try{
+    const _dw=drawWorldExtras;drawWorldExtras=function(){
+      const r=_dw.apply(this,arguments);
+      try{factionPresenceDrawEntity();}catch(e){}
+      return r;
+    };
+  }catch(e){}
+  /* 4. cleanup total (B3-S): morte/vitória/novo run/slot limpam a entidade.
+     O estado LÓGICO já é limpo pelo kit B2; aqui garantimos o corpo físico. */
+  try{
+    const _st=startRun;startRun=function(){
+      try{factionPresenceEntityClear();}catch(e){}
+      return _st.apply(this,arguments);
+    };
+    const _pd=onPlayerDeath;onPlayerDeath=function(){
+      const r=_pd.apply(this,arguments);try{factionPresenceEntityClear();}catch(e){}return r;
+    };
+    const _ov=onVictory;onVictory=function(){
+      const r=_ov.apply(this,arguments);try{factionPresenceEntityClear();}catch(e){}return r;
+    };
+    const _sv=showVictory;showVictory=function(){
+      const r=_sv.apply(this,arguments);try{factionPresenceEntityClear();}catch(e){}return r;
+    };
+    const _as=activateSlot;activateSlot=function(){
+      const r=_as.apply(this,arguments);try{factionPresenceEntityClear();}catch(e){}return r;
+    };
+    const _cs=smClearSlotSave;smClearSlotSave=function(){
+      const r=_cs.apply(this,arguments);try{factionPresenceEntityClear();}catch(e){}return r;
+    };
+  }catch(e){}
+  /* 5. Continue: reconstrói a entidade física da presença ativa (B3-T).
+     Roda DEPOIS do unpack do B2 (que já restaurou fp.active). */
+  try{
+    const _rs=resumeRun;resumeRun=function(){
+      const r=_rs.apply(this,arguments);
+      try{factionPresenceEntityClear();factionPresenceRebuildEntity();}catch(e){}
+      return r;
+    };
+  }catch(e){}
+  /* 6. Sandbox: nada persiste; entidade some ao sair/reiniciar o laboratório. */
+  try{
+    const _ss=sandboxStart;sandboxStart=function(){
+      const r=_ss.apply(this,arguments);try{factionPresenceEntityClear();}catch(e){}return r;
+    };
+    const _sr=sandboxRestart;sandboxRestart=function(){
+      const r=_sr.apply(this,arguments);try{factionPresenceEntityClear();}catch(e){}return r;
+    };
+    const _se=sandboxEndToSetup;sandboxEndToSetup=function(){
+      const r=_se.apply(this,arguments);try{factionPresenceEntityClear();}catch(e){}return r;
+    };
+    const _sx=sandboxExit;sandboxExit=function(){
+      const r=_sx.apply(this,arguments);try{factionPresenceEntityClear();}catch(e){}return r;
+    };
+  }catch(e){}
+  /* 7. DEV: seção read-only + comandos fp:force:* */
+  try{
+    const _dc=devCommand;devCommand=function(c){
+      if(typeof c==='string'&&c.indexOf('fp:')===0)return factionPresencePhysDevCommand(c.slice(3));
+      return _dc.apply(this,arguments);
+    };
+    const _dr=devRender;devRender=function(){
+      const r=_dr.apply(this,arguments);try{factionPresencePhysDevSection();}catch(e){}return r;
+    };
+  }catch(e){}
+}
+/* ==================== PR14·fim fp2.js ==================== */
+
 /* =====================================================================
    BOOT
    ===================================================================== */
 fracKitBoot();
 fractureKitBoot();   // PR 13: Diretor de Fratura (fundação)
 factionPresenceKitBoot();   // PR 14: Presença de Facção (fundação B2)
+factionPresencePhysicalKitBoot();   // PR 14: Presença física na arena (B3)
 
 /* ---- expõe o namespace no console apenas em build de desenvolvimento ---- */
 if(IS_DEV_BUILD){
