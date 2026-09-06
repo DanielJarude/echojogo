@@ -307,7 +307,9 @@ ok('B5C-17: recompensa de Memória não é tocada pelo spawn/update do boss nest
   const spawnSrc=SRC.slice(SRC.indexOf('function spawnBoss('),SRC.indexOf('function spawnShadowEcho('));
   const updateSrc=SRC.slice(SRC.indexOf('function updateBoss('),SRC.indexOf('function updateShadow('));
   assert.ok(!/meta\.mem|addResidues|player\.coins/.test(spawnSrc+updateSrc));
-  assert.ok(/const mem=Math\.round\(wave\*4/.test(SRC),'fórmula de recompensa permanece fora da mecânica do boss');
+  /* B5.5: fórmula reescalonada (wave*1.2 + decaimento) — o guard continua
+     verificando que a fórmula vive FORA da mecânica do boss. */
+  assert.ok(/const mem=Math\.round\(\(wave\*1\.2/.test(SRC),'fórmula de recompensa permanece fora da mecânica do boss');
 });
 
 /* ================= PORTABILIDADE / CONTRATOS VISUAIS ================= */

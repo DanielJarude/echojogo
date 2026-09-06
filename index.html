@@ -15880,6 +15880,13 @@ let meta={mem:0,spd:0,reroll:0,vault:0,wins:0,endings:[],evars:[]};
 /* PR 7.5: a meta-progresso (Pontos de Memória, melhorias, finais) vive
    dentro do slot ativo (echoSave.v3 → slots[n].meta). Cada memória tem
    seus próprios pontos — nada é compartilhado entre SAVE 1/2/3. */
+/* B5.5: fator de decaimento da recompensa por vitórias PRÉVIAS do slot
+   (meta.wins antes da vitória atual). 1ª vitória = 100% do base; repetições
+   decaem ×.75 até o piso de 50%. Derivado de estado já persistido — nada
+   novo no save; determinístico; morte/Sandbox/DEV não o movem. */
+function metaVictoryDecay(){
+  return Math.max(.5,Math.pow(.75,meta.wins|0));
+}
 function loadMeta(){
   if(!smEnsureSlot())return;
   try{
@@ -16134,11 +16141,20 @@ function onVictory(){
      a base; só a colorem). */
   const ending=resolveEnding();
   const key=ending.key;
-  // Pontos de Memória
-  const mem=Math.round(wave*4+kills*.8+player.level*3+player.coins*.22+
-    player.items.length*12+(key==='liber'?25:0)+(key==='tirano'?18:0)+
+  /* Pontos de Memória — B5.5: fórmula reescalonada (~×.25 preservando TODOS
+     os termos de qualidade da run) com UM fator novo de decaimento por
+     vitórias prévias do slot: max(.5,.75^meta.wins), piso de 50%.
+     EVIDÊNCIA (audit_pr135/meta_economy_b55.js): a fórmula anterior entregava
+     ≈702◆ numa vitória típica = 98% da meta inteira (META_SHOP=720◆) —
+     2 vitórias completavam toda a progressão meta (categoria C).
+     AGORA: 1ª vitória ≈160–254◆ (compra 2 upgrades, ~30% da meta);
+     100% da meta em ~6 ciclos; repetidas estabilizam em ~50% do base.
+     Bônus de final preservados (identidade); Credits/Resíduos/XP intatos;
+     idempotente (concessão única em onVictory; Continue não duplica). */
+  const mem=Math.round((wave*1.2+kills*.18+player.level*1.2+player.coins*.07+
+    player.items.length*5+(key==='liber'?25:0)+(key==='tirano'?18:0)+
     (key==='dueto'?22:0)+(key==='refugio'?20:0)+
-    (key==='silencio'?18:0)+(key==='exilio'?15:0)+30);
+    (key==='silencio'?18:0)+(key==='exilio'?15:0)+12)*metaVictoryDecay());
   meta.mem+=mem;meta.wins++;
   if(meta.endings.indexOf(key)<0)meta.endings.push(key);
   /* variantes viram sub-registros de descoberta (Codex) */
