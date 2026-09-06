@@ -106,11 +106,18 @@
     color:#eaffff;text-shadow:0 0 14px var(--cy);}
   #timer{font-family:Consolas,monospace;font-size:var(--fs-sm);letter-spacing:.3em;
     color:rgba(160,220,240,.55);margin-top:2px;}
-  #slots{display:flex;flex-direction:column;gap:6px;align-items:flex-end;}
+  #slots{display:flex;flex-direction:column;gap:10px;align-items:flex-end;}
+  /* B3-FIX §7: grupos hierárquicos do HUD (economia / temporal / echos).
+     Cada grupo empilha seus itens com um respiro pequeno; grupos separados
+     por um espaço maior — leitura rápida em combate, sem overlap. */
+  .hudgrp{display:flex;flex-direction:column;gap:5px;align-items:flex-end;}
+  .hudgrp:empty{display:none;}
   .chip{font-family:Consolas,monospace;font-size:var(--fs-sm);letter-spacing:.14em;
     padding:6px 11px;border:1px solid rgba(120,140,160,.25);border-radius:2px;
     color:rgba(140,160,175,.55);background:rgba(4,12,20,.55);min-width:206px;
-    text-align:left;white-space:nowrap;}
+    text-align:left;white-space:nowrap;box-sizing:border-box;}
+  /* chips dinâmicos (Resíduos/Fractura) alinham à mesma coluna dos demais */
+  #frac-hud-res,#frac-hud-theme{min-width:206px;box-sizing:border-box;}
   .chip.on1{color:#bffbff;border-color:rgba(70,224,255,.6);
     box-shadow:0 0 12px rgba(70,224,255,.25), inset 0 0 10px rgba(70,224,255,.08);}
   .chip.on2{color:#ffc7fb;border-color:rgba(255,77,240,.6);
@@ -868,16 +875,27 @@
       <div id="wave">ONDA 01</div>
       <div id="timer">00:00 · ABATE 0</div>
     </div>
+    <!-- B3-FIX §7: HUD superior direito reorganizado em hierarquia (ECONOMIA /
+         ESTADO TEMPORAL / ECHOS). Os chips dinâmicos de Resíduos e Fractura
+         agora entram NO FLUXO destes grupos (antes eram absolutos e sobrepunham
+         a coluna). Nada esconde informação; só agrupa e evita overlap. -->
     <div id="slots">
-      <div class="panel" id="coinp"><span class="lbl">CRÉDITOS</span><div id="coinsp">◈ 0</div></div>
-      <div class="chip" id="chip1">ECHO·01 — INATIVO</div>
-      <div class="chip" id="chip2">ECHO·02 — INATIVO</div>
-      <!-- PR 11.5: percentuais de moralidade saem do HUD (vão para o TAB).
-           Aqui fica só o perfil dominante — feedback imediato, sem poluição. -->
-      <div class="chip" id="moralp" title="Perfil moral — detalhes no TAB [TAB]">
-        <span class="lbl">PERFIL</span>
-        <b id="moral-dom">NEUTRO</b>
-        <span id="moral-tiers"></span>
+      <div class="hudgrp" id="grp-econ">
+        <div class="panel" id="coinp"><span class="lbl">CRÉDITOS</span><div id="coinsp">◈ 0</div></div>
+        <!-- #frac-hud-res (⧗ RESÍDUOS) é inserido aqui quando relevante -->
+      </div>
+      <div class="hudgrp" id="grp-temporal">
+        <!-- #frac-hud-theme (FRACTURA) é inserido aqui quando relevante -->
+        <!-- PR 11.5: só o perfil dominante no HUD — detalhes no TAB. -->
+        <div class="chip" id="moralp" title="Perfil moral — detalhes no TAB [TAB]">
+          <span class="lbl">PERFIL</span>
+          <b id="moral-dom">NEUTRO</b>
+          <span id="moral-tiers"></span>
+        </div>
+      </div>
+      <div class="hudgrp" id="grp-echos">
+        <div class="chip" id="chip1">ECHO·01 — INATIVO</div>
+        <div class="chip" id="chip2">ECHO·02 — INATIVO</div>
       </div>
     </div>
   </div>
@@ -24903,10 +24921,13 @@ function fracHudChip(){
   if(!chip){
     chip=document.createElement('div');
     chip.id='frac-hud-res';
-    chip.style.cssText='position:absolute;top:52px;right:14px;font-family:Consolas,monospace;'+
+    /* B3-FIX §7: entra no grupo ECONOMIA do HUD (no fluxo, sem sobrepor). */
+    chip.style.cssText='font-family:Consolas,monospace;'+
       'font-size:12px;letter-spacing:.14em;color:#e8fbff;background:rgba(8,20,32,.72);'+
-      'border:1px solid rgba(232,251,255,.28);padding:5px 10px;z-index:44;pointer-events:none';
-    hud.appendChild(chip);
+      'border:1px solid rgba(232,251,255,.28);padding:6px 11px;border-radius:2px;'+
+      'pointer-events:none;text-align:left';
+    const grp=document.getElementById('grp-econ')||hud;
+    grp.appendChild(chip);
   }
   chip.textContent=RES_SYM+' '+fmtNum(fracRun.res)+' RESÍDUOS TEMPORAIS';
 }
@@ -27578,11 +27599,13 @@ function fractureHudChip(){
   if(!chip){
     chip=document.createElement('div');
     chip.id='frac-hud-theme';
-    chip.style.cssText='position:absolute;top:88px;right:14px;'+
-      'font-family:Consolas,monospace;font-size:11px;letter-spacing:.16em;'+
-      'padding:5px 10px;z-index:44;pointer-events:none;'+
+    /* B3-FIX §7: entra no grupo ESTADO TEMPORAL, acima do PERFIL (no fluxo). */
+    chip.style.cssText='font-family:Consolas,monospace;font-size:11px;letter-spacing:.16em;'+
+      'padding:6px 11px;border-radius:2px;pointer-events:none;text-align:left;'+
       'background:rgba(8,20,32,.72);border:1px solid rgba(232,251,255,.22)';
-    hud.appendChild(chip);
+    const grp=document.getElementById('grp-temporal');
+    if(grp)grp.insertBefore(chip,grp.firstChild);   // FRACTURA acima do PERFIL
+    else hud.appendChild(chip);
   }
   const sig=fractureSignatureForWave((typeof wave!=='undefined')?(wave|0):0);
   const key=[h.known,h.themeNm,h.stageId,sig?sig.id:''].join('|');
