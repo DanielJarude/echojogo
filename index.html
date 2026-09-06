@@ -303,6 +303,20 @@
   .cds{font-family:Consolas,monospace;font-size:var(--fs-sm);line-height:1.8;letter-spacing:.04em;
     color:#8fb3c6;margin-top:8px;}
   .cmoral{font-family:Consolas,monospace;font-size:var(--fs-xs);letter-spacing:.2em;margin-top:10px;}
+  /* ---------- PR13.5 B5.5 — projected stat impact + densidade ---------- */
+  .cimpact{display:flex;flex-direction:column;gap:2px;margin-top:9px;
+    padding:7px 9px;border:1px solid rgba(70,224,255,.16);border-radius:3px;
+    background:rgba(10,24,36,.55);}
+  .cimrow{font-family:Consolas,monospace;font-size:var(--fs-xs);letter-spacing:.08em;
+    line-height:1.5;color:#9cc6da;display:flex;align-items:baseline;gap:6px;}
+  .cimrow i{font-style:normal;color:#7fa8bd;flex:1;white-space:nowrap;}
+  .cimrow em{font-style:normal;color:#5d7f92;}
+  .cimrow b{font-weight:normal;white-space:nowrap;}
+  .cchip{font-family:Consolas,monospace;font-size:var(--fs-3xs);letter-spacing:.22em;
+    color:rgba(160,200,220,.72);margin-top:9px;border:1px dashed rgba(120,150,170,.3);
+    padding:4px 8px;display:inline-block;width:fit-content;}
+  .cmoral.cmo{letter-spacing:.12em;margin-top:9px;opacity:.92;white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis;}
   .cprice{font-family:Consolas,monospace;font-size:var(--fs-md);letter-spacing:.14em;
     color:var(--gold);margin-top:10px;}
   /* ---------- PR 11.5 §12 — hierarquia leve de item cards ----------
@@ -4563,6 +4577,172 @@ function smRangeBoth(p,baseId,label,value){
   smMul(p,'rangedRange',baseId+'.ranged',label+' · LONGÍNQUO',value);
 }
 
+/* =====================================================================
+   PR13.5 · B5.5 — PROJECTED STAT IMPACT (preview real, seguro)
+   ---------------------------------------------------------------------
+   Problema (playtest): o card da loja não comunica o impacto REAL da
+   compra sobre a build atual. Este bloco projeta "ATUAL → PROJETADO"
+   reutilizando o PRÓPRIO Stat Modifier Pipeline — nenhum cálculo
+   paralelo simplificado.
+
+   Arquitetura (determinística, sem mutação):
+   · smPreviewCarrier(p) devolve um Proxy copy-on-write sobre o player:
+     leituras devolvem o valor real; ESCRITAS e mutações de objetos e
+     arrays ficam numa sombra descartável. O player real (sm, _smBase,
+     itemState, campos) NUNCA é tocado; RNG, moral, save, economy,
+     history e Sandbox não são lidos para além do necessário nem
+     alterados; hooks não disparam; nada de partículas/toasts/áudio.
+   · O apply() REAL do item/upgrade roda sobre o carrier (zero duplicação
+     de fórmula). Para MÓDULOS, applyMoralTuning() recompõe moral:* e
+     attune:* exatamente como giveItem faria — a Sintonia (B4) do estado
+     moral ATUAL entra na projeção, sem comprar o item.
+   · Único efeito colateral global em apply() é buffEchoes() (PARADOXO
+     ECOANTE): neutralizado por swap síncrono durante o dry-run.
+   · Deltas = smGet antes/depois + campos diretos observáveis (maxHp,
+     dashCdMax, globalLifesteal, regen). Classificação:
+       STAT DIRECT/FIELD → linhas "ATUAL → PROJETADO";
+       CONDITIONAL/PROC  → sem número inventado: chip curto; a descrição
+                           do catálogo continua sendo a fonte do efeito.
+   · Prioridade determinística de exibição (trade-offs legíveis): ordena
+     por |Δ| relativo e mostra até 3 linhas GARANTINDO que o maior ganho
+     E a maior perda apareçam quando existirem.
+   · Custo: O(stats×mods) por oferta, executado SOMENTE no render da loja
+     (abertura/compra/reroll/trava) — nunca por frame. Sem cache (o custo
+     fica abaixo do orçamento de um frame; medido na suíte B5.5).
+   · Não é salvo: projection é derivada (Save/Continue intactos;
+     SM_VERSION inalterado).
+   ===================================================================== */
+const PREVIEW_REL_EPS=.005, PREVIEW_ABS_EPS=.05;   // limiares de relevância
+const PREVIEW_STATS=[
+  {k:'damage',       lab:'DANO',           fmt:'mult'},
+  {k:'fireRate',     lab:'CADÊNCIA',       fmt:'mult'},
+  {k:'crit',         lab:'CRÍTICO',        fmt:'pct'},
+  {k:'critMul',      lab:'DANO CRÍT.',     fmt:'mult'},
+  {k:'maxHp',        lab:'VIDA MÁX',       fmt:'abs',   field:true},
+  {k:'shieldMax',    lab:'ESCUDO',         fmt:'abs'},
+  {k:'shieldRegen',  lab:'REGEN ESCUDO',   fmt:'rate'},
+  {k:'shieldDelay',  lab:'DELAY ESCUDO',   fmt:'sec',   inv:true},
+  {k:'meleeRange',   lab:'ALC. C.CORPO',   fmt:'mult'},
+  {k:'rangedRange',  lab:'ALC. LONGÍNQ.',  fmt:'mult'},
+  {k:'projSpd',      lab:'VEL. PROJÉTIL',  fmt:'mult'},
+  {k:'aoe',          lab:'ÁREA',           fmt:'mult'},
+  {k:'pierce',       lab:'PERFURAÇÃO',     fmt:'int'},
+  {k:'speed',        lab:'VELOCIDADE',     fmt:'px'},
+  {k:'pickupR',      lab:'RAIO DE COLETA', fmt:'px'},
+  {k:'coinMul',      lab:'MOEDAS',         fmt:'mult'},
+  {k:'dmgTaken',     lab:'DANO RECEBIDO',  fmt:'mult',  inv:true},
+  {k:'globalLifesteal',lab:'ROUBO DE VIDA',fmt:'pct',   field:true},
+  {k:'regen',        lab:'REGEN. VIDA',    fmt:'rate',  field:true},
+  {k:'dashCdMax',    lab:'RECARGA DASH',   fmt:'sec',   inv:true, field:true}
+];
+/* valor observável de um stat para o preview (SM ou campo direto) */
+function previewStatValue(p,k){
+  if(k==='maxHp')return p.maxHp||0;
+  if(k==='dashCdMax')return p.dashCdMax||0;
+  if(k==='globalLifesteal')return p.globalLifesteal||0;
+  if(k==='regen')return p.regen||0;
+  return smGet(p,k);
+}
+/* carrier copy-on-write: escrever aqui nunca alcança o player real */
+function smPreviewCarrier(p){
+  const shadow={};
+  return new Proxy({},{get(t,k){
+      if(k in shadow)return shadow[k];
+      const v=p[k];
+      if(v&&typeof v==='object'){
+        const c=Array.isArray(v)?v.slice():Object.assign({},v);
+        shadow[k]=c;return c;                 // mutações ficam na cópia
+      }
+      return v;
+    },set(t,k,v){shadow[k]=v;return true;}});
+}
+/* dry-run genérico: fn(carrier) roda o apply REAL; installId simula a
+   instalação de um módulo (items+applyMoralTuning, fiel a giveItem).
+   buffEchoes é neutralizado apenas durante o dry-run. */
+function smPreviewDryRun(p,fn,installId){
+  if(!p)return null;
+  const c=smPreviewCarrier(p);
+  if(installId){c.items=(p.items||[]).slice();c.items.push(installId);}
+  const be=buffEchoes;buffEchoes=function(){};
+  let ok=true;
+  try{fn(c);if(installId)applyMoralTuning(c);}
+  catch(e){ok=false;}
+  finally{buffEchoes=be;}
+  return ok?c:null;
+}
+/* linhas de impacto: delta por stat, ordenado por |Δ| relativo */
+function smPreviewRows(p,c){
+  if(!p||!c)return null;
+  const out=[];
+  for(const S of PREVIEW_STATS){
+    const a=previewStatValue(p,S.k),b=previewStatValue(c,S.k);
+    if(!isFinite(a)||!isFinite(b))continue;
+    const d=b-a,base=Math.max(Math.abs(a),1e-9);
+    if(Math.abs(d)<PREVIEW_ABS_EPS&&Math.abs(d)/base<PREVIEW_REL_EPS)continue;
+    out.push({k:S.k,lab:S.lab,fmt:S.fmt,inv:!!S.inv,
+      before:a,after:b,delta:d,rel:Math.abs(d)/base});
+  }
+  out.sort((x,y)=>y.rel-x.rel);
+  return out;
+}
+/* regra determinística de exibição: maior ganho E maior perda sempre
+   presentes quando existirem; completa até 3 pelo |Δ| relativo */
+function previewDisplayRows(rows){
+  if(!rows||!rows.length)return [];
+  const good=r=>r.inv?r.delta<0:r.delta>0;
+  const gains=rows.filter(r=>good(r)),losses=rows.filter(r=>!good(r));
+  const out=[];
+  if(gains[0])out.push(gains[0]);
+  if(losses[0])out.push(losses[0]);
+  for(const r of rows){
+    if(out.length>=3)break;
+    if(out.indexOf(r)<0)out.push(r);
+  }
+  out.sort((a,b)=>rows.indexOf(a)-rows.indexOf(b));  // ordem da tabela
+  return out;
+}
+function fmtPreviewVal(fmt,v){
+  if(fmt==='mult')return fmtMult(v);
+  if(fmt==='pct')return fmtPct(v,0);
+  if(fmt==='int')return fmtStat(v,0);
+  if(fmt==='px')return fmtStat(v,0)+'px';
+  if(fmt==='rate')return fmtNum(v,1)+'/s';
+  if(fmt==='sec')return fmtSec(v);
+  return fmtStat(v,0);
+}
+function shopImpactHTML(rows){
+  const shown=previewDisplayRows(rows);
+  if(!shown.length)return '';
+  let h='<div class="cimpact">';
+  for(const r of shown){
+    const good=r.inv?r.delta<0:r.delta>0;
+    h+='<span class="cimrow"><i>'+r.lab+'</i>'+fmtPreviewVal(r.fmt,r.before)+
+      '<em>→</em><b style="color:'+(good?'#7dffc4':'#ffb386')+'">'+
+      fmtPreviewVal(r.fmt,r.after)+'</b></span>';
+  }
+  return h+'</div>';
+}
+/* entrada: módulo passivo (instala → sintonia incluída) */
+function shopItemPreview(it){
+  if(!it||!it.apply||!player)return null;
+  const c=smPreviewDryRun(player,p=>it.apply(p),it.id);
+  return smPreviewRows(player,c);
+}
+/* entrada: upgrade da loja (não é item — sem sintonia) */
+function shopUpgPreview(u){
+  if(!u||!u.apply||!player)return null;
+  const c=smPreviewDryRun(player,p=>u.apply(p),null);
+  return smPreviewRows(player,c);
+}
+/* CONDITIONAL/PROC: nenhum número inventado — só sinalização curta.
+   A descrição do catálogo (sempre visível no card) continua descrevendo
+   o efeito; o tooltip detalha gatilhos e condições. */
+function shopEffectChip(it){
+  if(!it)return '';
+  if(it.transformer)return '';                     // transformador já tem selo
+  return '<div class="cchip">'+(it.hooks?'◈ EFEITO EM GATILHOS':'◈ EFEITO CONDICIONAL')+'</div>';
+}
+
 /* multiplicador de dano usado pelo tiro — única fonte de verdade.
    Reúne a base+modificadores persistidos (via pipeline, incluindo a
    Maldição do Oráculo) e os bônus condicionais dinâmicos de combate. */
@@ -5954,9 +6134,17 @@ function moralAffinityAxes(aff){
   return MORAL_AXES.filter(a=>aff[a]>0).sort((x,y)=>aff[y]-aff[x]);
 }
 const MORAL_AXIS_COLOR={comp:'#7dffc4',greed:'#ffd166',viol:'#ff5c7a'};
-function moralAffinityTagHTML(itemId,showCurrent){
+function moralAffinityTagHTML(itemId,showCurrent,compact){
   const aff=getItemMoralAffinity(itemId);
   if(!aff)return '';
+  /* B5.5: no card, sintonia em UMA linha (estado + efeito); eixos e motivo
+     continuam no tooltip (versão completa). Contrato B4 mantido: o HTML
+     do card contém state.lab e info.effect. */
+  if(compact&&showCurrent&&player){
+    const info=attunementInfo(itemId);
+    return '<div class="cmoral cmo">SINTONIA: <b style="color:'+info.state.c+'">'+
+      info.state.lab+'</b> · '+info.effect+'</div>';
+  }
   const axes=moralAffinityAxes(aff).map(a=>
     '<span style="color:'+MORAL_AXIS_COLOR[a]+'">'+MORAL_AXIS_LABEL[a]+'</span>').join(' / ');
   let s='<div class="cmoral">SINTONIA: '+axes;
@@ -7993,7 +8181,8 @@ function renderShopOp(){
     const pr=priceUpg(u),poor=player.coins<pr;
     const RC=RARITY[u.rar||0];
     mRow.appendChild(mkCard(
-      '<span style="color:'+RC.c+'">'+u.nm+'</span>'+rarTag(u.rar),u.desc,
+      '<span style="color:'+RC.c+'">'+u.nm+'</span>'+rarTag(u.rar),
+      u.desc+shopImpactHTML(shopUpgPreview(u)),
       '<div class="cprice">◈ '+pr+(mEff.upgMul<1?' (DESCONTO EMPÁTICO)':'')+'</div>',
       poor,()=>{
         player.coins-=pr;u.apply(player);player.upgLog.push(u.nm);shopMarkBought(u.id);
@@ -8021,11 +8210,13 @@ function renderShopOp(){
     const rg=Math.round(weaponRange(d,player));
     grow.appendChild(mkCard(
       '<span style="color:'+d.color+'">⌖ '+d.nm+'</span>'+rarTag(d.rar),
-      d.sdesc+'<br><span style="opacity:.65">CLASSE: '+d.tag+'</span>'+
-      (d.fx?'<br><span style="color:'+(STATUS_COLOR[d.fx.k]||'#fff')+
-        '">◆ APLICA '+d.fx.k.toUpperCase()+'</span>':'')+
-      '<br>ALCANCE: <b style="color:'+d.color+'">'+rg+'px · '+rangeLabel(rg)+'</b>'+
-      '<br>Ocupa o <b>slot '+(player.owned.length+1)+'</b> · alterna com <b>Q</b>.',
+      /* B5.5: corpo enxuto — CLASSE e "alterna com Q" migram para o
+         tooltip; o estado do arsenal (decisão de compra) permanece na
+         linha de preço; efeito de status + alcance numa linha só. */
+      d.sdesc+'<br><span style="opacity:.65">'+
+      (d.fx?'<span style="color:'+(STATUS_COLOR[d.fx.k]||'#fff')+'">◆ '+
+        d.fx.k.toUpperCase()+'</span> · ':'')+
+      'ALCANCE: <b style="color:'+d.color+'">'+rg+'px · '+rangeLabel(rg)+'</b></span>',
       '<div class="cprice">◈ '+pr+
         (player.owned.length>=player.maxSlots
           ?' · <span style="color:#ff9d3c">ARSENAL CHEIO — SUBSTITUIR</span>'
@@ -8057,7 +8248,11 @@ function renderShopOp(){
     const pr=priceItem(it),poor=player.coins<pr;
     const icard=mkCard(
       '<span style="color:'+it.color+'">'+it.nm+'</span>'+rarTag(it.rar),
-      itemDescParts(it).body+moralAffinityTagHTML(it.id,true),
+      itemDescParts(it).body+
+      /* B5.5: impacto REAL projetado (pipeline) ou chip p/ conditional/proc */
+      (()=>{const rows=shopItemPreview(it);
+        return rows&&rows.length?shopImpactHTML(rows):shopEffectChip(it);})()+
+      moralAffinityTagHTML(it.id,true,true),   // B5.5: sintonia compacta no card
       '<div class="cprice">◈ '+pr+'</div>',poor,()=>{
         player.coins-=pr;giveItem(it,false);shopMarkBought(it.id);
         if(isLocked('item',it.id))shopLock=null;
@@ -19508,6 +19703,10 @@ function weaponTipHTML(d){
     '<div class="trole" style="color:'+d.color+'">'+d.tag+
       (d.melee?' · ARMA BRANCA':'')+'</div>'+
     '<div class="tds">'+(d.sdesc||'')+'</div>'+
+    /* B5.5: classe e controle migraram do corpo do card (densidade) */
+    '<span class="tline" style="opacity:.75">CLASSE: '+d.tag+
+      ' · OCUPA O SLOT '+(player.owned.length+1)+'/'+player.maxSlots+
+      ' · ALTERNA COM <b>Q</b></span>'+
     '<div class="tst">';
   for(const s of stats)h+='<span>'+s+'</span>';
   h+='</div>';
