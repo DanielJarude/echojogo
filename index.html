@@ -303,6 +303,20 @@
   .cds{font-family:Consolas,monospace;font-size:var(--fs-sm);line-height:1.8;letter-spacing:.04em;
     color:#8fb3c6;margin-top:8px;}
   .cmoral{font-family:Consolas,monospace;font-size:var(--fs-xs);letter-spacing:.2em;margin-top:10px;}
+  /* ---------- PR13.5 B5.5 — projected stat impact + densidade ---------- */
+  .cimpact{display:flex;flex-direction:column;gap:2px;margin-top:9px;
+    padding:7px 9px;border:1px solid rgba(70,224,255,.16);border-radius:3px;
+    background:rgba(10,24,36,.55);}
+  .cimrow{font-family:Consolas,monospace;font-size:var(--fs-xs);letter-spacing:.08em;
+    line-height:1.5;color:#9cc6da;display:flex;align-items:baseline;gap:6px;}
+  .cimrow i{font-style:normal;color:#7fa8bd;flex:1;white-space:nowrap;}
+  .cimrow em{font-style:normal;color:#5d7f92;}
+  .cimrow b{font-weight:normal;white-space:nowrap;}
+  .cchip{font-family:Consolas,monospace;font-size:var(--fs-3xs);letter-spacing:.22em;
+    color:rgba(160,200,220,.72);margin-top:9px;border:1px dashed rgba(120,150,170,.3);
+    padding:4px 8px;display:inline-block;width:fit-content;}
+  .cmoral.cmo{letter-spacing:.12em;margin-top:9px;opacity:.92;white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis;}
   .cprice{font-family:Consolas,monospace;font-size:var(--fs-md);letter-spacing:.14em;
     color:var(--gold);margin-top:10px;}
   /* ---------- PR 11.5 §12 — hierarquia leve de item cards ----------
@@ -855,7 +869,7 @@
     <div id="lvl">NV 1 · 0/20</div>
   </div>
   <div id="dashwrap">
-    <span class="lbl">DASH [ESPAÇO]</span>
+    <span class="lbl" id="dashlbl">DASH [ESPAÇO]</span>
     <div id="dashbar"><div id="dashfill"></div></div>
   </div>
   <div id="spwrap">
@@ -1485,14 +1499,32 @@ const WEAPONS=[
    knock:420,lifesteal:.10,
    sdesc:'Soco curtíssimo que ARREMESSA o alvo e rouba 10% do dano.'},
 
-  {id:'glaive',nm:'ALABARDA DE VÁCUO',  interval:.62,speed:0,dmg:55,count:1,spread:0,jitter:0,life:.26,pr:0,color:'#c56bff',kick:-70,
+  /* B6: interval .62 → .72. A ALABARDA acumulava o maior dano por golpe
+     entre as melee (55), o maior alcance útil (reach 158 × arc 1.15) E
+     corrosão (+14%/camada, até +72% de vulnerabilidade). O resultado era
+     2,35× o valor mediano do arsenal e 2,24× a mediana das armas rar3 —
+     dominante mesmo dentro da própria classe (1,64× a mediana melee).
+     Só a cadência foi tocada: dano, alcance, arco e corrosão continuam
+     intactos, então a IDENTIDADE (estocada longa e corrosiva) é a mesma;
+     ela apenas não é mais a resposta certa para toda situação. */
+  {id:'glaive',nm:'ALABARDA DE VÁCUO',  interval:.72,speed:0,dmg:55,count:1,spread:0,jitter:0,life:.26,pr:0,color:'#c56bff',kick:-70,
    melee:true,reach:158,arc:1.15,range:158,price:80,tag:'CORPO A CORPO',sprite:'glaive',
    fx:{k:'corrode',dur:4,pow:.14},
    sdesc:'Estocada longa que perfura a linha inteira e CORRÓI armadura.'}
 ];
 /* alcance efetivo da arma para uma unidade (aplica o multiplicador da build) */
+/* multiplicador de alcance para um tipo explícito. O jogador usa
+   meleeRangeMul/rangedRangeMul (SM_STATS). Ecos DEV/unidades legadas que
+   ainda só possuem rangeMul continuam funcionando pelo fallback. */
+function srcRangeMul(src,kind){
+  if(!src)return 1;
+  const v=kind==='melee'?src.meleeRangeMul:src.rangedRangeMul;
+  if(v!=null&&isFinite(+v))return +v;
+  return (src.rangeMul!=null&&isFinite(+src.rangeMul))?+src.rangeMul:1;
+}
 function weaponRange(def,src){
-  return (def.range||600)*((src&&src.rangeMul)||1);
+  const base=def.melee?(def.reach||def.range||600):(def.range||600);
+  return base*srcRangeMul(src,def.melee?'melee':'ranged');
 }
 /* rótulo curto de alcance para HUD e loja */
 function rangeLabel(px){
@@ -2542,7 +2574,8 @@ function sheetRender(force){
     '<div class="srow"><span class="k">DPS ESTIMADO</span><span class="v">'+fmtStat(wDps,0)+'</span></div>'+
     sheetStatRow('crit','CRÍTICO',fmtPct(smGet(p,'crit')))+
     sheetStatRow('critMul','DANO CRÍT.',fmtMult(smGet(p,'critMul')))+
-    sheetStatRow('range','ALCANCE',fmtMult(smGet(p,'range')),'· '+fmtStat(weaponRange(w,p),0)+'px')+
+    sheetStatRow('meleeRange','ALCANCE C.A CORPO',fmtMult(smGet(p,'meleeRange')),'· '+fmtStat(weaponRange(w,p),0)+'px')+
+    sheetStatRow('rangedRange','ALCANCE LONGÍNQUO',fmtMult(smGet(p,'rangedRange')),'· '+fmtStat(weaponRange(w,p),0)+'px')+
     sheetStatRow('projSpd','VEL. PROJÉTIL',fmtMult(smGet(p,'projSpd')))+
     sheetStatRow('aoe','ÁREA',fmtMult(smGet(p,'aoe')))+
     sheetStatRow('pierce','PERFURAÇÃO','+'+fmtStat(smGet(p,'pierce'),0))+
@@ -2579,8 +2612,11 @@ function sheetRender(force){
     for(const id of p.items){
       const it=itemById(id);if(!it)continue;
       const st=itemHumanState(p,id);
+      const ai=attunementInfo(id);   // B4: estado de Sintonia na pílula (puro)
+      const aTag=ai&&ai.state.id!=='neutral'
+        ?' <span class="bstate" style="color:'+ai.state.c+'">'+ai.state.lab+(ai.pct?' '+(ai.pct>0?'+':'')+ai.pct+'%':'')+'</span>':'';
       h+='<span class="bpill'+(it.transformer?' tr':'')+'" data-itip="'+id+'" style="color:'+it.color+'">'+
-        (it.transformer?'◆ ':'')+it.nm+(st?' <span class="bstate">'+st+'</span>':'')+'</span>';
+        (it.transformer?'◆ ':'')+it.nm+aTag+(st?' <span class="bstate">'+st+'</span>':'')+'</span>';
     }
   }else h+='<span class="bpill" style="opacity:.5;cursor:default">NENHUM MÓDULO INSTALADO</span>';
   h+='</div></div>';
@@ -2981,6 +3017,10 @@ function sandboxRestart(){
 function sandboxClearRunState(){
   enemies=[];projectiles=[];xporbs=[];parts=[];ftexts=[];pickups=[];allies=[];
   swings=[];arcs=[];beacon=null;boss=null;miniBoss=null;
+  speechClear();
+  /* B3-FIX: histórico de variedade do laboratório não fica stale na memória
+     (o Continue real já reconstruía do slot; aqui só evita estado morto). */
+  shopOffers.length=0;shopItems.length=0;shopGuns.length=0;shopRecentReset();
   $('bosswrap').classList.remove('on');$('endwrap').classList.remove('on');
   echoes=[];
 }
@@ -3315,6 +3355,7 @@ function sbBind(){
 }
 function sandboxClearMini(){
   if(!miniBoss)return;
+  miniBoss.hazards=[];                     // B5-B: zonas do mini-chefe morrem com ele
   const i=enemies.indexOf(miniBoss);
   if(i>=0){enemies[i].dead=true;enemies.splice(i,1);}
   miniBoss=null;clearMiniBossHUD();
@@ -3438,6 +3479,8 @@ function saveEchoes(){
     const slim=echoQueue.filter(r=>r&&!r.dev).map(r=>({v:2,dur:Math.round(r.dur*100)/100,dmgMul:r.dmgMul,
       frMul:r.frMul,wave:r.wave,level:r.level,trail:r.trail,
       crit:r.crit,critMul:r.critMul,pierce:r.pierce,aoeMul:r.aoeMul,rangeMul:r.rangeMul,
+      /* B3-FIX: alcance separado (B2) viaja no snapshot; rangeMul fica p/ compat. */
+      meleeRangeMul:r.meleeRangeMul,rangedRangeMul:r.rangedRangeMul,
       projSpdMul:r.projSpdMul,longRangeBonus:r.longRangeBonus,
       coins:r.coins,items:r.items,upg:r.upg,owned:r.owned,moral:r.moral,dom:r.dom,
       k:r.kills|0,mh:r.mh||0,st:r.st||null,ps:r.ps||null}));   // PR 8: ps + sinais
@@ -3880,13 +3923,14 @@ function makePlayer(operatorId,freshMeta){
     dashT:0,dashCd:0,dashCdMax:C.dashCd,dashDx:1,dashDy:0,
     level:1,xp:0,xpNext:20,ghosts:[],hurtT:0,auraSlow:1,invT:0,
     coins:25*M.vault,crit:C.crit,critMul:1.8,pierce:0,aoeMul:1,rangeMul:1,
+    meleeRangeMul:1,rangedRangeMul:1,
     projSpdMul:1,longRangeBonus:0,
     freeRerolls:M.reroll,
     pickupR:170,dmgTakenMul:1,coinMul:1,dashReflect:false,echoBoost:0,
     items:[],upgLog:[],tempPen:0,tempT:0,repairs:0,
     anomalyT:0,visionUntil:-1,regen:0,rushT:0,
     spCd:0,spT:0,spKind:null,spMax:0,
-    vowPoverty:0,vowBlood:-1,markedUp:1,bigShop:0,slowAura:1,
+    vowPoverty:0,vowBlood:-1,markedUp:1,bigShop:0,slowAura:1,shopSurcharge:1,
     beamT:0,beamRamp:1,beamTarget:null,beamLen:0,recoil:0,swingDir:1};
   /* base imutável dos stats derivados + registro de modificadores (PR 7).
      A base NUNCA é reescrita: os campos derivados são recalculados a
@@ -3894,7 +3938,7 @@ function makePlayer(operatorId,freshMeta){
   p._smBase={
     dmg:C.dmg, rate:C.rate, crit:C.crit, critMul:1.8,
     speed:C.speed*(1+.05*M.spd), pickupR:170, coinMul:1, dmgTaken:1,
-    range:1, projSpd:1, aoe:1, pierce:0,
+    range:1, meleeRange:1, rangedRange:1, projSpd:1, aoe:1, pierce:0,
     /* PR 11: base imutável do Shield entra no mesmo pipeline */
     shieldMax:C.shieldMax||0, shieldRegen:C.shieldRegen||0,
     shieldDelay:C.shieldDelay||0
@@ -3907,9 +3951,16 @@ function makePlayer(operatorId,freshMeta){
   smRefresh(p);
   return p;
 }
+/* B3-FIX: campo de alcance do snapshot com fallback legado (rangeMul → 1). */
+function echoRangeField(data,key){
+  const v=data?data[key]:null;
+  if(v!=null&&isFinite(+v)&&+v>0)return +v;
+  const lg=data?data.rangeMul:null;
+  return (lg!=null&&isFinite(+lg)&&+lg>0)?+lg:1;
+}
 function makeEcho(data,slot){
   const tr=data.trail;
-  const boost=1+((player&&player.echoBoost)||0);
+  const boost=1+((player&&player.echoBoost)||0)*attuneFieldMul(player,'paradoxo');   // B4
   return echoRelInit({data,slot,x:tr[0][1],y:tr[0][2],vx:0,vy:0,r:13,aim:tr[0][4]||0,
     hp:Math.round(ECHO_HP[slot]*boost),maxHp:Math.round(ECHO_HP[slot]*boost),alive:true,
     shieldMax:ECHO_SHIELD[slot],shield:ECHO_SHIELD[slot],   // começa com escudo cheio
@@ -3918,6 +3969,9 @@ function makeEcho(data,slot){
     glitchT:0,glitchAmp:0,seed:rand(0,100),ca:rand(0,TAU),ghosts:[],
     crit:data.crit||0,critMul:data.critMul||1.8,pierce:data.pierce||0,
     aoeMul:data.aoeMul||1,rangeMul:data.rangeMul||1,
+    /* B3-FIX: snapshot novo traz melee/ranged; snapshot antigo cai no rangeMul legado */
+    meleeRangeMul:echoRangeField(data,'meleeRangeMul'),
+    rangedRangeMul:echoRangeField(data,'rangedRangeMul'),
     projSpdMul:data.projSpdMul||1,longRangeBonus:data.longRangeBonus||0,
     itemIds:(data.items||[]).slice(),upgLog:(data.upg||[]).slice(),
     ownedW:(data.owned||STARTER_WEAPONS).slice(),
@@ -4374,7 +4428,9 @@ const SM_STATS={
   fireRate:{set:(p,v)=>p.fireRateMul=v,base:o=>o.rate,      cl:[null,null], lab:'CADÊNCIA'},
   crit   :{set:(p,v)=>p.crit=v,        base:o=>o.crit,      cl:[0,1],       lab:'CRÍTICO'},
   critMul:{set:(p,v)=>p.critMul=v,     base:o=>o.critMul,   cl:[0,null],    lab:'DANO CRÍT.'},
-  range  :{set:(p,v)=>p.rangeMul=v,    base:o=>o.range,     cl:[null,null], lab:'ALCANCE'},
+  range  :{set:(p,v)=>p.rangeMul=v,    base:o=>o.range,     cl:[null,null], lab:'ALCANCE'},/* legado: ainda mantém p.rangeMul p/ Echo replay/saves antigos */
+  meleeRange:{set:(p,v)=>p.meleeRangeMul=v, base:o=>o.meleeRange,cl:[null,null], lab:'ALCANCE C.A CORPO'},
+  rangedRange:{set:(p,v)=>p.rangedRangeMul=v,base:o=>o.rangedRange,cl:[null,null], lab:'ALCANCE LONGÍNQUO'},
   projSpd:{set:(p,v)=>p.projSpdMul=v,  base:o=>o.projSpd,   cl:[null,null], lab:'VEL. PROJÉTIL'},
   aoe    :{set:(p,v)=>p.aoeMul=v,      base:o=>o.aoe,       cl:[null,null], lab:'ÁREA'},
   speed  :{set:(p,v)=>p.speed=v,       base:o=>o.speed,     cl:[null,null], lab:'VELOCIDADE'},
@@ -4502,6 +4558,199 @@ function smBreakdown(p,stat){
   }
   return {stat,lab:S.lab,base,final:smGet(p,stat),lines};
 }
+/* ---- B2-B: migração de modifiers legados de "range" ----
+   Um save antigo pode conter modificadores stat:'range' (antes o alcance era
+   genérico). Ao restaurar, clonamos cada um para meleeRange e rangedRange
+   mantendo o original (range) como legado para Echo replay/telemetria. */
+function migrateLegacyRangeMods(p){
+  p=smInit(p||player);
+  if(!p||!Array.isArray(p.sm))return 0;
+  if(p.sm.some(m=>m&&(m.stat==='meleeRange'||m.stat==='rangedRange')))return 0;
+  const legacy=p.sm.filter(m=>m&&m.stat==='range'&&!(m.id||'').indexOf('.ranged')>=0&&!(m.id||'').indexOf('.melee')>=0);
+  let n=0;
+  for(const m of legacy){
+    const melee=Object.assign({},m,{id:m.id+'.melee',stat:'meleeRange',label:(m.label||m.id)+' · C.A CORPO'});
+    const ranged=Object.assign({},m,{id:m.id+'.ranged',stat:'rangedRange',label:(m.label||m.id)+' · LONGÍNQUO'});
+    p.sm.push(melee,ranged);
+    n+=2;
+  }
+  if(n)smRefresh(p);
+  return n;
+}
+/* aplica um multiplicador de alcance às DUAS semânticas (migração fiel do
+   antigo "range" universal) e mantém o stat legado para compatibilidade. */
+function smRangeBoth(p,baseId,label,value){
+  smMul(p,'range',baseId+'.legacy',label,value);
+  smMul(p,'meleeRange',baseId+'.melee',label+' · C.A CORPO',value);
+  smMul(p,'rangedRange',baseId+'.ranged',label+' · LONGÍNQUO',value);
+}
+
+/* =====================================================================
+   PR13.5 · B5.5 — PROJECTED STAT IMPACT (preview real, seguro)
+   ---------------------------------------------------------------------
+   Problema (playtest): o card da loja não comunica o impacto REAL da
+   compra sobre a build atual. Este bloco projeta "ATUAL → PROJETADO"
+   reutilizando o PRÓPRIO Stat Modifier Pipeline — nenhum cálculo
+   paralelo simplificado.
+
+   Arquitetura (determinística, sem mutação):
+   · smPreviewCarrier(p) devolve um Proxy copy-on-write sobre o player:
+     leituras devolvem o valor real; ESCRITAS e mutações de objetos e
+     arrays ficam numa sombra descartável. O player real (sm, _smBase,
+     itemState, campos) NUNCA é tocado; RNG, moral, save, economy,
+     history e Sandbox não são lidos para além do necessário nem
+     alterados; hooks não disparam; nada de partículas/toasts/áudio.
+   · O apply() REAL do item/upgrade roda sobre o carrier (zero duplicação
+     de fórmula). Para MÓDULOS, applyMoralTuning() recompõe moral:* e
+     attune:* exatamente como giveItem faria — a Sintonia (B4) do estado
+     moral ATUAL entra na projeção, sem comprar o item.
+   · Único efeito colateral global em apply() é buffEchoes() (PARADOXO
+     ECOANTE): neutralizado por swap síncrono durante o dry-run.
+   · Deltas = smGet antes/depois + campos diretos observáveis (maxHp,
+     dashCdMax, globalLifesteal, regen). Classificação:
+       STAT DIRECT/FIELD → linhas "ATUAL → PROJETADO";
+       CONDITIONAL/PROC  → sem número inventado: chip curto; a descrição
+                           do catálogo continua sendo a fonte do efeito.
+   · Prioridade determinística de exibição (trade-offs legíveis): ordena
+     por |Δ| relativo e mostra até 3 linhas GARANTINDO que o maior ganho
+     E a maior perda apareçam quando existirem.
+   · Custo: O(stats×mods) por oferta, executado SOMENTE no render da loja
+     (abertura/compra/reroll/trava) — nunca por frame. Sem cache (o custo
+     fica abaixo do orçamento de um frame; medido na suíte B5.5).
+   · Não é salvo: projection é derivada (Save/Continue intactos;
+     SM_VERSION inalterado).
+   ===================================================================== */
+const PREVIEW_REL_EPS=.005, PREVIEW_ABS_EPS=.05;   // limiares de relevância
+const PREVIEW_STATS=[
+  {k:'damage',       lab:'DANO',           fmt:'mult'},
+  {k:'fireRate',     lab:'CADÊNCIA',       fmt:'mult'},
+  {k:'crit',         lab:'CRÍTICO',        fmt:'pct'},
+  {k:'critMul',      lab:'DANO CRÍT.',     fmt:'mult'},
+  {k:'maxHp',        lab:'VIDA MÁX',       fmt:'abs',   field:true},
+  {k:'shieldMax',    lab:'ESCUDO',         fmt:'abs'},
+  {k:'shieldRegen',  lab:'REGEN ESCUDO',   fmt:'rate'},
+  {k:'shieldDelay',  lab:'DELAY ESCUDO',   fmt:'sec',   inv:true},
+  {k:'meleeRange',   lab:'ALC. C.CORPO',   fmt:'mult'},
+  {k:'rangedRange',  lab:'ALC. LONGÍNQ.',  fmt:'mult'},
+  {k:'projSpd',      lab:'VEL. PROJÉTIL',  fmt:'mult'},
+  {k:'aoe',          lab:'ÁREA',           fmt:'mult'},
+  {k:'pierce',       lab:'PERFURAÇÃO',     fmt:'int'},
+  {k:'speed',        lab:'VELOCIDADE',     fmt:'px'},
+  {k:'pickupR',      lab:'RAIO DE COLETA', fmt:'px'},
+  {k:'coinMul',      lab:'MOEDAS',         fmt:'mult'},
+  {k:'dmgTaken',     lab:'DANO RECEBIDO',  fmt:'mult',  inv:true},
+  {k:'globalLifesteal',lab:'ROUBO DE VIDA',fmt:'pct',   field:true},
+  {k:'regen',        lab:'REGEN. VIDA',    fmt:'rate',  field:true},
+  {k:'dashCdMax',    lab:'RECARGA DASH',   fmt:'sec',   inv:true, field:true}
+];
+/* valor observável de um stat para o preview (SM ou campo direto) */
+function previewStatValue(p,k){
+  if(k==='maxHp')return p.maxHp||0;
+  if(k==='dashCdMax')return p.dashCdMax||0;
+  if(k==='globalLifesteal')return p.globalLifesteal||0;
+  if(k==='regen')return p.regen||0;
+  return smGet(p,k);
+}
+/* carrier copy-on-write: escrever aqui nunca alcança o player real */
+function smPreviewCarrier(p){
+  const shadow={};
+  return new Proxy({},{get(t,k){
+      if(k in shadow)return shadow[k];
+      const v=p[k];
+      if(v&&typeof v==='object'){
+        const c=Array.isArray(v)?v.slice():Object.assign({},v);
+        shadow[k]=c;return c;                 // mutações ficam na cópia
+      }
+      return v;
+    },set(t,k,v){shadow[k]=v;return true;}});
+}
+/* dry-run genérico: fn(carrier) roda o apply REAL; installId simula a
+   instalação de um módulo (items+applyMoralTuning, fiel a giveItem).
+   buffEchoes é neutralizado apenas durante o dry-run. */
+function smPreviewDryRun(p,fn,installId){
+  if(!p)return null;
+  const c=smPreviewCarrier(p);
+  if(installId){c.items=(p.items||[]).slice();c.items.push(installId);}
+  const be=buffEchoes;buffEchoes=function(){};
+  let ok=true;
+  try{fn(c);if(installId)applyMoralTuning(c);}
+  catch(e){ok=false;}
+  finally{buffEchoes=be;}
+  return ok?c:null;
+}
+/* linhas de impacto: delta por stat, ordenado por |Δ| relativo */
+function smPreviewRows(p,c){
+  if(!p||!c)return null;
+  const out=[];
+  for(const S of PREVIEW_STATS){
+    const a=previewStatValue(p,S.k),b=previewStatValue(c,S.k);
+    if(!isFinite(a)||!isFinite(b))continue;
+    const d=b-a,base=Math.max(Math.abs(a),1e-9);
+    if(Math.abs(d)<PREVIEW_ABS_EPS&&Math.abs(d)/base<PREVIEW_REL_EPS)continue;
+    out.push({k:S.k,lab:S.lab,fmt:S.fmt,inv:!!S.inv,
+      before:a,after:b,delta:d,rel:Math.abs(d)/base});
+  }
+  out.sort((x,y)=>y.rel-x.rel);
+  return out;
+}
+/* regra determinística de exibição: maior ganho E maior perda sempre
+   presentes quando existirem; completa até 3 pelo |Δ| relativo */
+function previewDisplayRows(rows){
+  if(!rows||!rows.length)return [];
+  const good=r=>r.inv?r.delta<0:r.delta>0;
+  const gains=rows.filter(r=>good(r)),losses=rows.filter(r=>!good(r));
+  const out=[];
+  if(gains[0])out.push(gains[0]);
+  if(losses[0])out.push(losses[0]);
+  for(const r of rows){
+    if(out.length>=3)break;
+    if(out.indexOf(r)<0)out.push(r);
+  }
+  out.sort((a,b)=>rows.indexOf(a)-rows.indexOf(b));  // ordem da tabela
+  return out;
+}
+function fmtPreviewVal(fmt,v){
+  if(fmt==='mult')return fmtMult(v);
+  if(fmt==='pct')return fmtPct(v,0);
+  if(fmt==='int')return fmtStat(v,0);
+  if(fmt==='px')return fmtStat(v,0)+'px';
+  if(fmt==='rate')return fmtNum(v,1)+'/s';
+  if(fmt==='sec')return fmtSec(v);
+  return fmtStat(v,0);
+}
+function shopImpactHTML(rows){
+  const shown=previewDisplayRows(rows);
+  if(!shown.length)return '';
+  let h='<div class="cimpact">';
+  for(const r of shown){
+    const good=r.inv?r.delta<0:r.delta>0;
+    h+='<span class="cimrow"><i>'+r.lab+'</i>'+fmtPreviewVal(r.fmt,r.before)+
+      '<em>→</em><b style="color:'+(good?'#7dffc4':'#ffb386')+'">'+
+      fmtPreviewVal(r.fmt,r.after)+'</b></span>';
+  }
+  return h+'</div>';
+}
+/* entrada: módulo passivo (instala → sintonia incluída) */
+function shopItemPreview(it){
+  if(!it||!it.apply||!player)return null;
+  const c=smPreviewDryRun(player,p=>it.apply(p),it.id);
+  return smPreviewRows(player,c);
+}
+/* entrada: upgrade da loja (não é item — sem sintonia) */
+function shopUpgPreview(u){
+  if(!u||!u.apply||!player)return null;
+  const c=smPreviewDryRun(player,p=>u.apply(p),null);
+  return smPreviewRows(player,c);
+}
+/* CONDITIONAL/PROC: nenhum número inventado — só sinalização curta.
+   A descrição do catálogo (sempre visível no card) continua descrevendo
+   o efeito; o tooltip detalha gatilhos e condições. */
+function shopEffectChip(it){
+  if(!it)return '';
+  if(it.transformer)return '';                     // transformador já tem selo
+  return '<div class="cchip">'+(it.hooks?'◈ EFEITO EM GATILHOS':'◈ EFEITO CONDICIONAL')+'</div>';
+}
+
 /* multiplicador de dano usado pelo tiro — única fonte de verdade.
    Reúne a base+modificadores persistidos (via pipeline, incluindo a
    Maldição do Oráculo) e os bônus condicionais dinâmicos de combate. */
@@ -4509,7 +4758,7 @@ function calcDamageMul(p){
   let mul=smGet(p,'damage');
   if(p.rushT>0)mul*=1.11;                              // WRAITH
   if(p.overheat)mul*=1+.08*(p.heat||0);                // REATOR
-  if(p.lowHpBonus&&p.hp<p.maxHp*.4)mul*=1+p.lowHpBonus;// VINGANÇA
+  if(p.lowHpBonus&&p.hp<p.maxHp*.4)mul*=1+p.lowHpBonus*attuneFieldMul(p,'vinganca');// VINGANÇA (B4: Sintonia)
   if(p.entropy)mul*=1+Math.min(.60,(p.waveKills||0)*.01);// ENTROPIA
   if(p.harvestStack)                                     // REVENANT
     mul*=1+Math.min(.75,(p.harvStacks||0)*p.harvestStack);
@@ -4698,7 +4947,7 @@ const $=id=>document.getElementById(id);
 const hpfill=$('hpfill'),hpnum=$('hpnum'),waveEl=$('wave'),timerEl=$('timer'),
   xpfill=$('xpfill'),lvlEl=$('lvl'),chip1=$('chip1'),chip2=$('chip2'),
   shfill=$('shfill'),shnum=$('shnum'),shbar=$('shbar'),
-  dashfill=$('dashfill'),dashwrap=$('dashwrap'),bannerEl=$('banner'),
+  dashfill=$('dashfill'),dashwrap=$('dashwrap'),dashlbl=$('dashlbl'),bannerEl=$('banner'),
   toastsEl=$('toasts'),overlay=$('overlay'),ovBody=$('ov-body'),
   ovGo=$('ov-go'),ovEchos=$('ov-echos'),ovFrac=$('ov-frac-lines'),
   ovTitle=$('ov-title'),ovSub=$('ov-sub');
@@ -4772,6 +5021,7 @@ function updateHUD(force){
   const dr=player.dashCd>0?1-player.dashCd/player.dashCdMax:1;
   dashfill.style.width=(dr*100)+'%';
   dashwrap.classList.toggle('ready',player.dashCd<=0);
+  if(dashlbl)dashlbl.textContent=player.dashCd>0?'DASH '+fmtSec(player.dashCd):'DASH [ESPAÇO]';   // B5-B-FIX: quanto falta
   // ---- HUD do especial ----
   const C=curChar(),spw=$('spwrap');
   if(spw&&C.sp){
@@ -4795,7 +5045,6 @@ function updateHUD(force){
   // busca por SLOT (e não por índice): o Modo DEV pode criar só o Echo·02
   setChip(chip1,1,echoes.find(e=>e&&e.slot===1)||null);
   setChip(chip2,2,echoes.find(e=>e&&e.slot===2)||null);
-  coinsEl.textContent='◈ '+player.coins;
   coinsEl.textContent='◈ '+fmtCompact(player.coins);
   /* PR 11.5: HUD mostra só o PERFIL dominante — percentuais de moralidade
      e tiers ficam no Registro de Combate (TAB) e na pausa (§15). */
@@ -4821,12 +5070,41 @@ let mEff={shopMul:1,coinMul:1,dmgMul:1,enemySpd:1,enemyAggr:1,upgMul:1,medDrop:0
   rerollMul:1,enemyHp:1,playerDmgTaken:1,echoPower:1,regen:0,conflict:0};
 let pickups=[], allies=[], beacon=null, evTimer=12, evCount=0, curEv=null;
 let boss=null, miniBoss=null, bossIntel=null, aberr=0, victoryData=null, freezeT=0;
+/* VFX de vitória do chefe: callbacks atrasados são parte da celebração, mas
+   precisam morrer junto com a run. Sem este registro, sair imediatamente
+   após a vitória recriava partículas depois de clearRunEntities(). */
+let bossVictoryTimers=[];
+function clearBossVictoryTimers(){
+  for(const entry of bossVictoryTimers)clearTimeout(entry.id);
+  bossVictoryTimers.length=0;
+}
+function scheduleBossVictoryTimer(fn,delay){
+  const entry={id:null};
+  entry.id=setTimeout(()=>{
+    const i=bossVictoryTimers.indexOf(entry);
+    if(i>=0)bossVictoryTimers.splice(i,1);
+    /* sair/reiniciar invalida a celebração; não reacenda efeitos fora da run */
+    if(state!=='victory')return;
+    fn();
+  },delay);
+  bossVictoryTimers.push(entry);
+  return entry.id;
+}
 let shopOffers=[], shopItems=[], shopGuns=[], rerollCost=10, shopLock=null;
+let shopRecent=[], shopRollSeq=0;
 const DOM_NAME={comp:'ALTRUÍSTA',greed:'AVARENTO',viol:'BRUTAL',neutro:'NEUTRO'};
 const DOM_SHORT={comp:'ALTR',greed:'AVAR',viol:'BRUT',neutro:'NEUT'};
 const DOM_COLOR={comp:'#7dffc4',greed:'#ffd166',viol:'#ff5c7a',neutro:'#9db8c8'};
 const TRUST_NAME=['BAIXA','NEUTRA','ALTA'];
 
+/* ---- B3-C: retorno decrescente de créditos (soft cap) ----
+   Ganância ainda multiplica, mas o produto mEff.coinMul × coinMul de
+   módulos não cresce linearmente até o infinito: até ×2 fica intacto;
+   acima disso a curva achatada (só 8% do excedente vira crédito). */
+function incomeCoinCap(x){
+  if(!(x>0))return 1;
+  return x<=2?x:2+(x-2)*.08;
+}
 /* 4 tiers: 0 neutro · 1 desperto (3) · 2 dominante (6) · 3 consumido (10) */
 function moralTier(v){return v>=10?3:(v>=6?2:(v>=3?1:0));}
 function moralDom(m){
@@ -5404,7 +5682,7 @@ function echoesEvaluate(ctx,opts){
   if(best&&best.r.value!==0&&!opts.silent){
     const line=pickRelationLine(best.echo,{type:best.r.type,reason:best.r.reason,
       state:echoRelState(best.echo).id,event:opts.event});
-    echoSpeak(best.echo,line.txt,best.r.value>0?'#8ff6ff':'#ff8095');
+    echoSpeak(best.echo,line.txt,best.r.value>0?'#8ff6ff':'#ff8095','high');
   }
   return out;
 }
@@ -5633,6 +5911,149 @@ function moralAffinityLevel(match){
   return MORAL_AFF_LEVELS[3];
 }
 
+/* =====================================================================
+   PR13.5 · B4 — SINTONIA DINÂMICA DOS MÓDULOS PASSIVOS
+   ---------------------------------------------------------------------
+   "Quanto este módulo combina com a forma como esta run está sendo
+   conduzida." O módulo REAGE à moralidade (lê comp/greed/viol); nunca a
+   altera. Tudo é DERIVADO do trio {módulo, MORAL_AFFINITY, moral} —
+   nada é persistido; Continue/Sandbox recalculam.
+   · score  = match do PR 9 (produto escalar 0..1) — determinístico.
+   · estado = 5 faixas finitas sobre o score (ATTUNE_STATES).
+   · efeito = multiplicador sobre a PARTE BENÉFICA dos modificadores
+     permanentes do PRÓPRIO módulo (module.<id>.*): dano escala dano,
+     escudo escala escudo, alcance longínquo escala alcance longínquo…
+     Trade-offs (mult<1 / add<0 / flat<0) nunca são agravados nem
+     aliviados. Módulos econômicos (coinMul) usam uma banda menor.
+   · módulos cujo efeito é um campo direto (regen, espinhos, execução…)
+     não têm o que multiplicar: para eles fica o bônus temático do PR 9
+     (proteção/créditos/ofensiva), agora escalado pelo mesmo estado.
+   · ids estáveis `attune:<itemId>:<stat>` (stacks 'replace'), excluídos
+     do checkpoint como os `moral:item:*`.
+   ===================================================================== */
+const ATTUNE_STATES=[
+  /* faixas sobre o score (match 0..1). Neutro (1/3) cai em NEUTRA. */
+  {id:'divergent',lab:'DIVERGENTE', c:'#ff8095', min:0,   mul:.90, eco:.95},
+  {id:'unstable', lab:'INSTÁVEL',   c:'#c9a9ff', min:.14, mul:.95, eco:.97},
+  {id:'neutral',  lab:'NEUTRA',     c:'#9db8c8', min:.26, mul:1,   eco:1},
+  {id:'attuned',  lab:'SINTONIZADA',c:'#8ff6ff', min:.50, mul:1.06,eco:1.03},
+  {id:'resonant', lab:'RESSONANTE', c:'#ffd166', min:.78, mul:1.12,eco:1.06}];
+const ATTUNE_NEUTRAL=ATTUNE_STATES[2];
+/* score determinístico 0..1 (null para módulo neutro) */
+function attunementScore(itemId,prof){
+  return calcMoralAffinityMatch(getItemMoralAffinity(itemId),prof||getMoralProfile());
+}
+function attunementStateFor(score){
+  if(score==null)return ATTUNE_NEUTRAL;
+  let st=ATTUNE_STATES[0];
+  for(const s of ATTUNE_STATES)if(score>=s.min-1e-9)st=s;
+  return st;
+}
+function attunementState(itemId,prof){return attunementStateFor(attunementScore(itemId,prof));}
+/* módulo econômico = mexe em coinMul (o B3 acabou de estabilizar isso) */
+function attuneIsEconomic(itemId){
+  return /^(iman|usura|eco_risco|eco_divida|trans_temporal)$/.test(itemId);
+}
+function attuneModId(itemId,stat){return 'attune:'+itemId+':'+stat;}
+function isAttuneModId(id){return typeof id==='string'&&id.indexOf('attune:')===0;}
+/* razão de intensidade aplicada à parte benéfica dos mods do módulo */
+function attunementMul(itemId,prof){
+  const st=attunementState(itemId,prof);
+  return attuneIsEconomic(itemId)?st.eco:st.mul;
+}
+/* modificadores permanentes BENÉFICOS do próprio módulo */
+function attuneBeneficialMods(p,itemId){
+  if(!p||!p.sm)return [];
+  return p.sm.filter(m=>m&&m.dur==null&&!m.cond&&SM_STATS[m.stat]&&
+    (m.id==='module.'+itemId||m.id.indexOf('module.'+itemId+'.')===0)&&
+    attuneModIsBeneficial(m));
+}
+function attuneModIsBeneficial(m){
+  const inv=(m.stat==='dmgTaken'||m.stat==='shieldDelay');   // menor é melhor
+  if(m.type==='mult')return inv?m.value<1:m.value>1;
+  if(m.type==='add'||m.type==='flat')return inv?m.value<0:m.value>0;
+  return false;
+}
+/* plano: para cada módulo com afinidade, um mod `attune:` por stat
+   benéfico que leva o bônus de (1+b) para (1+b·k). Puro — não escreve. */
+function calcAttunementPlan(p,prof){
+  prof=prof||getMoralProfile();
+  const out=[];
+  if(!p||!p.items)return out;
+  for(const id of p.items){
+    if(!getItemMoralAffinity(id))continue;
+    const k=attunementMul(id,prof);
+    if(Math.abs(k-1)<1e-9)continue;
+    const st=attunementState(id,prof);
+    const it=itemById(id),nm=it?it.nm:id;
+    /* agrupa por stat: o bônus do módulo naquele stat vira um só fator */
+    const byStat={};
+    for(const m of attuneBeneficialMods(p,id))(byStat[m.stat]=byStat[m.stat]||[]).push(m);
+    for(const stat in byStat){
+      let mult=1,add=0,flat=0;
+      for(const m of byStat[stat]){if(m.type==='mult')mult*=m.value;else if(m.type==='add')add+=m.value;else flat+=m.value;}
+      if(mult!==1){
+        /* (1+b)→(1+b·k): fator corretivo = (1+b·k)/(1+b) */
+        const b=mult-1,f=(1+b*k)/(1+b);
+        if(Math.abs(f-1)>1e-6)out.push({id:attuneModId(id,stat),stat,type:'mult',value:f,stacks:'replace',
+          label:'SINTONIA '+st.lab+' · '+nm});
+      }
+      if(add!==0){
+        const d=add*(k-1);
+        if(Math.abs(d)>1e-6)out.push({id:attuneModId(id,stat),stat,type:'add',value:d,stacks:'replace',
+          label:'SINTONIA '+st.lab+' · '+nm});
+      }
+      if(flat!==0){
+        const d=flat*(k-1);
+        if(Math.abs(d)>1e-6)out.push({id:attuneModId(id,stat+'.flat'),stat,type:'flat',value:d,stacks:'replace',
+          label:'SINTONIA '+st.lab+' · '+nm});
+      }
+    }
+  }
+  return out;
+}
+/* Módulos cujo efeito principal é um CAMPO direto (regen, espinhos,
+   execução…) não têm mod no pipeline para escalar. Para eles o estado
+   vira um fator lido no ponto de consumo — pelo cache derivado
+   p.attuneMul (recalculado em applyMoralTuning; nunca por frame; nunca
+   salvo). attuneFieldMul(p,itemId) devolve 1 se o módulo não está
+   instalado — o campo continua valendo o que o módulo escreveu. */
+const ATTUNE_FIELD_ITEMS={espinho:1,su_regen:1,su_sorte:1,su_critcura:1,su_exec:1,vinganca:1,
+  condutor:1,ampulheta:1,paradoxo:1,su_vampiro:1,su_dotcrit:1,talisma:0,pirostase:0};
+function attuneFieldMul(p,itemId){
+  p=p||player;
+  const c=p&&p.attuneMul;
+  return (c&&c[itemId]!=null)?c[itemId]:1;
+}
+function calcAttuneFieldCache(p,prof){
+  const out={};
+  if(!p||!p.items)return out;
+  for(const id of p.items){
+    if(!ATTUNE_FIELD_ITEMS[id]||!getItemMoralAffinity(id))continue;
+    const k=attunementMul(id,prof);
+    if(Math.abs(k-1)>1e-9)out[id]=k;
+  }
+  return out;
+}
+/* texto curto para UI: estado + eixo + efeito. Puro. */
+function attunementInfo(itemId,prof){
+  prof=prof||getMoralProfile();
+  const aff=getItemMoralAffinity(itemId);
+  if(!aff)return null;
+  const score=attunementScore(itemId,prof),st=attunementStateFor(score);
+  const axes=moralAffinityAxes(aff);
+  const k=attunementMul(itemId,prof);
+  const pct=Math.round((k-1)*100);
+  const n=prof.normalized;
+  /* motivo resumido: eixo principal do módulo está alto ou baixo no perfil */
+  const main=axes[0];
+  const reason=st.id==='neutral'?'perfil equilibrado'
+    :(st.id==='attuned'||st.id==='resonant')?MORAL_AXIS_LABEL[main]+' ↑'
+    :MORAL_AXIS_LABEL[main]+' baixa';
+  return {id:itemId,score,state:st,axes,mul:k,pct,reason,economic:attuneIsEconomic(itemId),
+    effect:pct===0?'efeito base':(pct>0?'efeito +'+pct+'%':'efeito reduzido: '+pct+'%')};
+}
+
 /* ---- efeitos derivados no Stat Pipeline (ids estáveis, recalculáveis) ---- */
 function moralTuneModId(itemId,stat){return 'moral:item:'+itemId+':'+stat;}
 function isMoralTuneModId(id){return typeof id==='string'&&id.indexOf('moral:item:')===0;}
@@ -5692,9 +6113,14 @@ function applyMoralTuning(p){
   p=p||player;
   if(!p)return false;
   smInit(p);
-  p.sm=p.sm.filter(m=>!isMoralTuneModId(m.id));
-  const plan=calcMoralTuningPlan(p.items||[],getMoralProfile());
+  p.sm=p.sm.filter(m=>!isMoralTuneModId(m.id)&&!isAttuneModId(m.id));
+  const prof=getMoralProfile();
+  const plan=calcMoralTuningPlan(p.items||[],prof);
   for(const mod of plan.mods)p.sm.push(mod);
+  /* B4: intensidade do próprio módulo segue o estado de Sintonia
+     (calculado DEPOIS de limpar os derivados: só vê os mods reais) */
+  for(const mod of calcAttunementPlan(p,prof))p.sm.push(mod);
+  p.attuneMul=calcAttuneFieldCache(p,prof);   // B4: fator dos módulos de campo direto
   smRefresh(p);
   return true;
 }
@@ -5705,8 +6131,8 @@ function countAttunedItems(p){
   const prof=getMoralProfile();
   let n=0;
   for(const id of p.items){
-    const m=calcMoralAffinityMatch(getItemMoralAffinity(id),prof);
-    if(m!=null&&m>=MORAL_BALANCE.affinity.levels.neutral)n++;
+    const st=attunementState(id,prof);
+    if(st.id==='attuned'||st.id==='resonant')n++;
   }
   return n;
 }
@@ -5716,15 +6142,25 @@ function moralAffinityAxes(aff){
   return MORAL_AXES.filter(a=>aff[a]>0).sort((x,y)=>aff[y]-aff[x]);
 }
 const MORAL_AXIS_COLOR={comp:'#7dffc4',greed:'#ffd166',viol:'#ff5c7a'};
-function moralAffinityTagHTML(itemId,showCurrent){
+function moralAffinityTagHTML(itemId,showCurrent,compact){
   const aff=getItemMoralAffinity(itemId);
   if(!aff)return '';
+  /* B5.5: no card, sintonia em UMA linha (estado + efeito); eixos e motivo
+     continuam no tooltip (versão completa). Contrato B4 mantido: o HTML
+     do card contém state.lab e info.effect. */
+  if(compact&&showCurrent&&player){
+    const info=attunementInfo(itemId);
+    return '<div class="cmoral cmo">SINTONIA: <b style="color:'+info.state.c+'">'+
+      info.state.lab+'</b> · '+info.effect+'</div>';
+  }
   const axes=moralAffinityAxes(aff).map(a=>
     '<span style="color:'+MORAL_AXIS_COLOR[a]+'">'+MORAL_AXIS_LABEL[a]+'</span>').join(' / ');
   let s='<div class="cmoral">SINTONIA: '+axes;
   if(showCurrent&&player){
-    const lv=moralAffinityLevel(calcMoralAffinityMatch(aff,getMoralProfile()));
-    s+=' · ATUAL: <b style="color:'+lv.c+'">'+lv.lab+'</b>';
+    /* B4: preview PURO com a moralidade atual — estado, motivo e efeito */
+    const info=attunementInfo(itemId);
+    s+=' · <b style="color:'+info.state.c+'">'+info.state.lab+'</b>'+
+      '<br><span style="opacity:.8">'+info.reason+' · '+info.effect+'</span>';
   }
   return s+'</div>';
 }
@@ -5744,13 +6180,14 @@ function moralShopWeight(item){
   if(!aff)return 1;
   return 1+MORAL_BALANCE.shopBias*moralTuneFactor(calcMoralAffinityMatch(aff,getMoralProfile()));
 }
-function pickWeightedMoral(list,waveN){
+function pickWeightedMoral(list,waveN,repW){
+  const w=o=>rarityWeight(o.rar||0,waveN)*moralShopWeight(o)*(repW?repW(o):1);
   let tot=0;
-  for(const o of list)tot+=rarityWeight(o.rar||0,waveN)*moralShopWeight(o);
+  for(const o of list)tot+=w(o);
   if(tot<=0)return list[randi(0,list.length-1)];
   let r=Math.random()*tot;
   for(const o of list){
-    r-=rarityWeight(o.rar||0,waveN)*moralShopWeight(o);
+    r-=w(o);
     if(r<=0)return o;
   }
   return list[list.length-1];
@@ -5855,7 +6292,7 @@ function echoSetDis(e,st){
       toast('ECHO·0'+e.slot+' — SINAL INSTÁVEL');
       const l=pickRelationLine(e,{type:'reject',reason:'moral_violence',
         state:echoRelState(e).id,event:'trustLow'});
-      echoSpeak(e,l.txt,'#ffd166');
+      echoSpeak(e,l.txt,'#ffd166','high');
       spawnRing(e.x,e.y,'#ffd166',6,70,.4);
     }
   }else if(st==='fracturing'){
@@ -5893,7 +6330,7 @@ function echoSetDis(e,st){
     evSetFlag('dis_reconciliado');
     const l=pickRelationLine(e,{type:'approve',reason:'reconciliation',
       state:echoRelState(e).id,event:'dissonanceEnd'});
-    echoSpeak(e,l.txt,'#8ff6ff');
+    echoSpeak(e,l.txt,'#8ff6ff','high');
     spawnRing(e.x,e.y,e.hue,8,140,.6);
   }
   return true;
@@ -6130,23 +6567,179 @@ const ECHO_LINES={
   ]
 };
 let _echoSpeakCd=0;
-const ECHO_SPEAK_INTERVAL=8;  // mínimo 8s entre falas
-function echoSpeak(e,txt,color){
-  if(!e||!e.alive)return;
-  if(_echoSpeakCd>0)return;
-  _echoSpeakCd=ECHO_SPEAK_INTERVAL;
-  floatText(e.x,e.y-e.r-34,txt,color||e.hue||'#8ff6ff',FTEXT_SPEAK);
-  AUDIO.tone(rand(600,800),.08,'sine',.018,120);
+const ECHO_SPEAK_INTERVAL=8;  // mínimo 8s entre falas (legado/compatibilidade)
+/* ---- B2-A: camada central de apresentação das falas do Echo ----
+   A fala deixa de viver no array de dano. Tem prioridade, cooldown por
+   prioridade, fila curta e duração derivada do texto. */
+const SPEECH_PRI={low:0,normal:1,high:2,critical:3};
+const ECHO_SPEECH_QUEUE_MAX=3;            // 1 ativa + 3 aguardando
+const SPEECH_CD={low:8,normal:6,high:4,critical:1.2};
+let _speechClock=0;
+let speechActive=null;
+let speechQueue=[];
+const _speechCd={low:0,normal:0,high:0,critical:0};
+const _speechPhrase=Object.create(null);
+function speechPri(v){
+  if(typeof v==='string')return v in SPEECH_PRI?SPEECH_PRI[v]:SPEECH_PRI.normal;
+  if(typeof v==='number')return clamp(Math.round(v),0,3);
+  return SPEECH_PRI.normal;
 }
+function echoSpeechDuration(txt,pri){
+  const p=speechPri(pri);
+  const s=String(txt||'');
+  const chars=s.length;
+  const words=(s.trim().match(/\S+/g)||[]).length;
+  let d;
+  if(chars<=10)d=1.8;
+  else if(chars<=18)d=2.1;
+  else if(chars<=26)d=2.5;
+  else if(chars<=34)d=3.0;
+  else d=3.3;
+  d+=Math.min(.10*words,1.0);             // palavras extra ganham leitura
+  if(p>=SPEECH_PRI.critical)d+=1.2;
+  else if(p>=SPEECH_PRI.high)d+=.45;
+  return clamp(d,1.6,5.0);
+}
+function speechCdLeft(pri){return _speechCd[pri]>0?_speechCd[pri]:0;}
+function speechPhraseOk(txt,pri){
+  const s=String(txt||'').toUpperCase().replace(/\s+/g,' ').trim().slice(0,80);
+  if(!s)return false;
+  const cd=pri>=SPEECH_PRI.critical?2.5:6;
+  const last=_speechPhrase[s];
+  if(last!=null&&_speechClock-last<cd)return false;
+  _speechPhrase[s]=_speechClock;
+  const k=Object.keys(_speechPhrase);
+  if(k.length>128){for(const key of k)if(_speechClock-_speechPhrase[key]>30)delete _speechPhrase[key];}
+  return true;
+}
+function speechStart(entry){
+  speechActive=entry;
+  _speechCd[entry.pri]=SPEECH_CD[entry.pri]||1;
+  /* compat: testes legados leem o cooldown global; o jogo real não usa
+     mais esse valor como bloqueio (fala crítica/bypass segue pela fila). */
+  _echoSpeakCd=Math.max(_echoSpeakCd,ECHO_SPEAK_INTERVAL);
+}
+function speechEnqueue(entry){
+  speechQueue.push(entry);
+  speechQueue.sort((a,b)=>b.pri-a.pri||a.t-b.t);
+  if(speechQueue.length>ECHO_SPEECH_QUEUE_MAX){
+    speechQueue.length=ECHO_SPEECH_QUEUE_MAX;  // descarta a mais antiga de menor prioridade
+  }
+}
+function speechClear(){
+  speechActive=null;
+  speechQueue.length=0;
+  _speechClock=0;
+  for(const k in _speechPhrase)delete _speechPhrase[k];
+  for(const k in _speechCd)_speechCd[k]=0;
+  _echoSpeakCd=0;
+}
+function speechTick(dt){
+  _speechClock+=dt;
+  if(_echoSpeakCd>0)_echoSpeakCd-=dt;
+  for(const k in _speechCd)if(_speechCd[k]>0)_speechCd[k]=Math.max(0,_speechCd[k]-dt);
+  if(speechActive){
+    speechActive.t+=dt;
+    if(speechActive.t>=speechActive.life)speechActive=null;
+  }
+  if(!speechActive&&speechQueue.length&&speechCdLeft(speechQueue[0].pri)<=0){
+    const n=speechQueue.shift();
+    speechStart(n);
+  }
+}
+function speechRender(){
+  if(!speechActive)return;
+  const a=speechActive;
+  const src=a.src;
+  const x=(src&&src.alive&&src.x!=null)?src.x:(a.x||0);
+  const y=(src&&src.alive&&src.y!=null)?src.y:(a.y||0);
+  const r=(src&&src.alive&&src.r!=null)?src.r:12;
+  const px=a.pri>=SPEECH_PRI.critical?17:(a.pri>=SPEECH_PRI.high?16:15);
+  ctx.save();
+  ctx.font=px+'px Consolas,monospace';
+  ctx.textAlign='center';
+  const alpha=clamp((a.life-a.t)/.45,0,1);
+  ctx.globalAlpha=alpha;
+  const maxW=236;
+  const words=String(a.txt||'').split(/\s+/);
+  const lines=[];let cur='';
+  for(const wd of words){
+    const test=cur?cur+' '+wd:wd;
+    if(ctx.measureText(test).width>maxW&&cur){lines.push(cur);cur=wd;}
+    else cur=test;
+  }
+  if(cur)lines.push(cur);
+  const lh=px+6;
+  let wid=0;for(const ln of lines)wid=Math.max(wid,ctx.measureText(ln).width);
+  const bh=lines.length*lh+10;
+  const yy=y-r-40;
+  ctx.fillStyle='rgba(5,10,16,.82)';
+  ctx.fillRect(x-wid/2-8,yy-bh+4,wid+16,bh);
+  ctx.strokeStyle=a.color||'#8ff6ff';
+  ctx.globalAlpha=alpha*.55;
+  ctx.lineWidth=1.2;
+  ctx.strokeRect(x-wid/2-8,yy-bh+4,wid+16,bh);
+  ctx.globalAlpha=alpha;
+  ctx.lineJoin='round';
+  ctx.strokeStyle='rgba(0,0,0,.92)';
+  ctx.lineWidth=3;
+  ctx.fillStyle=a.color||'#8ff6ff';
+  let ty=yy-6;
+  for(const ln of lines){
+    ctx.strokeText(ln,x,ty);
+    ctx.fillText(ln,x,ty);
+    ty+=lh;
+  }
+  ctx.restore();
+}
+function echoSpeak(e,txt,color,pri){
+  if(!e||!e.alive)return false;
+  const p=speechPri(pri);
+  const s=String(txt||'').trim();
+  if(!s)return false;
+  if(!speechPhraseOk(s,p))return false;
+  const entry={src:e,x:e.x,y:e.y,color:color||e.hue||'#8ff6ff',txt:s,pri:p,
+    t:0,life:echoSpeechDuration(s,p)};
+  if(p>=SPEECH_PRI.critical){
+    /* CRITICAL substitui qualquer fala e limpa filas triviais. */
+    speechActive=entry;
+    speechQueue=speechQueue.filter(q=>q.pri>=SPEECH_PRI.high);
+    speechStart(entry);
+    return true;
+  }
+  if(speechActive&&p>speechActive.pri){
+    if(p>=SPEECH_PRI.high&&speechActive.pri<=SPEECH_PRI.low){
+      speechActive=entry;               // HIGH preempta LOW/ambiental
+      speechStart(entry);
+      return true;
+    }
+  }
+  /* anti-spam: fala de mesma prioridade (ou inferior) enquanto uma fala
+     dessa categoria ainda está em cooldown é descartada — a fila é para
+     conteúdos relevantes (HIGH/CRITICAL), não para repetição. */
+  if(speechActive&&p<=speechActive.pri&&speechCdLeft(p)>0&&p<SPEECH_PRI.critical)return false;
+  if(speechActive&&p<speechActive.pri)return false;
+  if(!speechActive&&speechCdLeft(p)<=0){
+    speechStart(entry);
+    return true;
+  }
+  speechEnqueue(entry);
+  return true;
+}
+const ECHO_REACT_PRI={
+  dissonance:'critical',dissonanceEnd:'high',miniboss:'high',bossDeath:'high',
+  trustLow:'high',lowHp:'high',shieldBreak:'high',
+  waveStart:'normal',killStreak:'normal',playerHurt:'normal',
+  echoHit:'normal',resonance:'normal',trustHigh:'normal'};
 function echoReact(event,data){
-  if(!echoes.length)return;
-  if(_echoSpeakCd>0)return;
+  if(!echoes.length)return false;
   const live=echoes.filter(e=>e.alive&&!e.hostile&&echoAllied(e));
-  if(!live.length)return;
+  if(!live.length)return false;
   const lines=ECHO_LINES[event];
-  if(!lines||!lines.length)return;
-  // apenas 35% de chance por evento para evitar spam
-  if(Math.random()>.35)return;
+  if(!lines||!lines.length)return false;
+  // apenas 35% de chance por evento para evitar spam (o cooldown central
+  // por prioridade/frase agora é a autoridade de frequência).
+  if(Math.random()>.35)return false;
   const e=live[randi(0,live.length-1)];
   // PR 8: a VOZ é da personalidade quando existir para o evento;
   // o pool genérico permanece como fallback (Echo sem .ps, evento sem pool).
@@ -6160,7 +6753,7 @@ function echoReact(event,data){
     event==='miniboss'?'#ffd166':
     event==='bossDeath'?'#ff4df0':
     '#bffbff';
-  echoSpeak(e,txt,col);
+  return echoSpeak(e,txt,col,ECHO_REACT_PRI[event]||'normal');
 }
 
 /* --------------- PAPÉIS TÁTICOS DOS ECOS --------------- */
@@ -6253,9 +6846,10 @@ const ITEMS=[
  {id:'coracao',nm:'CORAÇÃO SOBRECARREGADO',desc:'+35% CADÊNCIA · +15% DANO RECEBIDO',price:33,color:'#ffb347',
   apply:p=>{smMul(p,'fireRate','module.coracao.rate','CORAÇÃO +35% CADÊNCIA',1.35);
     smMul(p,'dmgTaken','module.coracao.dmgTaken','CORAÇÃO +15% DANO RECEBIDO',1.15);}},
- {id:'iman',nm:'ÍMÃ DE VAZIO',desc:'RAIO DE COLETA ×2.2 · +30% MOEDAS · −8% VELOCIDADE',price:26,color:'#c9a9ff',
+ {id:'iman',nm:'ÍMÃ DE VAZIO',desc:'RAIO DE COLETA ×2.2 · +15% MOEDAS · UPGRADES/MÓDULOS +6% · −8% VELOCIDADE',price:26,color:'#c9a9ff',
   apply:p=>{smMul(p,'pickupR','module.iman.pickup','ÍMÃ ×2.2 RAIO COLETA',2.2);
-    smMul(p,'coinMul','module.iman.coin','ÍMÃ +30% MOEDAS',1.3);
+    smMul(p,'coinMul','module.iman.coin','ÍMÃ +15% MOEDAS',1.15);
+    p.shopSurcharge=(p.shopSurcharge||1)*1.06;
     smMul(p,'speed','module.iman.speed','ÍMÃ −8% VELOCIDADE',.92);}},
  {id:'placa',nm:'PLACA ABLATIVA',desc:'+55 VIDA MÁXIMA · +15% ESCUDO MÁX · −12% VELOCIDADE · −10% REGEN ESCUDO',price:30,color:'#8ff6ff',
   apply:p=>{p.maxHp+=55;p.hp+=55;smMul(p,'speed','module.placa.speed','PLACA −12% VELOCIDADE',.88);
@@ -6268,14 +6862,16 @@ const ITEMS=[
  {id:'paradoxo',nm:'PARADOXO ECOANTE',desc:'ECOS +55% DANO E +45% VIDA · −20% VIDA MÁXIMA DO JOGADOR',price:42,color:'#ff4df0',
   apply:p=>{p.echoBoost+=.55;p.maxHp=Math.max(30,Math.round(p.maxHp*.8));
     p.hp=Math.min(p.hp,p.maxHp);buffEchoes();}},
- {id:'luneta',nm:'LUNETA DE VÁCUO',desc:'+70% DE ALCANCE · +18% DANO ALÉM DE 400px · −20% CADÊNCIA',price:38,color:'#8ff6ff',
-  apply:p=>{smMul(p,'range','module.luneta.range','LUNETA +70% ALCANCE',1.70);
-    p.longRangeBonus=(p.longRangeBonus||0)+.18;
-    smMul(p,'fireRate','module.luneta.rate','LUNETA −20% CADÊNCIA',.80);}},
- {id:'estilhaco',nm:'CÂMARA DE ESTILHAÇO',desc:'−35% DE ALCANCE · +45% DANO · +20% CADÊNCIA',price:36,color:'#ffb347',
-  apply:p=>{smMul(p,'range','module.estilhaco.range','ESTILHAÇO −35% ALCANCE',.65);
-    smMul(p,'damage','module.estilhaco.damage','ESTILHAÇO +45% DANO',1.45);
-    smMul(p,'fireRate','module.estilhaco.rate','ESTILHAÇO +20% CADÊNCIA',1.20);}},
+ {id:'luneta',nm:'LUNETA DE VÁCUO',desc:'+70% ALCANCE LONGÍNQUO · +30% DANO ALÉM DE 400px · −18% CADÊNCIA · −8% ALCANCE C.A CORPO',price:38,rar:2,color:'#8ff6ff',
+  apply:p=>{smMul(p,'rangedRange','module.luneta.range','LUNETA +70% ALCANCE LONGÍNQUO',1.70);
+    smMul(p,'meleeRange','module.luneta.melee','LUNETA −8% ALCANCE C.A CORPO',.92);
+    p.longRangeBonus=(p.longRangeBonus||0)+.30;
+    smMul(p,'fireRate','module.luneta.rate','LUNETA −18% CADÊNCIA',.82);}},
+ {id:'estilhaco',nm:'CÂMARA DE ESTILHAÇO',desc:'−40% ALCANCE LONGÍNQUO · +20% ALCANCE C.A CORPO · +40% DANO · +15% CADÊNCIA',price:36,rar:2,color:'#ffb347',
+  apply:p=>{smMul(p,'rangedRange','module.estilhaco.range','ESTILHAÇO −40% ALCANCE LONGÍNQUO',.60);
+    smMul(p,'meleeRange','module.estilhaco.melee','ESTILHAÇO +20% ALCANCE C.A CORPO',1.20);
+    smMul(p,'damage','module.estilhaco.damage','ESTILHAÇO +40% DANO',1.40);
+    smMul(p,'fireRate','module.estilhaco.rate','ESTILHAÇO +15% CADÊNCIA',1.15);}},
 
  /* ============ MÓDULOS DE SINERGIA COM EFEITOS DE STATUS ============ */
  {id:'pirostase',nm:'PIRÓSTASE',desc:'STATUS +60% DE POTÊNCIA · QUEIMA PROPAGA AO MORRER · −10% VIDA MÁX.',
@@ -6323,10 +6919,11 @@ const ITEMS=[
   apply:p=>{p.drones=(p.drones||0)+2;
     smMul(p,'fireRate','module.colmeia.rate','COLMEIA −8% CADÊNCIA',.92);}},
 
- {id:'usura',nm:'CONTRATO DE USURA',desc:'+80% DE CRÉDITOS · INIMIGOS TÊM +12% DE VIDA',
+ {id:'usura',nm:'CONTRATO DE USURA',desc:'+45% DE CRÉDITOS · UPGRADES/MÓDULOS +12% · INIMIGOS TÊM +10% DE VIDA',
   price:30,color:'#ffd166',
-  apply:p=>{smMul(p,'coinMul','module.usura.coin','USURA +80% MOEDAS',1.80);
-    p.enemyHpTax=(p.enemyHpTax||0)+.12;}},
+  apply:p=>{smMul(p,'coinMul','module.usura.coin','USURA +45% MOEDAS',1.45);
+    p.shopSurcharge=(p.shopSurcharge||1)*1.12;
+    p.enemyHpTax=(p.enemyHpTax||0)+.10;}},
 
  {id:'ressonador',nm:'RESSONADOR DUPLO',desc:'RESSONÂNCIA COM ECOS: +90% DE RAIO E DANO · RECARGA MAIS RÁPIDA',
   price:48,color:'#8ff6ff',
@@ -6377,7 +6974,7 @@ const ITEMS=[
   apply:p=>{p.regen=(p.regen||0)+2.2;p.maxHp+=25;p.hp+=25;}},
 
  {id:'su_sorte',nm:'DADO VICIADO',rar:2,
-  desc:'25% DE CHANCE DE CURAR 14 HP AO ABATER · +12% DE SORTE',
+  desc:'25% DE CHANCE DE CURAR 14 HP AO ABATER',
   price:40,color:'#7dffc4',
   apply:p=>{p.healChance=(p.healChance||0)+.25;p.healAmount=(p.healAmount||14);}},
 
@@ -6430,9 +7027,11 @@ function giveItem(it,free){
   toast((free?'SAQUEADO: ':'INSTALADO: ')+it.nm);
   const _aff=getItemMoralAffinity(it.id);
   if(_aff){
-    const _lv=moralAffinityLevel(calcMoralAffinityMatch(_aff,getMoralProfile()));
-    if(_lv.id==='attuned'||_lv.id==='harmonic')
-      toast('SINTONIA '+_lv.lab+' · O MÓDULO RESPONDE AO SEU PERFIL');
+    const _st=attunementState(it.id);
+    if(_st.id==='attuned'||_st.id==='resonant')
+      toast('SINTONIA '+_st.lab+' · O MÓDULO RESPONDE AO SEU PERFIL');
+    else if(_st.id==='divergent')
+      toast('SINTONIA DIVERGENTE · O MÓDULO RENDE MENOS COM ESTE PERFIL');
   }
   floatText(player.x,player.y-32,it.nm,it.color);
   spawnRing(player.x,player.y,it.color,10,115,.6);sLvl();
@@ -6447,13 +7046,13 @@ const UPGRADES=[
  /* ---- COMUM ---- */
  {id:'crit', nm:'CÂMARA CRÍTICA',       desc:'+8% DE CHANCE CRÍTICA',           price:16,rar:0,
   apply:p=>smFlat(p,'crit','upgrade.crit.crit','CÂMARA CRÍTICA +8%',.08)},
- {id:'critd',nm:'DETONADOR FOCADO',     desc:'+35% DE DANO CRÍTICO',            price:16,rar:0,
+ {id:'critd',nm:'DETONADOR FOCADO',     desc:'+35% DE DANO CRÍTICO',            price:14,rar:0,   /* B3-FIX: só rende com crit — mais barato */
   apply:p=>smFlat(p,'critMul','upgrade.critd.critd','DETONADOR FOCADO +35%',.35)},
  {id:'rate', nm:'SERVO-GATILHO',        desc:'+12% DE CADÊNCIA DE TIRO',        price:18,rar:0,
   apply:p=>smMul(p,'fireRate','upgrade.rate.rate','SERVO-GATILHO +12% CADÊNCIA',1.12)},
  {id:'hp',   nm:'BLINDAGEM MODULAR',    desc:'+25 DE VIDA MÁXIMA E CURA 25',    price:18,rar:0,apply:p=>{p.maxHp+=25;p.hp=Math.min(p.maxHp,p.hp+25);}},
- {id:'range',nm:'ESTABILIZADOR DE FASE',desc:'+25% DE ALCANCE DE TODAS AS ARMAS',price:15,rar:0,
-  apply:p=>smMul(p,'range','upgrade.range.range','ESTABILIZADOR +25% ALCANCE',1.25)},
+ {id:'range',nm:'ESTABILIZADOR DE FASE',desc:'+18% DE ALCANCE (CORPO A CORPO E LONGÍNQUO)',price:15,rar:0,
+  apply:p=>smRangeBoth(p,'upgrade.range.range','ESTABILIZADOR +18% ALCANCE',1.18)},
  {id:'magnet',nm:'BOBINA COLETORA',     desc:'+45% DE RAIO DE COLETA',          price:12,rar:0,
   apply:p=>smMul(p,'pickupR','upgrade.magnet.pickup','BOBINA COLETORA +45%',1.45)},
  /* ---- INCOMUM ---- */
@@ -6462,34 +7061,35 @@ const UPGRADES=[
  {id:'dash', nm:'CAPACITOR DE DASH',    desc:'−15% DE RECARGA DO DASH',         price:16,rar:1,apply:p=>p.dashCdMax*=.85},
  {id:'aoe',  nm:'AMPLIFICADOR DE CAMPO',desc:'+25% DE ÁREA DE EXPLOSÃO',        price:20,rar:1,
   apply:p=>smMul(p,'aoe','upgrade.aoe.aoe','AMPLIFICADOR +25% ÁREA',1.25)},
- {id:'range2',nm:'BOBINA DE LONGO CURSO',desc:'+35% DE ALCANCE · +8% VELOCIDADE DE PROJÉTIL',price:24,rar:1,
-  apply:p=>{smMul(p,'range','upgrade.range2.range','LONGO CURSO +35% ALCANCE',1.35);
-    smMul(p,'projSpd','upgrade.range2.projSpd','LONGO CURSO +8% PROJÉTIL',1.08);}},
+ {id:'range2',nm:'BOBINA DE LONGO CURSO',desc:'+32% ALCANCE LONGÍNQUO · +14% VELOCIDADE DE PROJÉTIL',price:24,rar:1,
+  apply:p=>{smMul(p,'rangedRange','upgrade.range2.range','LONGO CURSO +32% ALCANCE LONGÍNQUO',1.32);
+    smMul(p,'projSpd','upgrade.range2.projSpd','LONGO CURSO +14% PROJÉTIL',1.14);}},
  /* ---- RARO (desbloqueáveis) ---- */
  {id:'pierce',nm:'PONTA PERFURANTE',    desc:'PROJÉTEIS PERFURAM +1 ALVO',      price:28,rar:2,
   apply:p=>smFlat(p,'pierce','upgrade.pierce.pierce','PONTA PERFURANTE +1',1)},
- {id:'critx',nm:'MIRA CIRÚRGICA',       desc:'+14% CRÍTICO · +55% DANO CRÍTICO',price:34,rar:2,
+ {id:'critx',nm:'MIRA CIRÚRGICA',       desc:'+14% CRÍTICO · +45% DANO CRÍTICO',price:46,rar:2,   /* B3-FIX: deixa de dominar crit+critd (32 por 8%/35%) */
   apply:p=>{smFlat(p,'crit','upgrade.critx.crit','MIRA CIRÚRGICA +14%',.14);
-    smFlat(p,'critMul','upgrade.critx.critd','MIRA CIRÚRGICA +55%',.55);}},
+    smFlat(p,'critMul','upgrade.critx.critd','MIRA CIRÚRGICA +45%',.45);}},
  {id:'vamp', nm:'DRENO SANGUÍNEO',      desc:'ROUBA 5% DO DANO COMO VIDA',      price:32,rar:2,
   apply:p=>p.globalLifesteal=(p.globalLifesteal||0)+.05},
  {id:'sprint',nm:'IMPULSO NEURAL',      desc:'+14% VELOCIDADE · −10% RECARGA DE DASH',price:30,rar:2,
   apply:p=>{smMul(p,'speed','upgrade.sprint.speed','IMPULSO NEURAL +14% VELOCIDADE',1.14);p.dashCdMax*=.90;}},
  /* ---- ÉPICO ---- */
- {id:'dmg2', nm:'REATOR DE ANIQUILAÇÃO',desc:'+32% DE DANO GERAL',              price:52,rar:3,
-  apply:p=>smMul(p,'damage','upgrade.dmg2.damage','REATOR +32% DANO',1.32)},
- {id:'rate2',nm:'GATILHO QUÂNTICO',     desc:'+30% DE CADÊNCIA DE TIRO',        price:50,rar:3,
-  apply:p=>smMul(p,'fireRate','upgrade.rate2.rate','GATILHO QUÂNTICO +30%',1.30)},
- {id:'pierce2',nm:'LANÇA DIMENSIONAL',  desc:'PROJÉTEIS PERFURAM +2 ALVOS',     price:56,rar:3,
+ {id:'dmg2', nm:'REATOR DE ANIQUILAÇÃO',desc:'+28% DE DANO GERAL',              price:58,rar:3,   /* B3-FIX: forte por slot, não por crédito (dmg: 14%/22) */
+  apply:p=>smMul(p,'damage','upgrade.dmg2.damage','REATOR +28% DANO',1.28)},
+ {id:'rate2',nm:'GATILHO QUÂNTICO',     desc:'+26% DE CADÊNCIA DE TIRO',        price:56,rar:3,   /* B3-FIX: idem rate (12%/18) */
+  apply:p=>smMul(p,'fireRate','upgrade.rate2.rate','GATILHO QUÂNTICO +26%',1.26)},
+ {id:'pierce2',nm:'LANÇA DIMENSIONAL',  desc:'PROJÉTEIS PERFURAM +2 ALVOS',     price:50,rar:3,   /* B3-FIX: nicho (inútil p/ melee) — mais barato */
   apply:p=>smFlat(p,'pierce','upgrade.pierce2.pierce','LANÇA DIMENSIONAL +2',2)},
  /* ---- LENDÁRIO ---- */
- {id:'omni', nm:'NÚCLEO ONISCIENTE',    desc:'+22% DANO · +18% CADÊNCIA · +12% CRÍTICO · +30 VIDA',price:88,rar:4,
+ {id:'omni', nm:'NÚCLEO ONISCIENTE',    desc:'+22% DANO · +18% CADÊNCIA · +12% CRÍTICO · +30 VIDA',price:110,rar:4,   /* B3-FIX: universal sem custo → paga o preço da universalidade */
   apply:p=>{smMul(p,'damage','upgrade.omni.damage','NÚCLEO +22% DANO',1.22);
     smMul(p,'fireRate','upgrade.omni.rate','NÚCLEO +18% CADÊNCIA',1.18);
     smFlat(p,'crit','upgrade.omni.crit','NÚCLEO +12% CRÍTICO',.12);
     p.maxHp+=30;p.hp+=30;}},
- {id:'singul',nm:'SINGULARIDADE PESSOAL',desc:'+45% DE DANO · DASH RECARREGA 50% MAIS RÁPIDO',price:92,rar:4,
-  apply:p=>{smMul(p,'damage','upgrade.singul.damage','SINGULARIDADE +45% DANO',1.45);p.dashCdMax*=.50;}}
+ {id:'singul',nm:'SINGULARIDADE PESSOAL',desc:'+45% DE DANO · DASH RECARREGA 50% MAIS RÁPIDO · −12% VIDA MÁXIMA',price:100,rar:4,   /* B3-FIX: canhão de vidro móvel (omni = seguro; singul = agressivo) */
+  apply:p=>{smMul(p,'damage','upgrade.singul.damage','SINGULARIDADE +45% DANO',1.45);p.dashCdMax*=.50;
+    p.maxHp=Math.max(30,Math.round(p.maxHp*.88));p.hp=Math.min(p.hp,p.maxHp);}}
 ];
 /* =====================================================================
    PR 11 — ITEM & BUILD REWORK + SHIELD EXPANSION
@@ -6670,7 +7270,8 @@ function _modBelongsToItem(modId,itemId){
   return (typeof modId==='string')&&(
     modId==='module.'+itemId||modId.indexOf('module.'+itemId+'.')===0||
     modId==='item.'+itemId||modId.indexOf('item.'+itemId+'.')===0||
-    modId==='moral:item:'+itemId+':'||modId.indexOf('moral:item:'+itemId+':')===0);
+    modId==='moral:item:'+itemId+':'||modId.indexOf('moral:item:'+itemId+':')===0||
+    modId.indexOf('attune:'+itemId+':')===0);
 }
 function removeItemStatMods(p,itemId){
   if(!p||!p.sm)return 0;
@@ -6900,17 +7501,19 @@ const NEW_ITEMS=[
    }}},
   /* ECONOMY BUILD */
   {id:'eco_risco',nm:'APOSTA DE MERCADO',price:38,rar:2,color:'#ffd166',
-   desc:'+65% CRÉDITOS · −12% DANO · +10% DANO RECEBIDO',
+   desc:'+40% CRÉDITOS · UPGRADES/MÓDULOS +15% · −12% DANO · +12% DANO RECEBIDO',
    tags:['economy','risk','tradeoff'],
-   apply:p=>{smMul(p,'coinMul','item.eco_risco.coin','APOSTA +65% CRÉDITOS',1.65);
+   apply:p=>{smMul(p,'coinMul','item.eco_risco.coin','APOSTA +40% CRÉDITOS',1.40);
+     p.shopSurcharge=(p.shopSurcharge||1)*1.15;
      smMul(p,'damage','item.eco_risco.dmg','APOSTA −12% DANO',.88);
-     smMul(p,'dmgTaken','item.eco_risco.taken','APOSTA +10% DANO RECEBIDO',1.10);}},
+     smMul(p,'dmgTaken','item.eco_risco.taken','APOSTA +12% DANO RECEBIDO',1.12);}},
   {id:'eco_divida',nm:'DÍVIDA TEMPORAL',price:42,rar:2,color:'#ffb347',
-   desc:'+100% CRÉDITOS · −30% ESCUDO MÁX · +14% DANO RECEBIDO',
+   desc:'+55% CRÉDITOS · UPGRADES/MÓDULOS +20% · −30% ESCUDO MÁX · +18% DANO RECEBIDO',
    tags:['economy','risk','tradeoff','shield'],
-   apply:p=>{smMul(p,'coinMul','item.eco_divida.coin','DÍVIDA +100% CRÉDITOS',2.0);
+   apply:p=>{smMul(p,'coinMul','item.eco_divida.coin','DÍVIDA +55% CRÉDITOS',1.55);
+     p.shopSurcharge=(p.shopSurcharge||1)*1.20;
      smMul(p,'shieldMax','item.eco_divida.max','DÍVIDA −30% ESCUDO MÁX',.70);
-     smMul(p,'dmgTaken','item.eco_divida.taken','DÍVIDA +14% DANO RECEBIDO',1.14);}},
+     smMul(p,'dmgTaken','item.eco_divida.taken','DÍVIDA +18% DANO RECEBIDO',1.18);}},
   /* TRANSFORMADORES */
   {id:'trans_fratura',nm:'LÂMINA DE RUPTURA',price:64,rar:4,color:'#8ff6ff',transformer:true,
    desc:'TRANSFORMADOR · ROMPER ESCUDO → PRÓXIMA RAJADA PERFURA ALVOS por 3s',
@@ -6945,13 +7548,14 @@ const NEW_ITEMS=[
      if(n>=3&&itemCdReady(p,'trans_conclusao',8)){itemStateSet(p,'trans_conclusao','critLock',1);devProcLog(ctx,'CONCLUSÃO · CRIT');}
    }}},
   {id:'trans_temporal',nm:'MERCADO DE FUTUROS',price:66,rar:4,color:'#ffb347',transformer:true,
-   desc:'TRANSFORMADOR · +90% CRÉDITOS · −25% ESCUDO MÁX · ABATE CONVERTE 5 POÇÕES',
+   desc:'TRANSFORMADOR · +55% CRÉDITOS · UPGRADES/MÓDULOS +25% · −25% ESCUDO MÁX · ABATE CONVERTE 3 CRÉDITOS',
    tags:['transformer','economy','risk'],
-   apply:p=>{smMul(p,'coinMul','item.trans_temporal.coin','FUTUROS +90% CRÉDITOS',1.90);
+   apply:p=>{smMul(p,'coinMul','item.trans_temporal.coin','FUTUROS +55% CRÉDITOS',1.55);
+     p.shopSurcharge=(p.shopSurcharge||1)*1.25;
      smMul(p,'shieldMax','item.trans_temporal.max','FUTUROS −25% ESCUDO MÁX',.75);},
    hooks:{onKill(ctx){
      const p=ctx.player;if(!itemCdReady(p,'trans_temporal',3.5))return;
-     p.coins+=5;floatText(p.x,p.y-24,'+5 ◈','#ffb347');
+     p.coins+=3;floatText(p.x,p.y-24,'+3 ◈','#ffb347');
    }}},
   {id:'trans_espectral',nm:'ESPECTRO DE DASH',price:72,rar:4,color:'#c56bff',transformer:true,
    desc:'TRANSFORMADOR · DASH → CRIT + PERFURAÇÃO 4s · +25% CD DASH',
@@ -7053,17 +7657,91 @@ const RARITY=[
 function rarityWeight(r,waveN){
   const R=RARITY[r];
   if(r===0)return R.w;
-  const unlockWave=[0,1,4,8,13][r];
+  const unlockWave=[0,1,3,8,13][r];
   if(waveN<unlockWave)return 0;
   return R.w*(1+Math.min(1.8,(waveN-unlockWave)*.14));
 }
-function pickWeighted(list,waveN){
+/* ---- PR13.5 B3-A: variedade leve na loja ---- */
+/* Capacidade do histórico (B3-FIX): uma visita normal registra 7 ofertas
+   (3 upg + 2 mód + 2 armas); com ARQUIVO PROIBIDO (bigShop) 10. A janela
+   pretendida é "última visita (d=0) + penúltima (d=1)" e cada reroll conta
+   como visita. Para que d=1 sobreviva a 1 reroll com bigShop são precisos
+   3 lotes × 10 = 30; 32 dá folga sem crescer além de ~3 lotes (~4,5 lotes
+   normais). Continua limitado, pequeno e sem penalidade por meia run. */
+const SHOP_RECENT_MAX=32;
+const SHOP_REPEAT_LAST_W=.42;        // último item NÃO comprado: peso ~0.42
+const SHOP_REPEAT_PENULT_W=.72;      // penúltimo item NÃO comprado: peso ~0.72
+function shopRecentReset(){shopRecent=[];shopRollSeq=0;}
+function shopOfferSeen(id){
+  if(id==null)return;
+  shopRecent.push({id:String(id),seq:shopRollSeq,bought:false});
+  while(shopRecent.length>SHOP_RECENT_MAX)shopRecent.shift();
+}
+function shopMarkBought(id){
+  if(id==null)return;
+  for(let i=shopRecent.length-1;i>=0;i--){
+    if(shopRecent[i].id===String(id)){shopRecent[i].bought=true;return;}
+  }
+}
+function shopRepeatWeight(id){
+  const sid=String(id);
+  for(let i=shopRecent.length-1;i>=0;i--){
+    const e=shopRecent[i];
+    if(shopRollSeq-e.seq>=2)break;           // B3-FIX: só d≤1 pesa; o resto do histórico (32) não precisa ser varrido
+    if(e.id!==sid)continue;
+    if(e.bought)return 1;                    // comprado nunca é penalizado
+    const d=shopRollSeq-e.seq;
+    if(d===0)return SHOP_REPEAT_LAST_W;
+    if(d===1)return SHOP_REPEAT_PENULT_W;
+    return 1;
+  }
+  return 1;
+}
+function shopWaveMul(){
+  const w=Math.max(0,wave||1);
+  return 1+Math.min(1.0,(w-1)*.05);          // +5%/onda, teto +100%
+}
+/* B3-FIX: a Ganância já paga mEff.shopMul (1+.34g); o "mercado" é um
+   segundo multiplicador na MESMA build. 0.18→0.14 (máx ×1.238) e teto no
+   surcharge dos módulos econômicos, escolhidos por varredura (economy sim):
+   Greed passa a comprar ≥ Neutral sem voltar a comprar tudo. */
+const MORAL_MARKET_K=.14;
+const SHOP_SURCHARGE_CAP=1.6;
+function moralMarketMul(){
+  const tg=moralTier(moral.greed||0);
+  const g=tg>=3?1.7:(tg>=2?1:(tg>=1?.5:0));
+  return 1+MORAL_MARKET_K*g;           // B3-C/FIX: mercado lucra (pouco) com a Ganância
+}
+/* sobrepreço dos módulos econômicos, com teto: empilhar 5 módulos não pode
+   custar mais que ×1.6 na loja (o trade-off continua, o runaway não). */
+function shopSurchargeMul(p){
+  const s=(p&&p.shopSurcharge)||1;
+  return Math.min(SHOP_SURCHARGE_CAP,Math.max(1,s));
+}
+function rerollBaseCost(){
+  const w=Math.max(0,wave||1);
+  return Math.max(8,Math.round(10+w*1.0));   // decisão econômica ao longo da run
+}
+function pickWeighted(list,waveN,repW){
+  const w=o=>rarityWeight(o.rar||0,waveN)*(repW?repW(o):1);
   let tot=0;
-  for(const o of list)tot+=rarityWeight(o.rar||0,waveN);
+  for(const o of list)tot+=w(o);
   if(tot<=0)return list[randi(0,list.length-1)];
   let r=Math.random()*tot;
   for(const o of list){
-    r-=rarityWeight(o.rar||0,waveN);
+    r-=w(o);
+    if(r<=0)return o;
+  }
+  return list[list.length-1];
+}
+function pickWeightedAny(list,repW){
+  const w=o=>(repW?repW(o):1);
+  let tot=0;
+  for(const o of list)tot+=w(o);
+  if(tot<=0)return list[randi(0,list.length-1)];
+  let r=Math.random()*tot;
+  for(const o of list){
+    r-=w(o);
     if(r<=0)return o;
   }
   return list[list.length-1];
@@ -7074,9 +7752,9 @@ function rarTag(r){
     '66;background:'+R.c+'14">'+R.nm+'</span>';
 }
 const repairCost=()=>Math.max(1,Math.round(22*Math.pow(1.5,player.repairs)*mEff.upgMul));
-const _mk=()=>((player&&player.markedUp)||1)*((player&&player.shopPersonal)||1);   // marca do Croupiê · desconto de loja do NÔMADE
-const priceUpg=u=>Math.max(1,Math.round(u.price*mEff.shopMul*mEff.upgMul*_mk()));
-const priceItem=i=>Math.max(1,Math.round(i.price*mEff.shopMul*_mk()));
+const _mk=()=>((player&&player.markedUp)||1)*((player&&player.shopPersonal)||1)*shopSurchargeMul(player)*moralMarketMul();   // marca do Croupiê · desconto de loja do NÔMADE
+const priceUpg=u=>Math.max(1,Math.round(u.price*mEff.shopMul*mEff.upgMul*_mk()*shopWaveMul()));
+const priceItem=i=>Math.max(1,Math.round(i.price*mEff.shopMul*_mk()*shopWaveMul()));
 /* multiplicador de potência aplicado a upgrades/itens conforme a raridade */
 function rarPower(o){return RARITY[o.rar||0].mul;}
 
@@ -7396,6 +8074,7 @@ function lockCfgFor(kind,id,label){
   return {locked:isLocked(kind,id),toggle:()=>toggleLock(kind,id,label)};
 }
 function rollShop(){
+  shopRollSeq++;
   // ---- UPGRADES ----
   const lockU=(shopLock&&shopLock.kind==='upg')
     ? UPGRADES.find(u=>u.id===shopLock.id) : null;
@@ -7405,7 +8084,7 @@ function rollShop(){
   const nOff=player.bigShop?6:3;      // ARQUIVO PROIBIDO expande a loja
   shopOffers=lockU?[lockU]:[];
   while(shopOffers.length<nOff&&pool.length){
-    const pick=pickWeighted(pool,wave);      // raridade pesa no sorteio
+    const pick=pickWeighted(pool,wave,o=>shopRepeatWeight(o.id));  // B3-A: raridade + variedade
     shopOffers.push(pool.splice(pool.indexOf(pick),1)[0]);
   }
   // ---- MÓDULOS PASSIVOS ----
@@ -7416,7 +8095,7 @@ function rollShop(){
     (sandboxRun||isItemUnlocked(i.id)));
   shopItems=lockI?[lockI]:[];
   while(shopItems.length<2&&ip.length){
-    const pick=pickWeightedMoral(ip,wave);   // PR 9: viés pequeno p/ sintonia
+    const pick=pickWeightedMoral(ip,wave,o=>shopRepeatWeight(o.id));   // PR 9: sintonia + B3-A variedade
     shopItems.push(ip.splice(ip.indexOf(pick),1)[0]);
   }
   // ---- ARMAS AVANÇADAS ----
@@ -7424,8 +8103,14 @@ function rollShop(){
     ? shopLock.id : null;
   const wp=shopWeaponPool().filter(i=>player.owned.indexOf(i)<0&&i!==lockG);
   shopGuns=lockG!==null?[lockG]:[];
-  while(shopGuns.length<2&&wp.length)
-    shopGuns.push(wp.splice(randi(0,wp.length-1),1)[0]);
+  while(shopGuns.length<2&&wp.length){
+    const pick=pickWeightedAny(wp,wi=>shopRepeatWeight(WEAPONS[wi].id)); // B3-A/FIX: wp guarda ÍNDICES; o histórico usa o id da arma
+    shopGuns.push(wp.splice(wp.indexOf(pick),1)[0]);
+  }
+  /* B3-A: registra a oferta desta visita (compra marca como comprado) */
+  for(const u of shopOffers)shopOfferSeen(u.id);
+  for(const it of shopItems)shopOfferSeen(it.id);
+  for(const wi of shopGuns)shopOfferSeen(WEAPONS[wi].id);
   // a trava expira se o item já foi adquirido de outra forma
   if(shopLock){
     if(shopLock.kind==='item'&&ownsItem(shopLock.id))shopLock=null;
@@ -7473,6 +8158,7 @@ function openSlotPicker(wi,price){
   mClose.onclick=()=>{renderShop();};
 }
 function openShop(){
+  speechClear();               // B2-A: modal de loja não mantém fala órfã
   // VOTO DE POBREZA: a loja é pulada por completo
   if(player.vowPoverty){
     player.vowPoverty=0;
@@ -7484,7 +8170,7 @@ function openShop(){
     return;
   }
   state='shop';firing=false;curEv=null;
-  rerollCost=10;rollShop();renderShop();
+  rerollCost=rerollBaseCost();rollShop();renderShop();
   modalEl.classList.add('on');
   sfx(523,.14,'sine',.04,0);setTimeout(()=>sfx(784,.2,'sine',.04,0),110);
   /* B3.13: emissão uma vez por ABERTURA REAL da loja — delta 0, sem farm.
@@ -7503,10 +8189,11 @@ function renderShopOp(){
     const pr=priceUpg(u),poor=player.coins<pr;
     const RC=RARITY[u.rar||0];
     mRow.appendChild(mkCard(
-      '<span style="color:'+RC.c+'">'+u.nm+'</span>'+rarTag(u.rar),u.desc,
+      '<span style="color:'+RC.c+'">'+u.nm+'</span>'+rarTag(u.rar),
+      u.desc+shopImpactHTML(shopUpgPreview(u)),
       '<div class="cprice">◈ '+pr+(mEff.upgMul<1?' (DESCONTO EMPÁTICO)':'')+'</div>',
       poor,()=>{
-        player.coins-=pr;u.apply(player);player.upgLog.push(u.nm);
+        player.coins-=pr;u.apply(player);player.upgLog.push(u.nm);shopMarkBought(u.id);
         if(isLocked('upg',u.id))shopLock=null;
         shopOffers.splice(shopOffers.indexOf(u),1);
         toast('UPGRADE: '+u.nm);sLvl();renderShop();
@@ -7531,11 +8218,13 @@ function renderShopOp(){
     const rg=Math.round(weaponRange(d,player));
     grow.appendChild(mkCard(
       '<span style="color:'+d.color+'">⌖ '+d.nm+'</span>'+rarTag(d.rar),
-      d.sdesc+'<br><span style="opacity:.65">CLASSE: '+d.tag+'</span>'+
-      (d.fx?'<br><span style="color:'+(STATUS_COLOR[d.fx.k]||'#fff')+
-        '">◆ APLICA '+d.fx.k.toUpperCase()+'</span>':'')+
-      '<br>ALCANCE: <b style="color:'+d.color+'">'+rg+'px · '+rangeLabel(rg)+'</b>'+
-      '<br>Ocupa o <b>slot '+(player.owned.length+1)+'</b> · alterna com <b>Q</b>.',
+      /* B5.5: corpo enxuto — CLASSE e "alterna com Q" migram para o
+         tooltip; o estado do arsenal (decisão de compra) permanece na
+         linha de preço; efeito de status + alcance numa linha só. */
+      d.sdesc+'<br><span style="opacity:.65">'+
+      (d.fx?'<span style="color:'+(STATUS_COLOR[d.fx.k]||'#fff')+'">◆ '+
+        d.fx.k.toUpperCase()+'</span> · ':'')+
+      'ALCANCE: <b style="color:'+d.color+'">'+rg+'px · '+rangeLabel(rg)+'</b></span>',
       '<div class="cprice">◈ '+pr+
         (player.owned.length>=player.maxSlots
           ?' · <span style="color:#ff9d3c">ARSENAL CHEIO — SUBSTITUIR</span>'
@@ -7544,7 +8233,7 @@ function renderShopOp(){
         if(player.owned.length>=player.maxSlots){
           openSlotPicker(wi,pr);          // arsenal cheio: escolher slot
         }else{
-          player.coins-=pr;
+          player.coins-=pr;shopMarkBought(WEAPONS[wi].id);
           grantWeapon(wi);
           player.upgLog.push('ARMA: '+d.nm);
           if(isLocked('gun',wi))shopLock=null;
@@ -7567,9 +8256,13 @@ function renderShopOp(){
     const pr=priceItem(it),poor=player.coins<pr;
     const icard=mkCard(
       '<span style="color:'+it.color+'">'+it.nm+'</span>'+rarTag(it.rar),
-      itemDescParts(it).body+moralAffinityTagHTML(it.id,true),
+      itemDescParts(it).body+
+      /* B5.5: impacto REAL projetado (pipeline) ou chip p/ conditional/proc */
+      (()=>{const rows=shopItemPreview(it);
+        return rows&&rows.length?shopImpactHTML(rows):shopEffectChip(it);})()+
+      moralAffinityTagHTML(it.id,true,true),   // B5.5: sintonia compacta no card
       '<div class="cprice">◈ '+pr+'</div>',poor,()=>{
-        player.coins-=pr;giveItem(it,false);
+        player.coins-=pr;giveItem(it,false);shopMarkBought(it.id);
         if(isLocked('item',it.id))shopLock=null;
         shopItems.splice(shopItems.indexOf(it),1);renderShop();
         checkpointShopPurchase();       // PR 7.5: compra concluída → checkpoint
@@ -7702,6 +8395,7 @@ function spawnBeacon(){
   sfx(660,.3,'sine',.045,-220);
 }
 function openEvent(kind){
+  speechClear();               // B2-A: fala não fica atrás do modal de decisão
   state='event';firing=false;curEv=kind;
   modalEl.classList.add('on');
   mSect.style.display='none';mRow2.innerHTML='';mReroll.style.display='none';
@@ -8103,6 +8797,7 @@ forge(){
     'mas o alcance dela cai <b>30%</b> para sempre.',[0,0,2],'',false,()=>{
       wd.dmg=Math.round(wd.dmg*1.45*10)/10;
       wd.range=Math.round((wd.range||600)*.70);
+      if(wd.melee)wd.reach=Math.round((wd.reach||wd.range)*.70);
       player.upgLog.push('FORJA: '+wd.nm);
       spawnRing(player.x,player.y,'#ff9d3c',10,150,.7);
       toast(wd.nm+' TEMPERADA · +45% DANO / −30% ALCANCE');
@@ -11194,7 +11889,7 @@ function updatePickups(dt){
         player.coins+=o.v;sXp();spawnParticles(o.x,o.y,'#ffd166',3,130,.2,2);
         itemEmit('onPickup',{player,type:'coin',value:o.v});
       }else{
-        const heal=o.v*(player.medBoost||1);   // HARDEN: kits curam o dobro
+        const heal=o.v*(1+((player.medBoost||1)-1)*attuneFieldMul(player,'su_vampiro'));   // HARDEN: kits curam o dobro (B4: Sintonia escala o bônus)
         player.hp=Math.min(player.maxHp,player.hp+heal);
         floatText(o.x,o.y-12,'+'+Math.round(heal)+' HP','#7dffc4');
         spawnRing(o.x,o.y,'#7dffc4',5,42,.35);sLvl();
@@ -11720,7 +12415,7 @@ function fireMelee(src,def,team,mul){
   if(src===player&&consumeCritLock(src))_crit=true;
   const crit=_crit;
   const cm=crit?(src.critMul||1.8):1;
-  const reach=def.reach*(src.rangeMul||1);
+  const reach=def.reach*srcRangeMul(src,'melee');
   const half=def.arc/2;
   const dmg=def.dmg*mul*cm;
   const dir=(src.swingDir=-(src.swingDir||1));
@@ -11810,7 +12505,7 @@ function fireMelee(src,def,team,mul){
 /* ---- [5] FEIXE DE SINGULARIDADE: laser sustentado com dano escalonado ---- */
 function fireBeam(src,def,team,mul,dt){
   curAttacker=src;
-  const range=def.range*(src.rangeMul||1);
+  const range=def.range*srcRangeMul(src,'ranged');
   const ux=Math.cos(src.aim),uy=Math.sin(src.aim);
   const ox=src.x+ux*(src.r+6),oy=src.y+uy*(src.r+6);
   let best=null,bd=range;
@@ -11873,7 +12568,7 @@ function fireWeaponFrom(src,def,team,mul){
   if(src===player&&consumeCritLock(src))_crit=true;
   const crit=_crit;
   const cm=crit?(src.critMul||1.8):1;
-  const rng=src.rangeMul||1,aoeM=src.aoeMul||1,
+  const rng=srcRangeMul(src,'ranged'),aoeM=src.aoeMul||1,
         pier=src.pierce+effectivePierceItem(src);
   for(let i=0;i<def.count;i++){
     const off=def.count>1?(i-(def.count-1)/2)*def.spread:0;
@@ -12015,7 +12710,7 @@ function trySpecial(){
     }
     case 'cache':{
       // NÔMADE: caixa de suprimentos
-      const c2=Math.round(120*mEff.coinMul*player.coinMul);
+      const c2=Math.round(120*incomeCoinCap(mEff.coinMul*player.coinMul));
       player.coins+=c2;
       player.hp=Math.min(player.maxHp,player.hp+35);
       const pool=UPGRADES.filter(u=>sandboxRun||isUpgUnlocked(u.id));
@@ -12047,6 +12742,9 @@ function trySpecial(){
   }
   buildWeaponHUD();
 }
+/* B6: piso de recarga do dash. MESMO valor que resumeRun já impunha ao
+   carregar um save — ver comentário em tryDash(). */
+const DASH_CD_MIN=.2;
 function tryDash(){
   if(!player||state!=='play')return;
   if(wave<=player.vowBlood){            // VOTO DE SANGUE bloqueia o dash
@@ -12066,7 +12764,18 @@ function tryDash(){
   let _dashMul=1;
   if(player&&itemStateGet(player,'fs_cinetica','dashT',0)>0)
     _dashMul=itemStateGet(player,'fs_cinetica','dashCdMul',1)||1;
-  player.dashCd=player.dashCdMax*_dashMul;
+  /* B6 · PISO DE RECARGA DO DASH (DASH_CD_MIN)
+     O dash concede i-frames de .17s (§13116). Sem piso, o produto de
+     dash(×.85) + sprint(×.90) + singularidade(×.50) + recompensas de
+     nível(×.92) leva dashCdMax a ~.06s: o uptime de invulnerabilidade
+     passa de 70% e o jogador vira intocável — inviabiliza o conteúdo.
+     O piso NÃO é um número novo: é exatamente o mesmo .2 que resumeRun
+     já aplicava ao carregar um save (§16927). O que havia era uma
+     INCOERÊNCIA — a run ao vivo não respeitava o limite que o Continue
+     impunha, então recarregar o jogo NERFAVA a build. Agora os dois
+     caminhos concordam. Builds de mobilidade seguem fortes: .2s ainda é
+     ~10× mais rápido que o VECTOR base (2.1s) e mantém 46% de uptime. */
+  player.dashCd=Math.max(DASH_CD_MIN,player.dashCdMax*_dashMul);
   itemEmit('onDash',{player});
   bumpProg('dashes');
   if(runSt)runSt.dsh++;                    // PR 8: dash — sinal de impulso/reposição
@@ -12134,7 +12843,7 @@ function damageEnemy(e,d,srcx,srcy,crit,isDot){
   if(atk&&atk.critChain&&crit&&!isDot)chainShock(e,d*.5,1,atk);
   if(isDot){                             // dano contínuo não gera ressonância
     // AGULHA RESSONANTE: DoT pode causar crítico
-    if(player&&player.dotCrit&&Math.random()<player.dotCrit){
+    if(player&&player.dotCrit&&Math.random()<player.dotCrit*attuneFieldMul(player,'su_dotcrit')){   // B4
       d*=1.8;
       spawnParticles(e.x,e.y,'#ffd166',3,160,.2,2);
     }
@@ -12210,7 +12919,7 @@ function damageEnemy(e,d,srcx,srcy,crit,isDot){
     spawnParticles(e.x,e.y,'#fff6b0',7,260,.32,3);
     // BISTURI SIMBIÓTICO: cura ao crítico
     if(curAttacker===player&&player&&player.critHeal){
-      player.hp=Math.min(player.maxHp,player.hp+player.critHeal);
+      player.hp=Math.min(player.maxHp,player.hp+player.critHeal*attuneFieldMul(player,'su_critcura'));   // B4
     }
     /* PR 11: hooks de crítico dos itens (build Crit/Status). */
     if(curAttacker===player)itemEmit('onCrit',{target:e,dmg:d,crit:true});
@@ -12223,7 +12932,7 @@ function damageEnemy(e,d,srcx,srcy,crit,isDot){
   if(curAttacker===player)itemEmit('onHit',{target:e,dmg:d,crit});
   // PROTOCOLO DE EXECUÇÃO: execução de alvos abaixo do limiar
   if(player&&player.execThreshold&&e.hp>0&&e.hp<=d&&
-     e.hp<e.maxHp*player.execThreshold&&curAttacker===player){
+     e.hp<e.maxHp*player.execThreshold*attuneFieldMul(player,'su_exec')&&curAttacker===player){   // B4
     e.hp=0;
     player.hp=Math.min(player.maxHp,player.hp+6);
     floatText(e.x,e.y-e.r-20,'EXECUTADO','#ff2f5e');
@@ -12293,10 +13002,10 @@ function killEnemy(e){
     player.waveKills=(player.waveKills||0)+1;              // MOTOR DE ENTROPIA
     if(player.waveKills%12===0)echoReact('killStreak');    // PR 8: fala de sequência
     if(player.killDash&&player.dashCd>0)                   // AMPULHETA QUEBRADA
-      player.dashCd=Math.max(0,player.dashCd-player.dashCdMax*player.killDash);
+      player.dashCd=Math.max(0,player.dashCd-player.dashCdMax*player.killDash*attuneFieldMul(player,'ampulheta'));   // B4
     // DADO VICIADO: chance de cura ao abater
     if(player.healChance&&Math.random()<player.healChance&&player.hp>0){
-      const amt=player.healAmount||14;
+      const amt=(player.healAmount||14)*attuneFieldMul(player,'su_sorte');   // B4
       player.hp=Math.min(player.maxHp,player.hp+amt);
       floatText(player.x,player.y-20,'+'+amt+' HP','#7dffc4');
     }
@@ -12353,6 +13062,7 @@ function killEnemy(e){
   }
   if(e.type==='miniboss'){
     // recompensa pesada + limpeza de tela
+    e.hazards=[];                          // B5-B: fogo/presságios/previsões morrem com o chefe
     clearMiniBossHUD();
     shake=Math.max(shake,20);aberrPeak(.9);
     for(let i=0;i<5;i++)setTimeout(()=>{
@@ -12361,7 +13071,7 @@ function killEnemy(e){
     },i*110);
     for(let i=projectiles.length-1;i>=0;i--)
       if(projectiles[i].team==='enemy')projectiles.splice(i,1);
-    const bonus=Math.round(120*mEff.coinMul*player.coinMul);
+    const bonus=Math.round(120*incomeCoinCap(mEff.coinMul*player.coinMul));
     player.coins+=bonus;
     player.hp=Math.min(player.maxHp,player.hp+40);
     floatText(e.x,e.y-40,'◈ +'+bonus+' · +40 HP','#ffd166');
@@ -12395,7 +13105,7 @@ function killEnemy(e){
   // créditos — escalados pela Ganância e por módulos
   const base=e.type==='tank'?9:(e.type==='shooter'?4:2);
   const bounty=e.ambushBounty?3:1;         // recompensa tripla da emboscada
-  let coins=Math.round(base*mEff.coinMul*player.coinMul*bounty);
+  let coins=Math.round(base*incomeCoinCap(mEff.coinMul*player.coinMul)*bounty);
   if(e.ambushBounty)floatText(e.x,e.y-e.r-20,'◈ ×3 EMBOSCADA','#ffd166');
   if(Math.random()<.35)coins++;
   while(coins>0){
@@ -13035,17 +13745,21 @@ function spawnMiniBoss(n,forced){
     chargeCd:3.4,telegraphT:0,dashT:0,dashDx:0,dashDy:0,
     burstCd:2.6,summonCd:9,skillCd:rand(2,4),
     spinAng:0,ring:0,core:0,trailT:0};
+  mbInitState(b);                       // B5-B: estado mecânico próprio + hazards (cap)
   enemies.push(b);
   miniBoss=b;
   /* B3.8: emissão real (só aqui — nunca em preview, pool ou inspetor) */
   try{fractureOnMiniSpawn(def,n);}catch(e){}
   $('bosswrap').classList.add('on');
-  $('bossnm').textContent=def.nm.toUpperCase().replace(/ /g,'   ');
-  $('bossnm').style.color='#ffd9a8';
-  $('bossnm').style.textShadow='0 0 18px '+def.c;
+  /* B5-A: barra e apresentação carregam a assinatura do mini-chefe
+     (símbolo + paleta própria), mantendo a MESMA estrutura de HUD */
+  const V=minibossVisual(def.id);
+  $('bossnm').textContent=V.symbol+'  '+def.nm.toUpperCase().replace(/ /g,'   ')+'  '+V.symbol;
+  $('bossnm').style.color=V.accent;
+  $('bossnm').style.textShadow='0 0 18px '+V.primary;
   $('bosssub').textContent='MINI-CHEFE · ONDA '+n+' · BLINDAGEM '+b.plates+'/'+b.plateMax;
-  $('bossfill').style.background='linear-gradient(90deg,'+def.c+',#ffd166,#ff5c7a)';
-  banner(def.nm,'MINI-CHEFE — '+def.desc);
+  $('bossfill').style.background='linear-gradient(90deg,'+V.secondary+','+V.primary+','+V.accent+')';
+  banner(V.symbol+' '+def.nm,'MINI-CHEFE — '+V.reading);
   shake=Math.max(shake,14);
   AUDIO.bossRoar();
   echoReact('miniboss');
@@ -13054,7 +13768,7 @@ function spawnMiniBoss(n,forced){
 function miniBossHUD(){
   if(!miniBoss||miniBoss.dead)return;
   $('bossfill').style.width=clamp(miniBoss.hp/miniBoss.maxHp*100,0,100)+'%';
-  $('bosssub').textContent='MINI-CHEFE · FASE '+miniBoss.phase+
+  $('bosssub').textContent='MINI-CHEFE · FASE '+miniBoss.phase+(miniBoss.phase===2?' ▲':'')+
     ' · BLINDAGEM '+miniBoss.plates+'/'+miniBoss.plateMax;
 }
 function clearMiniBossHUD(){
@@ -13067,374 +13781,811 @@ function clearMiniBossHUD(){
     $('bossfill').style.background='linear-gradient(90deg,#ff4df0,#ff9df7,#46e0ff)';
   }
 }
+/* =====================================================================
+   PR13.5 · B5-B — IDENTIDADE MECÂNICA DOS MINI-CHEFES
+   ---------------------------------------------------------------------
+   Antes: investida telegrafada + rajada radial + escolta + fase 2 (só
+   acelera) para os 8, e a "variante" por cima. Agora:
+   · núcleo comum = timers, fase 2 (50 %), movimento base, contato;
+   · MB_UPDATERS[id] = mecânica principal + secundária + mudança REAL de
+     fase 2 para cada um; dash só para herald/duelist(lunge)/colossus,
+     rajada só para herald/oracle(prevista)/brood(fase 2);
+   · hazards de área (fogo, presságio, previsão, slam) vivem em e.hazards
+     com CAP e lifetime (mbHazardAdd) — nunca crescem sem limite;
+   · estado próprio em e.ms (miniState); nada visual persistido;
+   · hazards ferem o JOGADOR (damagePlayer) — Ecos aliados e inimigos
+     não são atingidos (mesma regra dos orbes inimigos da arena).
+   ===================================================================== */
+const MB_HAZARD_CAP={furnace:22,herald:8,oracle:6,colossus:4,duelist:3,leech:2,brood:0,sentinel:0};
+const MB_BROOD_CAP=12;                // crias vivas da Matriz (além do teto global ENEMY_BUDGET)
+function mbHazardAdd(e,h){
+  if(!e.hazards)e.hazards=[];
+  const cap=MB_HAZARD_CAP[e.mb&&e.mb.id]||4;
+  while(e.hazards.length>=cap)e.hazards.shift();   // o mais antigo some
+  h.age=0;e.hazards.push(h);return h;
+}
+/* tick genérico dos hazards: expira, e cada tipo decide quando fere */
+function mbHazardsTick(e,dt,p){
+  if(!e.hazards||!e.hazards.length)return;
+  for(let i=e.hazards.length-1;i>=0;i--){
+    const h=e.hazards[i];h.age+=dt;h.life-=dt;
+    if(h.tick)h.tick(h,dt,p,e);
+    if(h.life<=0)e.hazards.splice(i,1);
+  }
+}
+function mbPlayerIn(h,p){return dist2(p.x,p.y,h.x,h.y)<(h.r+p.r*.5)*(h.r+p.r*.5);}
+/* movimento base: aproximação pesada (era comum a todos) */
+function mbApproach(e,p,dt,mul,keep){
+  const dx=p.x-e.x,dy=p.y-e.y,d=Math.hypot(dx,dy)||1;
+  const slow=e.slowT>0?.5:1;
+  let spd=e.spd*slow*mEff.enemySpd*(mul||1);
+  if(keep&&d<keep)spd=-spd*.6;           // mantém distância (Oráculo/Sanguessuga)
+  e.vx+=((dx/d)*spd-e.vx)*Math.min(1,2.6*dt);
+  e.vy+=((dy/d)*spd-e.vy)*Math.min(1,2.6*dt);
+  e.x=clamp(e.x+e.vx*dt,e.r,ARENA.w-e.r);
+  e.y=clamp(e.y+e.vy*dt,e.r,ARENA.h-e.r);
+  e.aim=angTo(e.aim,Math.atan2(dy,dx),1.9*dt);
+  if(d<e.r+p.r&&e.touchCd<=0){e.touchCd=.8;damagePlayer(e.dmg);}
+}
+/* investida telegrafada (helper — só quem a tem chama) */
+function mbCharge(e,p,dt,cfg){
+  const dx=p.x-e.x,dy=p.y-e.y,d=Math.hypot(dx,dy)||1;
+  const slow=e.slowT>0?.5:1;
+  if(e.dashT>0){
+    e.dashT-=dt;
+    const sp=cfg.speed*slow;
+    e.x=clamp(e.x+e.dashDx*sp*dt,e.r,ARENA.w-e.r);
+    e.y=clamp(e.y+e.dashDy*sp*dt,e.r,ARENA.h-e.r);
+    if(Math.random()<.7)spawnParticles(e.x,e.y,e.color,2,150,.3,4);
+    if(d<e.r+p.r+6&&e.touchCd<=0){e.touchCd=.6;damagePlayer(e.dmg*cfg.dmgMul);shake=Math.max(shake,11);}
+    if(cfg.onDash)cfg.onDash(e);
+    return true;
+  }
+  if(e.telegraphT>0){
+    e.telegraphT-=dt;
+    e.aim=angTo(e.aim,Math.atan2(dy,dx),cfg.track*dt);
+    if(e.telegraphT<=0){
+      e.dashT=cfg.dur;e.dashDx=Math.cos(e.aim);e.dashDy=Math.sin(e.aim);
+      spawnRing(e.x,e.y,e.color,10,120,.4);AUDIO.dash();AUDIO.tone(150,.3,'sawtooth',.06,-60);
+    }
+    return true;
+  }
+  e.chargeCd-=dt;
+  if(e.chargeCd<=0){e.chargeCd=cfg.cd;e.telegraphT=cfg.tele;AUDIO.tone(90,.5,'square',.05,40);}
+  return false;
+}
+/* rajada radial (helper) */
+function mbBurst(e,cnt,spd,color,dmgMul){
+  const off=rand(0,TAU);
+  for(let i=0;i<cnt;i++){
+    const a=off+i*TAU/cnt;
+    projectiles.push({x:e.x+Math.cos(a)*(e.r+6),y:e.y+Math.sin(a)*(e.r+6),
+      vx:Math.cos(a)*spd,vy:Math.sin(a)*spd,r:6,dmg:e.dmg*(dmgMul||.42),life:3.4,
+      type:'eorb',team:'enemy',color:color||'#ffb347',aoe:0});
+  }
+  spawnRing(e.x,e.y,color||'#ffb347',e.r,e.r+70,.4);
+  AUDIO.tone(rand(300,360),.16,'square',.035,-120);
+}
+/* escolta (helper) — teto global preservado */
+function mbSummon(e,type,n,rr,label){
+  if(enemies.length>=ENEMY_BUDGET)return 0;
+  let made=0;
+  for(let i=0;i<n;i++){
+    if(enemies.length>=ENEMY_BUDGET)break;
+    const a=rand(0,TAU);
+    const sx=clamp(e.x+Math.cos(a)*rr,30,ARENA.w-30),sy=clamp(e.y+Math.sin(a)*rr,30,ARENA.h-30);
+    const c=spawnEnemy(type,sx,sy,Math.max(1,wave));c.spawnT=.5;c.mbChild=e.mb.id;made++;
+    spawnRing(sx,sy,e.color,6,66,.5);
+  }
+  if(made&&label)toast(e.mb.nm+' '+label);
+  return made;
+}
+function mbChildren(e){let n=0;for(const x of enemies)if(!x.dead&&x.mbChild===e.mb.id)n++;return n;}
+
+/* ---------------- ARAUTO: ESCALADA (presságios) ----------------
+   Cria marcas de ruptura na posição do jogador; detonam após 1,5 s.
+   A CADA ciclo o número de marcas cresce (escalada: 2→3→4… teto 5 na
+   fase 1, 7 na fase 2) e o intervalo encurta. Matar rápido = menos
+   marcas. Mantém investida (identidade de presença) e rajada. */
+function updateHerald(e,dt,p){
+  const ms=e.ms;
+  if(!mbCharge(e,p,dt,{speed:e.phase===2?1180:980,dur:e.phase===2?.55:.45,cd:e.phase===2?3.4:5.0,tele:e.phase===2?.62:.85,track:3.4,dmgMul:1.35}))
+    mbApproach(e,p,dt,1);
+  e.burstCd-=dt;
+  if(e.burstCd<=0){e.burstCd=e.phase===2?2.6:3.6;mbBurst(e,e.phase===2?12:8,300,'#ffb347');}
+  ms.omenCd-=dt;
+  if(ms.omenCd<=0){
+    ms.escal=Math.min(e.phase===2?7:5,(ms.escal|0)+1);
+    ms.omenCd=Math.max(e.phase===2?3.2:4.5,(e.phase===2?6:8)-ms.escal*.5);
+    for(let i=0;i<ms.escal;i++){
+      const ang=rand(0,TAU),rr=i===0?0:rand(40,110);
+      mbHazardAdd(e,{kind:'omen',x:clamp(p.x+Math.cos(ang)*rr,40,ARENA.w-40),y:clamp(p.y+Math.sin(ang)*rr,40,ARENA.h-40),r:90,life:1.5,fuse:1.5,
+        tick:(h,dt,p,e)=>{if(h.life<=0){spawnRing(h.x,h.y,'#ffd166',6,h.r,.5);spawnShards(h.x,h.y,'#ffd166',6,4);
+          if(mbPlayerIn(h,p)){damagePlayer(e.dmg*.45);applyStatus(p,'chill',1.8,.25);}AUDIO.tone(280,.15,'square',.025,-80);}}});
+    }
+    AUDIO.tone(440,.2,'sine',.03,-120);
+  }
+  e.summonCd-=dt;
+  if(e.summonCd<=0){e.summonCd=e.phase===2?9:12;mbSummon(e,'chaser',e.phase===2?3:2,e.r+52,'CONVOCOU ESCOLTA');}
+}
+/* ---------------- FORNALHA: RASTRO DE FOGO (burn real) ----------------
+   Ao se mover deixa zonas de fogo (r 34, 5 s; cap 22) que queimam
+   (dano/s + status burn). Nova incendiária a cada 6,5 s (R 260) que
+   ACENDE 6 zonas em anel. Fase 2 (sobreaquecimento): zonas duram 7 s,
+   r 40, e a Fornalha corre (spd ×1.25) enquanto o núcleo está quente. */
+/* zona de fogo: 0,25 s de "acendendo" sem dano; depois 1 tick a cada 0,6 s
+   (dmg×0,16 + burn). Zonas sobrepostas NÃO somam: um único tick global. */
+function mbFireTick(h,dt,p,e){
+  if(h.age<.25)return;
+  if(!mbPlayerIn(h,p))return;
+  e.ms.fireIn=true;                 // consumido UMA vez por frame em updateFurnace (zonas sobrepostas não somam)
+}
+function updateFurnace(e,dt,p){
+  const ms=e.ms,ph2=e.phase===2;
+  /* tick de queimadura do frame ANTERIOR (hazards rodam depois do updater) */
+  ms.fireHitT=(ms.fireHitT||0)-dt;
+  if(ms.fireIn&&ms.fireHitT<=0){ms.fireHitT=.6;damagePlayer(e.dmg*.16);applyStatus(p,'burn',2,.08,e);}
+  ms.fireIn=false;
+  mbApproach(e,p,dt,ph2&&ms.hot>0?1.25:1);
+  if(ms.hot>0)ms.hot-=dt;
+  ms.trailT-=dt;
+  const moved=Math.hypot(e.vx,e.vy)>18;
+  if(ms.trailT<=0&&moved){
+    ms.trailT=ph2?.30:.36;
+    mbHazardAdd(e,{kind:'fire',x:e.x,y:e.y,r:ph2?40:34,life:ph2?7:5,max:ph2?7:5,
+      tick:mbFireTick});
+  }
+  ms.novaCd-=dt;
+  if(ms.novaCd<=0){
+    ms.novaCd=ph2?5.5:6.5;ms.hot=3;
+    const R=260;
+    spawnRing(e.x,e.y,'#ff7a2f',14,R,.8);spawnShards(e.x,e.y,'#ff7a2f',16,6);
+    if(dist2(p.x,p.y,e.x,e.y)<R*R)damagePlayer(e.dmg*.8);
+    for(let i=0;i<6;i++){const a=i/6*TAU+rand(0,.4);const d=R*.62;
+      mbHazardAdd(e,{kind:'fire',x:clamp(e.x+Math.cos(a)*d,30,ARENA.w-30),y:clamp(e.y+Math.sin(a)*d,30,ARENA.h-30),r:ph2?44:38,life:ph2?6:4.5,max:ph2?6:4.5,
+        tick:mbFireTick});}
+    shake=Math.max(shake,12);AUDIO.boom();
+  }
+}
+/* ---------------- SENTINELA: POSTURAS ----------------
+   Ciclo GUARDA (4 s: reflete projéteis do jogador, −75 % dano recebido,
+   placas fechadas) → ABERTURA (2,5 s: dano recebido ×1,30, placas abertas
+   — a janela) → NEUTRA (3,5 s). Fase 2: guarda 3 s / abertura 1,8 s / neutra
+   2 s e, ao abrir, dispara um leque de 5 orbes na direção do jogador.
+   Sem investida, sem rajada radial. */
+function updateSentinel(e,dt,p){
+  const ms=e.ms,ph2=e.phase===2;
+  mbApproach(e,p,dt,ms.stance==='guard'?.55:.9);
+  ms.stanceT-=dt;
+  if(ms.stanceT<=0){
+    if(ms.stance==='neutral'){ms.stance='guard';ms.stanceT=ph2?3:4;spawnRing(e.x,e.y,'#8ff6ff',e.r,e.r+80,.6);AUDIO.tone(520,.3,'sine',.04,140);}
+    else if(ms.stance==='guard'){ms.stance='open';ms.stanceT=ph2?1.8:2.5;spawnRing(e.x,e.y,'#ff5c7a',e.r,e.r+40,.4);AUDIO.tone(700,.2,'square',.03,-200);
+      if(ph2){const base=Math.atan2(p.y-e.y,p.x-e.x);for(let i=-2;i<=2;i++){const a=base+i*.22;
+        projectiles.push({x:e.x+Math.cos(a)*(e.r+6),y:e.y+Math.sin(a)*(e.r+6),vx:Math.cos(a)*340,vy:Math.sin(a)*340,r:6,dmg:e.dmg*.4,life:3,type:'eorb',team:'enemy',color:'#8ff6ff',aoe:0});}}}
+    else{ms.stance='neutral';ms.stanceT=ph2?2:3.5;}
+  }
+  /* estados legados lidos pelo renderer/overlays continuam coerentes */
+  e.shieldUpState=ms.stance==='guard'?'active':(ms.stance==='open'?'vulnerable':null);
+  e.reflectState=ms.stance==='guard'?'active':null;
+  /* dano recebido: damageEnemy já aplica ×0.25 em 'active' e ×1.30 em 'vulnerable' */
+  if(ms.stance==='guard'){
+    for(let i=projectiles.length-1;i>=0;i--){
+      const pr=projectiles[i];
+      if(pr.team!=='enemy'&&dist2(pr.x,pr.y,e.x,e.y)<(e.r+50)*(e.r+50)){
+        pr.vx*=-1.1;pr.vy*=-1.1;pr.team='enemy';pr.color='#8ff6ff';pr.dmg=e.dmg*.3;pr.owner=e;
+        spawnParticles(pr.x,pr.y,'#8ff6ff',3,120,.3,2);
+      }
+    }
+  }
+}
+/* ---------------- MATRIZ: PROLIFERAÇÃO + REGEN CONDICIONADA ----------------
+   Spawn: 4 crias a cada 3,6 s (fase 2: 5 a cada 3,0 s), até MB_BROOD_CAP
+   (12) vivas e dentro do teto global. Regen: 2,2 %/s da vida máx. por…
+   só ENQUANTO ≥3 crias estiverem vivas (fase 2: ≥2, 3 %/s); com menos
+   crias não regenera. Fase 2: rajada de 8 orbes lentos após cada spawn.
+   Counterplay: matar as crias corta a regen. Sem investida. */
+function updateBrood(e,dt,p){
+  const ms=e.ms,ph2=e.phase===2;
+  mbApproach(e,p,dt,.85,200);
+  ms.spawnCd-=dt;
+  const kids=mbChildren(e);
+  if(ms.spawnCd<=0){
+    ms.spawnCd=ph2?3.0:3.6;
+    const want=Math.min(ph2?5:4,MB_BROOD_CAP-kids);
+    if(want>0&&enemies.length<ENEMY_BUDGET){mbSummon(e,'swarm',want,e.r+40,null);spawnRing(e.x,e.y,'#39d98a',8,90,.5);AUDIO.tone(340,.25,'sawtooth',.035,-120);}
+    /* esporos: pressão própria da Matriz mesmo com o enxame no teto */
+    if(ph2)mbBurst(e,8,220,'#39d98a',.35);
+    else{const base=Math.atan2(p.y-e.y,p.x-e.x);for(let i=-1;i<=1;i++){const a=base+i*.35;
+      projectiles.push({x:e.x+Math.cos(a)*(e.r+6),y:e.y+Math.sin(a)*(e.r+6),vx:Math.cos(a)*200,vy:Math.sin(a)*200,r:7,dmg:e.dmg*.35,life:3.2,type:'eorb',team:'enemy',color:'#39d98a',aoe:0});}}
+  }
+  const need=ph2?2:3,rate=ph2?.030:.022;
+  ms.regenOn=kids>=need;
+  if(ms.regenOn&&e.hp<e.maxHp){e.hp=Math.min(e.maxHp,e.hp+e.maxHp*rate*dt);ms.regenT=(ms.regenT||0)+dt;}
+}
+/* ---------------- DUELISTA: SLASH / LUNGE ----------------
+   Blink para o flanco (2,6 s) → telegraph estreito (.42 s) → lunge curto
+   (.22 s a 1500 px/s) com hitbox de LÂMINA (segmento à frente, 70 px).
+   Fase 2: combo de até 3 lunges encadeados, cada um com telegraph (.30 s).
+   Nunca teleporta em cima do jogador (raio 70–130 ao redor). */
+function updateDuelist(e,dt,p){
+  const ms=e.ms,ph2=e.phase===2;
+  if(ms.slashT>0){
+    ms.slashT-=dt;
+    const sp=1500;
+    e.x=clamp(e.x+Math.cos(e.aim)*sp*dt,e.r,ARENA.w-e.r);e.y=clamp(e.y+Math.sin(e.aim)*sp*dt,e.r,ARENA.h-e.r);
+    /* lâmina: segmento do centro até r+70 na direção da mira */
+    const bx=e.x+Math.cos(e.aim)*(e.r+70),by=e.y+Math.sin(e.aim)*(e.r+70);
+    const t=Math.max(0,Math.min(1,((p.x-e.x)*(bx-e.x)+(p.y-e.y)*(by-e.y))/((bx-e.x)**2+(by-e.y)**2||1)));
+    const cx=e.x+(bx-e.x)*t,cy=e.y+(by-e.y)*t;
+    if(!ms.hit&&dist2(p.x,p.y,cx,cy)<(p.r+14)*(p.r+14)){ms.hit=true;damagePlayer(e.dmg*1.2);shake=Math.max(shake,9);}
+    if(ms.slashT<=0){
+      if(ms.combo>0){ms.combo--;e.telegraphT=.30;ms.hit=false;ms.chain=(ms.chain|0)+1;}
+      else e.skillCd=Math.max(e.skillCd,.9);   // respiro após o último golpe (janela de punição)
+    }
+    return;
+  }
+  if(e.telegraphT>0){
+    e.telegraphT-=dt;
+    const dx=p.x-e.x,dy=p.y-e.y;
+    /* 1º golpe: mira trava devagar (dá para ler); golpes do combo: giram
+       rápido para o jogador (o telegraph de .30 s continua visível) */
+    e.aim=angTo(e.aim,Math.atan2(dy,dx),(ms.chain>0?14:5)*dt);
+    if(e.telegraphT<=0){
+      /* comprimento do lunge: não passa do jogador em mais de ~40 px */
+      const d=Math.hypot(dx,dy);ms.slashT=Math.min(.22,Math.max(.10,(d+40-(e.r+70))/1500));
+      ms.hit=false;spawnRing(e.x,e.y,e.color,8,100,.3);AUDIO.dash();}
+    return;
+  }
+  mbApproach(e,p,dt,1.1);
+  e.skillCd-=dt;
+  if(e.skillCd<=0){
+    e.skillCd=ph2?2.2:2.6;
+    const a=Math.atan2(p.y-e.y,p.x-e.x)+Math.PI+rand(-.9,.9);const rr=rand(70,130);
+    spawnParticles(e.x,e.y,e.color,18,300,.5,3.5);spawnRing(e.x,e.y,e.color,8,120,.5);
+    e.x=clamp(p.x+Math.cos(a)*rr,e.r,ARENA.w-e.r);e.y=clamp(p.y+Math.sin(a)*rr,e.r,ARENA.h-e.r);
+    spawnRing(e.x,e.y,e.color,6,110,.5);aberrPeak(.5);AUDIO.tone(1300,.14,'square',.035,-700);
+    e.telegraphT=.42;ms.combo=ph2?2:0;ms.chain=0;
+  }
+}
+/* ---------------- COLOSSO: SLAM telegrafado ----------------
+   Slam: marca a zona (R 190) 1,1 s antes; ao fim: dano + empurrão só
+   dentro do raio. Cd 5 s. Quake (R 300, mantém) só ao despertar da
+   dormência (4,5 s dormente / 7 s desperto). Investida pesada (lenta,
+   cd longo) mantida. Fase 2: slam duplo — 2º anel (R 300) 0,7 s depois. */
+function updateColossus(e,dt,p){
+  const ms=e.ms,ph2=e.phase===2;
+  ms.sleepT-=dt;
+  if(ms.sleep==='awake'&&ms.sleepT<=0){ms.sleep='dormant';ms.sleepT=4.5;e.sleepDmgRed=.60;spawnRing(e.x,e.y,'#ff2f5e',e.r,e.r+100,.7);shake=Math.max(shake,8);AUDIO.tone(90,.6,'sine',.06,-24);}
+  else if(ms.sleep==='dormant'&&ms.sleepT<=0){ms.sleep='awake';ms.sleepT=7;e.sleepDmgRed=0;
+    const R2=340;spawnRing(e.x,e.y,'#ff9d3c',20,R2,.9);shake=Math.max(shake,22);
+    if(dist2(p.x,p.y,e.x,e.y)<R2*R2){damagePlayer(e.dmg*.8);const a2=Math.atan2(p.y-e.y,p.x-e.x);p.vx+=Math.cos(a2)*600;p.vy+=Math.sin(a2)*600;}
+    AUDIO.boom();AUDIO.tone(70,.7,'sine',.09,-24);}
+  e.sleepPhase=ms.sleep;e.sleepT=ms.sleepT;
+  if(ms.sleep==='dormant'){e.vx*=.85;e.vy*=.85;return;}
+  if(!mbCharge(e,p,dt,{speed:820,dur:.5,cd:7,tele:1.0,track:2.2,dmgMul:1.5}))mbApproach(e,p,dt,1);
+  ms.slamCd-=dt;
+  if(ms.slamCd<=0){
+    ms.slamCd=ph2?4.2:5;
+    const mk=(delay,R)=>mbHazardAdd(e,{kind:'slam',x:e.x,y:e.y,r:R,life:1.1+delay,fuse:1.1+delay,delay,
+      tick:(h,dt,p,e)=>{h.x=e.x;h.y=e.y;if(h.life<=0){spawnRing(h.x,h.y,'#ff2f5e',18,h.r,.9);spawnShards(h.x,h.y,'#ff9d3c',14,6);shake=Math.max(shake,14);
+        if(dist2(p.x,p.y,h.x,h.y)<h.r*h.r){damagePlayer(e.dmg*.75);const a=Math.atan2(p.y-h.y,p.x-h.x);p.vx+=Math.cos(a)*520;p.vy+=Math.sin(a)*520;}
+        AUDIO.boom();AUDIO.tone(70,.6,'sine',.09,-24);}}});
+    mk(0,190);if(ph2)mk(.7,300);
+    AUDIO.tone(60,.9,'sine',.07,-10);
+  }
+}
+/* ---------------- ORÁCULO: PREVISÃO ----------------
+   Marca "zonas futuras" (R 80) na posição prevista do jogador (pos +
+   vel×0,9 s); ativam após 1,4 s com dano + lentidão. Cd 3,2 s, 1 zona
+   (fase 2: 2 zonas cruzadas, cd 2,6 s). Maldição (−30 % dano, 6 s, cd 9)
+   preservada. Rajada só como "eco" da previsão: 6 orbes ao ativar uma
+   zona na fase 2. Mantém distância; sem investida. */
+function updateOracle(e,dt,p){
+  const ms=e.ms,ph2=e.phase===2;
+  mbApproach(e,p,dt,.9,300);
+  ms.predCd-=dt;
+  if(ms.predCd<=0){
+    ms.predCd=ph2?2.6:3.2;
+    const mk=(ox,oy)=>mbHazardAdd(e,{kind:'pred',x:clamp(p.x+p.vx*.9+ox,40,ARENA.w-40),y:clamp(p.y+p.vy*.9+oy,40,ARENA.h-40),r:80,life:1.4,fuse:1.4,
+      tick:(h,dt,p,e)=>{if(h.life<=0){spawnRing(h.x,h.y,'#ffd166',8,h.r,.5);
+        if(mbPlayerIn(h,p)){damagePlayer(e.dmg*.55);applyStatus(p,'chill',1.5,.3);}
+        if(e.phase===2){const off=rand(0,TAU);for(let i=0;i<6;i++){const a=off+i*TAU/6;projectiles.push({x:h.x,y:h.y,vx:Math.cos(a)*260,vy:Math.sin(a)*260,r:5,dmg:e.dmg*.3,life:2.4,type:'eorb',team:'enemy',color:'#ffd166',aoe:0});}}
+        AUDIO.tone(520,.18,'sine',.03,-160);}}});
+    mk(0,0);if(ph2){const a=Math.atan2(p.vy,p.vx)+Math.PI/2;mk(Math.cos(a)*110,Math.sin(a)*110);}
+    AUDIO.tone(880,.12,'sine',.025,-300);
+  }
+  ms.curseCd-=dt;
+  if(ms.curseCd<=0){
+    ms.curseCd=9;p.curseT=6;
+    smMul(p,'damage','status.oracle_curse.damage','MALDIÇÃO DO ORÁCULO −30% DANO',.70);
+    banner('MALDIÇÃO DISSONANTE','SEU DANO CAIU 30% POR 6s');spawnRing(p.x,p.y,'#ffd166',10,160,.7);AUDIO.tone(200,.5,'sawtooth',.05,-80);
+  }
+}
+/* ---------------- SANGUESSUGA: SIPHON ----------------
+   Fio de dreno (alcance 420) por 2,6 s: 4 ticks/s de dano ao jogador e
+   cura de 2× o dano drenado; QUEBRA se o jogador sair do alcance (ou
+   ficar atrás de >420). Cd 4,5 s. Corrosão leve mantida. Fase 2: fio
+   busca a 520, dura 3,2 s, e cria uma zona de fome (R 110) sob o
+   jogador ao fim que reduz 20 % do dano dele por 3 s se ficar dentro.
+   SEM escolta (a identidade de invocar é da Matriz). */
+function updateLeech(e,dt,p){
+  const ms=e.ms,ph2=e.phase===2;
+  const range=ph2?520:420;
+  mbApproach(e,p,dt,ms.siphonT>0?.4:1.1,240);
+  if(ms.siphonT>0){
+    ms.siphonT-=dt;
+    const d=Math.hypot(p.x-e.x,p.y-e.y);
+    if(d>range||p.dashT>0){ms.siphonT=0;ms.broken=(ms.broken|0)+1;floatText(e.x,e.y-e.r-20,'DRENO ROMPIDO','#e6ffb8');}
+    else{ms.tickT-=dt;if(ms.tickT<=0){ms.tickT=.25;const dd=e.dmg*.11;damagePlayer(dd);e.hp=Math.min(e.maxHp,e.hp+dd*2);ms.drained=(ms.drained||0)+dd;}}
+    if(ms.siphonT<=0&&ph2){mbHazardAdd(e,{kind:'hunger',x:p.x,y:p.y,r:110,life:3,tick:(h,dt,p)=>{if(mbPlayerIn(h,p)){h.in=true;applyStatus(p,'corrode',1,.2);}else h.in=false;}});}
+  }else{
+    ms.siphonCd-=dt;
+    if(ms.siphonCd<=0&&dist2(p.x,p.y,e.x,e.y)<range*range){ms.siphonCd=4.5;ms.siphonT=ph2?3.2:2.6;ms.tickT=.25;AUDIO.tone(150,.5,'sine',.05,60);}
+  }
+  e.drainT=ms.siphonT;             // renderer/overlay legado
+  if(Math.random()<dt*.5)applyStatus(p,'corrode',3,.1,e);
+}
+const MB_UPDATERS={herald:updateHerald,furnace:updateFurnace,sentinel:updateSentinel,brood:updateBrood,
+  duelist:updateDuelist,colossus:updateColossus,oracle:updateOracle,leech:updateLeech};
+function mbInitState(e){
+  e.ms={escal:0,omenCd:6,trailT:0,novaCd:5,hot:0,stance:'neutral',stanceT:2.5,spawnCd:2.5,regenOn:false,regenT:0,
+    slashT:0,combo:0,hit:false,sleep:'awake',sleepT:7,slamCd:3.5,predCd:2.5,curseCd:6,siphonCd:3,siphonT:0,tickT:0,drained:0,broken:0};
+  e.hazards=[];
+  return e.ms;
+}
 function updateMiniBoss(e,dt){
   e.t+=dt;e.core+=dt*2.1;e.ring+=dt*.8;e.spinAng+=dt*1.7;
   if(e.flashT>0)e.flashT-=dt;
   if(e.touchCd>0)e.touchCd-=dt;
   if(e.slowT>0)e.slowT-=dt;
+  if(!e.ms)mbInitState(e);
   if(e.spawnT>0){e.spawnT-=dt;return;}
-  // fase 2 abaixo de 50%
+  // fase 2 abaixo de 50 % — sinal comum; a mudança de comportamento é de cada updater
   if(e.phase===1&&e.hp<=e.maxHp*.5){
     e.phase=2;e.chargeCd=Math.min(e.chargeCd,1.4);
-    banner('ARAUTO ENFURECIDO','BLINDAGEM COMPROMETIDA — ELE ACELERA');
+    const V2=minibossVisual(e.mb&&e.mb.id);
+    banner(MINIBOSS_PHASE2_TITLE[e.mb&&e.mb.id]||'FASE 2','BLINDAGEM COMPROMETIDA — O PADRÃO MUDA');
     shake=Math.max(shake,14);aberrPeak(.8);
-    spawnRing(e.x,e.y,'#ff9d3c',16,340,.9);
-    spawnShards(e.x,e.y,'#ff9d3c',20,7);
+    spawnRing(e.x,e.y,V2.primary,16,340,.9);
+    spawnShards(e.x,e.y,V2.accent,20,7);
     AUDIO.bossPhase();
   }
   const p=player;
-  const dx=p.x-e.x,dy=p.y-e.y,d=Math.hypot(dx,dy)||1;
-  const slow=e.slowT>0?.5:1;
-
-  /* ---- INVESTIDA TELEGRAFADA ---- */
-  if(e.dashT>0){
-    e.dashT-=dt;
-    const sp=(e.phase===2?1180:980)*slow;
-    e.x=clamp(e.x+e.dashDx*sp*dt,e.r,ARENA.w-e.r);
-    e.y=clamp(e.y+e.dashDy*sp*dt,e.r,ARENA.h-e.r);
-    if(Math.random()<.7)spawnParticles(e.x,e.y,'#ff9d3c',2,150,.3,4);
-    // dano de impacto durante a investida
-    if(d<e.r+p.r+6&&e.touchCd<=0){
-      e.touchCd=.6;damagePlayer(e.dmg*1.35);shake=Math.max(shake,11);
-    }
-  }else if(e.telegraphT>0){
-    e.telegraphT-=dt;
-    e.aim=angTo(e.aim,Math.atan2(dy,dx),3.4*dt);   // mira travando no alvo
-    if(e.telegraphT<=0){
-      e.dashT=e.phase===2?.55:.45;
-      e.dashDx=Math.cos(e.aim);e.dashDy=Math.sin(e.aim);
-      spawnRing(e.x,e.y,'#ff9d3c',10,120,.4);
-      AUDIO.dash();AUDIO.tone(150,.3,'sawtooth',.06,-60);
-    }
-  }else{
-    e.chargeCd-=dt;
-    e.aim=angTo(e.aim,Math.atan2(dy,dx),1.9*dt);
-    // aproximação constante e pesada
-    const spd=e.spd*slow*mEff.enemySpd;
-    e.vx+=((dx/d)*spd-e.vx)*Math.min(1,2.6*dt);
-    e.vy+=((dy/d)*spd-e.vy)*Math.min(1,2.6*dt);
-    e.x=clamp(e.x+e.vx*dt,e.r,ARENA.w-e.r);
-    e.y=clamp(e.y+e.vy*dt,e.r,ARENA.h-e.r);
-    if(e.chargeCd<=0){
-      e.chargeCd=e.phase===2?3.0:4.6;
-      e.telegraphT=e.phase===2?.62:.85;
-      AUDIO.tone(90,.5,'square',.05,40);
-    }
-    if(d<e.r+p.r&&e.touchCd<=0){e.touchCd=.8;damagePlayer(e.dmg);}
+  const upd=MB_UPDATERS[e.mb&&e.mb.id]||updateHerald;
+  upd(e,dt,p);
+  mbHazardsTick(e,dt,p);
+}
+/* =====================================================================
+   PR13.5 · B5-A — IDENTIDADE VISUAL DOS MINI-CHEFES
+   ---------------------------------------------------------------------
+   Antes: um único renderer (octógono + placas retangulares + aríete +
+   núcleo) com a paleta do Arauto fixa para os 8. Agora cada mini-chefe
+   tem um perfil declarativo (MINIBOSS_VISUALS) + um renderer próprio.
+   REGRAS: o renderer é gameplay-pure (só lê e/ao ctx); nenhuma hitbox,
+   stat, timer ou mecânica muda; toda variação vem de runTime/e.t/e.core/
+   e.ring/e.spinAng/fase (determinística — sem Math.random no draw);
+   partículas só pelas funções com cap (spawnRing/Particles/Shards) e só
+   fora do draw (elas continuam no update, como antes).
+   ===================================================================== */
+const MINIBOSS_VISUALS={
+  herald  :{silhouette:'vertical-crowned', primary:'#ff9d3c',secondary:'#5c2a06',accent:'#ffd166',
+            feature:'crown',   secondaryFeature:'broken-halo',   scaleX:.86,scaleY:1.12,
+            telegraph:'radial-omen',  phaseVisual:'halo-shatter',  spawn:'omen-pulses',   symbol:'◈',
+            reading:'PRESENÇA · ANÚNCIO · PRESSÁGIO'},
+  furnace :{silhouette:'heavy-block',       primary:'#ff5c2f',secondary:'#3a1208',accent:'#ffb347',
+            feature:'vents',   secondaryFeature:'fissures',      scaleX:1.14,scaleY:.92,
+            telegraph:'heat-bloom',   phaseVisual:'core-overheat', spawn:'heat-shimmer',  symbol:'▣',
+            reading:'CALOR · PRESSÃO · INSTABILIDADE'},
+  sentinel:{silhouette:'plated-symmetric',  primary:'#8ff6ff',secondary:'#123a44',accent:'#e8ffff',
+            feature:'plates',  secondaryFeature:'containment-lines',scaleX:1,scaleY:1,
+            telegraph:'lock-line',    phaseVisual:'plates-open',   spawn:'lock-in',       symbol:'⬢',
+            reading:'DEFESA · CONTROLE · BLOQUEIO'},
+  brood   :{silhouette:'clustered-mass',    primary:'#39d98a',secondary:'#0e3d26',accent:'#bfffdc',
+            feature:'satellites',secondaryFeature:'pods',         scaleX:1.06,scaleY:1.06,
+            telegraph:'pod-swell',    phaseVisual:'satellites-accelerate',spawn:'pods-hatch',symbol:'⁂',
+            reading:'ENXAME · REPRODUÇÃO · MULTIPLICAÇÃO'},
+  duelist :{silhouette:'thin-blade',        primary:'#ff3d68',secondary:'#3a0a16',accent:'#ffc2d1',
+            feature:'blades',  secondaryFeature:'afterimage',     scaleX:1.35,scaleY:.55,
+            telegraph:'narrow-lunge', phaseVisual:'blades-ignite', spawn:'blink-in',      symbol:'⟋',
+            reading:'PRECISÃO · VELOCIDADE · DUELO'},
+  colossus:{silhouette:'massive-rings',     primary:'#ff2f5e',secondary:'#2a0b14',accent:'#ff9d3c',
+            feature:'heavy-rings',secondaryFeature:'thick-plates',scaleX:1.1,scaleY:1.1,
+            telegraph:'ground-crack', phaseVisual:'stress-fractures',spawn:'ground-rise', symbol:'◍',
+            reading:'MASSA · PESO · IMPACTO'},
+  oracle  :{silhouette:'eye-orbits',        primary:'#ffd166',secondary:'#3d2e05',accent:'#fff1b8',
+            feature:'eye',     secondaryFeature:'concentric-rings',scaleX:1,scaleY:1,
+            telegraph:'prophecy-arc', phaseVisual:'rings-multiply',spawn:'eye-open',      symbol:'◉',
+            reading:'PREVISÃO · MALDIÇÃO · TEMPORALIDADE'},
+  leech   :{silhouette:'asymmetric-tendrils',primary:'#a8ff3d',secondary:'#1f3a06',accent:'#e6ffb8',
+            feature:'tendrils',secondaryFeature:'suction-core',   scaleX:.95,scaleY:1.05,
+            telegraph:'siphon-thread',phaseVisual:'pulse-intensify',spawn:'unfurl',       symbol:'≈',
+            reading:'DRENO · FOME · ABSORÇÃO'}
+};
+function minibossVisual(id){return MINIBOSS_VISUALS[id]||MINIBOSS_VISUALS.herald;}
+const MINIBOSS_PHASE2_TITLE={herald:'O HALO SE ROMPE',furnace:'NÚCLEO SOBREAQUECIDO',sentinel:'PLACAS ABERTAS',
+  brood:'A MATRIZ ACELERA',duelist:'LÂMINAS ACESAS',colossus:'FRATURAS DE STRESS',oracle:'OS ANÉIS SE MULTIPLICAM',leech:'A FOME CRESCE'};
+/* helpers puros (só desenham) */
+function mbPoly(n,R,rot,sq){
+  ctx.beginPath();
+  for(let i=0;i<n;i++){const an=rot+i/n*TAU;const rr=sq&&(i%2)?R*sq:R;
+    ctx[i?'lineTo':'moveTo'](Math.cos(an)*rr,Math.sin(an)*rr);}
+  ctx.closePath();
+}
+function mbCore(R,color,pl,alpha){
+  const gs=glowSprite(color),gr=R*(.5+pl*.22);
+  ctx.globalCompositeOperation='lighter';ctx.globalAlpha=.75*alpha;
+  ctx.drawImage(gs,-gr,-gr,gr*2,gr*2);
+  ctx.globalCompositeOperation='source-over';ctx.globalAlpha=alpha;
+}
+/* base compartilhada: sombra (elíptica pela silhueta) + aro de surgimento
+   com a assinatura de cada um. Devolve o perfil visual. */
+function drawMinibossBase(e){
+  const V=minibossVisual(e.mb&&e.mb.id),R=e.r,intro=e.spawnT>0?1-e.spawnT/1.6:1;
+  ctx.save();ctx.globalAlpha=.34*intro;ctx.fillStyle='#000';
+  ctx.beginPath();ctx.ellipse(e.x,e.y+R*.4,R*.95*V.scaleX,R*.5*V.scaleY,0,0,TAU);ctx.fill();ctx.restore();
+  if(e.spawnT>0)drawMinibossSpawn(e,V);
+  return V;
+}
+function drawMinibossSpawn(e,V){
+  const k=e.spawnT/1.6,R=e.r;   // 1 → 0
+  ctx.save();ctx.globalAlpha=k;ctx.strokeStyle=V.primary;ctx.lineWidth=3;
+  switch(V.spawn){
+    case 'omen-pulses':   // 3 pulsos concêntricos defasados
+      for(let i=0;i<3;i++){const kk=((1-k)+i*.33)%1;ctx.globalAlpha=k*(1-kk);
+        ctx.beginPath();ctx.arc(e.x,e.y,R+220*kk,0,TAU);ctx.stroke();}break;
+    case 'heat-shimmer':  // quadrados girando, encolhendo
+      ctx.translate(e.x,e.y);ctx.rotate(k*2);
+      for(let i=0;i<3;i++){const s=(R+40+i*36)*(.5+k*.8);ctx.globalAlpha=k*(.7-i*.2);ctx.strokeRect(-s,-s,s*2,s*2);}break;
+    case 'lock-in':       // 4 colchetes fechando sobre o corpo
+      ctx.translate(e.x,e.y);
+      for(let i=0;i<4;i++){ctx.save();ctx.rotate(i*Math.PI/2);const d=R+20+160*k;
+        ctx.beginPath();ctx.moveTo(d,-d*.35);ctx.lineTo(d,d*.35);ctx.stroke();ctx.restore();}break;
+    case 'pods-hatch':    // pequenos círculos convergindo para o centro
+      for(let i=0;i<6;i++){const a=i/6*TAU,d=(R+40)+180*k;ctx.beginPath();ctx.arc(e.x+Math.cos(a)*d,e.y+Math.sin(a)*d,8,0,TAU);ctx.stroke();}break;
+    case 'blink-in':      // linha horizontal que se abre
+      ctx.lineWidth=2+4*k;ctx.beginPath();ctx.moveTo(e.x-R*2.2*(1-k*.5),e.y);ctx.lineTo(e.x+R*2.2*(1-k*.5),e.y);ctx.stroke();break;
+    case 'ground-rise':   // aro achatado no chão
+      ctx.beginPath();ctx.ellipse(e.x,e.y+R*.4,(R+200*k)*1.1,(R+200*k)*.45,0,0,TAU);ctx.stroke();break;
+    case 'eye-open':      // pálpebra abrindo
+      ctx.translate(e.x,e.y);ctx.beginPath();const h=(R+60)*(1-k);
+      ctx.moveTo(-R-60,0);ctx.quadraticCurveTo(0,-h,R+60,0);ctx.quadraticCurveTo(0,h,-R-60,0);ctx.stroke();break;
+    case 'unfurl':        // fios saindo do centro
+      ctx.translate(e.x,e.y);
+      for(let i=0;i<5;i++){const a=i*1.26+.4;ctx.beginPath();ctx.moveTo(0,0);
+        ctx.quadraticCurveTo(Math.cos(a+.6)*R,Math.sin(a+.6)*R,Math.cos(a)*(R+160*(1-k)),Math.sin(a)*(R+160*(1-k)));ctx.stroke();}break;
+    default:ctx.beginPath();ctx.arc(e.x,e.y,R+200*k,0,TAU);ctx.stroke();
   }
-
-  /* ---- RAJADA RADIAL ---- */
-  e.burstCd-=dt;
-  if(e.burstCd<=0){
-    e.burstCd=e.phase===2?2.0:3.2;
-    const cnt=e.phase===2?14:9;
-    const off=rand(0,TAU);
-    for(let i=0;i<cnt;i++){
-      const a=off+i*TAU/cnt;
-      projectiles.push({x:e.x+Math.cos(a)*(e.r+6),y:e.y+Math.sin(a)*(e.r+6),
-        vx:Math.cos(a)*300,vy:Math.sin(a)*300,r:6,dmg:e.dmg*.42,life:3.4,
-        type:'eorb',team:'enemy',color:'#ffb347',aoe:0});
-    }
-    spawnRing(e.x,e.y,'#ffb347',e.r,e.r+70,.4);
-    AUDIO.tone(rand(300,360),.16,'square',.035,-120);
+  ctx.restore();
+}
+/* telegrafia da investida — geometria FIEL ao ataque (linha reta na
+   direção e.aim, dano por contato durante o dash); só o estilo muda. */
+function drawMinibossDashTelegraph(e,V){
+  const k=1-e.telegraphT/(e.phase===2?.62:.85);
+  ctx.save();ctx.globalAlpha=.30+k*.45;ctx.strokeStyle=V.accent;
+  const L=760;
+  switch(V.telegraph){
+    case 'narrow-lunge':{ // Duelista: alcance REAL do lunge (deslocamento .22s×1500 + lâmina r+70)
+      const LL=1500*.22+e.r+70;
+      ctx.lineWidth=1.5+k*1.5;
+      for(const off of [-6,0,6]){ctx.beginPath();ctx.moveTo(e.x+Math.cos(e.aim+Math.PI/2)*off,e.y+Math.sin(e.aim+Math.PI/2)*off);
+        ctx.lineTo(e.x+Math.cos(e.aim)*LL+Math.cos(e.aim+Math.PI/2)*off,e.y+Math.sin(e.aim)*LL+Math.sin(e.aim+Math.PI/2)*off);ctx.stroke();}
+      ctx.globalAlpha=.5+k*.5;ctx.lineWidth=3;ctx.beginPath();ctx.arc(e.x+Math.cos(e.aim)*LL,e.y+Math.sin(e.aim)*LL,8,0,TAU);ctx.stroke();break;}
+    case 'lock-line':     // Sentinela: linha sólida + marcadores de trava
+      ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(e.x,e.y);ctx.lineTo(e.x+Math.cos(e.aim)*L,e.y+Math.sin(e.aim)*L);ctx.stroke();
+      for(let i=1;i<=3;i++){const d=e.r+i*90*k;ctx.beginPath();ctx.arc(e.x+Math.cos(e.aim)*d,e.y+Math.sin(e.aim)*d,6,0,TAU);ctx.stroke();}break;
+    case 'ground-crack':  // Colosso: faixa larga e pesada
+      ctx.lineWidth=8+k*10;ctx.globalAlpha=.18+k*.3;ctx.beginPath();ctx.moveTo(e.x,e.y);ctx.lineTo(e.x+Math.cos(e.aim)*L,e.y+Math.sin(e.aim)*L);ctx.stroke();break;
+    case 'radial-omen':   // Arauto: linha tracejada + sinais radiais no corpo
+      ctx.lineWidth=3+k*4;ctx.setLineDash([16,12]);ctx.lineDashOffset=-runTime*40;
+      ctx.beginPath();ctx.moveTo(e.x,e.y);ctx.lineTo(e.x+Math.cos(e.aim)*L,e.y+Math.sin(e.aim)*L);ctx.stroke();ctx.setLineDash([]);
+      for(let i=0;i<8;i++){const a=i/8*TAU;ctx.beginPath();ctx.moveTo(e.x+Math.cos(a)*(e.r+20),e.y+Math.sin(a)*(e.r+20));ctx.lineTo(e.x+Math.cos(a)*(e.r+20+18*k),e.y+Math.sin(a)*(e.r+20+18*k));ctx.stroke();}break;
+    case 'heat-bloom':    // Fornalha: linha grossa quente com brilho crescente
+      ctx.lineWidth=5+k*6;ctx.globalAlpha=.25+k*.4;ctx.beginPath();ctx.moveTo(e.x,e.y);ctx.lineTo(e.x+Math.cos(e.aim)*L,e.y+Math.sin(e.aim)*L);ctx.stroke();break;
+    case 'prophecy-arc':  // Oráculo: linha + pequenos arcos "previstos" ao longo
+      ctx.lineWidth=2;ctx.setLineDash([4,10]);ctx.beginPath();ctx.moveTo(e.x,e.y);ctx.lineTo(e.x+Math.cos(e.aim)*L,e.y+Math.sin(e.aim)*L);ctx.stroke();ctx.setLineDash([]);
+      for(let i=1;i<=4;i++){const d=e.r+i*120*k;ctx.beginPath();ctx.arc(e.x+Math.cos(e.aim)*d,e.y+Math.sin(e.aim)*d,14,e.aim-1,e.aim+1);ctx.stroke();}break;
+    case 'siphon-thread': // Sanguessuga: fio ondulado
+      ctx.lineWidth=2.5;ctx.beginPath();
+      for(let i=0;i<=24;i++){const d=i/24*L,w=Math.sin(i*.9+runTime*10)*8*(1-i/24);
+        const x=e.x+Math.cos(e.aim)*d+Math.cos(e.aim+Math.PI/2)*w,y=e.y+Math.sin(e.aim)*d+Math.sin(e.aim+Math.PI/2)*w;ctx[i?'lineTo':'moveTo'](x,y);}
+      ctx.stroke();break;
+    case 'pod-swell':     // Matriz: linha pontilhada grossa
+    default:
+      ctx.lineWidth=3+k*3;ctx.setLineDash([6,10]);ctx.lineDashOffset=-runTime*30;ctx.beginPath();ctx.moveTo(e.x,e.y);ctx.lineTo(e.x+Math.cos(e.aim)*L,e.y+Math.sin(e.aim)*L);ctx.stroke();ctx.setLineDash([]);
   }
-
-  /* ---- ESCOLTA ---- */
-  e.summonCd-=dt;
-  if(e.summonCd<=0&&enemies.length<ENEMY_BUDGET&&(e.sk.summon||e.mb.id==='herald')){
-    e.summonCd=e.phase===2?7:11;
-    for(let i=0;i<(e.phase===2?3:2);i++){
-      const a=rand(0,TAU),rr=e.r+52;
-      const sx=clamp(e.x+Math.cos(a)*rr,30,ARENA.w-30);
-      const sy=clamp(e.y+Math.sin(a)*rr,30,ARENA.h-30);
-      const c=spawnEnemy('chaser',sx,sy,Math.max(1,wave));
-      c.spawnT=.5;
-      spawnRing(sx,sy,e.color,6,66,.5);
-    }
-    toast(e.mb.nm+' CONVOCOU ESCOLTA');
-    AUDIO.tone(220,.35,'sawtooth',.04,-120);
+  ctx.restore();
+}
+/* sinal COMUM de escalada (fase 2): aro giratório fino + a assinatura
+   individual desenhada dentro de cada renderer. */
+function drawMinibossPhaseRing(e,V){
+  if(e.phase!==2)return;
+  ctx.strokeStyle=V.accent;ctx.globalAlpha=.75;ctx.lineWidth=2;
+  ctx.beginPath();ctx.arc(0,0,e.r+30,e.ring,e.ring+4.2);ctx.stroke();ctx.globalAlpha=1;
+}
+/* ---------------- renderers individuais (em espaço local) ---------------- */
+function drawHerald(e,V,R,flash,pl){
+  const P=flash?'#fff':V.primary,S=flash?'#fff':V.secondary,A=flash?'#fff':V.accent;
+  ctx.save();ctx.scale(V.scaleX,V.scaleY);
+  // halo incompleto — a BLINDAGEM é o halo: cada placa perdida apaga um trecho (fase 2: fragmentos)
+  ctx.strokeStyle=A;ctx.lineWidth=5;ctx.globalAlpha=.85;
+  const segs=e.plateMax||6,span=TAU*.7/segs;
+  for(let i=0;i<segs;i++){if(i>=e.plates)continue;const a=-Math.PI*.85+e.ring*.3+i*span*(e.phase===2?1.25:1);ctx.beginPath();ctx.arc(0,0,R+22,a,a+span*(e.phase===2?.55:.9));ctx.stroke();}
+  ctx.globalAlpha=1;
+  // corpo cerimonial vertical (hexágono alongado)
+  ctx.fillStyle=linGrad2('mb.herald|'+(flash?1:0),0,-R,0,R,P,S);ctx.strokeStyle=A;ctx.lineWidth=R*.09;
+  mbPoly(6,R,Math.PI/2);ctx.fill();ctx.stroke();
+  // coroa: 5 antenas no topo
+  ctx.strokeStyle=A;ctx.lineWidth=3;
+  for(let i=-2;i<=2;i++){const a=-Math.PI/2+i*.32,len=R*(i===0?.75:.5)+Math.sin(e.core*2+i)*3;
+    ctx.beginPath();ctx.moveTo(Math.cos(a)*R*.9,Math.sin(a)*R*.9);ctx.lineTo(Math.cos(a)*(R*.9+len),Math.sin(a)*(R*.9+len));ctx.stroke();}
+  // sinais radiais (pulsam antes da rajada — lê burstCd sem alterar)
+  const bk=e.burstCd<.9?1-e.burstCd/.9:0;
+  if(bk>0){ctx.globalAlpha=bk*.8;for(let i=0;i<9;i++){const a=i/9*TAU+e.spinAng*.5;ctx.beginPath();ctx.moveTo(Math.cos(a)*R*.55,Math.sin(a)*R*.55);ctx.lineTo(Math.cos(a)*(R*.55+10*bk),Math.sin(a)*(R*.55+10*bk));ctx.stroke();}ctx.globalAlpha=1;}
+  // núcleo: losango vertical (não o disco genérico)
+  mbCore(R*.9,V.accent,pl,1);ctx.fillStyle=flash?'#fff':'#ffe9a8';const cr=R*(.24+pl*.06);
+  ctx.beginPath();ctx.moveTo(0,-cr*1.5);ctx.lineTo(cr*.7,0);ctx.lineTo(0,cr*1.5);ctx.lineTo(-cr*.7,0);ctx.closePath();ctx.fill();
+  ctx.restore();
+}
+function drawFurnace(e,V,R,flash,pl){
+  const P=flash?'#fff':V.primary,S=flash?'#fff':V.secondary,A=flash?'#fff':V.accent;
+  const heat=.5+.5*Math.sin(e.core*1.4);const over=e.phase===2?1:0;
+  ctx.save();ctx.scale(V.scaleX,V.scaleY);
+  // bloco pesado (quadrado de cantos cortados)
+  ctx.fillStyle=linGrad2('mb.furnace|'+(flash?1:0)+over,-R,-R,R,R,P,S);ctx.strokeStyle=A;ctx.lineWidth=R*.11;
+  mbPoly(8,R*1.02,Math.PI/8,.88);ctx.fill();ctx.stroke();
+  // BLINDAGEM = chapas soldadas nos cantos do bloco (somem conforme e.plates cai)
+  ctx.fillStyle=flash?'#fff':'#5a2410';ctx.strokeStyle=A;ctx.lineWidth=2;
+  for(let i=0;i<(e.plateMax||7);i++){if(i>=e.plates)continue;ctx.save();ctx.rotate(i/(e.plateMax||7)*TAU+Math.PI/8);ctx.fillRect(R*.82,-R*.14,R*.22,R*.28);ctx.strokeRect(R*.82,-R*.14,R*.22,R*.28);ctx.restore();}
+  // vents: 4 fendas laterais que abrem com o calor
+  ctx.fillStyle=flash?'#fff':'#ffb347';
+  for(let i=0;i<4;i++){ctx.save();ctx.rotate(i*Math.PI/2);const w=3+heat*4+over*3;ctx.globalAlpha=.55+heat*.45;
+    ctx.fillRect(R*.55,-w/2,R*.5,w);ctx.restore();}
+  ctx.globalAlpha=1;
+  // fissuras internas (fixas — determinísticas)
+  ctx.strokeStyle=flash?'#fff':'#ffd166';ctx.lineWidth=1.5+over;ctx.globalAlpha=.5+heat*.5;
+  for(let i=0;i<5;i++){const a=i*1.257+.3;ctx.beginPath();ctx.moveTo(Math.cos(a)*R*.3,Math.sin(a)*R*.3);
+    ctx.lineTo(Math.cos(a+.35)*R*.6,Math.sin(a+.35)*R*.6);ctx.lineTo(Math.cos(a+.2)*R*.85,Math.sin(a+.2)*R*.85);ctx.stroke();}
+  ctx.globalAlpha=1;
+  // núcleo quente — expande com pressão da nova (skillCd) e sobreaquece na fase 2
+  const press=e.sk&&e.sk.nova&&e.skillCd<1.2?1-e.skillCd/1.2:0;
+  mbCore(R*(1+press*.35+over*.15),over?'#fff1b8':V.accent,pl,1);
+  ctx.fillStyle=flash?'#fff':(over?'#fff4d6':'#ffe0a8');const cq=R*(.30+pl*.08+press*.1);ctx.fillRect(-cq,-cq,cq*2,cq*2);   // núcleo QUADRADO (fornalha)
+  ctx.restore();
+}
+function drawSentinel(e,V,R,flash,pl){
+  const P=flash?'#fff':V.primary,S=flash?'#fff':V.secondary,A=flash?'#fff':V.accent;
+  const open=e.phase===2?1:0;   // fase 2: placas reposicionam (abrem)
+  const guard=e.shieldUpState==='active'?1:0;
+  // placas externas simétricas (8), postura fechada/aberta — substitui as placas retangulares genéricas
+  for(let i=0;i<e.plateMax;i++){
+    if(i>=e.plates)continue;   // blindagem destruída = placa some (mesmo dado de antes)
+    const a=i*TAU/e.plateMax+(open?e.spinAng*.4:0);
+    const d=R+12+open*14-guard*6;
+    ctx.save();ctx.rotate(a);ctx.translate(d,0);
+    ctx.fillStyle=flash?'#fff':S;ctx.strokeStyle=A;ctx.lineWidth=1.6;
+    ctx.beginPath();ctx.moveTo(-4,-R*.28);ctx.lineTo(8,-R*.18);ctx.lineTo(8,R*.18);ctx.lineTo(-4,R*.28);ctx.closePath();ctx.fill();ctx.stroke();
+    ctx.restore();
   }
-
-  /* ================= HABILIDADES DA VARIANTE ================= */
-  const SK=e.sk||{};
-  e.skillCd-=dt;
-  const pdx=p.x-e.x,pdy=p.y-e.y,pd=Math.hypot(pdx,pdy)||1;
-
-  // DUELISTA / BLINK: teleporte ofensivo
-  if(SK.blink&&e.skillCd<=0){
-    e.skillCd=2.6;
-    const a=Math.atan2(pdy,pdx)+Math.PI;
-    const rr=rand(70,130);
-    spawnParticles(e.x,e.y,e.color,18,300,.5,3.5);
-    spawnRing(e.x,e.y,e.color,8,120,.5);
-    e.x=clamp(p.x+Math.cos(a)*rr,e.r,ARENA.w-e.r);
-    e.y=clamp(p.y+Math.sin(a)*rr,e.r,ARENA.h-e.r);
-    spawnRing(e.x,e.y,e.color,6,110,.5);
-    aberrPeak(.5);
-    AUDIO.tone(1300,.14,'square',.035,-700);
-    if(SK.slash){e.telegraphT=.28;}
-  }
-
-  // FORNALHA: rastro incendiário
-  if(SK.trail){
-    e.trailT-=dt;
-    if(e.trailT<=0){
-      e.trailT=.28;
-      projectiles.push({x:e.x+rand(-14,14),y:e.y+rand(-14,14),vx:0,vy:0,
-        r:16,dmg:e.dmg*.30,life:4.5,type:'eorb',team:'enemy',
-        color:'#ff7a2f',aoe:0});
-      spawnParticles(e.x,e.y,'#ff7a2f',2,70,.5,3);
-    }
-  }
-  // FORNALHA: nova incendiária
-  if(SK.nova&&e.skillCd<=0){
-    e.skillCd=6.5;
-    const R=260;
-    spawnRing(e.x,e.y,'#ff7a2f',14,R,.8);
-    spawnShards(e.x,e.y,'#ff7a2f',16,6);
-    if(dist2(p.x,p.y,e.x,e.y)<R*R)damagePlayer(e.dmg*.8);
-    shake=Math.max(shake,12);AUDIO.boom();
-  }
-
-  // MATRIZ: gera enxames + regenera
-  if(SK.swarmSpawn&&e.skillCd<=0&&enemies.length<ENEMY_BUDGET){
-    e.skillCd=4.2;
-    for(let i=0;i<3;i++){
-      const a=rand(0,TAU),rr=e.r+40;
-      const c2=spawnEnemy('swarm',
-        clamp(e.x+Math.cos(a)*rr,30,ARENA.w-30),
-        clamp(e.y+Math.sin(a)*rr,30,ARENA.h-30),Math.max(1,wave));
-      c2.spawnT=.4;
-    }
-    spawnRing(e.x,e.y,'#39d98a',8,90,.5);
-    AUDIO.tone(340,.25,'sawtooth',.035,-120);
-  }
-  if(SK.heal&&e.hp<e.maxHp)e.hp=Math.min(e.maxHp,e.hp+e.maxHp*.012*dt);
-
-  // COLOSSO: tremor sísmico
-  if(SK.quake&&e.skillCd<=0){
-    e.skillCd=5.5;
-    const R=300;
-    spawnRing(e.x,e.y,'#ff2f5e',18,R,.9);
-    shake=Math.max(shake,20);
-    if(dist2(p.x,p.y,e.x,e.y)<R*R){
-      damagePlayer(e.dmg*.7);
-      const a=Math.atan2(p.y-e.y,p.x-e.x);
-      p.vx+=Math.cos(a)*520;p.vy+=Math.sin(a)*520;
-    }
-    AUDIO.boom();AUDIO.tone(70,.6,'sine',.09,-24);
-  }
-
-  // ORÁCULO: maldição que reduz dano
-  if(SK.curse&&e.skillCd<=0){
-    e.skillCd=9;
-    p.curseT=6;
-    /* PR 7: a redução de dano vira um MODIFICADOR TEMPORÁRIO do pipeline.
-       curseT continua sendo o estado/duração; remover o modificador quando
-       expira restaura o dano exatamente ao valor anterior (sem "desfazer"
-       multiplicação manual). */
-    smMul(p,'damage','status.oracle_curse.damage','MALDIÇÃO DO ORÁCULO −30% DANO',.70);
-    banner('MALDIÇÃO DISSONANTE','SEU DANO CAIU 30% POR 6s');
-    spawnRing(p.x,p.y,'#ffd166',10,160,.7);
-    AUDIO.tone(200,.5,'sawtooth',.05,-80);
-  }
-
-  // SANGUESUGA: dreno à distância
-  if(SK.drain&&e.skillCd<=0&&pd<520){
-    e.skillCd=5;
-    e.drainT=2.2;
-    AUDIO.tone(150,.5,'sine',.05,60);
-  }
-  if(e.drainT>0){
-    e.drainT-=dt;
-    if(Math.random()<dt*4){
-      damagePlayer(e.dmg*.13);
-      e.hp=Math.min(e.maxHp,e.hp+e.dmg*.2);
-    }
-  }
-  if(SK.corrode&&Math.random()<dt*.5)applyStatus(p,'corrode',3,.1,e);
-
-  /* ---- SENTINELA: escudo defensivo + reflexão ---- */
-  if(SK.shieldUp){
-    e.shieldUpCd=(e.shieldUpCd||8);
-    e.shieldUpCd-=dt;
-    if(e.shieldUpState==='active'){
-      e.shieldUpT-=dt;
-      if(e.shieldUpT<=0){e.shieldUpState='vulnerable';e.shieldUpT=2;}
-    }else if(e.shieldUpState==='vulnerable'){
-      e.shieldUpT-=dt;
-      if(e.shieldUpT<=0)e.shieldUpState=null;
-    }else if(e.shieldUpState==='telegraph'){
-      e.shieldUpT-=dt;
-      if(e.shieldUpT<=0){e.shieldUpState='active';e.shieldUpT=4;
-        spawnRing(e.x,e.y,'#8ff6ff',e.r,e.r+80,.6);
-        AUDIO.tone(520,.3,'sine',.04,140);
+  // linhas de contenção entre placas
+  ctx.strokeStyle=A;ctx.globalAlpha=.35+guard*.4;ctx.lineWidth=1;
+  mbPoly(e.plateMax,R+12+open*14,open?e.spinAng*.4:0);ctx.stroke();ctx.globalAlpha=1;
+  // corpo: hexágono simétrico
+  ctx.fillStyle=linGrad2('mb.sentinel|'+(flash?1:0),-R,-R,R,R,P,S);ctx.strokeStyle=A;ctx.lineWidth=R*.09;
+  mbPoly(6,R*.92,0);ctx.fill();ctx.stroke();
+  // escudo interno (losango) — visível sempre, mais forte quando ativo
+  ctx.strokeStyle=A;ctx.lineWidth=2;ctx.globalAlpha=.5+guard*.5;mbPoly(4,R*.55,0);ctx.stroke();ctx.globalAlpha=1;
+  mbCore(R*.9,V.primary,pl*.6,1);ctx.fillStyle=flash?'#fff':'#e8ffff';ctx.beginPath();ctx.arc(0,0,R*.2,0,TAU);ctx.fill();
+}
+function drawBrood(e,V,R,flash,pl){
+  const P=flash?'#fff':V.primary,S=flash?'#fff':V.secondary,A=flash?'#fff':V.accent;
+  const fast=e.phase===2?2.2:1;   // fase 2: satélites aceleram
+  const swell=e.sk&&e.sk.swarmSpawn&&e.skillCd<1?1-e.skillCd:0;   // bolsas incham antes do spawn
+  ctx.save();ctx.scale(V.scaleX,V.scaleY);
+  // massa segmentada: 5 lóbulos em volta do núcleo
+  ctx.fillStyle=linGrad2('mb.brood|'+(flash?1:0),-R,-R,R,R,P,S);ctx.strokeStyle=A;ctx.lineWidth=R*.07;
+  for(let i=0;i<5;i++){const a=i/5*TAU+e.ring*.2;const d=R*.45,rr=R*.55*(1+swell*.18);
+    ctx.beginPath();ctx.arc(Math.cos(a)*d,Math.sin(a)*d,rr,0,TAU);ctx.fill();ctx.stroke();}
+  // bolsas geométricas (pods) — 3 pequenos hexágonos
+  ctx.fillStyle=flash?'#fff':A;
+  for(let i=0;i<3;i++){ctx.save();const a=i/3*TAU+Math.PI/2;ctx.translate(Math.cos(a)*R*.7,Math.sin(a)*R*.7);
+    ctx.globalAlpha=.55+swell*.45;mbPoly(6,7+swell*5,0);ctx.fill();ctx.restore();}
+  ctx.globalAlpha=1;
+  // BLINDAGEM = membrana segmentada em volta da massa (trechos somem com as placas)
+  ctx.strokeStyle=A;ctx.lineWidth=4;ctx.globalAlpha=.6;
+  for(let i=0;i<(e.plateMax||5);i++){if(i>=e.plates)continue;const a=i/(e.plateMax||5)*TAU+e.ring*.2;ctx.beginPath();ctx.arc(0,0,R*1.02,a+.12,a+TAU/(e.plateMax||5)-.12);ctx.stroke();}
+  ctx.globalAlpha=1;
+  // satélites orbitando (6 nós) — exclusivo
+  ctx.fillStyle=flash?'#fff':P;ctx.strokeStyle=A;ctx.lineWidth=1.2;
+  for(let i=0;i<6;i++){const a=e.spinAng*fast+i/6*TAU;const d=R+18+Math.sin(e.core+i)*4;
+    ctx.beginPath();ctx.arc(Math.cos(a)*d,Math.sin(a)*d,5+(i%2)*2,0,TAU);ctx.fill();ctx.stroke();}
+  mbCore(R*.8,V.accent,pl,1);ctx.fillStyle=flash?'#fff':'#dfffe9';ctx.beginPath();ctx.arc(0,0,R*(.22+pl*.06+swell*.06),0,TAU);ctx.fill();
+  ctx.restore();
+}
+function drawDuelist(e,V,R,flash,pl){
+  const P=flash?'#fff':V.primary,S=flash?'#fff':V.secondary,A=flash?'#fff':V.accent;
+  const ign=e.phase===2?1:0;
+  // afterimage curto (determinístico: 2 cópias atrás, por velocidade)
+  const sp=Math.hypot(e.vx,e.vy);const trail=Math.min(1,sp/300)+(e.dashT>0?1:0);
+  for(let i=1;i<=2&&trail>0;i++){ctx.save();ctx.globalAlpha=.18*trail/i;ctx.translate(-i*10*trail,0);
+    ctx.fillStyle=P;ctx.beginPath();ctx.moveTo(R*1.5,0);ctx.lineTo(-R*.9,-R*.5);ctx.lineTo(-R*.9,R*.5);ctx.closePath();ctx.fill();ctx.restore();}
+  // corpo fino orientado (losango longo)
+  ctx.fillStyle=linGrad2('mb.duelist|'+(flash?1:0),-R,0,R,0,S,P);ctx.strokeStyle=A;ctx.lineWidth=R*.08;
+  ctx.beginPath();ctx.moveTo(R*1.5,0);ctx.lineTo(0,-R*.55);ctx.lineTo(-R*.9,0);ctx.lineTo(0,R*.55);ctx.closePath();ctx.fill();ctx.stroke();
+  // duas lâminas laterais — DECORATIVAS: dentro de ~1,0R e translúcidas (a hitbox real é a lâmina branca do lunge)
+  ctx.strokeStyle=ign?'#fff':A;ctx.lineWidth=2+ign*1.5;ctx.globalAlpha=.45;
+  for(const sgn of [-1,1]){ctx.beginPath();ctx.moveTo(-R*.3,sgn*R*.35);ctx.lineTo(R*.98,sgn*R*.7);ctx.stroke();
+    if(ign){ctx.globalAlpha=.25;ctx.lineWidth=6;ctx.beginPath();ctx.moveTo(-R*.3,sgn*R*.35);ctx.lineTo(R*.98,sgn*R*.7);ctx.stroke();ctx.globalAlpha=.45;ctx.lineWidth=3.5;}}
+  ctx.globalAlpha=1;
+  // BLINDAGEM = 3 chanfros na lâmina principal (somem com as placas)
+  ctx.strokeStyle=A;ctx.lineWidth=3;
+  for(let i=0;i<(e.plateMax||3);i++){if(i>=e.plates)continue;const x=-R*.5+i*R*.45;ctx.beginPath();ctx.moveTo(x,-R*.32);ctx.lineTo(x+R*.18,0);ctx.lineTo(x,R*.32);ctx.stroke();}
+  // linhas direcionais
+  ctx.strokeStyle=A;ctx.lineWidth=1;ctx.globalAlpha=.5;for(let i=0;i<3;i++){ctx.beginPath();ctx.moveTo(-R*.7+i*8,-R*.15+i*.15*R);ctx.lineTo(R*.6+i*10,-R*.15+i*.15*R);ctx.stroke();}
+  ctx.globalAlpha=1;
+  mbCore(R*.8,V.primary,pl,1);ctx.fillStyle=flash?'#fff':'#ffd9e2';ctx.fillRect(-R*.35,-R*.06,R*.9,R*.12);   // núcleo = fenda longitudinal
+}
+function drawColossus(e,V,R,flash,pl){
+  const P=flash?'#fff':V.primary,S=flash?'#fff':V.secondary,A=flash?'#fff':V.accent;
+  const stress=e.phase===2?1:0,dormant=e.sleepPhase==='dormant'?1:0;
+  ctx.save();ctx.scale(V.scaleX,V.scaleY);
+  // anéis pesados (3) — pouca ornamentação, muita massa
+  for(let i=0;i<3;i++){ctx.strokeStyle=i===2?A:S;ctx.lineWidth=R*(.12-i*.02);ctx.globalAlpha=.9-i*.15;
+    ctx.beginPath();ctx.arc(0,0,R*(1.05-i*.22),0,TAU);ctx.stroke();}
+  ctx.globalAlpha=1;
+  // placas grossas (usa e.plates/plateMax — blindagem real)
+  for(let i=0;i<e.plateMax;i++){if(i>=e.plates)continue;const a=i*TAU/e.plateMax+e.spinAng*.15;
+    ctx.save();ctx.rotate(a);ctx.fillStyle=flash?'#fff':S;ctx.strokeStyle=A;ctx.lineWidth=2;
+    ctx.beginPath();ctx.rect(R*.78,-R*.14,R*.32,R*.28);ctx.fill();ctx.stroke();ctx.restore();}
+  // corpo maciço
+  ctx.fillStyle=linGrad2('mb.colossus|'+(flash?1:0),-R,-R,R,R,P,S);ctx.strokeStyle=A;ctx.lineWidth=R*.12;
+  mbPoly(10,R*.72,0);ctx.fill();ctx.stroke();
+  // fase 2: fraturas de stress no corpo
+  if(stress){ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.globalAlpha=.6+.3*Math.sin(e.core*3);
+    for(let i=0;i<4;i++){const a=i*1.57+.5;ctx.beginPath();ctx.moveTo(Math.cos(a)*R*.2,Math.sin(a)*R*.2);ctx.lineTo(Math.cos(a+.4)*R*.5,Math.sin(a+.4)*R*.5);ctx.lineTo(Math.cos(a+.25)*R*.7,Math.sin(a+.25)*R*.7);ctx.stroke();}
+    ctx.globalAlpha=1;}
+  // impacto visual no movimento: leve achatamento pelo passo (determinístico)
+  mbCore(R*.7,dormant?'#b080ff':V.accent,pl*(dormant?.4:1),1);
+  ctx.fillStyle=flash?'#fff':(dormant?'#d9c8ff':'#ffd0d8');ctx.beginPath();ctx.arc(0,0,R*(.18+pl*.05),0,TAU);ctx.fill();
+  ctx.restore();
+}
+function drawOracle(e,V,R,flash,pl){
+  const P=flash?'#fff':V.primary,S=flash?'#fff':V.secondary,A=flash?'#fff':V.accent;
+  const rings=e.phase===2?5:3;   // fase 2: anéis se multiplicam
+  const curse=e.sk&&e.sk.curse&&e.skillCd<1.5?1-e.skillCd/1.5:0;   // carga da maldição
+  // anéis concêntricos + órbitas
+  ctx.strokeStyle=A;
+  for(let i=0;i<rings;i++){ctx.lineWidth=1.2;ctx.globalAlpha=.35+.1*i;const rr=R*(1.05+i*.16);
+    ctx.beginPath();ctx.arc(0,0,rr,0,TAU);ctx.stroke();
+    // marca temporal orbitando cada anel
+    const a=e.ring*(1+i*.35)*(i%2?-1:1);ctx.fillStyle=A;ctx.beginPath();ctx.arc(Math.cos(a)*rr,Math.sin(a)*rr,3,0,TAU);ctx.fill();}
+  ctx.globalAlpha=1;
+  // corpo: olho (amêndoa) — exclusivo
+  ctx.fillStyle=linGrad2('mb.oracle|'+(flash?1:0),-R,0,R,0,S,P);ctx.strokeStyle=A;ctx.lineWidth=R*.08;
+  ctx.beginPath();ctx.moveTo(-R,0);ctx.quadraticCurveTo(0,-R*.85,R,0);ctx.quadraticCurveTo(0,R*.85,-R,0);ctx.closePath();ctx.fill();ctx.stroke();
+  // BLINDAGEM = cílios/pálpebra: traços acima do olho, somem com as placas
+  ctx.strokeStyle=A;ctx.lineWidth=3;
+  for(let i=0;i<(e.plateMax||5);i++){if(i>=e.plates)continue;const t=(i+.5)/(e.plateMax||5);const x=-R*.8+t*R*1.6,y=-R*.85*Math.sin(t*Math.PI)*.9;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x,y-R*.22);ctx.stroke();}
+  // íris/pupila (segue e.aim — sem escrever)
+  const px=Math.cos(e.aim)*R*.18,py=Math.sin(e.aim)*R*.18;
+  ctx.fillStyle=flash?'#fff':'#3d2e05';ctx.beginPath();ctx.arc(px,py,R*.34,0,TAU);ctx.fill();
+  mbCore(R*.7,V.accent,pl,1);
+  ctx.fillStyle=flash?'#fff':'#fff1b8';ctx.beginPath();ctx.arc(px,py,R*(.14+pl*.05+curse*.08),0,TAU);ctx.fill();
+  // arcos de "previsão" ao carregar a maldição
+  if(curse>0){ctx.strokeStyle=A;ctx.lineWidth=2;ctx.globalAlpha=curse*.8;
+    for(let i=0;i<3;i++){ctx.beginPath();ctx.arc(0,0,R*(1.6+i*.25)*curse,e.aim-.5,e.aim+.5);ctx.stroke();}ctx.globalAlpha=1;}
+}
+function drawLeech(e,V,R,flash,pl){
+  const P=flash?'#fff':V.primary,S=flash?'#fff':V.secondary,A=flash?'#fff':V.accent;
+  const drain=e.drainT>0?1:0,ph2=e.phase===2?1:0;
+  const beat=.5+.5*Math.sin(e.core*(2+ph2*1.5));   // pulsação (intensifica na fase 2)
+  ctx.save();ctx.scale(V.scaleX,V.scaleY);
+  // tentáculos geométricos (5, assimétricos) — exclusivo
+  ctx.strokeStyle=A;ctx.lineWidth=3;ctx.lineCap='round';
+  const TENT=[[.2,1.15],[1.1,.9],[2.3,1.25],[3.6,.8],[4.7,1.05]];
+  for(let i=0;i<5;i++){const a=TENT[i][0]+Math.sin(e.core*.8+i)*.15,len=R*TENT[i][1]*(1+drain*.25);
+    ctx.globalAlpha=.7+beat*.3;ctx.beginPath();ctx.moveTo(Math.cos(a)*R*.6,Math.sin(a)*R*.6);
+    ctx.quadraticCurveTo(Math.cos(a+.5)*len*.8,Math.sin(a+.5)*len*.8,Math.cos(a+.2)*len*1.3,Math.sin(a+.2)*len*1.3);ctx.stroke();}
+  ctx.globalAlpha=1;
+  // corpo assimétrico (blob de 7 lados irregular, fixo)
+  ctx.fillStyle=linGrad2('mb.leech|'+(flash?1:0),-R,-R,R,R,P,S);ctx.strokeStyle=A;ctx.lineWidth=R*.07;
+  const IRR=[1,.78,.92,1.08,.74,.96,.86];
+  ctx.beginPath();for(let i=0;i<7;i++){const an=i/7*TAU;const rr=R*IRR[i]*(.92+beat*.08);ctx[i?'lineTo':'moveTo'](Math.cos(an)*rr,Math.sin(an)*rr);}ctx.closePath();ctx.fill();ctx.stroke();
+  // BLINDAGEM = escamas (pequenos triângulos) na borda do corpo, somem com as placas
+  ctx.fillStyle=flash?'#fff':A;
+  for(let i=0;i<(e.plateMax||4);i++){if(i>=e.plates)continue;const a=i/(e.plateMax||4)*TAU+.5;ctx.save();ctx.rotate(a);ctx.beginPath();ctx.moveTo(R*.7,-6);ctx.lineTo(R*.95,0);ctx.lineTo(R*.7,6);ctx.closePath();ctx.fill();ctx.restore();}
+  // núcleo pulsante com contração/expansão; efeito de sucção (anéis para dentro) durante o dreno
+  if(drain){ctx.strokeStyle=A;ctx.lineWidth=1.5;for(let i=0;i<3;i++){const kk=(runTime*1.5+i/3)%1;ctx.globalAlpha=kk*.6;ctx.beginPath();ctx.arc(0,0,R*(1.4-kk*1.1),0,TAU);ctx.stroke();}ctx.globalAlpha=1;}
+  mbCore(R*.9,V.primary,beat,1);ctx.fillStyle=flash?'#fff':'#e6ffb8';ctx.beginPath();ctx.arc(0,0,R*(.16+beat*.14),0,TAU);ctx.fill();
+  ctx.restore();
+}
+const MINIBOSS_RENDERERS={herald:drawHerald,furnace:drawFurnace,sentinel:drawSentinel,brood:drawBrood,
+  duelist:drawDuelist,colossus:drawColossus,oracle:drawOracle,leech:drawLeech};
+function mbArmorFrac(e){return e.plateMax?e.plates/e.plateMax:1;}
+/* ---- B5-B: hazards de área (desenhados ANTES do corpo; fiéis ao raio lógico) ---- */
+function drawMinibossHazards(e,V){
+  if(!e.hazards||!e.hazards.length)return;
+  for(const h of e.hazards){
+    ctx.save();
+    if(h.kind==='fire'){
+      const k=clamp(h.life/h.max,0,1),born=clamp(h.age/.25,0,1);
+      const rr=h.r*born;
+      // faixa residual escura + núcleo quente + borda pulsante + brasas determinísticas
+      ctx.globalAlpha=.28*k;ctx.fillStyle='#3a1208';ctx.beginPath();ctx.arc(h.x,h.y,rr*1.1,0,TAU);ctx.fill();
+      const rg=radGrad2('mb.fire',0,0,0,0,0,1,'#fff1b8','rgba(255,92,47,0)');
+      ctx.save();ctx.translate(h.x,h.y);ctx.scale(rr,rr);ctx.globalAlpha=(.55+.25*Math.sin(runTime*9+h.x))*k;ctx.fillStyle=rg;ctx.beginPath();ctx.arc(0,0,1,0,TAU);ctx.fill();ctx.restore();
+      ctx.globalAlpha=.9*k;ctx.strokeStyle='#ff7a2f';ctx.lineWidth=2;ctx.setLineDash([5,4]);ctx.lineDashOffset=-runTime*20;ctx.beginPath();ctx.arc(h.x,h.y,rr,0,TAU);ctx.stroke();ctx.setLineDash([]);
+      ctx.fillStyle='#ffd166';for(let i=0;i<5;i++){const a=i*1.257+h.x*.01+runTime*(.6+i*.13);const d=rr*(.25+.5*((i*.37+runTime*.4)%1));ctx.globalAlpha=k*(.9-((i*.37+runTime*.4)%1)*.8);ctx.beginPath();ctx.arc(h.x+Math.cos(a)*d,h.y+Math.sin(a)*d,1.6+(i%2),0,TAU);ctx.fill();}
+    }else if(h.kind==='omen'){
+      const k=clamp(1-h.life/h.fuse,0,1);
+      ctx.globalAlpha=.3+k*.4;ctx.strokeStyle='#ffd166';ctx.lineWidth=2+k*2;ctx.beginPath();ctx.arc(h.x,h.y,h.r*k,0,TAU);ctx.stroke();
+      ctx.globalAlpha=.25;ctx.setLineDash([3,6]);ctx.beginPath();ctx.arc(h.x,h.y,h.r,0,TAU);ctx.stroke();ctx.setLineDash([]);   // raio final sempre visível
+      for(let i=0;i<6;i++){const a=i/6*TAU+runTime*.8;ctx.globalAlpha=.5*k;ctx.beginPath();ctx.moveTo(h.x+Math.cos(a)*h.r*.6*k,h.y+Math.sin(a)*h.r*.6*k);ctx.lineTo(h.x+Math.cos(a)*h.r*k,h.y+Math.sin(a)*h.r*k);ctx.stroke();}
+      if(k>.7){ctx.globalAlpha=(k-.7)/.3*.35;ctx.fillStyle='#ffd166';ctx.beginPath();ctx.arc(h.x,h.y,h.r*.4,0,TAU);ctx.fill();}
+    }else if(h.kind==='pred'){
+      const k=clamp(1-h.life/h.fuse,0,1);
+      // "futuro": olho fino + relógio de anel preenchendo o raio real
+      ctx.globalAlpha=.22;ctx.fillStyle='#ffd166';ctx.beginPath();ctx.arc(h.x,h.y,h.r,0,TAU);ctx.fill();
+      ctx.globalAlpha=.85;ctx.strokeStyle='#fff1b8';ctx.lineWidth=3;ctx.beginPath();ctx.arc(h.x,h.y,h.r,-Math.PI/2,-Math.PI/2+TAU*k);ctx.stroke();
+      ctx.globalAlpha=.6;ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(h.x-h.r*.5,h.y);ctx.quadraticCurveTo(h.x,h.y-h.r*.35,h.x+h.r*.5,h.y);ctx.quadraticCurveTo(h.x,h.y+h.r*.35,h.x-h.r*.5,h.y);ctx.stroke();
+      ctx.fillStyle='#fff1b8';ctx.beginPath();ctx.arc(h.x,h.y,4+6*k,0,TAU);ctx.fill();
+    }else if(h.kind==='slam'){
+      const k=clamp(1-h.life/h.fuse,0,1);
+      if(h.life<=h.fuse-h.delay){   // já anunciado (o 2º anel da fase 2 espera o delay)
+        const kk=clamp((h.age-h.delay)/(h.fuse-h.delay),0,1);
+        // zona inteira sempre marcada (raio REAL) + preenchimento crescendo + rachaduras
+        ctx.globalAlpha=.16+.22*kk;ctx.fillStyle='#ff2f5e';ctx.beginPath();ctx.arc(h.x,h.y,h.r,0,TAU);ctx.fill();
+        ctx.globalAlpha=.9;ctx.strokeStyle='#ff9d3c';ctx.lineWidth=3+3*kk;ctx.beginPath();ctx.arc(h.x,h.y,h.r,0,TAU);ctx.stroke();
+        ctx.globalAlpha=.7*kk;ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.beginPath();ctx.arc(h.x,h.y,h.r*kk,0,TAU);ctx.stroke();
+        ctx.strokeStyle='#ffd0d8';ctx.lineWidth=1.5;ctx.globalAlpha=.5+.5*kk;
+        for(let i=0;i<8;i++){const a=i/8*TAU+.3;ctx.beginPath();ctx.moveTo(h.x+Math.cos(a)*h.r*.15,h.y+Math.sin(a)*h.r*.15);ctx.lineTo(h.x+Math.cos(a+.15)*h.r*.55*kk,h.y+Math.sin(a+.15)*h.r*.55*kk);ctx.lineTo(h.x+Math.cos(a-.05)*h.r*kk,h.y+Math.sin(a-.05)*h.r*kk);ctx.stroke();}
+        // contagem: pulso de alerta no último 0,3 s
+        if(h.life<.3){ctx.globalAlpha=(.3-h.life)/.3*.5;ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(h.x,h.y,h.r,0,TAU);ctx.fill();}
       }
-    }else if(e.shieldUpCd<=0){
-      e.shieldUpCd=12;e.shieldUpState='telegraph';e.shieldUpT=1.5;
-      spawnRing(e.x,e.y,'#8ff6ff',e.r,e.r+40,.4);
+    }else if(h.kind==='hunger'){
+      const k=clamp(h.life/3,0,1);
+      ctx.globalAlpha=.18*k;ctx.fillStyle='#a8ff3d';ctx.beginPath();ctx.arc(h.x,h.y,h.r,0,TAU);ctx.fill();
+      ctx.globalAlpha=.7*k;ctx.strokeStyle='#e6ffb8';ctx.lineWidth=2;ctx.setLineDash([8,6]);ctx.lineDashOffset=runTime*25;ctx.beginPath();ctx.arc(h.x,h.y,h.r,0,TAU);ctx.stroke();ctx.setLineDash([]);
     }
-  }
-  if(SK.reflect){
-    e.reflectCd=(e.reflectCd||6);
-    e.reflectCd-=dt;
-    if(e.reflectState==='active'){
-      e.reflectT-=dt;
-      // reflete projéteis inimigos próximos
-      for(let i=projectiles.length-1;i>=0;i--){
-        const pr=projectiles[i];
-        if(pr.team!=='enemy')continue;
-        if(dist2(pr.x,pr.y,e.x,e.y)<(e.r+50)*(e.r+50)){
-          pr.vx*=-1.2;pr.vy*=-1.2;pr.team='ally';pr.color='#8ff6ff';pr.dmg*=1.5;
-          spawnParticles(pr.x,pr.y,'#8ff6ff',3,120,.3,2);
-        }
-      }
-      if(e.reflectT<=0)e.reflectState=null;
-    }else if(e.reflectState==='telegraph'){
-      e.reflectT-=dt;
-      if(e.reflectT<=0){e.reflectState='active';e.reflectT=2.5;
-        AUDIO.tone(700,.2,'square',.03,-200);
-      }
-    }else if(e.reflectCd<=0){
-      e.reflectCd=7;e.reflectState='telegraph';e.reflectT=1;
-      spawnRing(e.x,e.y,'#bffbff',e.r,e.r+30,.3);
-    }
-  }
-
-  /* ---- COLOSSO: fases DORMENTE / DESPERTO ---- */
-  if(SK.quake){
-    e.sleepPhase=e.sleepPhase||'awake';   // começa desperto
-    e.sleepT=e.sleepT||0;
-    if(e.sleepPhase==='awake'){
-      e.sleepT-=dt;
-      if(e.sleepT<=0){
-        e.sleepPhase='dormant';e.sleepT=4.5;
-        e.sleepDmgRed=.60;   // 60% redução de dano
-        spawnRing(e.x,e.y,'#ff2f5e',e.r,e.r+100,.7);
-        shake=Math.max(shake,8);
-        AUDIO.tone(90,.6,'sine',.06,-24);
-      }
-    }else if(e.sleepPhase==='dormant'){
-      e.sleepT-=dt;
-      // imóvel: força velocidade a zero
-      e.vx*=.85;e.vy*=.85;
-      if(e.sleepT<=0){
-        e.sleepPhase='awake';e.sleepT=7;e.sleepDmgRed=0;
-        // transição: quake de despertar
-        const R2=340;
-        spawnRing(e.x,e.y,'#ff9d3c',20,R2,.9);
-        shake=Math.max(shake,22);
-        if(dist2(p.x,p.y,e.x,e.y)<R2*R2){
-          damagePlayer(e.dmg*.8);
-          const a2=Math.atan2(p.y-e.y,p.x-e.x);
-          p.vx+=Math.cos(a2)*600;p.vy+=Math.sin(a2)*600;
-        }
-        AUDIO.boom();AUDIO.tone(70,.7,'sine',.09,-24);
-      }
-    }
-  }
-
-  /* ---- ARAUTO: fraturas temporais (marcação de área) ---- */
-  if(e.mb&&e.mb.id==='herald'){
-    e.fractureCd=(e.fractureCd||8);
-    e.fractureCd-=dt;
-    if(e.fractureCd<=0){
-      e.fractureCd=e.phase===2?5:8;
-      // coloca 2 marcas temporais na posição do jogador
-      for(let i=0;i<2;i++){
-        const fx=p.x+rand(-60,60),fy=p.y+rand(-60,60);
-        e.fractures=(e.fractures||[]);
-        e.fractures.push({x:fx,y:fy,t:1.5,r:90});
-      }
-      AUDIO.tone(440,.2,'sine',.03,-120);
-    }
-    // atualiza fraturas: detonam após timer
-    if(e.fractures){
-      for(let i=e.fractures.length-1;i>=0;i--){
-        const f=e.fractures[i];
-        f.t-=dt;
-        if(f.t<=0){
-          // detonação
-          spawnRing(f.x,f.y,'#ffd166',6,f.r,.5);
-          spawnShards(f.x,f.y,'#ffd166',6,4);
-          if(dist2(p.x,p.y,f.x,f.y)<f.r*f.r){
-            damagePlayer(e.dmg*.45);
-            applyStatus(p,'chill',1.8,.25);
-          }
-          e.fractures.splice(i,1);
-          AUDIO.tone(280,.15,'square',.025,-80);
-        }
-      }
-    }
+    ctx.restore();
   }
 }
 function drawMiniBoss(e){
+  const V=drawMinibossBase(e);
   const intro=e.spawnT>0?1-e.spawnT/1.6:1;
   const R=e.r,flash=e.flashT>0;
-  // sombra
-  ctx.save();ctx.globalAlpha=.34*intro;ctx.fillStyle='#000';
-  ctx.beginPath();ctx.ellipse(e.x,e.y+R*.4,R*.95,R*.5,0,0,TAU);ctx.fill();ctx.restore();
-  // telegrafia da investida
-  if(e.telegraphT>0){
-    const k=1-e.telegraphT/(e.phase===2?.62:.85);
-    ctx.save();
-    ctx.globalAlpha=.30+k*.45;
-    ctx.strokeStyle='#ff5c7a';ctx.lineWidth=3+k*4;
-    ctx.setLineDash([16,12]);ctx.lineDashOffset=-runTime*40;
-    ctx.beginPath();ctx.moveTo(e.x,e.y);
-    ctx.lineTo(e.x+Math.cos(e.aim)*760,e.y+Math.sin(e.aim)*760);
-    ctx.stroke();ctx.setLineDash([]);
-    ctx.restore();
+  drawMinibossHazards(e,V);
+  if(e.telegraphT>0)drawMinibossDashTelegraph(e,V);
+  // SANGUESSUGA: fio do dreno (conexão visual clara, alcance real)
+  if(e.mb&&e.mb.id==='leech'&&e.ms&&player){
+    const range=e.phase===2?520:420;
+    if(e.ms.siphonT>0){
+      ctx.save();ctx.strokeStyle='#a8ff3d';ctx.lineWidth=3;ctx.globalAlpha=.85;ctx.beginPath();
+      for(let i=0;i<=20;i++){const t=i/20;const x=e.x+(player.x-e.x)*t,y=e.y+(player.y-e.y)*t;const w=Math.sin(t*14-runTime*18)*7*(1-Math.abs(t-.5)*2);
+        const nx=-(player.y-e.y),ny=(player.x-e.x),nl=Math.hypot(nx,ny)||1;ctx[i?'lineTo':'moveTo'](x+nx/nl*w,y+ny/nl*w);}
+      ctx.stroke();
+      // glóbulos indo do jogador para o Sanguessuga
+      ctx.fillStyle='#e6ffb8';for(let i=0;i<4;i++){const t=1-((runTime*.9+i*.25)%1);ctx.globalAlpha=.9;ctx.beginPath();ctx.arc(e.x+(player.x-e.x)*t,e.y+(player.y-e.y)*t,4,0,TAU);ctx.fill();}
+      ctx.restore();
+    }else if(e.ms.siphonCd<1.2){   // prestes a drenar: mostra o alcance
+      ctx.save();ctx.globalAlpha=.25*(1-e.ms.siphonCd/1.2);ctx.strokeStyle='#a8ff3d';ctx.lineWidth=2;ctx.setLineDash([10,10]);ctx.beginPath();ctx.arc(e.x,e.y,range,0,TAU);ctx.stroke();ctx.setLineDash([]);ctx.restore();
+    }
+  }
+  // DUELISTA: lâmina ativa (hitbox real: segmento até r+70)
+  if(e.mb&&e.mb.id==='duelist'&&e.ms&&e.ms.slashT>0){
+    ctx.save();ctx.globalAlpha=.9;ctx.strokeStyle='#fff';ctx.lineWidth=5;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(e.x,e.y);ctx.lineTo(e.x+Math.cos(e.aim)*(R+70),e.y+Math.sin(e.aim)*(R+70));ctx.stroke();
+    ctx.globalAlpha=.35;ctx.strokeStyle=V.primary;ctx.lineWidth=16;ctx.stroke();ctx.restore();
   }
   ctx.save();ctx.globalAlpha=intro;ctx.translate(e.x,e.y);
-  // placas de blindagem orbitando
-  for(let i=0;i<e.plates;i++){
-    const a=e.spinAng+i*TAU/e.plateMax;
-    const px=Math.cos(a)*(R+16),py=Math.sin(a)*(R+16);
-    ctx.save();ctx.translate(px,py);ctx.rotate(a);
-    ctx.fillStyle=flash?'#fff':'#8a5216';
-    ctx.strokeStyle='#ffd166';ctx.lineWidth=1.4;
-    ctx.beginPath();ctx.rect(-7,-4,14,8);ctx.fill();ctx.stroke();
-    ctx.restore();
-  }
-  ctx.rotate(e.aim);
-  // casco octogonal pesado
-  const g=linGrad2('mb|'+(flash?1:0),-R,-R,R,R,
-    flash?'#fff':'#ff9d3c',flash?'#fff':'#5c2a06');
-  ctx.fillStyle=g;ctx.strokeStyle=flash?'#fff':'#ffd166';ctx.lineWidth=R*.10;
-  ctx.beginPath();
-  for(let i=0;i<8;i++){const an=i/8*TAU;
-    ctx[i?'lineTo':'moveTo'](Math.cos(an)*R,Math.sin(an)*R);}
-  ctx.closePath();ctx.fill();ctx.stroke();
-  // aríete frontal
-  ctx.fillStyle=flash?'#fff':'#3d1c04';
-  ctx.beginPath();
-  ctx.moveTo(R*1.42,0);ctx.lineTo(R*.62,-R*.44);ctx.lineTo(R*.62,R*.44);
-  ctx.closePath();ctx.fill();
-  ctx.strokeStyle='#ffd166';ctx.lineWidth=2;ctx.stroke();
-  // núcleo pulsante
+  const id=e.mb&&e.mb.id;
+  const rend=MINIBOSS_RENDERERS[id]||drawHerald;
+  /* B5-B: SEM placas orbitais genéricas. A blindagem (e.plates, mecânica
+     intacta) é representada por cada renderer do seu jeito (mbArmorFrac). */
+  if(id!=='oracle'&&id!=='brood'&&id!=='leech')ctx.rotate(e.aim);   // formas orgânicas/olho não giram com a mira
   const pl=.5+.5*Math.sin(e.core*2.6);
-  const gs=glowSprite('#ffd166'),gr=R*(.5+pl*.22);
-  ctx.globalCompositeOperation='lighter';
-  ctx.globalAlpha=.75*intro;
-  ctx.drawImage(gs,-gr,-gr,gr*2,gr*2);
-  ctx.globalCompositeOperation='source-over';
-  ctx.globalAlpha=intro;
-  ctx.fillStyle=flash?'#fff':'#ffe9a8';
-  ctx.beginPath();ctx.arc(0,0,R*(.26+pl*.08),0,TAU);ctx.fill();
-  // anel de fase 2
-  if(e.phase===2){
-    ctx.strokeStyle='rgba(255,92,122,.75)';ctx.lineWidth=2;
-    ctx.beginPath();ctx.arc(0,0,R+30,e.ring,e.ring+4.2);ctx.stroke();
-  }
+  rend(e,V,R,flash,pl);
+  drawMinibossPhaseRing(e,V);           // arco circular: indiferente à rotação
   ctx.restore();
-  // aro de surgimento
-  if(e.spawnT>0){
-    ctx.save();ctx.globalAlpha=e.spawnT/1.6;
-    ctx.strokeStyle='#ff9d3c';ctx.lineWidth=3;
-    ctx.beginPath();ctx.arc(e.x,e.y,R+200*(e.spawnT/1.6),0,TAU);ctx.stroke();
-    ctx.restore();
-  }
+  // ---- overlays de estado já existentes (mecânica intacta; cores por perfil) ----
   // SENTINELA: escudo defensivo visual
   if(e.shieldUpState==='telegraph'){
     ctx.save();ctx.globalAlpha=.4+.3*Math.sin(runTime*12);
@@ -13445,9 +14596,9 @@ function drawMiniBoss(e){
   }else if(e.shieldUpState==='active'){
     ctx.save();ctx.globalAlpha=.5+.2*Math.sin(runTime*6);
     ctx.strokeStyle='#8ff6ff';ctx.lineWidth=4;
-    ctx.beginPath();ctx.arc(e.x,e.y,R+16,0,TAU);ctx.stroke();
+    mbPolyAt(e.x,e.y,8,R+16,runTime*.3);ctx.stroke();   // B5-A: escudo hexagonal (era círculo)
     ctx.globalAlpha=.12;ctx.fillStyle='#8ff6ff';
-    ctx.beginPath();ctx.arc(e.x,e.y,R+16,0,TAU);ctx.fill();
+    mbPolyAt(e.x,e.y,8,R+16,runTime*.3);ctx.fill();
     ctx.restore();
   }else if(e.shieldUpState==='vulnerable'){
     ctx.save();ctx.globalAlpha=.35;
@@ -13494,6 +14645,11 @@ function drawMiniBoss(e){
       ctx.restore();
     }
   }
+}
+function mbPolyAt(x,y,n,R,rot){
+  ctx.beginPath();
+  for(let i=0;i<n;i++){const an=rot+i/n*TAU;ctx[i?'lineTo':'moveTo'](x+Math.cos(an)*R,y+Math.sin(an)*R);}
+  ctx.closePath();
 }
 function spawnWave(n){
   waveCleared=false;
@@ -14120,7 +15276,7 @@ function updateEnemy(e,dt){
       // COROA DE ESPINHOS: reflete dano de contato
       if(player.thorns){
         const prev=curAttacker;curAttacker=player;
-        damageEnemy(e,e.dmg*player.thorns*3,player.x,player.y,false);
+        damageEnemy(e,e.dmg*player.thorns*3*attuneFieldMul(player,'espinho'),player.x,player.y,false);   // B4
         curAttacker=prev;
         spawnParticles(e.x,e.y,'#ff5c7a',4,180,.25,2.2);
       }
@@ -14302,7 +15458,7 @@ function updatePlayer(dt){
   if(p.recoil>0)p.recoil=Math.max(0,p.recoil-dt*7);
   if(p.rangeFx>0)p.rangeFx=Math.max(0,p.rangeFx-dt*1.1);
   // BULWARK / COMPAIXÃO: regeneração fora de combate
-  const regenTotal=(p.regen||0)+mEff.regen;
+  const regenTotal=(p.regen||0)*attuneFieldMul(p,'su_regen')+mEff.regen;   // B4: Sintonia escala só o regen do módulo
   if(regenTotal>0&&p.hurtT<=0&&p.hp<p.maxHp){
     p.noHitT=(p.noHitT||0)+dt;
     if(p.noHitT>2.5)p.hp=Math.min(p.maxHp,p.hp+regenTotal*dt);
@@ -14496,7 +15652,7 @@ function onProjectileHit(p,e,dmg){
   const src=p.owner;
   if(src===player&&runSt)runSt.hi++;             // PR 8: acerto de projétil (precisão)
   if(d.fx)applyStatus(e,d.fx.k,d.fx.dur,d.fx.pow,src);
-  if(d.chain)chainShock(e,dmg*.78,d.chain+((src&&src.chainBonus)||0),src);
+  if(d.chain)chainShock(e,dmg*.78,d.chain+Math.round(((src&&src.chainBonus)||0)*attuneFieldMul(src,'condutor')),src);   // B4
   if(d.lifesteal&&src===player)
     player.hp=Math.min(player.maxHp,player.hp+dmg*d.lifesteal);
   // PRISMA: divide em fragmentos
@@ -14746,6 +15902,13 @@ let meta={mem:0,spd:0,reroll:0,vault:0,wins:0,endings:[],evars:[]};
 /* PR 7.5: a meta-progresso (Pontos de Memória, melhorias, finais) vive
    dentro do slot ativo (echoSave.v3 → slots[n].meta). Cada memória tem
    seus próprios pontos — nada é compartilhado entre SAVE 1/2/3. */
+/* B5.5: fator de decaimento da recompensa por vitórias PRÉVIAS do slot
+   (meta.wins antes da vitória atual). 1ª vitória = 100% do base; repetições
+   decaem ×.75 até o piso de 50%. Derivado de estado já persistido — nada
+   novo no save; determinístico; morte/Sandbox/DEV não o movem. */
+function metaVictoryDecay(){
+  return Math.max(.5,Math.pow(.75,meta.wins|0));
+}
 function loadMeta(){
   if(!smEnsureSlot())return;
   try{
@@ -14966,6 +16129,7 @@ function resolveEnding(){
 
 function onVictory(){
   if(state==='victory')return;
+  clearBossVictoryTimers();
   /* PR 11.5 §90: vitória no laboratório NÃO registra final/variante/memória. */
   if(sandboxRun){sandboxVictory();return;}
   state='victory';firing=false;
@@ -14981,7 +16145,7 @@ function onVictory(){
   enemies.length=0;projectiles.length=0;beacon=null;
   shake=26;aberr=1;
   for(let i=0;i<9;i++){
-    setTimeout(()=>{
+    scheduleBossVictoryTimer(()=>{
       const x=ARENA.w/2+rand(-260,260),y=ARENA.h/2+rand(-200,200);
       spawnRing(x,y,i%2?'#ff4df0':'#46e0ff',10,rand(180,420),.9);
       spawnShards(x,y,i%2?'#ff4df0':'#46e0ff',14,7);
@@ -14999,11 +16163,20 @@ function onVictory(){
      a base; só a colorem). */
   const ending=resolveEnding();
   const key=ending.key;
-  // Pontos de Memória
-  const mem=Math.round(wave*4+kills*.8+player.level*3+player.coins*.22+
-    player.items.length*12+(key==='liber'?25:0)+(key==='tirano'?18:0)+
+  /* Pontos de Memória — B5.5: fórmula reescalonada (~×.25 preservando TODOS
+     os termos de qualidade da run) com UM fator novo de decaimento por
+     vitórias prévias do slot: max(.5,.75^meta.wins), piso de 50%.
+     EVIDÊNCIA (audit_pr135/meta_economy_b55.js): a fórmula anterior entregava
+     ≈702◆ numa vitória típica = 98% da meta inteira (META_SHOP=720◆) —
+     2 vitórias completavam toda a progressão meta (categoria C).
+     AGORA: 1ª vitória ≈160–254◆ (compra 2 upgrades, ~30% da meta);
+     100% da meta em ~6 ciclos; repetidas estabilizam em ~50% do base.
+     Bônus de final preservados (identidade); Credits/Resíduos/XP intatos;
+     idempotente (concessão única em onVictory; Continue não duplica). */
+  const mem=Math.round((wave*1.2+kills*.18+player.level*1.2+player.coins*.07+
+    player.items.length*5+(key==='liber'?25:0)+(key==='tirano'?18:0)+
     (key==='dueto'?22:0)+(key==='refugio'?20:0)+
-    (key==='silencio'?18:0)+(key==='exilio'?15:0)+30);
+    (key==='silencio'?18:0)+(key==='exilio'?15:0)+12)*metaVictoryDecay());
   meta.mem+=mem;meta.wins++;
   if(meta.endings.indexOf(key)<0)meta.endings.push(key);
   /* variantes viram sub-registros de descoberta (Codex) */
@@ -15033,9 +16206,10 @@ function onVictory(){
     rels:ending.ctx.echoes.map(e=>({slot:e.slot,rel:e.rel,trust:e.trust})),
     dis:{count:ending.ctx.disCount,ruptured:ending.ctx.disRuptured,
       reconciled:ending.ctx.disReconciled}};
-  setTimeout(showVictory,1250);
+  scheduleBossVictoryTimer(showVictory,1250);
 }
 function showVictory(){
+  if(state!=='victory'||!victoryData)return;
   ovExitMenu(false);                         // botão sandbox nunca vaza pro jogo real
   ovMenuVisible(false);
   const v=victoryData,E=ENDINGS[v.key];
@@ -15601,7 +16775,7 @@ function smBuildCheckpoint(reason,waveOverride){
       itemState:player.itemState?JSON.parse(JSON.stringify(player.itemState)):{},
       /* modificadores PERMANENTES do pipeline (temporários ficam de fora;
          PR 9: sintonia moral é DERIVADA — recalculada no resume, nunca salva) */
-      sm:(player.sm||[]).filter(m=>m&&m.dur==null&&!m.cond&&!isMoralTuneModId(m.id))
+      sm:(player.sm||[]).filter(m=>m&&m.dur==null&&!m.cond&&!isMoralTuneModId(m.id)&&!isAttuneModId(m.id))
         .map(m=>({id:m.id,stat:m.stat,type:m.type,value:m.value,
           stacks:m.stacks,label:m.label})),
       /* escolhas e efeitos permanentes da run (bandeiras cruas — o
@@ -15626,7 +16800,10 @@ function smBuildCheckpoint(reason,waveOverride){
       entropy:!!player.entropy,killDash:player.killDash||0,
       revives:player.revives||0,thorns:player.thorns||0,
       harvestHeal:player.harvestHeal||0,harvestStack:player.harvestStack||0,
-      decayPerWave:player.decayPerWave||0,shopPersonal:player.shopPersonal||1,
+      decayPerWave:player.decayPerWave||0,shopPersonal:player.shopPersonal||1,shopSurcharge:player.shopSurcharge||1,
+      /* B3-A: histórico leve de variedade — preservado no Continue */
+      shopRecent:shopRecent.map(e=>({id:String(e.id),seq:e.seq|0,bought:!!e.bought})),
+      shopRollSeq:shopRollSeq|0,
       /* status/econômicos (módulos elementais, eventos e operadores) */
       longRangeBonus:player.longRangeBonus||0,
       burnSpread:!!player.burnSpread,
@@ -15744,7 +16921,7 @@ function resumeRun(){
      o pipeline recalcula os derivados a partir da base imutável — os
      multiplicadores NÃO são reaplicados em cima dos valores finais */
   player.sm=(Array.isArray(q.sm)?q.sm:[])
-    .filter(m=>m&&m.id&&SM_STATS[m.stat]&&!isMoralTuneModId(m.id))
+    .filter(m=>m&&m.id&&SM_STATS[m.stat]&&!isMoralTuneModId(m.id)&&!isAttuneModId(m.id))
     .map(m=>({id:String(m.id),stat:m.stat,
       type:SM_ORDER.indexOf(m.type)>=0?m.type:'mult',
       value:num(m.value,1),stacks:m.stacks||'stack',
@@ -15789,6 +16966,21 @@ function resumeRun(){
   player.harvestStack=num(q.harvestStack,0);
   player.decayPerWave=num(q.decayPerWave,0);
   player.shopPersonal=num(q.shopPersonal,1);
+  player.shopSurcharge=Math.max(1,num(q.shopSurcharge,1));
+  /* B3-A: restaura o histórico de variedade (sem ele um reroll pós-Continue
+     perderia a memória de “já vi sem comprar”); save antigo cai em vazio. */
+  {
+    shopRecent=[];
+    if(Array.isArray(q.shopRecent)){
+      for(const e of q.shopRecent){
+        if(!e||e.id==null)continue;
+        shopRecent.push({id:String(e.id),seq:Math.max(0,e.seq|0),bought:!!e.bought});
+      }
+      while(shopRecent.length>SHOP_RECENT_MAX)shopRecent.shift();
+    }
+    shopRollSeq=Math.max((q.shopRollSeq|0),0);
+    if(!shopRollSeq&&shopRecent.length)shopRollSeq=shopRecent.length;
+  }
   /* status/econômicos — fallback: o que o operador já definiu no makePlayer */
   player.longRangeBonus=num(q.longRangeBonus,player.longRangeBonus||0);
   player.burnSpread=!!q.burnSpread||!!player.burnSpread;
@@ -15824,6 +17016,7 @@ function resumeRun(){
       if(qDelay!==player._smBase.shieldDelay)player._smBase.shieldDelay=qDelay;
     }
   }
+  migrateLegacyRangeMods(player);   // B2-B: saves antigos de alcance genérico
   smRefresh(player);
   applyMoralTuning(player);   // PR 9: sintonia derivada — recalculada, nunca duplicada
   /* Ecos do slot com a confiança do checkpoint */
@@ -15876,6 +17069,7 @@ function onPlayerDeath(){
   if(wave>prog.best)prog.best=wave;
   checkUnlocks();saveProg();
   state='fracture';fracT=0;shake=18;
+  speechClear();               // B2-A: morte encerra a camada de fala efêmera
   spawnParticles(player.x,player.y,'#9ff3ff',50,520,1,4);
   spawnRing(player.x,player.y,'#46e0ff',10,260,.8);
   spawnRing(player.x,player.y,'#ff4df0',4,180,1.1);
@@ -15887,6 +17081,7 @@ function onPlayerDeath(){
     frMul:player.fireRateMul,wave,level:player.level,
     crit:player.crit,critMul:player.critMul,pierce:player.pierce,
     aoeMul:player.aoeMul,rangeMul:player.rangeMul,coins:player.coins,
+    meleeRangeMul:player.meleeRangeMul,rangedRangeMul:player.rangedRangeMul,   // B3-FIX
     projSpdMul:player.projSpdMul,longRangeBonus:player.longRangeBonus,
     items:player.items.slice(),upg:player.upgLog.slice(),
     owned:player.owned.slice(),
@@ -15969,12 +17164,14 @@ function hideOverlay(){
    resetRunWorld: parte comum (limpeza total do mundo) usada por
    startRun (run nova) e resumeRun (continuar um checkpoint). */
 function resetRunWorld(){
+  clearBossVictoryTimers();
   if(sheetOpen)sheetHide();              // PR 11.5: ficha nunca atravessa runs
   sheetBrk=Object.create(null);_sheetSig='';
   state='play';runTime=0;fracT=0;shake=0;
   wave=0;kills=0;wavePause=2.2;waveActive=false;waveCleared=false;
   document.getElementById('pause-menu').classList.remove('on');
   enemies=[];projectiles=[];xporbs=[];parts=[];ftexts=[];
+  speechClear();
   swings=[];arcs=[];curAttacker=null;resoFlash=0;
   pickups=[];allies=[];beacon=null;curEv=null;evCount=0;
   /* PR 10.5: memória de eventos nova + limpeza de acontecimentos de arena */
@@ -15988,7 +17185,7 @@ function resetRunWorld(){
   moral={comp:0,greed:0,viol:0};
   _lastTier={c:0,g:0,v:0};_wasConflict=0;
   applyMoral();
-  rerollCost=10;shopLock=null;modalEl.classList.remove('on');
+  rerollCost=rerollBaseCost();shopRecentReset();shopLock=null;modalEl.classList.remove('on');
   scheduleBeacon();
   recorder=[];recAcc=0;
   runStReset();   // PR 8: run nova começa com métricas de personalidade zeradas
@@ -17245,6 +18442,8 @@ function render(){
     ctx.fillText(f.txt,f.x,f.y-f.t*30);
   }
   ctx.globalAlpha=1;
+  speechRender();   /* B5-B-FIX: era renderSpeech() — ReferenceError abortava o frame
+                       ANTES de updateHUD() (HUD congelado desde o B2) */
   ctx.restore();
   ctx.restore();
 
@@ -17454,7 +18653,7 @@ function loop(now){
   if(state==='play'){
     const sdt=dt;
     runTime+=sdt;
-    if(_echoSpeakCd>0)_echoSpeakCd-=sdt;
+    speechTick(sdt);
     updatePlayer(sdt);
     for(const e of echoes)updateEcho(e,sdt);
     for(let i=0;i<enemies.length;i++)updateEnemy(enemies[i],sdt);
@@ -17552,7 +18751,10 @@ function loop(now){
     if(f.t<f.life)ftexts[_fw++]=f;
   }
   ftexts.length=_fw;
-  render();
+  /* B5-B-FIX: o HUD é atualizado num try próprio — uma exceção no render()
+     (como a que congelou 9 indicadores) nunca mais leva o HUD junto. */
+  try{render();}
+  catch(err){if(errGuard++<8)console.error('[ECHO] erro no render (HUD segue):',err);}
   hudAcc+=dt;
   updateHUD();
   /* PR 11.5 §108: o registro só re-renderiza quando aberta e sob demanda
@@ -18520,7 +19722,7 @@ function itemTipHTML(it){
       syn.map(s=>'<span>'+s+'</span>').join('')+'</span>';
   }
   if(it.transformer)h+='<div class="tcard-tr">◆ TRANSFORMADOR — muda como a run é jogada</div>';
-  h+=moralAffinityTagHTML(it.id,false);
+  h+=moralAffinityTagHTML(it.id,!!player);   // B4: estado atual/projetado + motivo (puro)
   h+=lockLineFor('i',it.id);
   return h;
 }
@@ -18539,6 +19741,10 @@ function weaponTipHTML(d){
     '<div class="trole" style="color:'+d.color+'">'+d.tag+
       (d.melee?' · ARMA BRANCA':'')+'</div>'+
     '<div class="tds">'+(d.sdesc||'')+'</div>'+
+    /* B5.5: classe e controle migraram do corpo do card (densidade) */
+    '<span class="tline" style="opacity:.75">CLASSE: '+d.tag+
+      ' · OCUPA O SLOT '+(player.owned.length+1)+'/'+player.maxSlots+
+      ' · ALTERNA COM <b>Q</b></span>'+
     '<div class="tst">';
   for(const s of stats)h+='<span>'+s+'</span>';
   h+='</div>';
@@ -18945,6 +20151,7 @@ document.getElementById('p-abort').addEventListener('click',abortRun);
 /* ---- PR 7.5: limpeza comum de fim de partida (usada ao sair para menus) ---- */
 function clearRunEntities(){
   // 1. interrompe a partida e limpa TODAS as entidades ativas da run
+  clearBossVictoryTimers();
   releaseAllInput();
   enemies.length=0;
   projectiles.length=0;
@@ -18954,6 +20161,7 @@ function clearRunEntities(){
   swings.length=0;
   parts.length=0;
   ftexts.length=0;
+  speechClear();
   boss=null;miniBoss=null;bossIntel=null;beacon=null;curEv=null;
   stopArenaEvent(false);arenaEv=null;arenaEvWave=-9;microT=26;_aeInterfT=0;
   echoes.length=0;
@@ -18961,7 +20169,7 @@ function clearRunEntities(){
   wave=0;kills=0;wavePause=2.2;waveActive=false;waveCleared=false;
   runTime=0;fracT=0;shake=0;aberr=0;resoFlash=0;freezeT=0;
   curAttacker=null;recorder=null;recAcc=0;
-  shopOffers.length=0;shopItems.length=0;shopGuns.length=0;rerollCost=10;shopLock=null;
+  shopOffers.length=0;shopItems.length=0;shopGuns.length=0;rerollCost=rerollBaseCost();shopLock=null;shopRecentReset();
   // 2. fecha todos os overlays/modais que possam estar abertos
   document.getElementById('pause-menu').classList.remove('on');
   modalEl.classList.remove('on');
@@ -19209,6 +20417,72 @@ const DEV={
   },
 
 /* --------------------------- MINI-CHEFES ---------------------------- */
+  /* B5-A: inspeção do perfil visual (puro; inerte fora do DEV) */
+  minibossVisual(id){
+    if(!DEV_MODE)return null;
+    const def=MINIBOSS.find(m=>m.id===id);if(!def)return null;
+    const V=MINIBOSS_VISUALS[id];
+    return {id,nm:def.nm,r:def.r,plates:def.plates,silhouette:V.silhouette,feature:V.feature,
+      secondaryFeature:V.secondaryFeature,telegraph:V.telegraph,phaseVisual:V.phaseVisual,spawn:V.spawn,
+      palette:{primary:V.primary,secondary:V.secondary,accent:V.accent},scale:[V.scaleX,V.scaleY],
+      symbol:V.symbol,reading:V.reading,renderer:(MINIBOSS_RENDERERS[id]||{}).name||null};
+  },
+  minibossGallery(){
+    if(!DEV_MODE)return null;
+    return MINIBOSS.map(m=>DEV.minibossVisual(m.id));
+  },
+  /* B5-B-FIX: estado real que o HUD deveria mostrar (puro; inerte fora do DEV) */
+  hudState(){
+    if(!DEV_MODE||!player)return null;
+    const C=curChar();
+    return {hp:Math.max(0,Math.ceil(player.hp)),hpMax:player.maxHp,shield:Math.max(0,Math.ceil(player.shield)),shieldMax:player.shieldMax,
+      dashCd:+player.dashCd.toFixed(2),dashReady:player.dashCd<=0,special:C.sp?{name:C.sp.nm,cd:+(player.spCd||0).toFixed(2),active:+(player.spT||0).toFixed(2),ready:(player.spCd||0)<=0&&!(player.spT>0)}:null,
+      credits:player.coins,sync:{level:player.level,xp:Math.floor(player.xp),next:player.xpNext},wave:Math.max(1,wave),runTime:+runTime.toFixed(2),kills};
+  },
+  /* compara STATE × DOM campo a campo — força um updateHUD e lê o DOM */
+  hudSnapshot(){
+    if(!DEV_MODE||!player)return null;
+    hudAcc=1;updateHUD(true);
+    const st=DEV.hudState();
+    const txt=id=>{const el=$(id);return el?String(el.textContent):'';};
+    const num=s=>{const m=String(s).replace(/\./g,'').match(/-?\d+/);return m?+m[0]:NaN;};
+    const rows={
+      hp:{state:st.hp,dom:num(txt('hpnum').split('/')[0])},
+      hpMax:{state:st.hpMax,dom:num(txt('hpnum').split('/')[1])},
+      shield:{state:st.shield,dom:num(txt('shnum').split('/')[0])},
+      credits:{state:'◈ '+fmtCompact(st.credits),dom:txt('coinsp')},   // o HUD usa o formato compacto por design (1.2K)
+      wave:{state:st.wave,dom:num(txt('wave'))},
+      kills:{state:st.kills,dom:num(txt('timer').split('ABATES')[1]||'')},
+      runTime:{state:fmtTime(runTime),dom:txt('timer').split(' · ')[0]},
+      dash:{state:st.dashReady?'READY':fmtSec(player.dashCd),dom:st.dashReady?(dashwrap.classList.contains('ready')?'READY':'?'):txt('dashlbl').replace('DASH ','')},
+      sync:{state:'NV '+st.sync.level+' · '+st.sync.xp+'/'+st.sync.next,dom:txt('lvl')}};
+    for(const k in rows)rows[k].ok=String(rows[k].state)===String(rows[k].dom)||(typeof rows[k].state==='number'&&rows[k].state===rows[k].dom);
+    rows.ok=Object.keys(rows).every(k=>rows[k].ok!==false);
+    return rows;
+  },
+  /* B5-B: estado mecânico do mini-chefe vivo (puro; inerte fora do DEV) */
+  minibossState(){
+    if(!DEV_MODE)return null;
+    const b=miniBoss;if(!b||b.dead)return null;
+    const ms=b.ms||{};
+    return {id:b.mb.id,phase:b.phase,hp:Math.round(b.hp),maxHp:b.maxHp,plates:b.plates+'/'+b.plateMax,
+      cooldowns:{charge:+b.chargeCd.toFixed(2),burst:+b.burstCd.toFixed(2),summon:+b.summonCd.toFixed(2),skill:+b.skillCd.toFixed(2),
+        omen:ms.omenCd,nova:ms.novaCd,spawn:ms.spawnCd,slam:ms.slamCd,pred:ms.predCd,curse:ms.curseCd,siphon:ms.siphonCd},
+      hazards:(b.hazards||[]).map(h=>({kind:h.kind,r:h.r,life:+h.life.toFixed(2)})),hazardCap:MB_HAZARD_CAP[b.mb.id]||4,
+      summons:mbChildren(b),summonCap:b.mb.id==='brood'?MB_BROOD_CAP:null,
+      regen:{on:!!ms.regenOn,secs:+(ms.regenT||0).toFixed(1)},stance:ms.stance,stanceT:ms.stanceT,
+      combo:{left:ms.combo,chain:ms.chain|0,slashT:ms.slashT,telegraphT:+b.telegraphT.toFixed(2)},
+      siphon:{active:ms.siphonT>0,t:ms.siphonT,drained:Math.round(ms.drained||0),broken:ms.broken|0},
+      escalation:ms.escal|0,sleep:ms.sleep,dashT:b.dashT};
+  },
+  minibossPhase2(){
+    if(!devReady()||!miniBoss||miniBoss.dead)return false;
+    miniBoss.hp=Math.min(miniBoss.hp,Math.floor(miniBoss.maxHp*.5));devTaint();devLog('MINI-CHEFE → 50 % (fase 2 no próximo tick)');return true;
+  },
+  minibossClearHazards(){
+    if(!devReady()||!miniBoss)return false;
+    miniBoss.hazards=[];devTaint();return true;
+  },
   spawnMiniBoss(id){
     if(!devReady())return false;
     const def=MINIBOSS.find(m=>m.id===id);
@@ -19405,15 +20679,15 @@ const DEV={
     devTaint();devLog('COOLDOWN DE PAPEL ZERADO');
     return true;
   },
-  forceSpeak(slot){
+  forceSpeak(slot,priority){
     if(!devReady())return false;
     const e=DEV.echo(slot);if(!e||!e.alive)return false;
-    _echoSpeakCd=0;
+    speechClear();
     const keys=Object.keys(ECHO_LINES);
     const k=keys[randi(0,keys.length-1)];
     const lines=ECHO_LINES[k];
-    echoSpeak(e,lines[randi(0,lines.length-1)],e.hue);
-    devTaint();devLog('FALA FORÇADA ('+k+')');
+    echoSpeak(e,lines[randi(0,lines.length-1)],e.hue,priority||'normal');
+    devTaint();devLog('FALA FORÇADA ('+k+') '+(priority||'normal'));
     return k;
   },
   /* Dissonância usa a MESMA função de produção (enterDissonance). */
@@ -19523,7 +20797,7 @@ const DEV={
     if(!ap)return false;
     relFeedback(e,ap);
     const l=pickRelationLine(e,{type:r.type,reason:r.reason,state:echoRelState(e).id});
-    echoSpeak(e,l.txt,approve?'#8ff6ff':'#ff8095');
+    echoSpeak(e,l.txt,approve?'#8ff6ff':'#ff8095','high');
     devTaint();devLog('REAÇÃO FORÇADA '+r.type+' ('+ap.trust.toFixed(1)+' CONF)');
     return ap;
   },
@@ -19717,6 +20991,33 @@ const DEV={
     devTaint();devLog('LOJA REROLADA');
     return true;
   },
+  /* B5.5: inspetor do projected stat impact — roda o MESMO preview do
+     card para qualquer item/upgrade, sem mutar nada (read-only; não
+     taint: igual a hudState/minibossState). Inerte fora do DEV. */
+  shopPreview(id){
+    if(!devReady())return false;
+    const it=itemById(id),u=UPGRADES.find(x=>x.id===id);
+    if(!it&&!u)return false;
+    const rows=it?shopItemPreview(it):shopUpgPreview(u);
+    return {kind:it?'item':'upgrade',id:rows?'ok':'erro',rows:rows||[],
+      display:previewDisplayRows(rows)};
+  },
+  /* B5.5: inspetor da economia meta — estado do slot, custo total restante
+     e fator de decaimento atual. Read-only (não taint). */
+  metaEconomy(){
+    if(!devReady())return false;
+    let spent=0,total=0;
+    for(const m of META_SHOP){
+      total+=m.cost*m.max;
+      spent+=m.cost*Math.min(m.max,m.lvl()|0);
+    }
+    return {mem:meta.mem|0,wins:meta.wins|0,
+      decay:+metaVictoryDecay().toFixed(3),
+      totalCost:total,spent:spent,remaining:Math.max(0,total-spent),
+      progress:total?+(Math.min(1,spent/total)).toFixed(3):1,
+      shop:META_SHOP.map(m=>({id:m.id,cost:m.cost,lvl:m.lvl()|0,max:m.max})),
+      endings:meta.endings.slice()};
+  },
 
 /* ---------------------------- OPERADORES ---------------------------- */
   /* Troca o operador da PRÓXIMA run — trocar no meio da run corromperia
@@ -19800,6 +21101,23 @@ const DEV={
     return DEV.setMoral(p[0],p[1],p[2]);
   },
   /* Força o recálculo completo do perfil + sintonia (inspeção). */
+  /* PR13.5 B4 — inspector de Sintonia (somente DEV; puro) */
+  attunement(id){
+    if(!DEV_MODE)return null;
+    const prof=getMoralProfile();
+    const one=(iid)=>{
+      const it=itemById(iid);if(!it)return null;
+      const info=attunementInfo(iid,prof);
+      const active=!!(player&&player.items.indexOf(iid)>=0);
+      const mods=active?player.sm.filter(m=>m.id.indexOf('attune:'+iid+':')===0||m.id.indexOf('moral:item:'+iid+':')===0)
+        .map(m=>({id:m.id,stat:m.stat,type:m.type,value:+(+m.value).toFixed(4)})):[];
+      return {id:iid,nm:it.nm,aff:getItemMoralAffinity(iid),moral:{comp:moral.comp,greed:moral.greed,viol:moral.viol},
+        score:info?+info.score.toFixed(3):null,state:info?info.state.lab:'NEUTRA',mul:info?info.mul:1,
+        economic:!!(info&&info.economic),active,mods};
+    };
+    if(id)return one(id);
+    return (player?player.items:[]).map(one).filter(Boolean);
+  },
   moralRecalc(){
     if(!devReady())return false;
     _moralProfCache=null;_moralProfKey='';
@@ -20145,7 +21463,7 @@ function devRender(){
   h+='<h4>MINI-CHEFES (8)</h4><div class="dvrow">';
   for(const m of MINIBOSS)
     h+=devBtn('m:'+m.id,m.nm.replace(/^(O|A)\s+/,'').split(' ')[0]);
-  h+=devBtn('clearmini','LIMPAR MINI-CHEFE','warn')+devBtn('boss','CHEFE FINAL','gold')+
+  h+=devBtn('hudsnap','HUD × STATE')+devBtn('mbstate','ESTADO → LOG')+devBtn('mbp2','FASE 2')+devBtn('mbhaz','LIMPAR HAZARDS')+devBtn('clearmini','LIMPAR MINI-CHEFE','warn')+devBtn('boss','CHEFE FINAL','gold')+
     '</div>';
 
   h+='<h4>PLAYER'+(p?' · '+Math.ceil(p.hp)+'/'+p.maxHp+' HP · ◈'+p.coins:'')+
@@ -20296,7 +21614,7 @@ function devRender(){
       devBtn('mp:mix_cv','MIX C/V')+devBtn('mp:zero','ZERAR','warn')+'</div>'+
       '<div class="dvrow" style="margin-top:5px">'+
       devBtn('msimc','ESCOLHA +2 COMP')+devBtn('msimg','ESCOLHA +2 GANÂ')+
-      devBtn('msimv','ESCOLHA +2 VIOL')+devBtn('mitems','ITENS → LOG')+'</div>'+
+      devBtn('msimv','ESCOLHA +2 VIOL')+devBtn('mitems','ITENS → LOG')+devBtn('attinsp','SINTONIA B4 → LOG')+'</div>'+
       devMoralInspectorHTML();
   }
 
@@ -20559,6 +21877,15 @@ function devCommand(c){
     case 'bossdbg':    return devLog('BOSS '+JSON.stringify(DEV.bossDebug()));
     case 'msetall':    return DEV.setMoral(devNum('dev-mc',0),devNum('dev-mg',0),devNum('dev-mv',0));
     case 'mrecalc':    return DEV.moralRecalc();
+    case 'hudsnap':{const r=DEV.hudSnapshot();devLog(r?('HUD '+(r.ok?'OK':'DIVERGENTE')+' · '+Object.keys(r).filter(k=>k!=='ok').map(k=>k+':'+(r[k].ok?'✓':r[k].state+'≠'+r[k].dom)).join(' ')):'sem player');return true;}
+    case 'mbstate':{const st=DEV.minibossState();devLog(st?('MINI-CHEFE '+st.id+' F'+st.phase+' hp '+st.hp+' haz '+st.hazards.length+'/'+st.hazardCap+' crias '+st.summons+(st.stance?' postura '+st.stance:'')+(st.escalation?' escalada '+st.escalation:'')+(st.siphon.active?' DRENANDO':'')):'sem mini-chefe');return true;}
+    case 'mbp2':       return DEV.minibossPhase2();
+    case 'mbhaz':      return DEV.minibossClearHazards();
+    case 'attinsp':{
+      const l=DEV.attunement()||[];
+      devLog('SINTONIA B4: '+(l.length?l.map(x=>x.id+'='+x.state+'(×'+x.mul+')').join(' · '):'sem módulos'));
+      return true;
+    }
     case 'msimc':      return DEV.simulateMoralChoice('comp',2);
     case 'msimg':      return DEV.simulateMoralChoice('greed',2);
     case 'msimv':      return DEV.simulateMoralChoice('viol',2);
@@ -21399,7 +22726,9 @@ function echoEqInit(e){
   if(!e.eqBase){
     e.eqBase={hp:e.maxHp||100,sh:e.shieldMax||0,reg:e.shieldRegen||0,mul:e.mul||1,
       crit:e.crit||0,critMul:e.critMul||1.8,pierce:e.pierce||0,
-      aoe:e.aoeMul||1,range:e.rangeMul||1,proj:e.projSpdMul||1};
+      aoe:e.aoeMul||1,range:e.rangeMul||1,proj:e.projSpdMul||1,
+      mrange:(e.meleeRangeMul!=null?e.meleeRangeMul:(e.rangeMul||1)),
+      rrange:(e.rangedRangeMul!=null?e.rangedRangeMul:(e.rangeMul||1))};   // B3-FIX
   }
   if(!e.eqCaps)e.eqCaps={wave:0,coleta:0,revigor:0,ultima:0,contrato:0,contain:0,mascara:0};
   if(!e.eqBoost)e.eqBoost={dmgMul:1,rateMul:1,hpMul:1,shMul:1,regenMul:1,takenMul:1,disMul:1};
@@ -21442,6 +22771,9 @@ function echoEqRefresh(e){
   e.pierce=Math.max(0,(b.pierce||0)+fx.pierceA);
   e.aoeMul=Math.max(.2,(b.aoe||1)*fx.aoeMul);
   e.rangeMul=Math.max(.2,(b.range||1)*fx.rangeMul);
+  /* B3-FIX: equipamento escala os dois alcances (eqBase antigo sem mrange/rrange cai no range legado) */
+  e.meleeRangeMul=Math.max(.2,(b.mrange!=null?b.mrange:(b.range||1))*fx.rangeMul);
+  e.rangedRangeMul=Math.max(.2,(b.rrange!=null?b.rrange:(b.range||1))*fx.rangeMul);
   e.projSpdMul=Math.max(.2,(b.proj||1)*fx.projMul);
 }
 /* multiplicador dinâmico por equipamento (dyn) — lido no momento do dano */
@@ -21695,7 +23027,7 @@ const EQ_FX_HANDLERS={
     spawnRing(e.x,e.y,'#ff4df0',5,90,.5);
     if(typeof echoSpeak==='function'&&typeof randi==='function'){
       const L=['EU CONHEÇO ESTE ROSTO.','A MÁSCARA SORRI PRIMEIRO.','ISSO TAMBÉM SOU EU.'];
-      echoSpeak(e,L[randi(0,L.length-1)],'#ff4df0');
+      echoSpeak(e,L[randi(0,L.length-1)],'#ff4df0','high');
     }
   },
   nascimentoDuplo(e,def,pl){
@@ -25092,7 +26424,7 @@ function fractureResoReact(d,info){
     const txt=pool[Math.floor(pick()*pool.length)%pool.length];
     const alvo=echoes.filter(e=>e&&e.alive&&echoAllied(e))[0]||
       echoes.filter(e=>e&&e.alive)[0];
-    if(alvo)echoSpeak(alvo,txt,key==='ruptured'?'#ff2f5e':'#8ff6ff');
+    if(alvo)echoSpeak(alvo,txt,key==='ruptured'?'#ff2f5e':'#8ff6ff',key==='ruptured'?'critical':'high');
     fractureHistPush({t:'reso_line',w:w,d:0,s:key});
   }catch(e){return false;}
   return true;
@@ -25110,7 +26442,12 @@ function fractureResoReact(d,info){
      · reroll temporal ligeiramente mais barato na loja (uma vez por visita).
    ===================================================================== */
 const FRACTURE_SCAR_COIN_MUL=.88;   // só nos eventos de Fratura
-const FRACTURE_SCAR_REROLL=7;       // contra os 10 padrão
+const FRACTURE_SCAR_REROLL=7;       // contra os 10 padrão (piso do desconto)
+/* B3-FIX: o reroll base agora cresce com a onda (rerollBaseCost=10+onda).
+   Para manter a IDENTIDADE de ESCASSEZ (≈30% mais barato no 1º reroll da
+   visita, 1×/onda) sem inflar o benefício (7 vs 30 na onda 20), o desconto é
+   proporcional: max(7, round(base×0.70)). Na onda 1 (base 10~11) continua 7. */
+const FRACTURE_SCAR_REROLL_K=.70;
 const FRACTURE_SCAR_RES_BONUS=1;    // +1 resíduo nas oportunidades de Fratura
 /* multiplicador de Créditos para recompensas vindas de evento de Fratura.
    Devolve 1 para qualquer outro Tema e para qualquer fonte que não seja
@@ -25164,7 +26501,7 @@ function fractureShopRerollCost(base){
   if(!(w>0))return v;
   const b=fractureB3();
   if(b&&b.scarUsed['rr'+((typeof wave!=='undefined')?(wave|0):0)])return v;
-  return Math.max(1,Math.min(v,FRACTURE_SCAR_REROLL));
+  return Math.max(1,Math.min(v,Math.max(FRACTURE_SCAR_REROLL,Math.round(v*FRACTURE_SCAR_REROLL_K))));
 }
 function fractureShopRerollUsed(){
   const b=fractureB3();
@@ -26145,7 +27482,7 @@ function fractureEchoSpeakPick(key){
     ((fractureRun?fractureRun.seed>>>0:1)^Math.imul(w+1,0x9E3779B1)^
      Math.imul(fractureHash32(key),0x85EBCA6B))>>>0));
   const txt=pool[Math.floor(rng()*pool.length)%pool.length];
-  try{echoSpeak(alvo,txt,'#8ff6ff');}catch(e){return false;}
+  try{echoSpeak(alvo,txt,'#8ff6ff','high');}catch(e){return false;}
   return true;
 }
 function fractureEchoOnReveal(){return fractureEchoSpeakPick('reveal');}

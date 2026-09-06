@@ -2537,10 +2537,14 @@ ok('fonte: nenhuma mutação de waveProfile fora do bloco PR13',()=>{
   }
   assert.ok(n>0,'a verificação encontrou escritas para validar');
 });
-ok('npm test continua listando as 18 suítes (17 legadas + PR13)',()=>{
+ok('npm test continua listando as suítes (18 legadas + PR13 + PR13.5 B2 + PR13.5 B3 + B3-FIX + B4 + B5-A + B5-B + B5-B-FIX + B5.5 + B6)',()=>{
   const pkg=JSON.parse(fs.readFileSync(path.join(ROOT,'package.json'),'utf8'));
   const partes=pkg.scripts.test.split('&&').map(s=>s.trim());
-  assert.strictEqual(partes.length,18,'18 suítes no npm test');
+  assert.strictEqual(partes.length,27,'27 suítes no npm test');   // B6 somou a sua
+  assert.ok(pkg.scripts.test.indexOf('pr13-5-b55-shop-meta.test.js')>=0,
+    'suíte B5.5 integrada');
+  assert.ok(pkg.scripts.test.indexOf('pr13-5-b6-balance.test.js')>=0,
+    'suíte B6 integrada');
 });
 
 /* =====================================================================
@@ -4419,16 +4423,19 @@ ok('B5-09: os quatro invocadores respeitam o teto de entidades',()=>{
     assert.ok(i>=0,'âncora ausente: '+ancora);
     const f=fim?jogo.indexOf(fim,i):jogo.indexOf('\n',i);
     assert.ok(f>i,'fim do ramo não encontrado em '+nome);
-    assert.ok(jogo.slice(i,f).indexOf('enemies.length<ENEMY_BUDGET')>0,
+    assert.ok(/enemies\.length[<>]=?ENEMY_BUDGET/.test(jogo.slice(i,f)),
       nome+' sem teto de entidades');
   };
   teto('cisão do splitter',"if(e.type==='splitter'&&!e.isShard");
-  teto('convocação do mini-chefe','if(e.summonCd<=0');
-  teto('habilidade swarmSpawn','if(SK.swarmSpawn&&e.skillCd<=0');
+  /* PR13.5 B5-B: a convocação dos mini-chefes (Arauto: escolta; Matriz:
+     enxame) passa pelo helper único mbSummon, que checa o teto na entrada e
+     dentro do laço; a Matriz ainda checa antes de chamar. */
+  teto('convocação do mini-chefe (mbSummon)','function mbSummon(','function mbChildren(');
+  teto('habilidade swarmSpawn (Matriz)','if(want>0&&enemies.length<ENEMY_BUDGET');
   teto('fenda do spawner',"if(e.type==='spawner'){",'/* ---- ANÔMALO TEMPORAL');
-  /* e não pode existir invocador novo sem teto: o total é exatamente 4 */
-  const total=(jogo.match(/enemies\.length<ENEMY_BUDGET/g)||[]).length;
-  assert.strictEqual(total,4,'mudou o número de invocadores com teto: '+total);
+  /* e não pode existir invocador novo sem teto: splitter, mbSummon (2 checks), Matriz, spawner = 5 */
+  const total=(jogo.match(/enemies\.length[<>]=?ENEMY_BUDGET/g)||[]).length;
+  assert.strictEqual(total,5,'mudou o número de invocadores com teto: '+total);
 });
 
 ok('B5-10: o runner continua recapitulando os rótulos das falhas',()=>{

@@ -21,7 +21,7 @@ let src=m[1];
 const RAWSRC=m[1];   // fonte crua para auditorias estáticas
 
 src+=';globalThis.__t={'+
-  'MORAL_BALANCE,MORAL_AFFINITY,MORAL_AXES,MORAL_AXIS_LABEL,MORAL_STATE_LABEL,'+
+  'MORAL_BALANCE,MORAL_AFFINITY,MORAL_AXES,MORAL_AXIS_LABEL,MORAL_STATE_LABEL,ATTUNE_STATES,'+
   'getMoralProfile,getItemMoralAffinity,calcMoralAffinityMatch,moralTuneFactor,'+
   'moralAffinityLevel,moralTuneModsFor,calcMoralTuningPlan,applyMoralTuning,moralTuneModId,'+
   'isMoralTuneModId,countAttunedItems,moralShopWeight,pickWeightedMoral,'+
@@ -306,8 +306,11 @@ ok('equipar item afinado com perfil alinhado → modificador moral:item no pipel
   t.giveItem(t.itemById('nucleo'),true);
   assert(t.smHas(p,'moral:item:nucleo:damage'),'id estável presente');
   const after=t.smGet(p,'damage');
-  const expected=before*1.30*(1+B.affinity.maxBonus.viol);
-  assert(near(after,expected,1e-6),'dano = base × módulo × sintonia ('+after+' vs '+expected+')');
+  /* PR13.5 B4: além do bônus temático do PR 9 (+5%), o próprio +30% do
+     módulo é escalado pelo estado RESSONANTE (×1.12 → +33,6%) */
+  const kRes=t.ATTUNE_STATES.find(s=>s.id==='resonant').mul;
+  const expected=before*(1+.30*kRes)*(1+B.affinity.maxBonus.viol);
+  assert(near(after,expected,1e-6),'dano = base × módulo(sintonizado) × sintonia ('+after+' vs '+expected+')');
 });
 ok('recálculo repetido NÃO duplica modificadores nem stat',()=>{
   const p=t.getPlayer();
@@ -685,7 +688,7 @@ ok('UI: tag de sintonia lista os eixos e o nível atual; neutro fica limpo',()=>
   setMoralRaw(0,0,10);
   const tag=t.moralAffinityTagHTML('nucleo',true);
   assert(tag.indexOf('SINTONIA')>=0&&tag.indexOf('VIOLÊNCIA')>=0);
-  assert(tag.indexOf('HARMÔNICA')>=0,'nível atual exibido');
+  assert(tag.indexOf('RESSONANTE')>=0,'nível atual exibido (B4: RESSONANTE substitui HARMÔNICA)');
   assert.strictEqual(t.moralAffinityTagHTML('lente',true),'','item neutro sem poluição');
 });
 ok('UI: frase de tooltip existe e não expõe a fórmula',()=>{

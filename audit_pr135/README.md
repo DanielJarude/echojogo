@@ -1,0 +1,115 @@
+# Auditoria PR13.5 — Bloco 1 (ferramentas)
+
+Estes scripts **não alteram o jogo**. Servem apenas para medir `index.html` real a partir do
+mesmo harness usado pelos testes.
+
+## Requisitos
+
+- Node.js (versão compatível com o repo).
+- Nenhuma alteração em `package.json`.
+
+## Como reproduzir
+
+```bash
+# carrega o script real do jogo e valida os dados exportados
+node -e "const {T}=require('./audit_pr135/harness.js'); console.log(T.ITEMS.length,T.UPGRADES.length,T.WEAPONS.length,T.MINIBOSS.length)"
+
+# variedade da loja + repeticoes (10.000 lojas / cenário; 1.000 runs)
+node audit_pr135/variety.js
+node audit_pr135/variety2.js
+
+# economia em 3 perfis morais (300 runs cada)
+node audit_pr135/economy_sim.js
+
+# métricas das strings de fala
+node audit_pr135/speech_metrics.js
+
+# inventário de armas e consumidores de range
+node audit_pr135/range_audit.js
+
+# matriz de minibosses
+node audit_pr135/miniboss_audit.js
+```
+
+## Conteúdo
+
+- `harness.js` — sandbox VM + DOM mínimo; expõe `T` com os dados/algoritmos do `index.html`.
+- `variety.js` — distribuição, entropia e repetição (upgrades/módulos).
+- `variety2.js` — at-least-once, repetição consecutiva e pool de armas.
+- `economy_sim.js` — simulação de créditos com RNG seedado e heurística documentada.
+- `speech_metrics.js` — comprimento/WPM das linhas de fala por fonte.
+- `range_audit.js` — tabela das 27 armas e consumidores de `rangeMul`.
+- `miniboss_audit.js` — matriz de habilidades dos 8 minibosses.
+- `b6_run_sim.js` — proxy determinístico de uma run completa (B6).
+- `b6_balance_audit.js` — tabelas agregadas de balanceamento (B6).
+
+## B6 — balanceamento final
+
+```bash
+# curva da run baseline (ondas 1-20 + PARADOXO)
+node audit_pr135/b6_run_sim.js
+
+# auditoria completa (armas, builds x operadores, temas, mini-chefes,
+# Paradoxo, sobrevivencia, itens/Attunement)
+node audit_pr135/b6_balance_audit.js 20260905 1000 all
+
+# um bloco por vez: weapons | items | themes | miniboss | paradox |
+#                   survival | builds | all
+node audit_pr135/b6_balance_audit.js 20260905 1000 weapons
+```
+
+`b6_run_sim.js` e o comentario no topo dele documentam os coeficientes
+heuristicos (SKILL, HEAL_PER_WAVE, UPTIME por classe) e as limitacoes do
+proxy. Eles sao IGUAIS para todas as linhas das tabelas, entao valem para
+comparacao relativa — nunca como dificuldade absoluta. Ver `PR13_5_B6.md`.
+
+## RNG
+
+Os scripts injetam um LCG (`Math.imul`/`1664525`/`1013904223`) em `Math.random` do sandbox,
+com sementes derivadas de cenário/onda/perfil. Reexecutar produz os mesmos números.
+
+## B3-FIX — holdouts (seeds nunca usadas no tuning)
+
+```bash
+# variedade/repetição da loja (1.000 runs × 20 ondas + reroll) contra a árvore indicada
+node audit_pr135/shop_metrics.js "$PWD" 777001
+node audit_pr135/shop_metrics.js "$PWD" 555999
+
+# economia formal (CAN_ALL / CAN_NONE / MEANINGFUL / saldo por onda), perfis A/B/C/C2, N=1000
+node audit_pr135/eco_metrics.js "$PWD" 424242 1000
+node audit_pr135/eco_metrics.js "$PWD" 991337 1000
+```
+O 1º argumento é a raiz ABSOLUTA de uma árvore (`"$PWD"` = a atual; um extract de outro commit serve para o "antes").
+
+## B4 — Sintonia
+
+```bash
+# matriz moral × 57 módulos: estados, efeito real por módulo, duplicatas, transições
+node audit_pr135/attunement_audit.js            # árvore atual
+node audit_pr135/attunement_audit.js /caminho/de/outra/arvore   # "antes"
+```
+
+## B5-A — Visual dos mini-chefes
+
+```bash
+# matriz de identidade, assinatura de primitivas do renderer real, distância entre pares, pureza, custo
+node audit_pr135/miniboss_visual_audit.js
+node audit_pr135/miniboss_visual_audit.js /caminho/da/arvore/anterior   # "antes"
+```
+
+## B5-B — Mecânica dos mini-chefes
+
+```bash
+# proxy: pressão/hazards/crias/regen/caps por mini-chefe × wave × fase (não substitui playtest)
+node audit_pr135/miniboss_mechanical_audit.js            # árvore atual (40 s por cenário)
+node audit_pr135/miniboss_mechanical_audit.js /outra 20  # "antes", 20 s
+```
+
+## B5-B-FIX — HUD
+
+```bash
+# loop REAL do jogo: STATE × DOM por indicador + chamadas efetivas de updateHUD/s
+node audit_pr135/hud_runtime_audit.js
+node audit_pr135/hud_runtime_audit.js /caminho/da/arvore/anterior   # em a27b3d1: DIVERGENTE, 0 chamadas
+```
+

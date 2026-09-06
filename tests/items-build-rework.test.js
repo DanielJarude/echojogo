@@ -124,7 +124,7 @@ ok('onKill: trans_temporal tem cooldown interno (não farmável)',()=>{
   const p=freshRun();T.grantItemInternal(p,T.itemById('trans_temporal'),true);
   const c0=p.coins;T.setCurAttacker(p);
   T.itemEmit('onKill',{player:p,target:{__id:1,x:0,y:0}});
-  assert(p.coins>=c0+5);
+  assert(p.coins>=c0+3);
   const c1=p.coins;
   T.itemEmit('onKill',{player:p,target:{__id:2,x:1,y:1}});
   assert.strictEqual(p.coins,c1,'cooldown impede segundo proc');
@@ -255,7 +255,7 @@ ok('Economy build: trade-offs reais (moedas sobem, escudo/dano caem)',()=>{
   const p=freshRun(0);
   const c0=p.coinMul,sm0=p.shieldMax;
   T.itemById('eco_divida').apply(p);
-  assert(p.coinMul>c0*1.9);
+  assert(p.coinMul>c0*1.5);
   assert(p.shieldMax<sm0*0.72,'dívida corta escudo máximo');
   const cm=p.coinMul;
   T.smRemoveId(p,'item.eco_divida.coin');

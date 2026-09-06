@@ -26,6 +26,8 @@ src+=';globalThis.__t={'+
   'persLineFor,persTraitLabs,persSpacing,persBiasMul,persFindTarget,'+
   'makeEcho,echoReact,echoSpeak,echoRoleTick,trustTier,enterDissonance,'+
   'triggerResonance,updateEcho,nearestEnemy,smBuildCheckpoint,captureCheckpoint,'+
+  'speechClear,speechTick,echoSpeechDuration,speechActive:()=>speechActive,'+
+  'speechQueue:()=>speechQueue,'+
   'startRun,onPlayerDeath,saveEchoes,loadEchoes,activateSlot,smLoadRoot,'+
   'getState:()=>state,getRunSt:()=>runSt,'+
   'setKills:v=>{kills=v|0;},setRunTime:v=>{runTime=+v;},getRunTime:()=>runTime,'+
@@ -649,7 +651,7 @@ ok('sem pool para o evento → fallback para o genérico',()=>{
   assert.strictEqual(line,null);
   assert.ok(t.ECHO_LINES.trustLow.length>0,'genérico continua existindo');
 });
-ok('echoReact usa a voz da personalidade e o cooldown global segura spam',()=>{
+ok('echoReact usa a voz da personalidade e o cooldown central segura spam',()=>{
   freshRun();
   const data={dur:60,trail:trail(100,0,1),items:[],upg:[],owned:[0,1],dom:'neutro',
     moral:{},kills:5,mh:100,st:stOf({}),dmgMul:1,frMul:1,wave:2,level:1,
@@ -657,15 +659,16 @@ ok('echoReact usa a voz da personalidade e o cooldown global segura spam',()=>{
   const e=t.makeEcho(data,1);
   e.x=t.getPlayer().x;e.y=t.getPlayer().y;
   t.setEchoes([e]);
-  t.getFtexts().length=0;
+  t.speechClear();
   t.setSpeakCd(0);
   MathF._rng=()=>0;                       // passa o gate de 35% e escolhe [0]
   t.echoReact('lowHp');
-  assert.strictEqual(t.getFtexts().length,1,'uma fala por evento');
-  const said=t.getFtexts()[t.getFtexts().length-1].txt;
+  assert.ok(t.speechActive()&&t.speechActive().txt,'uma fala por evento');
+  const said=t.speechActive().txt;
   assert.ok(t.PERSONALITIES.aggressive.lines.lowHp.indexOf(said)>=0,'voz certa: '+said);
   t.echoReact('lowHp');t.echoReact('lowHp');   // cooldown imediato bloqueia
-  assert.strictEqual(t.getFtexts().length,1,'sem spam: cooldown global respeitado');
+  assert.ok(t.speechActive()&&t.speechActive().txt===said,'sem spam: fala permanece única');
+  assert.strictEqual(t.speechQueue().length,0,'sem fila de spam');
   assert.ok(t.getSpeakCd()>=7.5,'cd aplicado: '+t.getSpeakCd());
   MathF._rng=()=>0.4242;
   t.setEchoes([]);
