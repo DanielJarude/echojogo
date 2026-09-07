@@ -8242,6 +8242,8 @@ function openShop(){
      Fica DEPOIS do early-return do voto de pobreza (loja pulada não abre)
      e NÃO em renderShop (que roda de novo a cada compra e a cada reroll). */
   fractureOnShopOpen();
+  /* B5: proposta de pacto diplomático (decisão explícita), uma vez por loja. */
+  try{if(typeof b5MaybeOfferPact==='function')b5MaybeOfferPact();}catch(e){}
 }
 function renderShopOp(){
   mTag.textContent='NÓDULO DE MANUTENÇÃO · ONDA '+String(wave).padStart(2,'0')+' NEUTRALIZADA';
@@ -20712,6 +20714,70 @@ const DEV={
     }
     return false;
   },
+  /* ---------- B5 §36: DIPLOMACIA (playtest) ---------- */
+  /* inspetor READ-ONLY do estado diplomático completo (não altera nada). */
+  factionDiplomacy(){
+    if(typeof factionDiplomacySnapshot!=='function')return null;
+    const snap=factionDiplomacySnapshot();
+    for(const id in snap){
+      const d=snap[id];
+      devLog(id.toUpperCase().padEnd(11)+' '+String(d.state).padEnd(12)+
+        ' aff:'+d.aff+(d.pact?' [PACTO]':'')+(d.canPact?' [pode-pactuar]':'')+
+        ' rival:'+d.rival+' teto:'+d.ceiling);
+    }
+    return snap;
+  },
+  /* seta afinidade direta de uma facção (respeita teto/clamp via fracApplyDelta
+     quando delta; escrita direta clampa [-100,100]). Taints a run. */
+  setFactionAffinity(faction,value){
+    if(!devReady())return false;
+    if(!fracRun||!FRACTION_BY_ID[faction])return false;
+    fracRun.aff[faction]=clamp(Math.round(+value||0),-100,100);
+    devTaint();devLog('AFF '+faction+' = '+fracRun.aff[faction]+' ('+fracStateOf(faction).lab+')');
+    return fracRun.aff[faction];
+  },
+  /* consolida um pacto (respeita as regras: eixo/limiar/cooldown). */
+  forceFactionAlliance(faction){
+    if(!devReady())return false;
+    if(!fracRun||!FRACTION_BY_ID[faction])return false;
+    /* garante conhecimento e afinidade mínima para o pacto ser válido */
+    if(typeof fracDisc!=='undefined'&&fracDisc[faction]&&fracDisc[faction].indexOf('contact')<0)
+      fracDisc[faction].push('contact');
+    if((fracRun.aff[faction]|0)<FACTION_PACT_MIN)fracRun.aff[faction]=FACTION_PACT_MIN;
+    if(fracRun.pactBroke)fracRun.pactBroke[faction]=0;
+    const ok=(typeof factionPactConsolidate==='function')?factionPactConsolidate(faction,{silent:false}):false;
+    devTaint();devLog('PACTO '+faction+(ok?' CONSOLIDADO':' RECUSADO (eixo ocupado?)'));
+    return ok;
+  },
+  /* rompe um pacto consolidado. */
+  breakFactionAlliance(faction){
+    if(!devReady())return false;
+    const ok=(typeof factionPactBreak==='function')?factionPactBreak(faction,{silent:false}):false;
+    devTaint();devLog('PACTO '+faction+(ok?' ROMPIDO':' (não havia pacto)'));
+    return ok;
+  },
+  /* cenários de playtest §51 (força um par diplomático + presença opcional). */
+  diploScenario(n){
+    if(!devReady()||!fracRun)return false;
+    const S={
+      1:{ally:'anchor',hostile:'deviants'},
+      2:{ally:'deviants',hostile:'anchor'},
+      3:{ally:'remnants',hostile:'consortium'},
+      4:{ally:'consortium',hostile:'remnants'},
+      5:{neutral:true},
+      6:{ally:'anchor',ally2:'remnants'}   // uma por eixo (compatível)
+    }[n|0];
+    if(!S){devLog('CENÁRIO inválido (1..6)');return false;}
+    /* reset diplomático da run (mantém o resto) */
+    for(const id of FACTION_IDS){fracRun.aff[id]=0;fracRun.pact[id]=0;fracRun.pactBroke[id]=0;
+      if(fracDisc[id]&&fracDisc[id].indexOf('contact')<0)fracDisc[id].push('contact');}
+    if(S.neutral){devTaint();devLog('CENÁRIO 5 · TODOS NEUTROS');return true;}
+    if(S.ally){DEV.forceFactionAlliance(S.ally);}
+    if(S.ally2){DEV.forceFactionAlliance(S.ally2);}
+    if(S.hostile){DEV.setFactionAffinity(S.hostile,-70);}
+    devTaint();devLog('CENÁRIO '+n+' aplicado');
+    return true;
+  },
   /* inspetor read-only de autopreservação dos Ecos (não altera gameplay). */
   echoRisk(){
     if(typeof echoes==='undefined')return [];
@@ -22500,6 +22566,217 @@ function fracStateOf(id){const s=fracRun?fracRun.aff[id]:0;
    A UI normal NUNCA mostra o número — só st.lab/st.col. */
 function getFactionAffinity(id){return fracRun&&fracRun.aff&&fracRun.aff[id]!=null?fracRun.aff[id]:0;}
 function getFactionState(id){return fracStateOf(id);}
+/* =====================================================================
+   PR14 · B5 — DIPLOMACIA: RIVALIDADES, PACTOS E TETO DIPLOMÁTICO
+   =====================================================================
+   marcadores: PR14·bloco b5-diplomacy.js / PR14·fim b5-diplomacy.js
+
+   AUDITORIA (audit_pr14/faction_diplomacy_b5_audit.js) mostrou que hoje o
+   estado ALIADA (afinidade>=85) é PRATICAMENTE INALCANÇÁVEL: um jogador que
+   se posiciona chega a ~60-66 (FAVORÁVEL, min 58). Portanto ALIADA era um
+   threshold numérico morto. O B5 dá sentido a ela SEM inflar deltas e SEM
+   nova barra:
+
+   · dois EIXOS de rivalidade forte (lore FRACTIONS.rel confirma):
+       ⬡ ÂNCORA  ↔  ◬ DESVIADOS      (estabilidade × transformação)
+       ◉ REMANESCENTES ↔ ◈ CONSÓRCIO (preservação × exploração)
+   · PACTO: ao atingir FAVORÁVEL (>=58) com uma facção conhecida, o jogador
+     PODE consolidar um pacto (decisão explícita, não automática). O pacto é
+     um pequeno FLAG por facção (fracRun.pact[id]) — reutiliza a afinidade
+     existente; NÃO é XP/pontos/moeda/barra. Consolidar promove a relação a
+     ALIADA (efeito diplomático) reusando o mesmo número.
+   · TETO DIPLOMÁTICO: um pacto consolidado com X impõe teto NEUTRO (0) na
+     rival Y — centralizado em factionAffinityCeiling(id). NÃO é -100
+     instantâneo: a rival é empurrada para <=0 (uma vez, no ato) e NÃO pode
+     voltar a subir acima de 0 enquanto o pacto existir.
+   · UM PACTO POR EIXO: consolidar X exige que a rival de X não tenha pacto.
+     Logo, no máximo 2 pactos (um por eixo) — nunca as 4 contraditórias.
+   · RUPTURA: o pacto pode ser rompido (decisão), liberando o teto da rival;
+     a antiga aliada cai para DESCONFIADA (custo) e fica em "cooldown" de
+     re-consolidação nesta run (anti-farm de troca de lado).
+   Tudo run-scoped (fracRun), idempotente e persistido no mesmo payload.
+   ===================================================================== */
+/* PR14·bloco b5-diplomacy.js */
+const FACTION_RIVAL={anchor:'deviants',deviants:'anchor',
+  remnants:'consortium',consortium:'remnants'};
+/* afinidade mínima para PODER consolidar um pacto. FAVORÁVEL (>=58) é
+   alcançável por quem se posiciona (auditado); ALIADA(85) seria inatingível. */
+const FACTION_PACT_MIN=58;
+/* penalidade ao romper: a antiga aliada cai para DESCONFIADA (topo da faixa). */
+const FACTION_RUPTURE_AFF=-40;
+/* teto imposto à rival de uma facção com pacto: NEUTRA (não pode passar de 0). */
+const FACTION_RIVAL_CEIL=0;
+function fracRival(id){return FACTION_RIVAL[id]||null;}
+/* leitura pura: existe pacto consolidado com esta facção nesta run? */
+function factionHasPact(id){return !!(fracRun&&fracRun.pact&&fracRun.pact[id]);}
+/* leitura pura: teto diplomático atual de uma facção (100 = sem teto).
+   Se a RIVAL tem pacto consolidado, esta facção é limitada a NEUTRA. */
+function factionAffinityCeiling(id){
+  if(!fracRun)return 100;
+  const rv=fracRival(id);
+  if(rv&&factionHasPact(rv))return FACTION_RIVAL_CEIL;
+  return 100;
+}
+/* leitura pura: o jogador PODE consolidar pacto com esta facção agora?
+   Requer: run ativa, facção conhecida, afinidade>=min, ainda sem pacto,
+   rival do MESMO eixo sem pacto (um pacto por eixo) e não em cooldown de
+   ruptura nesta run. */
+function factionCanPact(id){
+  if(!fracRun||!FRACTION_BY_ID[id])return false;
+  if(factionHasPact(id))return false;
+  if(fracRun.pactBroke&&fracRun.pactBroke[id])return false;   // rompeu antes: sem re-consolidar na run
+  if(typeof fracKnows==='function'&&!fracKnows(id))return false;
+  const rv=fracRival(id);
+  if(rv&&factionHasPact(rv))return false;                     // eixo já ocupado
+  return (fracRun.aff[id]|0)>=FACTION_PACT_MIN;
+}
+/* estado diplomático EFETIVO (considera pacto): pacto => sempre 'aliada'. */
+function factionDiploState(id){
+  if(factionHasPact(id))return FACTION_STATES[0];             // ALIADA
+  return fracStateOf(id);
+}
+/* consolida o pacto (idempotente). Aplica UMA vez: seta flag, deteriora a
+   rival até o teto e emite feedback. Retorna true só na 1ª consolidação. */
+function factionPactConsolidate(id,opts){
+  if(!factionCanPact(id))return false;
+  opts=opts||{};
+  fracRun.pact[id]=1;
+  /* deteriora a rival até o teto AGORA (uma vez). O ceiling impede que ela
+     volte a subir enquanto o pacto existir. */
+  const rv=fracRival(id);
+  if(rv&&(fracRun.aff[rv]|0)>FACTION_RIVAL_CEIL){
+    fracRun.aff[rv]=FACTION_RIVAL_CEIL;
+  }
+  if(!opts.silent&&!sandboxMode&&!sandboxRun){
+    const f=FRACTION_BY_ID[id],fr=rv?FRACTION_BY_ID[rv]:null;
+    try{
+      if(typeof toast==='function')toast(f.sym+' '+f.nm+' · '+FACTION_PACT_NAME[id]+' CONSOLIDADO'
+        +(fr?(' · '+fr.sym+' '+fr.nm+' RELAÇÃO DETERIORADA'):''));
+      if(typeof banner==='function')banner('PACTO // '+f.nm,FACTION_PACT_LINE[id]||'A ALIANÇA FOI SELADA.');
+      if(typeof AUDIO!=='undefined'&&AUDIO&&AUDIO.tone)AUDIO.tone(523,.22,'sine',.05,120);
+    }catch(e){}
+  }
+  return true;
+}
+/* rompe um pacto consolidado (idempotente). Libera o teto da rival, aplica
+   custo (antiga aliada cai para DESCONFIADA) e marca cooldown de run. */
+function factionPactBreak(id,opts){
+  if(!fracRun||!factionHasPact(id))return false;
+  opts=opts||{};
+  fracRun.pact[id]=0;
+  if(!fracRun.pactBroke)fracRun.pactBroke={};
+  fracRun.pactBroke[id]=1;                                    // sem re-consolidar nesta run
+  const before=fracRun.aff[id]|0;
+  fracRun.aff[id]=clamp(Math.min(before,FACTION_RUPTURE_AFF),-100,100);  // custo real
+  if(!opts.silent&&!sandboxMode&&!sandboxRun){
+    const f=FRACTION_BY_ID[id];
+    try{
+      if(typeof toast==='function')toast(f.sym+' '+f.nm+' · PACTO ROMPIDO · RELAÇÃO DESFEITA');
+      if(typeof banner==='function')banner('RUPTURA // '+f.nm,'O COMPROMISSO FOI DESFEITO — HÁ UM PREÇO.');
+      if(typeof AUDIO!=='undefined'&&AUDIO&&AUDIO.tone)AUDIO.tone(220,.3,'sine',.05,-160);
+    }catch(e){}
+  }
+  return true;
+}
+/* nomes/linhas de pacto por facção (coerentes com o lore de cada uma). */
+const FACTION_PACT_NAME={
+  anchor:'PROTOCOLO DE CONTENÇÃO',
+  remnants:'PACTO DE CONTINUIDADE',
+  consortium:'ACORDO DE EXCLUSIVIDADE',
+  deviants:'PACTO DE ADAPTAÇÃO'
+};
+const FACTION_PACT_LINE={
+  anchor:'A ORDEM RECONHECE VOCÊ COMO PARTE DA ESTRUTURA.',
+  remnants:'ELES CONFIAM A VOCÊ A CONTINUIDADE DOS QUE FICARAM.',
+  consortium:'O MERCADO ABRE UMA LINHA EXCLUSIVA EM SEU NOME.',
+  deviants:'A FENDA ACEITA VOCÊ COMO PARTE DA TRANSFORMAÇÃO.'
+};
+/* snapshot read-only da diplomacia inteira (DEV/UI/testes). Nunca escreve. */
+function factionDiplomacySnapshot(){
+  const out={};
+  for(const id of FACTION_IDS){
+    out[id]={aff:getFactionAffinity(id),state:factionDiploState(id).id,
+      rawState:fracStateOf(id).id,pact:factionHasPact(id),
+      canPact:factionCanPact(id),rival:fracRival(id),
+      ceiling:factionAffinityCeiling(id),
+      broke:!!(fracRun&&fracRun.pactBroke&&fracRun.pactBroke[id])};
+  }
+  return out;
+}
+/* =====================================================================
+   PR14 · B5 — PROMPT DE PACTO DIPLOMÁTICO (decisão explícita §9/§14/§16)
+   ---------------------------------------------------------------------
+   Surge no NÓDULO DE MANUTENÇÃO (loja, tempo congelado) quando uma facção
+   conhecida está elegível a pacto (FAVORÁVEL+) OU quando há um pacto ativo
+   que o operador pode romper. É uma DECISÃO: consolidar / manter independência
+   / romper. Uma facção por abertura de loja (sem spam). Só na run real.
+   Reutiliza o modal compartilhado; NÃO cria HUD/barra persistente (§37). */
+let _b5PactPromptWave=-1;
+function b5EligiblePactFaction(){
+  if(!fracRun)return null;
+  /* prioriza consolidação; determinístico pela ordem de FACTION_IDS */
+  for(const id of FACTION_IDS){
+    if(typeof factionCanPact==='function'&&factionCanPact(id))return {id:id,mode:'offer'};
+  }
+  return null;
+}
+function b5MaybeOfferPact(){
+  if(!fracRun||sandboxMode||sandboxRun)return false;
+  if(state!=='shop')return false;
+  if(_b5PactPromptWave===(wave|0))return false;           // uma vez por loja
+  const cand=b5EligiblePactFaction();
+  if(!cand)return false;
+  _b5PactPromptWave=wave|0;
+  b5OpenPactModal(cand.id);
+  return true;
+}
+function b5OpenPactModal(id){
+  const f=FRACTION_BY_ID[id];if(!f)return;
+  const rv=fracRival(id),fr=rv?FRACTION_BY_ID[rv]:null;
+  speechClear();
+  state='event';firing=false;curEv=null;
+  if(typeof hideActiveTooltip==='function')hideActiveTooltip();
+  const _mtabs=document.getElementById('m-tabs');
+  if(_mtabs){_mtabs.style.display='none';_mtabs.innerHTML='';}
+  mSect.style.display='none';mRow2.innerHTML='';mReroll.style.display='none';
+  mTag.textContent='PROPOSTA DIPLOMÁTICA · TEMPO CONGELADO';
+  mCoins.textContent='◈ '+(player?player.coins:0)+' CRÉDITOS';
+  mOwned.innerHTML=(typeof ownedLine==='function')?ownedLine():'';
+  mTitle.textContent=f.sym+' '+f.nm+' — '+(FACTION_PACT_NAME[id]||'PACTO');
+  mDesc.innerHTML=(FACTION_PACT_LINE[id]||'Uma aliança profunda foi oferecida.')+
+    '<br><span style="opacity:.8">'+f.frase+'</span>';
+  mClose.textContent='(ESCOLHA UMA OPÇÃO)';mClose.className='btn dis';mClose.onclick=null;
+  modalEl.classList.add('on');
+  mRow.innerHTML='';
+  /* impactos declarativos (UX §16): consolidar prejudica a rival ideológica */
+  const impConsolidate=[{k:f.nm,v:'ALIANÇA',t:'gain'}];
+  if(fr)impConsolidate.push({k:fr.nm,v:'RELAÇÃO PREJUDICADA',t:'loss'});
+  impConsolidate.push({k:'PRESENÇA FÍSICA',v:'PASSA A COOPERAR',t:'neutral'});
+  mRow.appendChild(mkCard('CONSOLIDAR '+(FACTION_PACT_NAME[id]||'PACTO'),
+    'Selar a aliança com '+f.nm+'. '+(fr?('A rivalidade com '+fr.nm+' será reconhecida — a relação com eles se deteriora e fica limitada nesta run.'):'')+
+    ' Um compromisso por eixo ideológico.',
+    (typeof evImpactHTML==='function'?evImpactHTML(impConsolidate):''),false,()=>{
+      factionPactConsolidate(id);
+      b5ClosePactModal();
+    }));
+  mRow.appendChild(mkCard('MANTER INDEPENDÊNCIA',
+    'Recusar o pacto por enquanto. A relação com '+f.nm+' permanece '+
+    (fracStateOf(id).lab)+' — nada muda, e a oferta pode voltar.',
+    '',false,()=>{
+      if(typeof toast==='function')toast('INDEPENDÊNCIA MANTIDA · '+f.nm);
+      b5ClosePactModal();
+    }));
+  if(typeof sfx==='function')sfx(300,.35,'sine',.05,-120);
+}
+function b5ClosePactModal(){
+  modalEl.classList.remove('on');
+  /* retoma a loja (a proposta acontece DENTRO da visita à loja) */
+  state='shop';curEv=null;
+  mReroll.style.display='block';
+  if(typeof renderShop==='function')renderShop();
+  modalEl.classList.add('on');
+}
+/* PR14·fim b5-diplomacy.js */
 /* Parâmetros do REROLL TEMPORAL (auditados no Bloco 3 §24): o custo começa
    em REROLL_BASE, cresce ×REROLL_SCALE (arredondado) e estaciona em REROLL_CAP.
    NUNCA reseta por trocar de aba/fechar/reabrir — só com a run (fracFresh).
@@ -22513,6 +22790,8 @@ function fracFresh(){
     aff:{anchor:0,remnants:0,consortium:0,deviants:0},
     obs:{anchor:0,remnants:0,consortium:0,deviants:0},  // observações p/ primeiro contato
     bandAnn:{anchor:0,remnants:0,consortium:0,deviants:0}, // faixa já transmitida (anti-spam; transiente da run)
+    pact:{anchor:0,remnants:0,consortium:0,deviants:0},    // B5: pactos consolidados (flag por facção, run-scoped)
+    pactBroke:{anchor:0,remnants:0,consortium:0,deviants:0},// B5: pacto rompido nesta run (sem re-consolidar)
     hist:[],                        // histórico COMPACTO de decisões (anti-spam + DEV + futuro)
     es:{rerollCost:REROLL_BASE,rerolls:0,inv:[],stock:[],shopRolled:false,
         stockWave:-1},              // onda em que o estoque foi rolado (anti-exploit de reopen)
@@ -22615,7 +22894,14 @@ function fracApplyDelta(id,delta,ev,pl){
   if(!fracRun||!delta)return 0;
   const stBefore=fracStateOf(id).id;
   const before=fracRun.aff[id]|0;
-  fracRun.aff[id]=clamp(before+delta,-100,100);
+  /* B5: TETO DIPLOMÁTICO centralizado. Se a RIVAL desta facção tem pacto
+     consolidado, esta facção não pode subir acima do teto (NEUTRA). Ganhos
+     positivos são cortados no teto; perdas passam normalmente. Único ponto
+     de escrita de afinidade em gameplay ⇒ o teto vale para TODAS as fontes. */
+  let next=clamp(before+delta,-100,100);
+  const ceil=(typeof factionAffinityCeiling==='function')?factionAffinityCeiling(id):100;
+  if(next>ceil&&next>before)next=Math.max(before,ceil);  // nunca sobe além do teto (mas não rebaixa)
+  fracRun.aff[id]=next;
   const applied=fracRun.aff[id]-before;
   /* observação: decisões que a facção NOTA contam para o primeiro contato */
   if(Math.abs(delta)>=2){
@@ -22769,6 +23055,10 @@ function fracRunPack(){
     cr:fr.cr|0,duoNasc:fr.duoNasc|0,refugio:fr.refugio|0,conTax:fr.conTax|0,
     aff:{anchor:fr.aff.anchor|0,remnants:fr.aff.remnants|0,
          consortium:fr.aff.consortium|0,deviants:fr.aff.deviants|0},
+    pact:{anchor:fr.pact?fr.pact.anchor?1:0:0,remnants:fr.pact?fr.pact.remnants?1:0:0,
+          consortium:fr.pact?fr.pact.consortium?1:0:0,deviants:fr.pact?fr.pact.deviants?1:0:0},
+    pactBroke:{anchor:fr.pactBroke?fr.pactBroke.anchor?1:0:0,remnants:fr.pactBroke?fr.pactBroke.remnants?1:0:0,
+               consortium:fr.pactBroke?fr.pactBroke.consortium?1:0:0,deviants:fr.pactBroke?fr.pactBroke.deviants?1:0:0},
     obs:{anchor:fr.obs.anchor|0,remnants:fr.obs.remnants|0,
          consortium:fr.obs.consortium|0,deviants:fr.obs.deviants|0},
     hist:fr.hist.slice(-FACTION_HIST_MAX).map(h=>({w:h.w|0,ev:h.ev,fid:h.fid||h.id||'',d:h.d|0,r:h.r})),
@@ -22791,6 +23081,23 @@ function fracRunUnpack(cp){
   for(const id of FACTION_IDS){
     fracRun.aff[id]=clamp((p.aff&&p.aff[id])|0,-100,100);
     fracRun.obs[id]=clamp((p.obs&&p.obs[id])|0,0,99);
+    /* B5: pactos/ruptura. Save antigo (sem p.pact) → defaults seguros (0),
+       preservando SM_VERSION/FRACTURE_STATE_VERSION (default seguro, sem migration). */
+    fracRun.pact[id]=(p.pact&&p.pact[id])?1:0;
+    fracRun.pactBroke[id]=(p.pactBroke&&p.pactBroke[id])?1:0;
+  }
+  /* B5: invariante de um-pacto-por-eixo ao restaurar (save corrompido nunca
+     produz duas rivais aliadas). Mantém o de menor índice de FACTION_IDS. */
+  for(const id of FACTION_IDS){
+    const rv=FACTION_RIVAL[id];
+    if(rv&&fracRun.pact[id]&&fracRun.pact[rv])fracRun.pact[rv]=0;
+  }
+  /* B5: reaplica o teto diplomático ao estado restaurado (idempotente): uma
+     rival de facção com pacto nunca fica acima do teto após o Continue. */
+  for(const id of FACTION_IDS){
+    const rv=FACTION_RIVAL[id];
+    if(rv&&fracRun.pact[id]&&(fracRun.aff[rv]|0)>FACTION_RIVAL_CEIL)
+      fracRun.aff[rv]=FACTION_RIVAL_CEIL;
   }
   if(Array.isArray(p.hist))
     /* histórico é input não confiável: só entradas com forma de decisão
@@ -25132,14 +25439,20 @@ function fracCodexBody(){
         'revelar esta facção — decisões fortes atraem olhares.</div></div>';
       continue;
     }
-    const st=fracStateOf(f.id);
+    /* B5: usa o estado DIPLOMÁTICO efetivo (pacto ⇒ ALIADA) para o rótulo. */
+    const st=(typeof factionDiploState==='function')?factionDiploState(f.id):fracStateOf(f.id);
+    const hasPact=(typeof factionHasPact==='function')&&factionHasPact(f.id);
+    const rv=(typeof fracRival==='function')?fracRival(f.id):null;
+    const rivalPact=rv&&(typeof factionHasPact==='function')&&factionHasPact(rv);
+    const pactTxt=hasPact?('◆ '+(FACTION_PACT_NAME[f.id]||'PACTO')):(rivalPact?'PACTO: NENHUM · RIVAL ALIADA':'PACTO: NENHUM');
     const disc=fracDisc[f.id]||[];
     const have=k=>disc.indexOf(k)>=0;
     h+='<div class="cxitem" style="border-color:'+f.col+'44;box-shadow:0 0 14px '+f.col+'22">'+
       '<div class="cxinfo"><div class="cxnm">'+
       '<span style="color:'+f.col+'">'+f.sym+' '+f.nm+'</span>'+
       '<span class="cxtag" style="color:'+st.col+';border:1px solid '+st.col+'55;background:'+st.col+'12">'+
-      st.lab+' (OBSERVANDO ESTA RUN)</span></div>'+
+      st.lab+' (ESTA RUN)</span></div>'+
+      '<div class="cxfx" style="color:'+(hasPact?f.col:'#9db8c8')+';font-size:.82em">'+pactTxt+'</div>'+
       '<div class="cxds">'+f.short+'</div>'+
       (have('contact')?'<div class="cxfx" style="color:'+f.col+'">« '+f.ideologia+' »</div>':'');
     if(have('contact'))h+='<div class="cxfx" style="color:rgba(200,230,245,.8);font-style:italic">'+f.frase+'</div>';
@@ -25419,6 +25732,16 @@ function fracSandboxSection(){
     if(st)h+='<span class="asbtn" style="color:'+st.col+';border-color:'+st.col+'66" data-fracsb="know:'+fid+'">'+st.lab+'</span>';
   }
   h+='</div>';
+  /* B5: PACTOS diplomáticos (consolidar/romper) — estado temporário do lab */
+  h+='<div class="srow"><span class="k">DIPLOMACIA (B5)</span><span class="v">PACTO = ALIANÇA · rival do eixo fica limitada</span></div>';
+  h+='<div class="sbrow" style="flex-wrap:wrap">';
+  for(const fid of FACTION_IDS){
+    const f=FRACTION_BY_ID[fid];
+    const hasP=run&&typeof factionHasPact==='function'&&factionHasPact(fid);
+    h+='<span class="asbtn" title="Consolidar pacto" data-fracsb="pact:'+fid+'">'+f.sym+' PACTO'+(hasP?' ✓':'')+'</span>'+
+      '<span class="asbtn" title="Romper pacto" data-fracsb="unpact:'+fid+'">'+f.sym+' ROMPER</span>';
+  }
+  h+='</div>';
   /* Lore temporária: ofertas/eventos por facção — mutam SÓ a cópia do lab */
   h+='<div class="sbrow" style="flex-wrap:wrap">'+
     '<span class="asbtn" data-fracsb="offer:anchor">OFERTA ÂNCORA</span>'+
@@ -25546,6 +25869,21 @@ function fracSandboxAction(cmd){
       else if(raw==='A'){run.aff[fid]=90;}
       else break;
       toast('SANDBOX: '+FRACTION_BY_ID[fid].nm+' → '+fracStateOf(fid).lab);
+      break;}
+    case 'pact':{
+      if(!run||!FRACTION_BY_ID[fid])break;
+      /* garante pré-requisitos no laboratório (conhecimento + limiar) */
+      if(!fracDisc[fid])fracDisc[fid]=[];
+      if(fracDisc[fid].indexOf('contact')<0)fracDisc[fid].push('contact');
+      if((run.aff[fid]|0)<FACTION_PACT_MIN)run.aff[fid]=FACTION_PACT_MIN;
+      if(run.pactBroke)run.pactBroke[fid]=0;
+      const ok=(typeof factionPactConsolidate==='function')?factionPactConsolidate(fid,{silent:true}):false;
+      toast('SANDBOX: PACTO '+FRACTION_BY_ID[fid].nm+(ok?' CONSOLIDADO':' RECUSADO (eixo ocupado?)'));
+      break;}
+    case 'unpact':{
+      if(!run||!FRACTION_BY_ID[fid])break;
+      const ok=(typeof factionPactBreak==='function')?factionPactBreak(fid,{silent:true}):false;
+      toast('SANDBOX: PACTO '+FRACTION_BY_ID[fid].nm+(ok?' ROMPIDO':' (não havia)'));
       break;}
     case 'know':{
       if(!run||!FRACTION_BY_ID[fid])break;
@@ -26442,7 +26780,6 @@ function fractureOnShopOpen(){
         ?Math.round(player.coins):0});
   }catch(e){}
 }
-
 /* ---------------- sanitização de waveProfile (B2.11) ----------------
    bias/pool vêm do save, ou seja, são INPUT NÃO CONFIÁVEL. Só passam:
    arquétipos que existem em EDEFS (nada de '__proto__'/'constructor'),
@@ -29300,6 +29637,29 @@ const FACTION_PRESENCE_DEVIANTS_DUR=12;      // segundos do buff/trade-off tempo
 const FACTION_PRESENCE_DEVIANTS_DMG=1.20;    // +20% dano do operador (temporário)
 const FACTION_PRESENCE_DEVIANTS_TAKEN=1.15;  // +15% dano recebido (o risco/custo)
 
+/* ---- B5: modulação diplomática das presenças físicas. Cada presença
+   CONSULTA o estado diplomático efetivo (factionDiploState) e se comporta
+   por FAIXA — agrupada em 3 tiers para não criar 7 versões (§22):
+     'ally'   → ALIADA/pacto (cooperação; benefício pequeno/moderado);
+     'base'   → FAVORÁVEL/INTERESSADA/OBSERVANDO/NEUTRA (comportamento B4);
+     'hostile'→ DESCONFIADA/HOSTIL (restrição/custo, mas com DECISÃO).
+   Multiplicadores conservadores: aliada NÃO é "sempre melhor" e hostil NÃO
+   é punição de morte (§23/§24). ---- */
+const FACTION_PRESENCE_ALLY_MULT=1.30;       // aliada: +30% sobre o benefício base (moderado)
+const FACTION_PRESENCE_HOSTILE_MULT=0.55;    // hostil: benefício reduzido (quando ainda há)
+const FACTION_PRESENCE_HOSTILE_RES_COST=6;   // ⧗ para destravar cache do Consórcio hostil
+const FACTION_PRESENCE_DEVIANTS_ALLY_TAKEN=1.08; // aliada: risco menor (adaptação mais controlada)
+const FACTION_PRESENCE_DEVIANTS_HOSTILE_DMG=1.28;   // hostil: oferta mais tentadora…
+const FACTION_PRESENCE_DEVIANTS_HOSTILE_TAKEN=1.35; // …mas muito mais instável (decisão do jogador)
+/* tier diplomático de uma facção (leitura pura; nunca escreve). */
+function fpDiploTier(faction){
+  let id='neutra';
+  try{if(typeof factionDiploState==='function'){const st=factionDiploState(faction);if(st&&st.id)id=st.id;}}catch(e){}
+  if(id==='aliada')return 'ally';
+  if(id==='hostil'||id==='desconfiada')return 'hostile';
+  return 'base';
+}
+
 /* ---- identidade visual (B3-E/B4): símbolo + cor + forma. Nomes sustentados
    pelo lore existente (Âncora: contenção; Consórcio: recurso; Remanescentes:
    memória/vínculo; Desviados: transformação/instabilidade). ---- */
@@ -29398,13 +29758,16 @@ function fpEntityAnnounce(e){
   try{if(typeof echoFactionReaction==='function')echoFactionReaction(e.faction,'spawn',e);}catch(x){}
 }
 
-/* rótulo de estado de afinidade (B3-I): SÓ LEITURA, para nuance de texto. */
+/* rótulo de estado de afinidade (B3-I): SÓ LEITURA, para nuance de texto.
+   B5: usa o estado DIPLOMÁTICO efetivo (pacto ⇒ ALIADA). */
 function fpEntityAffinityLabel(faction){
   try{
-    if(typeof getFactionState==='function'){
-      const st=getFactionState(faction);
-      if(st&&st.nm)return String(st.nm).slice(0,18);
-      if(st&&st.id)return String(st.id).slice(0,18);
+    const st=(typeof factionDiploState==='function')?factionDiploState(faction)
+      :(typeof getFactionState==='function'?getFactionState(faction):null);
+    if(st){
+      let s=String(st.lab||st.id||'NEUTRA').slice(0,18);
+      if(typeof factionHasPact==='function'&&factionHasPact(faction))s='◆ '+s; // marca de pacto
+      return s;
     }
   }catch(e){}
   return 'NEUTRA';
@@ -29418,68 +29781,109 @@ function factionPresenceInteract(){
   e.consumed=true;
   const lab=FACTION_PRESENCE_LABEL[e.faction]||{nm:'PRESENÇA',col:'#e8fbff'};
   let msg='';
+  const _tier=fpDiploTier(e.faction);   // B5: 'ally' | 'base' | 'hostile'
   if(e.faction==='anchor'){
     /* estabilização defensiva: fração LIMITADA do Escudo. Só escudo, nunca
-       HP; não vira buff permanente. Sem escudo disponível ⇒ sem efeito. */
+       HP; não vira buff permanente. Sem escudo disponível ⇒ sem efeito.
+       B5: ALIADA estabiliza melhor (contenção cooperativa); HOSTIL ainda
+       oferece contenção, porém restrita (fração menor) — é NEGAÇÃO PARCIAL,
+       nunca um turret inimigo nem punição inevitável. */
     if(typeof player!=='undefined'&&player&&player.shieldMax>0){
-      const amt=Math.max(1,Math.round(player.shieldMax*FACTION_PRESENCE_ANCHOR_SHIELD));
+      let frac=FACTION_PRESENCE_ANCHOR_SHIELD;
+      if(_tier==='ally')frac*=FACTION_PRESENCE_ALLY_MULT;
+      else if(_tier==='hostile')frac*=FACTION_PRESENCE_HOSTILE_MULT;
+      const amt=Math.max(1,Math.round(player.shieldMax*frac));
       const before=player.shield||0;
       player.shield=clamp(before+amt,0,player.shieldMax);
       if(player.shieldDelayT!=null)player.shieldDelayT=0;   // libera regen
       const gained=Math.round(player.shield-before);
-      msg='ESCUDO ESTABILIZADO +'+gained;
+      msg=(_tier==='ally'?'CONTENÇÃO ALIADA +':(_tier==='hostile'?'CONTENÇÃO RESTRITA +':'ESCUDO ESTABILIZADO +'))+gained;
       try{if(typeof floatText==='function')floatText(e.x,e.y-20,'+'+gained+' ESCUDO',lab.col);}catch(x){}
     }else{
       msg='NADA A ESTABILIZAR';
     }
   }else if(e.faction==='consortium'){
-    /* oportunidade de recurso: ⧗ Resíduos EXISTENTES, via API central. */
-    let got=0;
-    try{if(typeof addResidues==='function'&&addResidues(FACTION_PRESENCE_CONSORTIUM_RES,'faction_presence',e.x,e.y))got=FACTION_PRESENCE_CONSORTIUM_RES;}catch(x){got=0;}
-    msg=got>0?('⧗ +'+got+' RESÍDUOS'):'CACHE VAZIO';
+    /* oportunidade de recurso: ⧗ Resíduos EXISTENTES, via API central.
+       B5: ALIADA rende mais (acesso prioritário); HOSTIL é ACESSO RESTRITO
+       com DECISÃO — o cache só abre pagando um custo em ⧗ (se o operador
+       tiver saldo), devolvendo um retorno líquido pequeno. Sem saldo ⇒ o
+       cache permanece negado (administrável, não fatal). */
+    let got=0,net=0;
+    if(_tier==='hostile'){
+      const cost=FACTION_PRESENCE_HOSTILE_RES_COST;
+      const gross=FACTION_PRESENCE_CONSORTIUM_RES+cost;   // paga taxa, recebe cache maior
+      if(typeof getResidues==='function'&&getResidues()>=cost&&typeof spendResidues==='function'&&spendResidues(cost,'faction_presence_toll')){
+        try{if(typeof addResidues==='function'&&addResidues(gross,'faction_presence',e.x,e.y))got=gross;}catch(x){got=0;}
+        net=got-cost;
+        msg=net>0?('CACHE DESTRAVADO · ⧗ +'+net+' (LÍQUIDO)'):'CACHE DESTRAVADO';
+      }else{
+        msg='ACESSO NEGADO · ⧗'+cost+' PARA DESTRAVAR';
+      }
+    }else{
+      let base=FACTION_PRESENCE_CONSORTIUM_RES;
+      if(_tier==='ally')base=Math.round(base*FACTION_PRESENCE_ALLY_MULT);   // acesso prioritário
+      try{if(typeof addResidues==='function'&&addResidues(base,'faction_presence',e.x,e.y))got=base;}catch(x){got=0;}
+      msg=got>0?((_tier==='ally'?'ACESSO PRIORITÁRIO · ⧗ +':'⧗ +')+got+' RESÍDUOS'):'CACHE VAZIO';
+    }
   }else if(e.faction==='remnants'){
     /* B4 — MEMORIAL RESSONANTE: preserva o VÍNCULO. Restaura uma fração
        LIMITADA do escudo de CADA Eco vivo aliado e reata um pouco de
        confiança (pequeno, com clamp, uma vez). Nunca HP cheio, nunca revive,
        nunca apaga consequência de relação ruim (só soma um pouco de trust —
        um Eco hostil/dissonante continua hostil/dissonante). */
+    /* B5: ALIADA reconhece/protege os Echos → vínculo mais forte; HOSTIL
+       RECUSA o vínculo → sem restaurar escudo e sem +trust (o Eco não perde
+       nada: não mata, não remove trust, não provoca Dissonância — só NEGA a
+       ajuda). Base = comportamento B4. */
     let touched=0,shTot=0;
+    const _rmShieldFrac=(_tier==='ally')?FACTION_PRESENCE_REMNANTS_SHIELD*FACTION_PRESENCE_ALLY_MULT:FACTION_PRESENCE_REMNANTS_SHIELD;
+    const _rmTrust=(_tier==='ally')?Math.round(FACTION_PRESENCE_REMNANTS_TRUST*FACTION_PRESENCE_ALLY_MULT):FACTION_PRESENCE_REMNANTS_TRUST;
     try{
-      if(typeof echoes!=='undefined'&&echoes&&echoes.length){
+      if(_tier!=='hostile'&&typeof echoes!=='undefined'&&echoes&&echoes.length){
         for(const ec of echoes){
           if(!ec||!ec.alive)continue;
           if(typeof echoAllied==='function'&&!echoAllied(ec))continue; // hostil não recebe carinho
           if(ec.shieldMax>0){
             const before=ec.shield||0;
-            const amt=Math.max(1,Math.round(ec.shieldMax*FACTION_PRESENCE_REMNANTS_SHIELD));
+            const amt=Math.max(1,Math.round(ec.shieldMax*_rmShieldFrac));
             ec.shield=clamp(before+amt,0,ec.shieldMax);
             shTot+=Math.round(ec.shield-before);
           }
-          if(typeof changeEchoTrust==='function')changeEchoTrust(ec,FACTION_PRESENCE_REMNANTS_TRUST,'faction_presence_remnants');
+          if(typeof changeEchoTrust==='function')changeEchoTrust(ec,_rmTrust,'faction_presence_remnants');
           try{if(typeof spawnRing==='function')spawnRing(ec.x,ec.y,lab.col,6,90,.5);}catch(_x){}
           touched++;
         }
       }
     }catch(x){}
-    msg=touched>0?('VÍNCULO REATADO · '+touched+' ECO'+(touched>1?'S':'')+(shTot>0?' · +'+shTot+' ESCUDO':'')):'NENHUM ECO PARA RESSOAR';
+    if(_tier==='hostile')msg='VÍNCULO RECUSADO';
+    else msg=touched>0?((_tier==='ally'?'VÍNCULO RECONHECIDO · ':'VÍNCULO REATADO · ')+touched+' ECO'+(touched>1?'S':'')+(shTot>0?' · +'+shTot+' ESCUDO':'')):'NENHUM ECO PARA RESSOAR';
   }else if(e.faction==='deviants'){
     /* B4 — FENDA ADAPTATIVA: transformação com RISCO. Um trade-off TEMPORÁRIO
        via Stat Modifier Pipeline (auto-expira em smTick): +dano do operador,
        mas +dano recebido. Sem +dano grátis permanente, sem stacking (replace),
        sem invulnerabilidade. Expira sozinho — nada a limpar manualmente. */
+    /* B5: o PRINCÍPIO risco↔recompensa é preservado em TODOS os tiers.
+       ALIADA = adaptação mais CONTROLADA (mesmo +dano, risco menor);
+       HOSTIL = oferta mais TENTADORA (+dano maior) porém MUITO mais instável
+       (+dano recebido maior) — continua sendo uma DECISÃO administrável, não
+       um debuff inevitável. Sem +dano grátis; sem stacking (replace). */
     let applied=false;
+    let dmgMul=FACTION_PRESENCE_DEVIANTS_DMG,takenMul=FACTION_PRESENCE_DEVIANTS_TAKEN;
+    if(_tier==='ally')takenMul=FACTION_PRESENCE_DEVIANTS_ALLY_TAKEN;          // risco menor
+    else if(_tier==='hostile'){dmgMul=FACTION_PRESENCE_DEVIANTS_HOSTILE_DMG;takenMul=FACTION_PRESENCE_DEVIANTS_HOSTILE_TAKEN;}
     try{
       if(typeof player!=='undefined'&&player&&typeof smAdd==='function'){
         smAdd(player,{id:'faction.deviants.dmg',stat:'damage',type:'mult',
-          value:FACTION_PRESENCE_DEVIANTS_DMG,dur:FACTION_PRESENCE_DEVIANTS_DUR,
+          value:dmgMul,dur:FACTION_PRESENCE_DEVIANTS_DUR,
           stacks:'replace',label:'ADAPTAÇÃO DESVIADA +DANO'});
         smAdd(player,{id:'faction.deviants.taken',stat:'dmgTaken',type:'mult',
-          value:FACTION_PRESENCE_DEVIANTS_TAKEN,dur:FACTION_PRESENCE_DEVIANTS_DUR,
+          value:takenMul,dur:FACTION_PRESENCE_DEVIANTS_DUR,
           stacks:'replace',label:'ADAPTAÇÃO DESVIADA +DANO RECEBIDO'});
         applied=true;
       }
     }catch(x){applied=false;}
-    msg=applied?('ADAPTAÇÃO ATIVA '+FACTION_PRESENCE_DEVIANTS_DUR+'s · +'+Math.round((FACTION_PRESENCE_DEVIANTS_DMG-1)*100)+'% DANO / +'+Math.round((FACTION_PRESENCE_DEVIANTS_TAKEN-1)*100)+'% RECEBIDO'):'FENDA INSTÁVEL';
+    const _pfx=(_tier==='ally'?'ADAPTAÇÃO CONTROLADA ':(_tier==='hostile'?'ADAPTAÇÃO INSTÁVEL ':'ADAPTAÇÃO ATIVA '));
+    msg=applied?(_pfx+FACTION_PRESENCE_DEVIANTS_DUR+'s · +'+Math.round((dmgMul-1)*100)+'% DANO / +'+Math.round((takenMul-1)*100)+'% RECEBIDO'):'FENDA INSTÁVEL';
   }
   /* B4: reação contextual do Echo à presença NO MOMENTO da interação. */
   try{if(typeof echoFactionReaction==='function')echoFactionReaction(e.faction,'interact',e);}catch(x){}
@@ -30080,6 +30484,57 @@ function _echoFacReactColor(faction){
    interact (consumo). NÃO obriga os dois; o cooldown/queue central evita spam.
    Determinístico na escolha do Echo (sem RNG solto): pega o Echo vivo aliado
    de menor slot (o de maior confiança tende a ser o slot 1). ---- */
+/* ---- B5: CAMADA DIPLOMÁTICA (§27). Pequena, keyed por SITUAÇÃO diplomática,
+   NÃO por facção×personalidade (evita explosão combinatória 4×8×7). Um Echo
+   percebe: presença de ALIADA, presença HOSTIL, e RIVALIDADE CONSOLIDADA
+   (o operador tem pacto com a rival ideológica desta facção). Reutiliza o
+   picker determinístico com anti-repeat; a fala é NARRATIVA (não muda nada). */
+const ECHO_DIPLO_REACTIONS={
+  ally:[
+    'Essa facção trabalha com a gente agora. Dá pra sentir a diferença.',
+    'Eles nos reconhecem. É estranho ter um aliado de verdade aqui.',
+    'Aliança selada. Que dure mais que a próxima onda.'
+  ],
+  hostile:[
+    'Eles não gostam de nós. Isso aqui vai cobrar caro.',
+    'Presença hostil. Não espere gentileza dessa gente.',
+    'A relação azedou. Melhor pensar duas vezes antes de tocar nisso.'
+  ],
+  rival:[
+    'Eles sabem do nosso pacto com a rival. Estão medindo você.',
+    'Você escolheu um lado. Essa facção não esqueceu disso.',
+    'Vínculo com o inimigo deles detectado. Isso não passa despercebido.'
+  ]
+};
+/* decide a SITUAÇÃO diplomática relevante para a fala (ou null p/ usar B4). */
+function echoDiploSituation(faction){
+  try{
+    if(typeof factionHasPact==='function'&&factionHasPact(faction))return 'ally';
+    let tier='base';
+    if(typeof fpDiploTier==='function')tier=fpDiploTier(faction);
+    if(tier==='ally')return 'ally';
+    if(tier==='hostile')return 'hostile';
+    /* rivalidade consolidada: o operador tem pacto com a RIVAL desta facção */
+    if(typeof fracRival==='function'&&typeof factionHasPact==='function'){
+      const rv=fracRival(faction);
+      if(rv&&factionHasPact(rv))return 'rival';
+    }
+  }catch(e){}
+  return null;
+}
+function echoDiploReactionPick(sit,pers){
+  const pool=ECHO_DIPLO_REACTIONS[sit];
+  if(!pool||!pool.length)return '';
+  if(pool.length===1)return pool[0];
+  const key=(pers||'_')+'|diplo|'+sit;
+  let st=_echoFacReactMem[key];
+  if(!st){st={n:0,last:-1,at:0};_echoFacReactMem[key]=st;}
+  let idx=st.n%pool.length;
+  if(idx===st.last)idx=(idx+1)%pool.length;
+  st.last=idx;st.n=(st.n+1)%1000000;st.at=(++_echoFacReactSeq);
+  _echoFacReactTrim();
+  return pool[idx];
+}
 function echoFactionReaction(faction,ctx,entity){
   if(typeof echoes==='undefined'||!echoes||!echoes.length)return false;
   if(!faction||!(faction in ECHO_FACTION_BASE))return false;
@@ -30098,11 +30553,18 @@ function echoFactionReaction(faction,ctx,entity){
   live.sort((a,b)=>(a.slot|0)-(b.slot|0));
   const e=live[0];
   const pid=(e.pers&&e.pers.id)||(e.ps&&e.ps.id)||null;
-  const txt=echoFactionReactionPick(faction,pid,ctx);
+  /* B5 §27: camada diplomática como FALLBACK PREFERENCIAL nas situações
+     extremas (ally/hostile/rival). Determinística: em 'interact' comenta a
+     situação diplomática; em 'spawn' mantém a variedade B4 (facção×pers) e só
+     usa a camada diplo quando existe rivalidade consolidada. NÃO muda trust/
+     facção/buff — puramente narrativa (§17). */
+  let txt='';
+  const sit=(typeof echoDiploSituation==='function')?echoDiploSituation(faction):null;
+  if(sit&&(ctx==='interact'||sit==='rival')){
+    txt=echoDiploReactionPick(sit,pid);
+  }
+  if(!txt)txt=echoFactionReactionPick(faction,pid,ctx);
   if(!txt)return false;
-  /* nuance narrativa por confiança (§17): NÃO altera trust — só escolhe o
-     tom quando há alternativa trivial de prefixo curto. Mantido mínimo para
-     não inflar os pools nem mudar gameplay. */
   const col=_echoFacReactColor(faction);
   try{return !!echoSpeak(e,txt,col,'normal');}catch(x){return false;}
 }
