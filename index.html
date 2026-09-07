@@ -9568,19 +9568,95 @@ function evRelLine(e){
   const st=echoRelState(e);
   return '<span style="color:'+st.col+'">ECHO·0'+e.slot+' · '+st.lab+'</span><br>';
 }
+/* PR14·B3-FIX.1 FIX C — POOL DE FALAS DE OPERADOR (anti-repetição)
+   -------------------------------------------------------------------
+   Antes: 1 frase FIXA por operador, exibida em TODO evento de facção via
+   operatorWhisperHTML() → a mesma linha ("Estabilidade não é ausência de
+   risco...") aparecia em dezenas de eventos. Era ARQUITETURAL (fallback
+   único), não específico do VECTOR — por isso o pool cobre os 8 operadores.
+   Agora: cada operador tem um PEQUENO pool (a 1ª linha é a assinatura
+   histórica, preservada para não mudar identidade). A seleção é
+   DETERMINÍSTICA e cosmética: um contador por operador rotaciona o pool e
+   um anti-repeat garante que a mesma linha não saia duas vezes seguidas.
+   NÃO consome o RNG do Director (não usa fractureRng/Math.random do loop),
+   NÃO altera gameplay, NÃO é salvo (não sobe SM_VERSION) e não cresce
+   indefinidamente (só um inteiro por operador).
+   Distinção importante: isto é fala de OPERADOR (o jogador). Reações de
+   ECHO às facções são dívida do B4 — NÃO são tratadas aqui. */
 const OPERATOR_WHISPER={
-  vector:'"Estabilidade não é ausência de risco. É escolher qual risco pagar."',
-  wraith:'"Eu já vi isso acabar. Quatro vezes. Todas erradas."',
-  bulwark:'"Se cair, eu seguro. É para isso que existem as placas."',
-  pyre:'"Tudo aqui está a um estopim de virar solução."',
-  warden:'"O protocolo sugere cautela. O protocolo sugere. Eu decido."',
-  nomad:'"Metade dessas coisas já me pertenceu. A outra metade me deve."',
-  echo0:'"Eu lembro de ter esquecido exatamente isto."',
-  revenant:'"A fome reconhece fome. Não confie nela. Nem em mim."'
+  vector:[
+    '"Estabilidade não é ausência de risco. É escolher qual risco pagar."',
+    '"Cada escolha tem um preço. A pergunta nunca é se — é quanto."',
+    '"Eu não aposto. Eu calculo qual perda dói menos."',
+    '"Emoção é ruído. Decida pelo número, lamente depois."',
+    '"Toda saída limpa é só uma conta que ainda não venceu."'
+  ],
+  wraith:[
+    '"Eu já vi isso acabar. Quatro vezes. Todas erradas."',
+    '"Reconheço este momento. Nunca terminou bem."',
+    '"O futuro não me surpreende mais. Só me cansa."',
+    '"Faça diferente desta vez. Por favor. Uma vez."',
+    '"Eu lembro do fim antes do começo. É a maldição do trabalho."'
+  ],
+  bulwark:[
+    '"Se cair, eu seguro. É para isso que existem as placas."',
+    '"Fica atrás de mim. O resto a gente resolve depois."',
+    '"Metal aguenta. Eu aguento. Decida sem medo do impacto."',
+    '"Nenhum Eco cai enquanto eu estiver de pé."',
+    '"Escudo primeiro, arrependimento nunca."'
+  ],
+  pyre:[
+    '"Tudo aqui está a um estopim de virar solução."',
+    '"Queima tudo e o problema deixa de existir. Simples."',
+    '"Cada fenda dessas cheira a combustível. Eu gosto."',
+    '"Contenção é para quem tem medo do próprio fogo."',
+    '"Um dia isso explode. Melhor escolher a direção antes."'
+  ],
+  warden:[
+    '"O protocolo sugere cautela. O protocolo sugere. Eu decido."',
+    '"Existe o manual, e existe o que precisa ser feito. Raramente coincidem."',
+    '"Regra boa é a que sobrevive ao primeiro contato. As outras eu quebro."',
+    '"Ordem não é obediência. É saber quando desobedecer."',
+    '"O sistema confia em mim. Eu confio no sistema. Um de nós está errado."'
+  ],
+  nomad:[
+    '"Metade dessas coisas já me pertenceu. A outra metade me deve."',
+    '"Nada aqui é lixo. Só é valor que ninguém reclamou ainda."',
+    '"Eu não roubo. Eu recupero o que o colapso largou no chão."',
+    '"Todo posto abandonado tem uma dívida. Eu vim cobrar."',
+    '"Estrada ensina: pega o que der, o resto o tempo leva."'
+  ],
+  echo0:[
+    '"Eu lembro de ter esquecido exatamente isto."',
+    '"Já estive aqui. Ou vou estar. A ordem não importa mais."',
+    '"Minha memória é um espelho rachado. Ainda reflete, aos pedaços."',
+    '"Você decide. Eu só relembro o que a decisão vai custar."',
+    '"Sou o eco de alguém que também hesitou aqui."'
+  ],
+  revenant:[
+    '"A fome reconhece fome. Não confie nela. Nem em mim."',
+    '"Algo aqui quer ser alimentado. Sempre quer."',
+    '"Eu já fui presa. Aprendi a ser o que caça."',
+    '"Cuidado com o que promete saciar. Ele mente melhor que eu."',
+    '"O vazio dentro pede mais. Escolha antes que ele escolha por você."'
+  ]
 };
+/* memória cosmética de anti-repeat — NÃO é salva no SaveManager */
+const _opWhisperMem={};
+function operatorWhisperLine(id){
+  const pool=OPERATOR_WHISPER[id];
+  if(!pool||!pool.length)return '';
+  if(pool.length===1)return pool[0];
+  const st=_opWhisperMem[id]||(_opWhisperMem[id]={n:0,last:-1});
+  /* rotação determinística: avança o contador, pula se cair na última linha */
+  let idx=st.n%pool.length;
+  if(idx===st.last)idx=(idx+1)%pool.length;
+  st.last=idx;st.n=(st.n+1)%1000000;   // contador limitado: nunca cresce sem fim
+  return pool[idx];
+}
 function operatorWhisperHTML(){
   const c=CHARS[charSel];if(!c)return '';
-  const w=OPERATOR_WHISPER[c.id];if(!w)return '';
+  const w=operatorWhisperLine(c.id);if(!w)return '';
   return '<span style="color:'+c.color+'">'+c.nm+' · '+w+'</span><br>';
 }
 
