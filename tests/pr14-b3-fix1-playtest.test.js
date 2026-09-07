@@ -447,13 +447,15 @@ ok('37. SM_VERSION = 3 (sem migration)',()=>{assert.strictEqual(t.SM_VERSION,3);
 ok('38. FRACTURE_STATE_VERSION = 1',()=>{assert.strictEqual(t.FRACTURE_STATE_VERSION,1);});
 ok('39. 12 FACTION_RUN_EVENTS',()=>{assert.strictEqual(t.FACTION_RUN_EVENTS.length,12);});
 ok('40. 4 FRAC_CONTACT_EVENTS',()=>{assert.strictEqual(t.FRAC_CONTACT_EVENTS.length,4);});
-ok('41. presença física só ÂNCORA e CONSÓRCIO',()=>{
-  /* cross-realm: comparar por conteúdo (não reference-equal entre VMs) */
-  assert.strictEqual(t.FACTION_PRESENCE_PHYSICAL.slice().sort().join(','),'anchor,consortium');
+ok('41. ÂNCORA e CONSÓRCIO seguem físicas (base preservada após o B4)',()=>{
+  /* cross-realm: comparar por conteúdo (não reference-equal entre VMs).
+     O B4 completou o conjunto para as 4 facções; aqui só garantimos que a
+     base do B3 continua presente (a lista completa é validada no B4). */
+  const set=t.FACTION_PRESENCE_PHYSICAL.slice();
+  assert.ok(set.indexOf('anchor')>=0&&set.indexOf('consortium')>=0,'anchor+consortium físicas');
 });
-ok('42. fpIsPhysical coerente (anchor/consortium sim; remnants/deviants não)',()=>{
+ok('42. fpIsPhysical coerente para ÂNCORA e CONSÓRCIO',()=>{
   assert.ok(t.fpIsPhysical('anchor')&&t.fpIsPhysical('consortium'));
-  assert.ok(!t.fpIsPhysical('remnants')&&!t.fpIsPhysical('deviants'));
 });
 ok('43. FACTION_PRESENCE_ACTIVE_CAP = 1 mantido',()=>{
   assert.strictEqual(t.FACTION_PRESENCE_ACTIVE_CAP,1);

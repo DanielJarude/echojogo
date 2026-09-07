@@ -314,20 +314,23 @@ ok('16. Sandbox isolado: sem run física, spawn é inócuo',()=>{
   t.setSandboxRun(false);
 });
 
-/* 17/18. ÂNCORA e CONSÓRCIO reconhecidas como físicas */
-ok('17/18. ÂNCORA e CONSÓRCIO são físicas; REMANESCENTES/DESVIADOS não',()=>{
+/* 17/18. ÂNCORA e CONSÓRCIO reconhecidas como físicas (B3).
+   NOTA: o B4 completou o conjunto — as 4 facções são físicas agora. Este
+   teste passa a garantir que a base do B3 (anchor/consortium) continua
+   física; a cobertura das 2 novas vive em tests/pr14-b4-four-factions.test.js. */
+ok('17/18. ÂNCORA e CONSÓRCIO continuam físicas (base do B3 preservada)',()=>{
   assert.ok(t.fpIsPhysical('anchor'));
   assert.ok(t.fpIsPhysical('consortium'));
-  assert.ok(!t.fpIsPhysical('remnants'),'remnants fica para o B4');
-  assert.ok(!t.fpIsPhysical('deviants'),'deviants fica para o B4');
 });
 
-/* 18b. facção não-física agendada não materializa entidade */
-ok('18b. presença de facção não-física não vira entidade (B4)',()=>{
-  beginPhys(308);scheduleFaction('remnants',5);
+/* 18b. presença física agendada materializa entidade. No B3 remnants ainda
+   não materializava; o B4 a habilitou — o teste agora confirma que uma
+   facção física agendada vira entidade (usando consortium, base do B3). */
+ok('18b. presença física agendada materializa entidade',()=>{
+  beginPhys(308);scheduleFaction('consortium',5);
   const e=t.factionPresenceSpawnFromScheduled(true);
-  assert.strictEqual(e,null,'remnants não materializa no B3');
-  assert.strictEqual(t.getEntity(),null);
+  assert.ok(e,'consortium materializa');
+  assert.ok(t.getEntity(),'entidade viva');
 });
 
 /* 19. símbolos corretos */

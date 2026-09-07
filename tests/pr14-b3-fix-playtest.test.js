@@ -469,7 +469,8 @@ ok('34/35. Âncora e Consórcio têm helpers de desenho próprios',()=>{
 /* 36. não reutiliza a assinatura do beacon (fonte: sem "col=(EV_LABEL" no draw da presença) */
 ok('36. desenho da presença ≠ desenho do beacon (gramática distinta)',()=>{
   const fnStart=html.indexOf('function factionPresenceDrawEntity');
-  const fnSrc=html.slice(fnStart,fnStart+2200);
+  /* janela ampliada: no B4 a função de desenho passou a tratar 4 facções */
+  const fnSrc=html.slice(fnStart,fnStart+3200);
   /* o beacon usa EV_LABEL[b.kind]; a presença não deve derivar cor de EV_LABEL */
   assert.ok(fnSrc.indexOf('EV_LABEL')<0,'presença não usa EV_LABEL do beacon');
   /* tag exclusiva que separa de evento comum */
@@ -543,9 +544,11 @@ ok('49/50. 12 FACTION_RUN_EVENTS + 4 FRAC_CONTACT_EVENTS intactos',()=>{
   assert.strictEqual(t.FACTION_RUN_EVENTS.length,12);
   assert.strictEqual(t.FRAC_CONTACT_EVENTS.length,4);
 });
-ok('fpIsPhysical: só ÂNCORA e CONSÓRCIO',()=>{
+ok('fpIsPhysical: ÂNCORA e CONSÓRCIO seguem físicas (base do B3)',()=>{
+  /* O B4 completou o conjunto para as 4 facções; a lista completa é
+     validada em tests/pr14-b4-four-factions.test.js. Aqui garantimos que a
+     base do B3 continua física. */
   assert.ok(t.fpIsPhysical('anchor')&&t.fpIsPhysical('consortium'));
-  assert.ok(!t.fpIsPhysical('remnants')&&!t.fpIsPhysical('deviants'));
 });
 
 console.log('\nResultado: '+pass+' passaram · '+fail+' falharam');
