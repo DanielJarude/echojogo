@@ -19008,6 +19008,7 @@ function loop(now){
             }
           }
           swings.length=0;
+          fracWaveSediment(wave|0);   // FIX B: sedimento temporal de fim de onda
         }
         waveActive=false;wavePause-=dt;
         if(wavePause<=0){
@@ -22508,7 +22509,8 @@ function fracFresh(){
        consortium:{wave:0,last:0,n:0},deviants:{wave:0,last:0,n:0}}, // ofertas por facção
     gainLog:[],                     // log bruto por evento (DEV)
     eco:{gain:{},spend:{},mx:0},    // telemetria LOCAL de balanceamento (§11) — só DEV, não persiste
-    dRes:{wave:-1,n:0}              // Dissonância contida: cap por onda (anti-farm §9)
+    dRes:{wave:-1,n:0},            // Dissonância contida: cap por onda (anti-farm §9)
+    sedW:0                          // FIX B: última onda que pagou sedimento (idempotência anti-reentrada/reload)
   };
 }
 let fracRun=null;
@@ -22762,7 +22764,8 @@ function fracRunPack(){
         inv:(fr.es.inv||[]).slice(),stock:(fr.es.stock||[]).slice(),
         shopRolled:!!fr.es.shopRolled,stockWave:(fr.es.stockWave==null?-1:fr.es.stockWave)|0},
     eq:fr.eq.map(s=>({n:s.n,p:s.p,r:s.r,b:s.b?Object.assign({},s.b):null})),
-    o:(function(){const o={};for(const id of FACTION_IDS)o[id]=Object.assign({},fr.o[id]);return o;})()
+    o:(function(){const o={};for(const id of FACTION_IDS)o[id]=Object.assign({},fr.o[id]);return o;})(),
+    sedW:fr.sedW|0   // FIX B: persiste a última onda paga (Continue não re-concede sedimento)
   };
 }
 function fracRunUnpack(cp){
@@ -22772,6 +22775,7 @@ function fracRunUnpack(cp){
   fracRun.res=clamp(p.res|0,0,9999);
   fracRun.cr=clamp(p.cr|0,0,999);fracRun.duoNasc=clamp(p.duoNasc|0,0,99);
   fracRun.refugio=clamp(p.refugio|0,0,9);fracRun.conTax=p.conTax?1:0;
+  fracRun.sedW=clamp(p.sedW|0,0,MAX_WAVE);   // FIX B: restaura idempotência do sedimento (save antigo = 0)
   for(const id of FACTION_IDS){
     fracRun.aff[id]=clamp((p.aff&&p.aff[id])|0,-100,100);
     fracRun.obs[id]=clamp((p.obs&&p.obs[id])|0,0,99);
@@ -24075,6 +24079,32 @@ function fracLore(fid,key){
 }
 function fracResFX(n){
   addResidues(n,'evento_faccao',beacon?beacon.x:player.x,beacon?beacon.y:player.y);
+}
+/* PR14·B3-FIX.1 FIX B — SEDIMENTO TEMPORAL DE FIM DE ONDA
+   -------------------------------------------------------------------
+   O 2º playtest achou a geração de ⧗ baixa cedo demais para participar das
+   primeiras lojas da aba ECHO. A auditoria (audit_pr14/residue_economy_audit.js,
+   N>=1000) confirmou a CAUSA REAL: toda fonte por-abate exige EQUIPAMENTO de
+   Eco que já custa ⧗ (bootstrap circular), e o 1º mini-chefe (⧗3) só vem na
+   onda 5 → na loja da W4, ~98% das runs tinham ⧗0, abaixo do item mais barato
+   (⧗3). É problema de GERAÇÃO INICIAL, não de preço.
+   Correção MÍNIMA e quantificada: um "sedimento" de fim de onda, pequeno e
+   DECRESCENTE (2/2/1/1/1 nas ondas 1-5, 0 a partir da 6). Injeta só ~⧗7 na
+   run inteira, todos cedo — eleva o PISO de participação sem inflar o teto
+   (P90 tardio quase não muda; não vira 2ª versão dos Créditos, sem UI nova,
+   sem moeda nova). Fonte temática: resíduo que "assenta" ao estabilizar a
+   onda. Idempotente: chamado uma única vez por onda no gate waveCleared, e
+   ainda carimba fracRun.sedW para blindar contra reentrada. Sandbox isolado. */
+const FRAC_SEDIMENT_MAX_WAVE=5;
+function fracWaveSediment(w){
+  if(!fracRun)return 0;                         // só em run com economia de facção
+  if(sandboxMode||sandboxRun)return 0;          // laboratório não injeta economia
+  w=w|0;
+  if(w<1||w>FRAC_SEDIMENT_MAX_WAVE)return 0;    // taper: some a partir da onda 6
+  if((fracRun.sedW|0)>=w)return 0;              // anti-reentrada: uma vez por onda
+  fracRun.sedW=w;
+  const n=(w<=2)?2:1;                           // 2,2,1,1,1
+  return addResidues(n,'sedimento_temporal',player?player.x:null,player?player.y:null)||0;
 }
 const FACTION_RUN_EVENTS=[
 /* ================= A ÂNCORA ================= */
