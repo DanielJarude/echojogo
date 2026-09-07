@@ -20700,6 +20700,18 @@ const DEV={
     if(typeof factionPresenceEntitySnapshot!=='function')return null;
     return factionPresenceEntitySnapshot();
   },
+  /* B4: dispara/inspeciona uma reação de Echo a uma facção para playtest.
+     Se 'pers' for dado, força temporariamente a fala de um Echo com aquela
+     personalidade (sem alterar o Echo real). NÃO altera gameplay/afinidade. */
+  echoFactionReaction(faction,pers){
+    if(!devReady())return false;
+    if(typeof echoFactionReactionPreview==='function'){
+      const txt=echoFactionReactionPreview(faction,pers);
+      devLog('REAÇÃO '+String(faction)+'/'+(pers||'?')+': '+(txt||'—'));
+      return txt||false;
+    }
+    return false;
+  },
   /* inspetor read-only de autopreservação dos Ecos (não altera gameplay). */
   echoRisk(){
     if(typeof echoes==='undefined')return [];
@@ -29261,9 +29273,11 @@ function factionPresenceKitBoot(){
        addResidues). one-shot; sem nova moeda; sem economia infinita.
    ===================================================================== */
 
-/* ---- facções fisicamente elegíveis no B3 (só 2). As outras 2 continuam
-   sendo agendadas pelo B2, mas NÃO manifestam entidade — isso é B4. ---- */
-const FACTION_PRESENCE_PHYSICAL=['anchor','consortium'];
+/* ---- facções fisicamente elegíveis. B3 ativou ⬡ ÂNCORA e ◈ CONSÓRCIO;
+   B4 completa o conjunto com ◉ REMANESCENTES e ◬ DESVIADOS (o bloco fp3.js
+   estende as constantes de balance, o draw e o efeito de cada uma). O
+   scheduler do B2 já sorteia as 4; até o B4 as outras 2 só não materializavam. ---- */
+const FACTION_PRESENCE_PHYSICAL=['anchor','remnants','consortium','deviants'];
 const FACTION_PRESENCE_PHYSICAL_SET=(function(){const o={};
   for(const id of FACTION_PRESENCE_PHYSICAL)o[id]=true;return o;})();
 function fpIsPhysical(id){return !!FACTION_PRESENCE_PHYSICAL_SET[id];}
@@ -29278,14 +29292,26 @@ const FACTION_PRESENCE_MIN_PLAYER_DIST=300;// nunca nasce sobre o player
 const FACTION_PRESENCE_MIN_BEACON_DIST=170;// nunca nasce sobre o beacon
 const FACTION_PRESENCE_ANCHOR_SHIELD=0.5;  // fração do shieldMax restaurada
 const FACTION_PRESENCE_CONSORTIUM_RES=4;   // ⧗ concedidos (one-shot)
+/* ---- B4: constantes de balance das 2 novas presenças. Conservadoras e
+   auditadas em audit_pr14/faction_presence_b4_audit.js. ---- */
+const FACTION_PRESENCE_REMNANTS_SHIELD=0.35; // fração do shieldMax de CADA Eco vivo restaurada
+const FACTION_PRESENCE_REMNANTS_TRUST=4;     // +confiança (pequeno; respeita clamp; sem farm)
+const FACTION_PRESENCE_DEVIANTS_DUR=12;      // segundos do buff/trade-off temporário
+const FACTION_PRESENCE_DEVIANTS_DMG=1.20;    // +20% dano do operador (temporário)
+const FACTION_PRESENCE_DEVIANTS_TAKEN=1.15;  // +15% dano recebido (o risco/custo)
 
-/* ---- identidade visual (B3-E): símbolo + cor + forma. Nomes sustentados
-   pelo lore existente (Âncora: contenção; Consórcio: resíduos têm valor). */
+/* ---- identidade visual (B3-E/B4): símbolo + cor + forma. Nomes sustentados
+   pelo lore existente (Âncora: contenção; Consórcio: recurso; Remanescentes:
+   memória/vínculo; Desviados: transformação/instabilidade). ---- */
 const FACTION_PRESENCE_LABEL={
   anchor    :{nm:'NÓ DE CONTENÇÃO',sym:'⬡',col:'#8fd6ff',
               title:'PRESENÇA DA ÂNCORA'},
   consortium:{nm:'CACHE TEMPORAL', sym:'◈',col:'#ffd166',
-              title:'PRESENÇA DO CONSÓRCIO'}
+              title:'PRESENÇA DO CONSÓRCIO'},
+  remnants  :{nm:'MEMORIAL RESSONANTE',sym:'◉',col:'#7dffc4',
+              title:'PRESENÇA DOS REMANESCENTES'},
+  deviants  :{nm:'FENDA ADAPTATIVA',  sym:'◬',col:'#ff4df0',
+              title:'PRESENÇA DOS DESVIADOS'}
 };
 
 /* ---- entidade física efêmera. Objeto plano, dedicado; NÃO é beacon, NÃO
@@ -29367,6 +29393,9 @@ function fpEntityAnnounce(e){
   const lab=FACTION_PRESENCE_LABEL[e.faction];if(!lab)return;
   try{if(typeof banner==='function')banner(lab.sym+' '+lab.title,'APROXIME-SE PARA INTERAGIR');}catch(x){}
   try{if(typeof AUDIO!=='undefined'&&AUDIO&&AUDIO.tone)AUDIO.tone(560,.28,'sine',.04,-160);}catch(x){}
+  /* B4: reação contextual do Echo à APARIÇÃO da presença (gatilho 'spawn').
+     Narrativa; o cooldown/queue central de fala evita spam (§19). */
+  try{if(typeof echoFactionReaction==='function')echoFactionReaction(e.faction,'spawn',e);}catch(x){}
 }
 
 /* rótulo de estado de afinidade (B3-I): SÓ LEITURA, para nuance de texto. */
@@ -29408,7 +29437,52 @@ function factionPresenceInteract(){
     let got=0;
     try{if(typeof addResidues==='function'&&addResidues(FACTION_PRESENCE_CONSORTIUM_RES,'faction_presence',e.x,e.y))got=FACTION_PRESENCE_CONSORTIUM_RES;}catch(x){got=0;}
     msg=got>0?('⧗ +'+got+' RESÍDUOS'):'CACHE VAZIO';
+  }else if(e.faction==='remnants'){
+    /* B4 — MEMORIAL RESSONANTE: preserva o VÍNCULO. Restaura uma fração
+       LIMITADA do escudo de CADA Eco vivo aliado e reata um pouco de
+       confiança (pequeno, com clamp, uma vez). Nunca HP cheio, nunca revive,
+       nunca apaga consequência de relação ruim (só soma um pouco de trust —
+       um Eco hostil/dissonante continua hostil/dissonante). */
+    let touched=0,shTot=0;
+    try{
+      if(typeof echoes!=='undefined'&&echoes&&echoes.length){
+        for(const ec of echoes){
+          if(!ec||!ec.alive)continue;
+          if(typeof echoAllied==='function'&&!echoAllied(ec))continue; // hostil não recebe carinho
+          if(ec.shieldMax>0){
+            const before=ec.shield||0;
+            const amt=Math.max(1,Math.round(ec.shieldMax*FACTION_PRESENCE_REMNANTS_SHIELD));
+            ec.shield=clamp(before+amt,0,ec.shieldMax);
+            shTot+=Math.round(ec.shield-before);
+          }
+          if(typeof changeEchoTrust==='function')changeEchoTrust(ec,FACTION_PRESENCE_REMNANTS_TRUST,'faction_presence_remnants');
+          try{if(typeof spawnRing==='function')spawnRing(ec.x,ec.y,lab.col,6,90,.5);}catch(_x){}
+          touched++;
+        }
+      }
+    }catch(x){}
+    msg=touched>0?('VÍNCULO REATADO · '+touched+' ECO'+(touched>1?'S':'')+(shTot>0?' · +'+shTot+' ESCUDO':'')):'NENHUM ECO PARA RESSOAR';
+  }else if(e.faction==='deviants'){
+    /* B4 — FENDA ADAPTATIVA: transformação com RISCO. Um trade-off TEMPORÁRIO
+       via Stat Modifier Pipeline (auto-expira em smTick): +dano do operador,
+       mas +dano recebido. Sem +dano grátis permanente, sem stacking (replace),
+       sem invulnerabilidade. Expira sozinho — nada a limpar manualmente. */
+    let applied=false;
+    try{
+      if(typeof player!=='undefined'&&player&&typeof smAdd==='function'){
+        smAdd(player,{id:'faction.deviants.dmg',stat:'damage',type:'mult',
+          value:FACTION_PRESENCE_DEVIANTS_DMG,dur:FACTION_PRESENCE_DEVIANTS_DUR,
+          stacks:'replace',label:'ADAPTAÇÃO DESVIADA +DANO'});
+        smAdd(player,{id:'faction.deviants.taken',stat:'dmgTaken',type:'mult',
+          value:FACTION_PRESENCE_DEVIANTS_TAKEN,dur:FACTION_PRESENCE_DEVIANTS_DUR,
+          stacks:'replace',label:'ADAPTAÇÃO DESVIADA +DANO RECEBIDO'});
+        applied=true;
+      }
+    }catch(x){applied=false;}
+    msg=applied?('ADAPTAÇÃO ATIVA '+FACTION_PRESENCE_DEVIANTS_DUR+'s · +'+Math.round((FACTION_PRESENCE_DEVIANTS_DMG-1)*100)+'% DANO / +'+Math.round((FACTION_PRESENCE_DEVIANTS_TAKEN-1)*100)+'% RECEBIDO'):'FENDA INSTÁVEL';
   }
+  /* B4: reação contextual do Echo à presença NO MOMENTO da interação. */
+  try{if(typeof echoFactionReaction==='function')echoFactionReaction(e.faction,'interact',e);}catch(x){}
   if(typeof factionPresenceResolve==='function')factionPresenceResolve('interact');
   factionPresenceEntity=null;
   try{
@@ -29544,6 +29618,98 @@ function fpDrawConsortium(e,col,p,fade){
   ctx.restore();
   ctx.restore();
 }
+/* =====================================================================
+   B4 §5/§8 — IDENTIDADE VISUAL PRÓPRIA DAS 2 NOVAS PRESENÇAS
+   ---------------------------------------------------------------------
+   Regra do PR14 (do B3-FIX): reconhecível ANTES de ler o nome, ≠ beacon,
+   ≠ das outras 3. Gramáticas distintas mesmo em grayscale:
+
+   · REMANESCENTES (◉) — MEMORIAL RESSONANTE: silhueta ORGÂNICA/vertical, sem
+     ângulos rígidos. Um núcleo vivo pulsante, ondas concêntricas suaves que
+     se expandem para fora (ressonância) e FRAGMENTOS DE MEMÓRIA orbitando
+     devagar em elipse (não círculo perfeito → sensação de algo que lembra e
+     respira). Nada de hexágono (Âncora) nem cofre (Consórcio).
+   · DESVIADOS (◬) — FENDA ADAPTATIVA: geometria QUEBRADA/assimétrica. Um
+     triângulo que se desloca em offsets temporais (a forma parece mudar sem
+     virar glitch RGB), lascas trianguladas que alternam posição em passos
+     discretos e um núcleo instável de pulso NÃO-uniforme. Estética = distorção
+     TEMPORAL (deslocamento/eco), não ruído colorido.
+
+   Desenho procedural O(1) por frame; sem partículas sem cap, sem filtros. */
+function fpDrawRemnants(e,col,p,fade){
+  const R=e.r;
+  ctx.save();
+  /* ondas concêntricas suaves (ressonância que se expande) */
+  ctx.strokeStyle=col;ctx.shadowColor=col;ctx.lineWidth=1.6;
+  for(let k=0;k<3;k++){
+    const ph=(e.pulse*.5+k/3)%1;                 // 0..1 expande e some
+    const rr=R*(.4+ph*1.05);
+    ctx.globalAlpha=(1-ph)*.5*(.5+fade*.5);ctx.shadowBlur=6;
+    ctx.beginPath();ctx.arc(0,0,rr,0,TAU);ctx.stroke();
+  }
+  /* fragmentos de memória orbitando em ELIPSE lenta (assimetria orgânica) */
+  ctx.fillStyle=col;ctx.shadowBlur=8;
+  for(let i=0;i<4;i++){
+    const a=e.pulse*.7+i*TAU/4;
+    const ox=Math.cos(a)*R*.95,oy=Math.sin(a)*R*.6;  // elipse (≠ órbita circular do Consórcio)
+    const s=R*(.09+.03*Math.sin(e.pulse*2+i));
+    ctx.globalAlpha=(.4+.4*Math.sin(e.pulse*1.6+i))*(.5+fade*.5);
+    ctx.beginPath();ctx.arc(ox,oy,Math.max(1,s),0,TAU);ctx.fill();
+  }
+  /* núcleo vivo pulsante (respira; sem bordas rígidas) — dois círculos */
+  const beat=.5+.5*Math.sin(e.pulse*2.2);
+  ctx.globalAlpha=(.55+beat*.4)*(.6+fade*.4);ctx.shadowBlur=12+beat*8;
+  ctx.beginPath();ctx.arc(0,0,R*(.22+beat*.06),0,TAU);ctx.fill();
+  ctx.globalAlpha=1;ctx.fillStyle='#04140e';
+  ctx.beginPath();ctx.arc(0,0,R*.10,0,TAU);ctx.fill();
+  /* símbolo ◉ integrado: aro externo fino ao redor do núcleo */
+  ctx.strokeStyle=col;ctx.globalAlpha=.7*(.5+fade*.5);ctx.lineWidth=1.4;ctx.shadowBlur=6;
+  ctx.beginPath();ctx.arc(0,0,R*.30,0,TAU);ctx.stroke();
+  ctx.restore();
+}
+function fpDrawDeviants(e,col,p,fade){
+  const R=e.r;
+  ctx.save();
+  /* triângulo-base com ECO deslocado no tempo (distorção temporal, não glitch):
+     duas cópias em offset discreto que se alternam. */
+  const step=Math.floor(e.pulse*3)%3;               // passos discretos
+  const off=(step-1)*R*.14;                          // offset temporal
+  ctx.strokeStyle=col;ctx.shadowColor=col;
+  for(let g=0;g<2;g++){
+    ctx.save();
+    ctx.translate(g?off:-off*.6,g?-off*.5:off);
+    ctx.rotate((g?1:-1)*Math.sin(e.pulse*1.3)*.18);
+    ctx.globalAlpha=(g?.35:.85)*(.5+fade*.5);ctx.lineWidth=g?1.4:2.4;
+    ctx.shadowBlur=g?4:9;
+    const rr=g?R*.5:R*.66;
+    ctx.beginPath();
+    for(let i=0;i<3;i++){const a=-Math.PI/2+i*TAU/3;
+      const px=Math.cos(a)*rr,py=Math.sin(a)*rr;
+      if(i===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);}
+    ctx.closePath();ctx.stroke();
+    ctx.restore();
+  }
+  /* lascas trianguladas que SALTAM de posição em passos (adaptação instável) */
+  ctx.fillStyle=col;ctx.shadowBlur=7;
+  for(let i=0;i<3;i++){
+    const base=i*TAU/3;
+    const jump=(Math.floor(e.pulse*2)+i)%3;          // salto discreto
+    const a=base+jump*.5;
+    const orb=R*(.9+.1*((jump)-1));
+    const ox=Math.cos(a)*orb,oy=Math.sin(a)*orb,s=R*.13;
+    ctx.globalAlpha=(.45+.35*((jump)/2))*(.5+fade*.5);
+    ctx.beginPath();
+    ctx.moveTo(ox,oy-s);ctx.lineTo(ox+s*.9,oy+s*.7);ctx.lineTo(ox-s*.9,oy+s*.7);
+    ctx.closePath();ctx.fill();
+  }
+  /* núcleo instável: pulso NÃO-uniforme (dois senos batendo) */
+  const ip=(Math.sin(e.pulse*3.1)+Math.sin(e.pulse*5.7))*.5;
+  ctx.globalAlpha=(.5+Math.abs(ip)*.45)*(.6+fade*.4);ctx.shadowBlur=10+Math.abs(ip)*8;
+  const c=R*(.13+Math.abs(ip)*.06);
+  ctx.beginPath();
+  ctx.moveTo(0,-c);ctx.lineTo(c,0);ctx.lineTo(0,c);ctx.lineTo(-c,0);ctx.closePath();ctx.fill();
+  ctx.restore();
+}
 function factionPresenceDrawEntity(){
   const e=factionPresenceEntity;
   if(!e)return;
@@ -29558,14 +29724,27 @@ function factionPresenceDrawEntity(){
      "pegada" de estrutura instalada na arena (telegrafa presença física). */
   ctx.globalAlpha=.10*(.5+fade*.5);ctx.fillStyle=col;
   if(e.faction==='anchor'){
+    /* pegada hexagonal (estrutura ancorada) */
     ctx.beginPath();
     for(let i=0;i<6;i++){const a=-Math.PI/2+i*TAU/6,rr=e.r*1.1;
       const px=e.x+Math.cos(a)*rr,py=e.y+Math.sin(a)*rr;
       if(i===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);}
     ctx.closePath();ctx.fill();
-  }else{
+  }else if(e.faction==='consortium'){
+    /* pegada quadrada (depósito/cofre) */
     ctx.save();ctx.translate(e.x,e.y);ctx.rotate(Math.PI/4);
     const s=e.r*.9;ctx.fillRect(-s,-s,s*2,s*2);ctx.restore();
+  }else if(e.faction==='remnants'){
+    /* pegada circular suave (ondas concêntricas de memória) */
+    ctx.beginPath();ctx.arc(e.x,e.y,e.r*1.1,0,TAU);ctx.fill();
+  }else{
+    /* pegada triangular irregular (fenda/instabilidade) */
+    ctx.save();ctx.translate(e.x,e.y);ctx.rotate(Math.sin(e.pulse*.7)*.25);
+    const rr=e.r*1.15;ctx.beginPath();
+    for(let i=0;i<3;i++){const a=-Math.PI/2+i*TAU/3;
+      if(i===0)ctx.moveTo(Math.cos(a)*rr,Math.sin(a)*rr);
+      else ctx.lineTo(Math.cos(a)*rr,Math.sin(a)*rr);}
+    ctx.closePath();ctx.fill();ctx.restore();
   }
   /* raio de interação: tracejado discreto (≠ anel sólido do beacon) */
   ctx.globalAlpha=.14;ctx.strokeStyle=col;ctx.lineWidth=1;
@@ -29575,7 +29754,9 @@ function factionPresenceDrawEntity(){
   ctx.globalAlpha=1;ctx.shadowBlur=0;
   ctx.save();ctx.translate(e.x,e.y);
   if(e.faction==='anchor')fpDrawAnchor(e,col,p,fade);
-  else fpDrawConsortium(e,col,p,fade);
+  else if(e.faction==='consortium')fpDrawConsortium(e,col,p,fade);
+  else if(e.faction==='remnants')fpDrawRemnants(e,col,p,fade);
+  else fpDrawDeviants(e,col,p,fade);
   ctx.restore();
   /* rótulo legível: símbolo + nome + tag "PRESENÇA DE FACÇÃO" (distingue de
      evento comum, que usa só o nome do sinal). */
@@ -29633,7 +29814,9 @@ function factionPresencePhysDevSection(){
   if(typeof devBtn==='function'){
     h+='<div class="dvrow" style="margin-top:6px;flex-wrap:wrap">'+
       devBtn('fp:force:anchor','⬡ FORÇAR ÂNCORA')+
-      devBtn('fp:force:consortium','◈ FORÇAR CONSÓRCIO')+'</div>';
+      devBtn('fp:force:remnants','◉ FORÇAR REMANESCENTES')+
+      devBtn('fp:force:consortium','◈ FORÇAR CONSÓRCIO')+
+      devBtn('fp:force:deviants','◬ FORÇAR DESVIADOS')+'</div>';
   }
   sec.innerHTML=h;
 }
@@ -29742,6 +29925,188 @@ function factionPresencePhysicalKitBoot(){
   }catch(e){}
 }
 /* ==================== PR14·fim fp2.js ==================== */
+
+/* ==================== PR14·bloco fp3.js ==================== */
+/* =====================================================================
+   PR 14 — PRESENÇA DE FACÇÃO · B4 — REAÇÕES CONTEXTUAIS DOS ECHOS
+   ---------------------------------------------------------------------
+   Documentado em PR14_B4_FOUR_FACTIONS.md.
+
+   O QUE É: quando uma presença física de facção aparece / é interagida, um
+   Echo aliado pode REAGIR com uma fala. A reação considera FACÇÃO ×
+   PERSONALIDADE × CONTEXTO (spawn/interação) e, de forma narrativa, o
+   trust/relacionamento e a Dissonância.
+
+   SEPARAÇÃO EXPLÍCITA (§21):
+     · Fala de OPERADOR (o jogador) = OPERATOR_WHISPER/operatorWhisperHTML
+       (corrigida no B3-FIX.1). NÃO é tocada aqui.
+     · Fala de ECHO à facção = ESTE bloco. Usa o pipeline central de fala do
+       Echo (echoSpeak → speechQueue), com prioridade/cooldown/queue EXISTENTES.
+
+   REGRAS (§20/§22):
+     · A fala é NARRATIVA: não altera trust, afinidade, Dissonância, nem
+       concede/retira buff. As consequências mecânicas da presença já foram
+       aplicadas em factionPresenceInteract — a fala só COMENTA.
+     · Seleção DETERMINÍSTICA cosmética: NÃO usa Math.random nem o RNG crítico
+       do Fracture Director. Um contador local por (personalidade,facção,ctx)
+       rotaciona o pool com anti-repeat; a memória é limitada e NÃO é salva
+       (não sobe SM_VERSION).
+     · Dissonância: Echo hostil/em ruptura NÃO produz reação amistosa (§18).
+   ===================================================================== */
+
+/* ---- pool BASE por facção: a "voz" da facção quando a personalidade do Echo
+   não tem célula própria para aquele contexto (fallback garantido, §15). ---- */
+const ECHO_FACTION_BASE={
+  anchor:[
+    'A Âncora de novo. Eles nunca perguntam se a gente quer ser contido.',
+    'Ordem. É sempre a palavra deles. Nunca a nossa.',
+    'Sinto o campo estabilizando. É alívio e prisão ao mesmo tempo.'
+  ],
+  remnants:[
+    'Os Remanescentes. Eles são os únicos que olham pra mim como… alguém.',
+    'Essa ressonância… é como ser lembrado. Faz tempo.',
+    'Eles não querem me consertar nem me vender. Só que eu continue.'
+  ],
+  consortium:[
+    'O Consórcio. Tudo tem preço com eles — inclusive nós.',
+    'Recurso na mão, sorriso na cara. Eu não confiaria.',
+    'Eles chamam de oportunidade. Eu chamo de anzol.'
+  ],
+  deviants:[
+    'Os Desviados. Eles acham a fratura bonita. Isso me assusta.',
+    'Poder fácil, custo escondido. É sempre assim com eles.',
+    'Sinto algo puxando. Transformação. Ou dissolução. Difícil saber.'
+  ]
+};
+
+/* ---- matriz FACÇÃO × PERSONALIDADE (§14/§15).
+   Nem toda célula precisa existir: a base cobre os buracos. Personalidades
+   com voz forte ganham linhas próprias por facção; contextos 'interact'
+   herdam da célula da personalidade (uma linha específica quando faz sentido).
+   IDs de personalidade REAIS: aggressive/cautious/precise/impulsive/
+   resilient/opportunist/versatile/fragmented. ---- */
+const ECHO_FACTION_REACTIONS={
+  anchor:{
+    aggressive:['Contenção? Eu prefiro avançar. Mas anotado.','Eles seguram. Eu quebro. Sistemas diferentes.'],
+    cautious:['Estabilidade tem valor. Não baixe a guarda mesmo assim.','A Âncora é previsível. Isso, ao menos, dá pra usar.'],
+    precise:['Padrão de contenção limpo. Eficiente, admito.','Cada linha deles tem propósito. Respeito o método, não a intenção.'],
+    impulsive:['Parada? Agora? Eles querem que a gente congele.','Ordem demais me dá coceira. Vamos logo.'],
+    resilient:['Eles seguram o que cai. Eu também. Só que sem apagar ninguém.','Já aguentei mais que qualquer contenção deles.'],
+    opportunist:['Um campo estável é uma janela. Sei onde ela abre.','Se eles baixam o risco, eu subo o lucro.'],
+    versatile:['Contenção detectada. Ajusto a postura ao campo deles.','Leio a Âncora antes de decidir. Sempre.'],
+    fragmented:['Âncora… eles apagam registros. Como o meu.','…contenção… eu lembro de ter sido contido. Ou vou ser.']
+  },
+  remnants:{
+    aggressive:['Eles me protegem. Estranho baixar a guarda por isso.','Vínculo não me deixa mais fraco. Só menos sozinho.'],
+    cautious:['Um refúgio de verdade. Cauteloso, mas… genuíno.','Eles não pedem nada em troca. Isso me deixa alerta e grato.'],
+    precise:['A ressonância recalibra minha assinatura. Precisa, não sentimental.','Eles preservam sem distorcer. Trabalho limpo.'],
+    impulsive:['Eles me querem inteiro! Vamos, isso é bom!','Sinto o laço apertar — de um jeito que eu gosto.'],
+    resilient:['Eles lembram de quem cai. Eu também não esqueço.','Enquanto houver Remanescentes, ninguém se dissolve sozinho.'],
+    opportunist:['Ajuda sem preço? Raro. Aceito antes que mudem de ideia.','Até eu sei reconhecer o único lado que não me vende.'],
+    versatile:['Vínculo restaurado. Adapto — desta vez, para durar.','Eles me devolvem o que a fratura tirou. Uso bem.'],
+    fragmented:['Eles… lembram de mim. Mesmo eu não lembrando.','…memória… alguém guardou a minha. Obrigado. Acho.']
+  },
+  consortium:{
+    aggressive:['Recurso é recurso. Pego e sigo cortando.','Eles falam de lucro. Eu falo de alvos. Combina, às vezes.'],
+    cautious:['Nada é grátis com o Consórcio. Leia as entrelinhas.','Aceito o cache. Não aceito a conversa que vem junto.'],
+    precise:['Troca eficiente, se você calcular o custo real.','Eles precificam tudo. Só não erram a conta a favor da gente.'],
+    impulsive:['Coisa brilhante! Pego agora, penso depois!','Cache aberto? Não vou ficar olhando.'],
+    resilient:['Pego o que dá e aguento o resto. Como sempre.','O preço deles cansa. Eu canso menos.'],
+    opportunist:['Agora sim. Esses eu entendo. Todo mundo tem um preço.','O Consórcio joga o meu jogo. Vamos negociar.'],
+    versatile:['Recurso adaptável. Encaixo onde a run precisar.','Leio a oferta, uso a parte boa, ignoro o resto.'],
+    fragmented:['Eles compram… memórias? Não vendam a minha.','…transação… eu já fui um item numa lista deles?']
+  },
+  deviants:{
+    aggressive:['Poder com risco? É a minha linguagem. Vamos.','Instabilidade que morde? Melhor ainda.'],
+    cautious:['Isso cobra caro depois. Eu não confiaria na fenda.','Adaptação hoje, dissolução amanhã. Cuidado.'],
+    precise:['O ganho é real, o custo também. Meça antes de aceitar.','Transformação sem controle é só erro com boa aparência.'],
+    impulsive:['A fenda me chama! Eu quero ver o que eu viro!','Sim! Mais instável, mais vivo!'],
+    resilient:['Vou aguentar o preço da transformação. Sempre aguento.','A fratura tenta me refazer. Que tente.'],
+    opportunist:['Risco alto, retorno alto. Se der pra sair, eu entro.','A fenda paga bem. Só não durmo perto dela.'],
+    versatile:['Adaptação é o que eu faço. Eles só deram nome.','Aceito a mudança e reajusto. Nada novo pra mim.'],
+    fragmented:['Eu já sou meio fenda. Isso me reconhece.','…transformar… eu não sei mais onde eu termino. Eles gostam disso.']
+  }
+};
+
+/* contexto → sufixo opcional (mantém a fala curta; o contexto já vem do pool).
+   Guardado para expansão futura sem inflar contrato (§23). */
+const ECHO_FACTION_CTX=['spawn','interact'];
+const ECHO_FACTION_CTX_SET={spawn:1,interact:1};
+
+/* memória cosmética de anti-repeat (§20): contador + última escolhida por
+   chave (pers|faction|ctx). NÃO é salva (sem migration). Limitada. */
+const _echoFacReactMem=Object.create(null);
+const _ECHO_FAC_MEM_MAX=64;
+function _echoFacReactTrim(){
+  const keys=Object.keys(_echoFacReactMem);
+  if(keys.length<=_ECHO_FAC_MEM_MAX)return;
+  /* descarta as mais antigas (menor 'seen' de uso) — memória limitada */
+  keys.sort((a,b)=>_echoFacReactMem[a].at-_echoFacReactMem[b].at);
+  for(let i=0;i<keys.length-_ECHO_FAC_MEM_MAX;i++)delete _echoFacReactMem[keys[i]];
+}
+let _echoFacReactSeq=0;
+/* escolhe uma linha do pool de forma determinística com anti-repeat.
+   NÃO usa Math.random / RNG do Director. */
+function echoFactionReactionPick(faction,pers,ctx){
+  faction=String(faction||'');
+  ctx=ECHO_FACTION_CTX_SET[ctx]?ctx:'spawn';
+  const persCell=(ECHO_FACTION_REACTIONS[faction]&&pers)?ECHO_FACTION_REACTIONS[faction][pers]:null;
+  const pool=(persCell&&persCell.length)?persCell:(ECHO_FACTION_BASE[faction]||null);
+  if(!pool||!pool.length)return '';
+  if(pool.length===1)return pool[0];
+  const key=(pers||'_')+'|'+faction+'|'+ctx;
+  let st=_echoFacReactMem[key];
+  if(!st){st={n:0,last:-1,at:0};_echoFacReactMem[key]=st;}
+  let idx=st.n%pool.length;
+  if(idx===st.last)idx=(idx+1)%pool.length;   // anti-repeat imediato
+  st.last=idx;st.n=(st.n+1)%1000000;          // contador limitado
+  st.at=(++_echoFacReactSeq);
+  _echoFacReactTrim();
+  return pool[idx];
+}
+
+/* preview read-only para DEV/testes: NÃO fala, só devolve o texto. */
+function echoFactionReactionPreview(faction,pers){
+  return echoFactionReactionPick(faction,pers,'spawn');
+}
+
+/* cor da fala = cor da facção (identidade). */
+function _echoFacReactColor(faction){
+  const lab=(typeof FACTION_PRESENCE_LABEL!=='undefined')?FACTION_PRESENCE_LABEL[faction]:null;
+  return (lab&&lab.col)||'#bffbff';
+}
+
+/* seleciona um Echo elegível e faz ele reagir. Gatilhos: spawn (aparição) e
+   interact (consumo). NÃO obriga os dois; o cooldown/queue central evita spam.
+   Determinístico na escolha do Echo (sem RNG solto): pega o Echo vivo aliado
+   de menor slot (o de maior confiança tende a ser o slot 1). ---- */
+function echoFactionReaction(faction,ctx,entity){
+  if(typeof echoes==='undefined'||!echoes||!echoes.length)return false;
+  if(!faction||!(faction in ECHO_FACTION_BASE))return false;
+  if(typeof sandboxRun!=='undefined'&&sandboxRun){/* sandbox: permite p/ playtest, sem persistência */}
+  /* Echo elegível: vivo, aliado, NÃO hostil e NÃO em ruptura (§18). */
+  const live=[];
+  for(const e of echoes){
+    if(!e||!e.alive)continue;
+    if(e.hostile)continue;
+    if(typeof echoAllied==='function'&&!echoAllied(e))continue;
+    if(typeof echoInRupture==='function'&&echoInRupture(e))continue;
+    live.push(e);
+  }
+  if(!live.length)return false;
+  /* escolha determinística do Echo: menor slot (estável entre execuções). */
+  live.sort((a,b)=>(a.slot|0)-(b.slot|0));
+  const e=live[0];
+  const pid=(e.pers&&e.pers.id)||(e.ps&&e.ps.id)||null;
+  const txt=echoFactionReactionPick(faction,pid,ctx);
+  if(!txt)return false;
+  /* nuance narrativa por confiança (§17): NÃO altera trust — só escolhe o
+     tom quando há alternativa trivial de prefixo curto. Mantido mínimo para
+     não inflar os pools nem mudar gameplay. */
+  const col=_echoFacReactColor(faction);
+  try{return !!echoSpeak(e,txt,col,'normal');}catch(x){return false;}
+}
+/* ==================== PR14·fim fp3.js ==================== */
 
 /* =====================================================================
    BOOT
