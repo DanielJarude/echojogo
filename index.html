@@ -2350,6 +2350,7 @@ function pauseGame(){
   if(_pr)_pr.innerHTML=relationPanelHTML();
   const _pv=document.getElementById('p-ver');
   if(_pv)_pv.textContent=ECHO_VERSION_LABEL+(DEV_MODE?'  ·  DEV MODE':'');
+  hideActiveTooltip();          // FIX A
   pm.classList.add('on');
   AUDIO.tone(330,.16,'sine',.04,-90);
 }
@@ -2431,6 +2432,7 @@ function sheetShow(){
   sheetOpen=true;sheetSel=-1;
   releaseAllInput();
   state='sheet';                       // tempo congelado (§27 — PAUSAR)
+  hideActiveTooltip();          // FIX A
   sheetEl().classList.add('on');
   sheetRender(true);
   AUDIO.tone(660,.1,'sine',.03,180);
@@ -8232,6 +8234,7 @@ function openShop(){
     return;
   }
   state='shop';firing=false;curEv=null;
+  hideActiveTooltip();          // FIX A: mata tooltip flutuante ao abrir a Loja
   rerollCost=rerollBaseCost();rollShop();renderShop();
   modalEl.classList.add('on');
   sfx(523,.14,'sine',.04,0);setTimeout(()=>sfx(784,.2,'sine',.04,0),110);
@@ -8459,6 +8462,7 @@ function spawnBeacon(){
 function openEvent(kind){
   speechClear();               // B2-A: fala não fica atrás do modal de decisão
   state='event';firing=false;curEv=kind;
+  hideActiveTooltip();          // FIX A: nenhum tooltip de card sobrevive à abertura do evento
   modalEl.classList.add('on');
   /* B3-FIX §3: o modal é compartilhado com a Loja Temporal. Ao entrar num
      EVENTO, a barra de abas [ OPERADOR | ECHO ] da loja NÃO pode sobreviver —
@@ -19137,6 +19141,7 @@ function openCodex(mode){
   }
   $('cx-close').textContent=(state==='play'||state==='paused')
     ? 'VOLTAR AO JOGO':'VOLTAR AO MENU';
+  hideActiveTooltip();          // FIX A
   codexEl.classList.add('on');
   AUDIO.ui(680);
 }
@@ -19590,6 +19595,7 @@ function cfgRow(nm,ds,valTxt,cls,onClick){
 let _confirmOpen=false;
 function openConfirm(o){
   _confirmOpen=true;
+  hideActiveTooltip();          // FIX A
   modalEl.classList.add('on');
   mSect.style.display='none';mRow2.innerHTML='';mReroll.style.display='none';
   mTag.textContent=o.tag||'CONFIRMAÇÃO';
@@ -19821,7 +19827,39 @@ function quitGame(){
    TOOLTIPS — descrição ao passar o mouse sobre armas e operadores
    ===================================================================== */
 const tipEl=$('tip');
-function tipShow(html,ev){
+/* PR14·B3-FIX.1 FIX A — TOOLTIP × MODAL BLOQUEANTE
+   -------------------------------------------------------------------
+   O tooltip é ÚNICO (#tip, z-index:60, acima de todos os modais). Bug do
+   2º playtest: ao abrir um modal (evento/loja), o elemento que estava sob
+   o mouse é REMOVIDO do DOM (innerHTML=''), então o 'mouseleave' NUNCA
+   dispara e o #tip fica flutuando por cima do novo modal ("CONTRATO DE
+   USURA" vazando sobre o modal de evento).
+   Correção na ORIGEM (não é z-index): (1) tipShow recusa exibir enquanto
+   um modal/overlay bloqueante estiver aberto; (2) hideActiveTooltip() é
+   chamado na abertura de cada modal para matar qualquer tooltip flutuante.
+   A Loja Temporal usa o MESMO #modal e seus tooltips continuam funcionando
+   porque bindTip só é ativado por mouseenter DENTRO do modal já aberto —
+   e tipShow só bloqueia quando o elemento hovered está FORA do modal ativo. */
+const TOOLTIP_BLOCKERS=['pause-menu','codex','endwrap','sheet','sandboxp'];
+function tooltipBlockedByModal(srcEl){
+  /* modais de tela cheia que capturam o foco: nenhum tooltip por baixo */
+  for(const id of TOOLTIP_BLOCKERS){
+    const el=document.getElementById(id);
+    if(el&&el.classList.contains('on'))return true;
+  }
+  /* #modal é compartilhado por Loja Temporal (tooltips válidos) e por
+     EVENTOS/decisões (sem tooltips). Só bloqueia se o modal está aberto E
+     o elemento que disparou o tooltip NÃO pertence ao modal (vazamento de
+     um card removido / elemento de trás). */
+  const modal=document.getElementById('modal');
+  if(modal&&modal.classList.contains('on')){
+    if(!srcEl||!modal.contains(srcEl))return true;
+  }
+  return false;
+}
+function hideActiveTooltip(){if(tipEl)tipEl.classList.remove('on');}
+function tipShow(html,ev,srcEl){
+  if(tooltipBlockedByModal(srcEl)){hideActiveTooltip();return;}
   tipEl.innerHTML=html;
   tipEl.classList.add('on');
   tipMove(ev);
@@ -19837,7 +19875,7 @@ function tipMove(ev){
 }
 function tipHide(){tipEl.classList.remove('on');}
 function bindTip(el,htmlFn){
-  el.addEventListener('mouseenter',ev=>tipShow(htmlFn(),ev));
+  el.addEventListener('mouseenter',ev=>tipShow(htmlFn(),ev,el));
   el.addEventListener('mousemove',tipMove);
   el.addEventListener('mouseleave',tipHide);
 }
