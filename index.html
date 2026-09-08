@@ -177,6 +177,18 @@
     animation:tin 2.1s forwards;}
   @keyframes tin{0%{opacity:0;transform:translateY(8px);}12%{opacity:1;transform:none;}
     75%{opacity:1;}100%{opacity:0;transform:translateY(-10px);}}
+  /* B5-FIX.1: FEEDBACK IMPORTANTE DE PRESENÇA DE FACÇÃO — categoria própria.
+     Dura ~4.6s (≈4–5s úteis) e usa hierarquia de 3 linhas; NÃO altera o
+     toast comum. Cor/borda vêm da facção (via --fp-col, inline). */
+  .toast.fp{display:flex;flex-direction:column;align-items:center;gap:2px;
+    padding:8px 16px;border:1px solid var(--fp-col,#8fd6ff);border-radius:4px;
+    background:rgba(6,12,22,.72);box-shadow:0 0 18px color-mix(in srgb,var(--fp-col,#8fd6ff) 40%,transparent);
+    animation:fptin 4.6s forwards;text-shadow:0 0 10px color-mix(in srgb,var(--fp-col,#8fd6ff) 70%,transparent);}
+  .toast.fp .fp-head{font-size:var(--fs-md);letter-spacing:.32em;color:var(--fp-col,#8fd6ff);font-weight:700;}
+  .toast.fp .fp-eff{font-size:var(--fs-lg);letter-spacing:.24em;color:#eef7ff;}
+  .toast.fp .fp-sub{font-size:var(--fs-sm);letter-spacing:.22em;color:rgba(200,225,240,.72);}
+  @keyframes fptin{0%{opacity:0;transform:translateY(10px);}6%{opacity:1;transform:none;}
+    88%{opacity:1;}100%{opacity:0;transform:translateY(-12px);}}
 
   /* ---------- telas ---------- */
   #overlay{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;
@@ -4997,6 +5009,24 @@ function banner(txt,sub){
 function toast(txt){
   const d=document.createElement('div');d.className='toast';d.textContent=txt;
   toastsEl.appendChild(d);setTimeout(()=>d.remove(),2100);
+}
+/* B5-FIX.1 — FEEDBACK IMPORTANTE DE PRESENÇA DE FACÇÃO (ACHADO B).
+   Toast de categoria própria (.toast.fp): dura ~4.6s e usa 3 linhas de
+   hierarquia — SÍMBOLO·ESTADO / NOME DO EFEITO / +bônus·custo/risco. É só
+   para a MENSAGEM PRINCIPAL de uma presença; NÃO substitui/alonga o toast
+   comum. Uma por interação (o chamador não duplica). */
+function fpImportantToast(faction,head,eff,sub){
+  if(!toastsEl)return;
+  const lab=(typeof FACTION_PRESENCE_LABEL!=='undefined'&&FACTION_PRESENCE_LABEL[faction])||{sym:'▣',col:'#8fd6ff'};
+  const d=document.createElement('div');
+  d.className='toast fp';
+  d.style.setProperty('--fp-col',lab.col);
+  const mk=(cls,txt)=>{const s=document.createElement('div');s.className=cls;s.textContent=txt;return s;};
+  d.appendChild(mk('fp-head',lab.sym+' '+(head==null?'':String(head))));
+  d.appendChild(mk('fp-eff',eff==null?'':String(eff)));
+  if(sub!=null&&String(sub).length)d.appendChild(mk('fp-sub',String(sub)));
+  toastsEl.appendChild(d);setTimeout(()=>{try{d.remove();}catch(_x){}},4600);
+  return d;
 }
 const coinsEl=$('coinsp');
 const weapWrapEl=$('weapwrap');
@@ -29901,7 +29931,12 @@ function factionPresenceInteract(){
   if(typeof factionPresenceResolve==='function')factionPresenceResolve('interact');
   factionPresenceEntity=null;
   try{
-    if(typeof toast==='function')
+    /* B5-FIX.1 (ACHADO B): mensagem principal em 3 linhas hierárquicas —
+       SÍMBOLO·ESTADO / NOME DO EFEITO / +bônus·custo/risco. Uma só por
+       interação (não duplica o toast comum). Valores reais vindos de msg. */
+    if(typeof fpImportantToast==='function')
+      fpImportantToast(e.faction,fpEntityAffinityLabel(e.faction),lab.nm,msg);
+    else if(typeof toast==='function')
       toast(lab.nm+' · '+msg+' · '+fpEntityAffinityLabel(e.faction));
     if(typeof spawnRing==='function')spawnRing(e.x,e.y,lab.col,8,120,.6);
     if(typeof AUDIO!=='undefined'&&AUDIO&&AUDIO.tone)AUDIO.tone(720,.2,'sine',.04,180);
