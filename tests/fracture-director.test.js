@@ -2537,10 +2537,10 @@ ok('fonte: nenhuma mutação de waveProfile fora do bloco PR13',()=>{
   }
   assert.ok(n>0,'a verificação encontrou escritas para validar');
 });
-ok('npm test continua listando as suítes (18 legadas + PR13 + PR13.5 B2 + PR13.5 B3 + B3-FIX + B4 + B5-A + B5-B + B5-B-FIX + B5.5 + B6 + PR14 B2 + PR14 B3 + PR14 B3-FIX + PR14 B3-FIX.1 + PR14 B4 + PR14 B5 + PR14 B5-FIX.1 + PR14 B5-FIX.2 + PR14 B6 + DEV-FIX DevTools)',()=>{
+ok('npm test continua listando as suítes (18 legadas + PR13 + PR13.5 B2 + PR13.5 B3 + B3-FIX + B4 + B5-A + B5-B + B5-B-FIX + B5.5 + B6 + PR14 B2 + PR14 B3 + PR14 B3-FIX + PR14 B3-FIX.1 + PR14 B4 + PR14 B5 + PR14 B5-FIX.1 + PR14 B5-FIX.2 + PR14 B6 + PR14 B6-FIX.1 + DEV-FIX DevTools)',()=>{
   const pkg=JSON.parse(fs.readFileSync(path.join(ROOT,'package.json'),'utf8'));
   const partes=pkg.scripts.test.split('&&').map(s=>s.trim());
-  assert.strictEqual(partes.length,37,'37 suítes no npm test');   // PR14 B6 somou a sua
+  assert.strictEqual(partes.length,38,'38 suítes no npm test');   // PR14 B6-FIX.1 somou a sua
   assert.ok(pkg.scripts.test.indexOf('pr13-5-b55-shop-meta.test.js')>=0,
     'suíte B5.5 integrada');
   assert.ok(pkg.scripts.test.indexOf('pr13-5-b6-balance.test.js')>=0,
@@ -2563,6 +2563,8 @@ ok('npm test continua listando as suítes (18 legadas + PR13 + PR13.5 B2 + PR13.
     'suíte PR14 B5-FIX.2 integrada');
   assert.ok(pkg.scripts.test.indexOf('pr14-b6-finalization.test.js')>=0,
     'suíte PR14 B6 integrada');
+  assert.ok(pkg.scripts.test.indexOf('pr14-b6-fix1-speech-bubble.test.js')>=0,
+    'suíte PR14 B6-FIX.1 integrada');
   assert.ok(pkg.scripts.test.indexOf('devtools-shortcut.test.js')>=0,
     'suíte DEV-FIX (DevTools) integrada');
 });

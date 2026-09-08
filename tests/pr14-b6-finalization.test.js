@@ -358,10 +358,12 @@ ok('26. palavra longa + palavra normal: resto da longa agrega próxima palavra',
   assert.ok(L.length>=1);
   for(const ln of L)assert.ok(measure(ln,15)<=80+0.001);
 });
-ok('27. speechRender usa speechWrapLines (não reimplementa quebra)',()=>{
+ok('27. speechRender usa o layout único (speechLayout → speechWrapLines)',()=>{
   const blk=RAW.match(/function speechRender[\s\S]*?\n}/);
   assert.ok(blk,'speechRender existe');
-  assert.ok(/speechWrapLines\(/.test(blk[0]),'chama o wrapper');
+  assert.ok(/speechLayout\(/.test(blk[0]),'render deriva do layout único');
+  const lay=RAW.match(/function speechLayout[\s\S]*?\n}/);
+  assert.ok(lay&&/speechWrapLines\(/.test(lay[0]),'layout usa o wrapper');
 });
 ok('28. sem redução drástica de fonte: px permanece 15/16/17 conforme prioridade',()=>{
   const blk=RAW.match(/function speechRender[\s\S]*?\n}/)[0];
