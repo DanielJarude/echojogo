@@ -38,6 +38,10 @@ src+='\n;globalThis.__t={'+
   'MB_UPDATERS,MB_HAZARD_CAP,MB_BROOD_CAP,mbHazardAdd,mbInitState,mbChildren,MINIBOSS_VISUALS,MINIBOSS_RENDERERS,MINIBOSS_PHASE2_TITLE,minibossVisual,drawMiniBoss,drawEnemy,drawBoss,updateMiniBoss,spawnMiniBoss,pickMiniBoss,miniBossHUD,clearMiniBossHUD,getMiniBoss:()=>miniBoss,setMiniBoss:v=>{miniBoss=v;},getBoss:()=>boss,setRunTime:v=>{runTime=v;},'+
   'ATTUNE_STATES,ATTUNE_FIELD_ITEMS,attuneFieldMul,smHas,isMoralTuneModId,moralAffinityTagHTML,attunementScore,attunementState,attunementStateFor,attunementMul,attunementInfo,calcAttunementPlan,isAttuneModId,attuneIsEconomic,'+
   'SHOP_RECENT_MAX,SHOP_REPEAT_LAST_W,SHOP_REPEAT_PENULT_W,shopRecentReset,shopRepeatWeight,shopOfferSeen,shopMarkBought,shopWaveMul,rerollBaseCost,incomeCoinCap,moralMarketMul,shopSurchargeMul,MORAL_MARKET_K,SHOP_SURCHARGE_CAP,echoRangeField,echoEqInit,echoEqRefresh,pickWeightedAny,'+
+  /* PR14.5 B2: Perfil de Build + Sintonia de compatibilidade + famílias */
+  'BUILD_ARCH,BUILD_AFFINITY,buildProfile,buildProfileSummary,buildCompat,buildShopWeight,buildHasAffinity,attunementReasons,itemFamily,itemFamilyName,itemFamilies,familyBlocker,ITEM_FAMILIES,rerollCap,'+
+  'setBuildProfileOverride:v=>{_bpOverride=v;},getBuildProfileOverride:()=>_bpOverride,'+
+  'getBuildProfileCache:()=>_bpCache,getBuildProfileKey:()=>_bpKey,'+
   'getShopRecent:()=>shopRecent.map(e=>({id:e.id,seq:e.seq,now:shopRollSeq,bought:e.bought})),'+
   'smBuildCheckpoint,captureCheckpoint,resumeRun,activateSlot,clearActiveRun,hasActiveRun,getActiveRun:()=>activeRun,'+
   'getCurSlot:()=>curSlot,setCurSlot:v=>{curSlot=v;},'+

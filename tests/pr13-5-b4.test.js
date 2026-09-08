@@ -38,49 +38,72 @@ ok('B4-1: 5 estados finitos, ordenados, com faixa numérica e multiplicador',()=
   for(const s of T.ATTUNE_STATES){assert.ok(s.mul>=.85&&s.mul<=1.20,s.id+' mul dentro do tuning conservador');assert.ok(s.eco>=.90&&s.eco<=1.10,s.id+' eco banda menor');assert.ok(s.lab&&s.c);}
   assert.strictEqual(ST('neutral').mul,1);assert.strictEqual(ST('neutral').eco,1);
 });
-ok('B4-2: score é determinístico (sem Math.random) e igual ao match do PR 9',()=>{
+ok('B4-2: score é determinístico (sem Math.random); SEM leitura de build = match moral do PR 9; COM build a compatibilidade domina e a moral só modula (B2)',()=>{
   const r=sandbox.Math.random;sandbox.Math.random=()=>{throw new Error('random usado');};
   try{
     for(const id in T.MORAL_AFFINITY)for(const [c,g,v] of MATRIX){
-      const s1=T.attunementScore(id,prof(c,g,v)),s2=T.calcMoralAffinityMatch(T.getItemMoralAffinity(id),prof(c,g,v));
-      assert.ok(near(s1,s2));assert.ok(s1>=0&&s1<=1);
+      const s1=T.attunementScore(id,prof(c,g,v));
+      assert.ok(s1>=0&&s1<=1);
+      if(!T.buildHasAffinity(id))
+        assert.ok(near(s1,T.calcMoralAffinityMatch(T.getItemMoralAffinity(id),prof(c,g,v))),id+' sem build = moral puro');
       assert.strictEqual(T.attunementState(id,prof(c,g,v)).id,T.attunementState(id,prof(c,g,v)).id,'estável');
     }
+    /* B2: módulo COM leitura de build — compat decide; moral move ≤ ~2 p.p. */
+    T.setBuildProfileOverride({crit:1});
+    const a=T.attunementScore('olho',prof(0,0,0)),z=T.attunementScore('olho',prof(0,0,0)),b=T.attunementScore('olho',prof(10,0,0));
+    T.setBuildProfileOverride(null);
+    assert.ok(near(a,z),'determinístico');
+    assert.ok(a>=.5,'olho + build de crit = bem sintonizado (B2)');
+    assert.ok(Math.abs(a-b)<=.021,'moral modula no máx ±2 p.p.');
   }finally{sandbox.Math.random=r;}
 });
-ok('B4-3: thresholds — perfil neutro/equilibrado/extremo → NEUTRA para todos; puro alinhado → RESSONANTE; oposto → DIVERGENTE',()=>{
+ok('B4-3: thresholds — módulo SEM leitura de build segue a moral (neutro→NEUTRA; puro alinhado→RESSONANTE; oposto→DIVERGENTE); COM build, a BUILD dá RESSONANTE e a moral não decide (B2)',()=>{
   for(const id in T.MORAL_AFFINITY){
+    if(T.buildHasAffinity(id))continue;   /* B2: o estado dele vem da build */
     assert.strictEqual(T.attunementState(id,prof(0,0,0)).id,'neutral',id+' neutro');
     assert.strictEqual(T.attunementState(id,prof(10,10,10)).id,'neutral',id+' extremo equilibrado');
   }
   assert.strictEqual(T.attunementState('nucleo',prof(0,0,10)).id,'resonant');
   assert.strictEqual(T.attunementState('nucleo',prof(10,0,0)).id,'divergent');
-  assert.strictEqual(T.attunementState('placa',prof(10,0,0)).id,'resonant');
-  assert.strictEqual(T.attunementState('usura',prof(0,10,0)).id,'resonant');
-  assert.strictEqual(T.attunementState('usura',prof(0,0,10)).id,'divergent');
+  /* B2: placa/usura têm leitura de build — a BUILD dedicada dá RESSONANTE */
+  T.setBuildProfileOverride({shield:1});
+  assert.strictEqual(T.attunementState('placa',prof(10,0,0)).id,'resonant','placa + build escudo');
+  T.setBuildProfileOverride({economy:1});
+  assert.strictEqual(T.attunementState('usura',prof(0,10,0)).id,'resonant','usura + build economia');
+  T.setBuildProfileOverride({economy:0,melee:1});
+  assert.strictEqual(T.attunementState('usura',prof(0,10,0)).id,'neutral','usura neutra em build melee');
+  T.setBuildProfileOverride(null);
   /* faixa INSTÁVEL alcançável (score entre .14 e .26) */
   assert.strictEqual(T.attunementStateFor(.2).id,'unstable');
   assert.strictEqual(T.attunementStateFor(.5).id,'attuned');
   assert.strictEqual(T.attunementStateFor(.78).id,'resonant');
   assert.strictEqual(T.attunementStateFor(null).id,'neutral');
 });
-ok('B4-4: módulos NEUTROS (sem afinidade) ficam sempre NEUTRA, sem mods, sem info',()=>{
+ok('B4-4: ex-neutros (lente/luneta/espectro/colmeia/prisma2) agora têm leitura de BUILD: NEUTRA em build indefinida, info de build, sem mods morais; nucleo/su_regen/entropia continuam só-morais (B2)',()=>{
   for(const id of ['lente','luneta','espectro','colmeia','prisma2']){
-    for(const [c,g,v] of MATRIX)assert.strictEqual(T.attunementState(id,prof(c,g,v)).id,'neutral',id);
-    assert.strictEqual(T.attunementInfo(id),null);
+    for(const [c,g,v] of MATRIX)assert.strictEqual(T.attunementState(id,prof(c,g,v)).id,'neutral',id+' build indefinida -> NEUTRA');
+    const info=T.attunementInfo(id);
+    assert.ok(info&&info.byBuild===true,id+' info de BUILD (antes: null)');
     const p=fresh();setMoral(0,0,10);T.giveItem(T.itemById(id),true);
-    assert.strictEqual(p.sm.filter(m=>m.id.indexOf('attune:'+id+':')===0).length,0,id+' sem attune');
-    assert.strictEqual(T.attuneFieldMul(p,id),1);
+    assert.strictEqual(p.sm.filter(m=>m.id.indexOf('attune:'+id+':')===0).length,0,id+' sem attune em build indefinida');
+  }
+  for(const id of ['nucleo','su_regen','entropia']){
+    const info=T.attunementInfo(id);
+    assert.ok(info&&info.byBuild===false,id+' continua só-moral (B2)');
   }
 });
-ok('B4-5: HÍBRIDOS — sifao (C/V) fica SINTONIZADA em C puro e V puro; RESSONANTE exige os dois eixos (C8/V8 = match .5 → SINTONIZADA; nunca RESSONANTE com 1 eixo só)',()=>{
-  assert.strictEqual(T.attunementState('sifao',prof(10,0,0)).id,'attuned');
-  assert.strictEqual(T.attunementState('sifao',prof(0,0,10)).id,'attuned');
-  assert.strictEqual(T.attunementState('sifao',prof(8,0,8)).id,'attuned');
-  assert.strictEqual(T.attunementState('sifao',prof(8,8,0)).id,'unstable');   // metade do vetor em eixo não coberto
-  assert.strictEqual(T.attunementState('sifao',prof(0,10,0)).id,'divergent');
-  assert.strictEqual(T.attunementState('carapaca',prof(10,0,0)).id,'attuned');  // .6 comp
-  assert.strictEqual(T.attunementState('rg_condensador',prof(0,10,0)).id,'unstable'); // .2 greed
+
+ok('B4-5: B2 — sifao/status+escudo e carapaca/escudo respondem à BUILD (híbrida → AFINADA, dedicada → RESSONANTE, oposta → NEUTRA/DIVERGENTE); moral só modula',()=>{
+  T.setBuildProfileOverride({status:.5,shield:.5});
+  assert.strictEqual(T.attunementState('sifao',prof(0,0,0)).id,'attuned','build híbrida status+escudo');
+  T.setBuildProfileOverride({shield:1});
+  assert.strictEqual(T.attunementState('carapaca',prof(0,0,0)).id,'resonant','carapaca + build escudo dedicada');
+  assert.strictEqual(T.attunementState('rg_condensador',prof(0,0,0)).id,'resonant','condensador + build escudo');
+  T.setBuildProfileOverride({dash:1,shield:0,melee:0});
+  assert.strictEqual(T.attunementState('carapaca',prof(0,0,0)).id,'neutral','carapaca neutra em build de dash');
+  T.setBuildProfileOverride({dash:1,shield:0,melee:0,status:0});
+  assert.strictEqual(T.attunementState('sifao',prof(0,0,0)).id,'neutral','sifao neutro fora de build status/escudo');
+  T.setBuildProfileOverride(null);
 });
 
 /* ================= EFEITO NO PIPELINE ================= */
@@ -99,43 +122,51 @@ ok('B4-7: divergente — núcleo em C10 rende +30%×0.90 = +27% (reduzido, NÃO 
   assert.ok(T.smGet(p,'damage')>base*1.25,'continua claramente útil');
 });
 ok('B4-8: trade-offs do módulo NUNCA são escalados (só a parte benéfica): coração (+cadência, +dano recebido) e estilhaço (−alcance longínquo)',()=>{
-  const p=fresh();setMoral(0,0,10);T.giveItem(T.itemById('coracao'),true);
+  const p=fresh();T.setBuildProfileOverride({ranged:1,crit:1});setMoral(0,0,10);T.giveItem(T.itemById('coracao'),true);T.setBuildProfileOverride(null);
   const cor=p.sm.filter(m=>m.id.indexOf('attune:coracao:')===0).map(m=>m.stat);
   assert.strictEqual(cor.join(','),'fireRate','dmgTaken (custo) fora');
-  const q=fresh();setMoral(0,0,10);T.giveItem(T.itemById('estilhaco'),true);
+  const q=fresh();T.setBuildProfileOverride({melee:1,ranged:0});setMoral(0,0,10);T.giveItem(T.itemById('estilhaco'),true);T.setBuildProfileOverride(null);
   const est=q.sm.filter(m=>m.id.indexOf('attune:estilhaco:')===0).map(m=>m.stat).sort();
   assert.strictEqual(est.join(','),'damage,fireRate,meleeRange','rangedRange ×0.60 (custo) fora; meleeRange ×1.20 (benefício) dentro');
   assert.ok(near(q.rangedRangeMul,.60),'alcance longínquo do Estilhaço intacto');
   assert.ok(q.meleeRangeMul>1.20&&q.meleeRangeMul<1.30,'melee levemente maior: '+q.meleeRangeMul);
 });
 ok('B4-9: shield — placa (+15% shieldMax; −10% regen e −12% vel. são custos) em C10 escala SÓ o shieldMax, sem encher o escudo; delay não é agravado',()=>{
-  const p=fresh();p.shield=0;setMoral(10,0,0);T.giveItem(T.itemById('placa'),true);
+  const p=fresh();p.shield=0;T.setBuildProfileOverride({shield:1});setMoral(10,0,0);T.giveItem(T.itemById('placa'),true);
   const mods=p.sm.filter(m=>m.id.indexOf('attune:placa:')===0).map(m=>m.stat).sort();
   assert.strictEqual(mods.join(','),'shieldMax');
   assert.ok(near(p.shieldMax,p._smBase.shieldMax*(1+.15*ST('resonant').mul)),'+15%→+16,8%');
   assert.ok(near(T.smGet(p,'shieldRegen'),p._smBase.shieldRegen*.90),'custo de regen intacto');
   assert.ok(p.shieldMax<=500,'clamp do pipeline');assert.strictEqual(p.shield,0,'escudo não encheu');
-  const r=fresh();setMoral(0,0,10);T.giveItem(T.itemById('rg_peso'),true);   // C puro em V10 → divergente
+  const r=fresh();T.setBuildProfileOverride({shield:1});setMoral(0,0,10);T.giveItem(T.itemById('rg_peso'),true);T.setBuildProfileOverride(null);   // B2: build escudo → sintonia alta
   const dl=r.sm.find(m=>m.id==='attune:rg_peso:shieldDelay');
   assert.ok(!dl||dl.value>=1||true,'shieldDelay benéfico (<1) só reduz o ganho, nunca passa da base');
   assert.ok(T.smGet(r,'shieldDelay')<=r._smBase.shieldDelay+1e-9,'delay final nunca pior que a base');
 });
 ok('B4-10: econômicos — banda menor: usura em G10 = coinMul ×(1+.45×1.06) e nunca acima de +6% sobre o efeito; divergente ≥ 0.95',()=>{
-  const p=fresh();setMoral(0,10,0);T.giveItem(T.itemById('usura'),true);
+  const p=fresh();T.setBuildProfileOverride({economy:1});setMoral(0,10,0);T.giveItem(T.itemById('usura'),true);
   const m=p.sm.find(x=>x.id==='attune:usura:coinMul');
   assert.ok(m&&near(m.value,(1+.45*ST('resonant').eco)/1.45));
   assert.ok(T.attuneIsEconomic('usura')&&T.attuneIsEconomic('iman')&&!T.attuneIsEconomic('nucleo'));
+  T.setBuildProfileOverride({economy:1});
   for(const id of ['iman','usura','eco_risco','eco_divida','trans_temporal'])
     for(const [c,g,v] of MATRIX){const k=T.attunementMul(id,prof(c,g,v));assert.ok(k>=.95&&k<=1.06,id+' eco '+k);}
+  T.setBuildProfileOverride({economy:0,melee:1});
+  for(const id of ['iman','usura','eco_risco','eco_divida','trans_temporal'])
+    assert.ok(near(T.attunementMul(id,prof(0,0,0)),1),id+' neutro de build → banda 1.00 (B2)');
+  T.setBuildProfileOverride(null);
 });
 ok('B4-11: módulos de CAMPO (espinho/regen/execução…) usam p.attuneMul; fator 1 quando neutro ou sem o módulo',()=>{
   const p=fresh();T.giveItem(T.itemById('espinho'),true);T.giveItem(T.itemById('su_regen'),true);
   assert.strictEqual(T.attuneFieldMul(p,'espinho'),1);
-  setMoral(0,0,10);assert.ok(near(T.attuneFieldMul(p,'espinho'),ST('attuned').mul));   // .6 viol → attuned
-  assert.ok(near(T.attuneFieldMul(p,'su_regen'),ST('divergent').mul));
+  T.setBuildProfileOverride({shield:.5});T.applyMoralTuning(p);
+  assert.ok(near(T.attuneFieldMul(p,'espinho'),ST('attuned').mul),'build escudo → espinho AFINADA (B2)');
+  assert.ok(near(T.attuneFieldMul(p,'su_regen'),1),'su_regen sem leitura de build: build não mexe');
+  setMoral(0,0,10);assert.ok(near(T.attuneFieldMul(p,'su_regen'),ST('divergent').mul));
   setMoral(10,0,0);assert.ok(near(T.attuneFieldMul(p,'su_regen'),ST('resonant').mul));
+  T.setBuildProfileOverride(null);T.applyMoralTuning(p);
   assert.strictEqual(T.attuneFieldMul(p,'talisma'),1,'não instalado → 1');
-  setMoral(0,0,0);assert.strictEqual(JSON.stringify(p.attuneMul),'{}');
+  setMoral(0,0,0);T.applyMoralTuning(p);assert.strictEqual(JSON.stringify(p.attuneMul),'{}');
   assert.ok(p.regen>0,'campo do módulo (regen) continua escrito pelo módulo');
 });
 ok('B4-12: limites — em TODA a matriz moral, nenhum stat de nenhum módulo isolado sai da faixa [0.85, 1.20] por Sintonia',()=>{
@@ -211,6 +242,10 @@ ok('B4-19: preview da loja (moralAffinityTagHTML/attunementInfo/itemTipHTML) é 
   for(const it of T.ITEMS){
     const tag=T.moralAffinityTagHTML(it.id,true);const info=T.attunementInfo(it.id);X('itemTipHTML')(it);
     if(T.MORAL_AFFINITY[it.id]){assert.ok(tag.indexOf(info.state.lab)>=0,'estado projetado no card');assert.ok(tag.indexOf(info.effect)>=0,'efeito no card');}
+    else if(T.buildHasAffinity(it.id)){
+      if(info.state.id!=='neutral')assert.ok(tag.indexOf(info.state.lab)>=0,'estado de BUILD projetado no card (B2)');
+      else assert.strictEqual(tag,'','neutro de build não polui o card');
+    }
     else assert.strictEqual(tag,'');
   }
   X('renderShop=function(){}');X('renderShop()');
@@ -222,7 +257,9 @@ ok('B4-20: preview reflete a moralidade ATUAL sem comprar: núcleo em V10 mostra
   setMoral(10,0,0);i=T.attunementInfo('nucleo');
   assert.strictEqual(i.state.id,'divergent');assert.strictEqual(i.pct,-10);assert.ok(i.reason.indexOf('baixa')>=0);
   assert.strictEqual(T.getPlayer().items.indexOf('nucleo'),-1,'não comprou');
-  i=T.attunementInfo('usura',prof(0,10,0));assert.strictEqual(i.pct,6,'econômico: banda menor');
+  T.setBuildProfileOverride({economy:1});
+  i=T.attunementInfo('usura',prof(0,10,0));assert.strictEqual(i.pct,6,'econômico: banda menor (build economia, B2)');
+  T.setBuildProfileOverride(null);
 });
 
 /* ================= SAVE / CONTINUE ================= */
@@ -260,9 +297,12 @@ ok('B4-24: Sandbox — moral alta + módulos: Sintonia funciona; sair limpa mods
   const snap=sandbox.localStorage.getItem('echoSave.v3');
   X('sandboxOpenSetup();sandboxCfg.char=0;');assert.strictEqual(X('sandboxStart()'),true);
   const p=T.getPlayer();const m=T.getMoral();m.viol=10;T.applyMoral();
+  T.setBuildProfileOverride({shield:.5});
   X('grantItemInternal')(p,T.itemById('nucleo'),true);X('grantItemInternal')(p,T.itemById('espinho'),true);
   assert.ok(T.smHas(p,'attune:nucleo:damage'),'sintonia viva no laboratório');
-  assert.ok(near(T.attuneFieldMul(p,'espinho'),ST('attuned').mul));
+  T.applyMoralTuning(p);
+  assert.ok(near(T.attuneFieldMul(p,'espinho'),ST('attuned').mul),'espinho AFINADO pela build (B2)');
+  T.setBuildProfileOverride(null);
   X('sandboxExit(true)');
   assert.strictEqual(sandbox.localStorage.getItem('echoSave.v3'),snap,'byte-a-byte');
   assert.strictEqual(X('sandboxRun||sandboxMode'),false,'laboratório encerrado');
@@ -300,15 +340,15 @@ ok('B4-26: distribuição do catálogo — 5 neutros, 14 híbridos, nenhum eixo 
   for(const k of ['comp','greed','viol'])assert.ok(d[k]/T.ITEMS.length<=.5,k+' concentra '+d[k]);
 });
 ok('B4-27: TAB — pílula do módulo mostra o estado quando não é NEUTRA; countAttunedItems usa os estados novos',()=>{
-  const p=fresh();setMoral(0,0,10);for(const id of ['nucleo','placa','lente'])T.giveItem(T.itemById(id),true);
-  assert.strictEqual(T.countAttunedItems(p),1);
+  const p=fresh();setMoral(0,0,10);for(const id of ['nucleo','su_regen','lente'])T.giveItem(T.itemById(id),true);
+  assert.strictEqual(T.countAttunedItems(p),1,'núcleo ressonante conta; su_regen divergente não; lente neutra não');
   X('sheetOpen=true');X('sheetRender')(true);const body=X('$("s-body").innerHTML');X('sheetOpen=false');
   assert.ok(body.indexOf('RESSONANTE +12%')>=0,'núcleo ressonante na pílula');
-  assert.ok(body.indexOf('DIVERGENTE -10%')>=0,'placa divergente na pílula');
+  assert.ok(body.indexOf('DIVERGENTE -10%')>=0,'su_regen divergente na pílula');
 });
 ok('B4-28: giveItem avisa quando SINTONIZADA/RESSONANTE ou DIVERGENTE; neutro silencioso',()=>{
   fresh();setMoral(0,0,10);X('toastLog=[];const _t=toast;toast=function(x){toastLog.push(x);return _t(x);}');
-  T.giveItem(T.itemById('nucleo'),true);T.giveItem(T.itemById('placa'),true);T.giveItem(T.itemById('lente'),true);
+  T.giveItem(T.itemById('nucleo'),true);T.giveItem(T.itemById('su_regen'),true);T.giveItem(T.itemById('colmeia'),true);
   const log=X('toastLog');
   assert.ok(log.some(x=>x.indexOf('SINTONIA RESSONANTE')>=0));assert.ok(log.some(x=>x.indexOf('SINTONIA DIVERGENTE')>=0));
   assert.strictEqual(log.filter(x=>x.indexOf('SINTONIA')>=0).length,2);
