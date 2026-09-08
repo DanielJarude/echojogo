@@ -38,6 +38,14 @@ src+='\n;globalThis.__t={'+
   'MB_UPDATERS,MB_HAZARD_CAP,MB_BROOD_CAP,mbHazardAdd,mbInitState,mbChildren,MINIBOSS_VISUALS,MINIBOSS_RENDERERS,MINIBOSS_PHASE2_TITLE,minibossVisual,drawMiniBoss,drawEnemy,drawBoss,updateMiniBoss,spawnMiniBoss,pickMiniBoss,miniBossHUD,clearMiniBossHUD,getMiniBoss:()=>miniBoss,setMiniBoss:v=>{miniBoss=v;},getBoss:()=>boss,setRunTime:v=>{runTime=v;},'+
   'ATTUNE_STATES,ATTUNE_FIELD_ITEMS,attuneFieldMul,smHas,isMoralTuneModId,moralAffinityTagHTML,attunementScore,attunementState,attunementStateFor,attunementMul,attunementInfo,calcAttunementPlan,isAttuneModId,attuneIsEconomic,'+
   'SHOP_RECENT_MAX,SHOP_REPEAT_LAST_W,SHOP_REPEAT_PENULT_W,shopRecentReset,shopRepeatWeight,shopOfferSeen,shopMarkBought,shopWaveMul,rerollBaseCost,incomeCoinCap,moralMarketMul,shopSurchargeMul,MORAL_MARKET_K,SHOP_SURCHARGE_CAP,echoRangeField,echoEqInit,echoEqRefresh,pickWeightedAny,'+
+  /* PR14.5 B2: Perfil de Build + Sintonia de compatibilidade + famílias */
+  'BUILD_ARCH,BUILD_AFFINITY,buildProfile,buildProfileSummary,buildCompat,buildShopWeight,buildHasAffinity,attunementReasons,itemFamily,itemFamilyName,itemFamilies,familyBlocker,ITEM_FAMILIES,rerollCap,'+
+  'setBuildProfileOverride:v=>{_bpOverride=v;},getBuildProfileOverride:()=>_bpOverride,'+
+  'getBuildProfileCache:()=>_bpCache,getBuildProfileKey:()=>_bpKey,'+
+  /* PR14.5 B3: calibrações/facção/reworks */
+  'toRomanRank,upgRankOf,UPG_ADVANCED,UPG_ELITE,upgDescHTML,upgRankSpan,lensChargeMul,fpIndicatorTick,'+
+  'getShopVisitN:()=>shopVisitN,getShopBoughtAtVisit:()=>shopBoughtAtVisit,'+
+  'getShopBoughtIds:()=>shopBoughtIds,'+
   'getShopRecent:()=>shopRecent.map(e=>({id:e.id,seq:e.seq,now:shopRollSeq,bought:e.bought})),'+
   'smBuildCheckpoint,captureCheckpoint,resumeRun,activateSlot,clearActiveRun,hasActiveRun,getActiveRun:()=>activeRun,'+
   'getCurSlot:()=>curSlot,setCurSlot:v=>{curSlot=v;},'+
@@ -55,7 +63,7 @@ src+='\n;globalThis.__t={'+
   'getFracRun:()=>fracRun,'+
   'grantItemInternal,itemStateInit,updateHUD,getMeta:()=>meta'+
   '};';
-function makeStyle(){const store={};return new Proxy(store,{get(t,k){return k in t?t[k]:'';},set(t,k,v){t[k]=String(v);return true;}});}
+function makeStyle(){const store={setProperty(k,v){store[k]=String(v);return v;}};return new Proxy(store,{get(t,k){return k in t?t[k]:'';},set(t,k,v){t[k]=String(v);return true;}});}
 function ctx2d(){const grad={addColorStop(){}};const numProps=new Set(['globalAlpha','lineWidth','shadowBlur','font','fillStyle','strokeStyle','lineCap','textAlign','imageSmoothingEnabled']);return new Proxy({},{get(t,k){if(k==='canvas')return{width:0,height:0};if(k==='measureText')return()=>({width:0});if(k==='getImageData')return()=>({data:new Uint8ClampedArray(4)});if(k==='createLinearGradient'||k==='createRadialGradient'||k==='createPattern')return()=>grad;if(numProps.has(k))return 1;return(...args)=>{const L=globalThis.__ctxLog;if(L)L.push([k,args]);};},set(t,k,v){const L=globalThis.__ctxLog;if(L)L.push(['set:'+k,[v]]);return true;}});}
 function makeEl(id){const el={id:id||'',children:[],dataset:{},value:'',width:0,height:0,_cls:new Set(),isConnected:true,offsetWidth:0,offsetHeight:0,textContent:'',className:'',title:'',style:makeStyle(),_html:''};
 Object.defineProperty(el,'innerHTML',{get(){return el._html;},set(v){el._html=String(v);/* semântica browser: limpar innerHTML remove os filhos */if(el._html==='')el.children.length=0;}});

@@ -187,6 +187,13 @@
   .toast.fp .fp-head{font-size:var(--fs-md);letter-spacing:.32em;color:var(--fp-col,#8fd6ff);font-weight:700;}
   .toast.fp .fp-eff{font-size:var(--fs-lg);letter-spacing:.24em;color:#eef7ff;}
   .toast.fp .fp-sub{font-size:var(--fs-sm);letter-spacing:.22em;color:rgba(200,225,240,.72);}
+  /* B3 §36: indicador persistente da presença de facção ativa — discreto,
+     no topo, some quando a entidade expira/é consumida. */
+  #fpind{position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:10;
+    pointer-events:none;display:none;font-family:Consolas,monospace;
+    font-size:var(--fs-sm);letter-spacing:.26em;padding:5px 14px;
+    border:1px solid var(--fp-col,#8fd6ff);color:var(--fp-col,#8fd6ff);
+    background:rgba(6,12,20,.72);white-space:nowrap;}
   @keyframes fptin{0%{opacity:0;transform:translateY(10px);}6%{opacity:1;transform:none;}
     88%{opacity:1;}100%{opacity:0;transform:translateY(-12px);}}
 
@@ -899,8 +906,9 @@
       <div class="hudgrp" id="grp-temporal">
         <!-- #frac-hud-theme (FRACTURA) é inserido aqui quando relevante -->
         <!-- PR 11.5: só o perfil dominante no HUD — detalhes no TAB. -->
-        <div class="chip" id="moralp" title="Perfil moral — detalhes no TAB [TAB]">
-          <span class="lbl">PERFIL</span>
+        <!-- B2 §36: rótulo explícito MORAL — o PERFIL DE BUILD é outro sistema. -->
+        <div class="chip" id="moralp" title="Perfil MORAL — detalhes no TAB [TAB]">
+          <span class="lbl">MORAL</span>
           <b id="moral-dom">NEUTRO</b>
           <span id="moral-tiers"></span>
         </div>
@@ -945,6 +953,7 @@
 
 <div id="banner"></div>
 <div id="toasts"></div>
+<div id="fpind"></div>
 
 <div id="bosswrap">
   <div id="bossnm">O   P A R A D O X O</div>
@@ -2657,6 +2666,18 @@ function sheetRender(force){
   const syn=activeSynergies(p);
   h+=syn.length?'<div class="ssyn">'+syn.map(s=>'<span>'+s+'</span>').join('')+'</div>'
     :'<div class="srow"><span class="k">NENHUMA SINERGIA ATIVA AINDA</span></div>';
+  /* B2 §37: PERFIL DE BUILD — "minha build está se tornando o quê?"
+     Derivado (nunca salvo); híbridos são válidos. UX mínima no TAB. */
+  {
+    const _bp=buildProfileSummary(p);
+    const _bpTops=_bp.rank.filter(r=>r.s>=.15).slice(0,3)
+      .map(r=>'<span style="color:'+BUILD_ARCH[r.a].col+'">'+BUILD_ARCH[r.a].nm+
+        ' '+Math.round(r.s*100)+'%</span>').join(' · ');
+    h+='<div class="srow" style="margin-top:10px"><span class="k">PERFIL DE BUILD</span>'+
+      '<span class="v" style="font-size:var(--fs-sm)"><b style="color:'+
+      (BUILD_ARCH[_bp.dom]?BUILD_ARCH[_bp.dom].col:'#9db8c8')+'">'+_bp.lab+'</b>'+
+      (_bpTops?'<br><span style="opacity:.85">'+_bpTops+'</span>':'')+'</span></div>';
+  }
   h+='<div style="margin-top:12px">';
   if(p.items.length){
     for(const id of p.items){
@@ -2678,7 +2699,7 @@ function sheetRender(force){
   };
   const prof=getMoralProfile();
   h+='<div class="ssect"><h4>MORALIDADE</h4>'+
-    '<div class="srow"><span class="k">PERFIL</span><span class="v" style="color:'+DOM_COLOR[moralDom()]+'">'+DOM_NAME[moralDom()]+'</span></div>'+
+    '<div class="srow"><span class="k">PERFIL MORAL</span><span class="v" style="color:'+DOM_COLOR[moralDom()]+'">'+DOM_NAME[moralDom()]+'</span></div>'+
     mrow('COMPAIXÃO',moral.comp,'#7dffc4')+
     mrow('GANÂNCIA',moral.greed,'#ffd166')+
     mrow('VIOLÊNCIA',moral.viol,'#ff5c7a')+
@@ -4997,14 +5018,14 @@ const $=id=>document.getElementById(id);
 const hpfill=$('hpfill'),hpnum=$('hpnum'),waveEl=$('wave'),timerEl=$('timer'),
   xpfill=$('xpfill'),lvlEl=$('lvl'),chip1=$('chip1'),chip2=$('chip2'),
   shfill=$('shfill'),shnum=$('shnum'),shbar=$('shbar'),
-  dashfill=$('dashfill'),dashwrap=$('dashwrap'),dashlbl=$('dashlbl'),bannerEl=$('banner'),
+  dashfill=$('dashfill'),dashwrap=$('dashwrap'),dashlbl=$('dashlbl'),bannerEl=$('banner'),fpindEl=$('fpind'),
   toastsEl=$('toasts'),overlay=$('overlay'),ovBody=$('ov-body'),
   ovGo=$('ov-go'),ovEchos=$('ov-echos'),ovFrac=$('ov-frac-lines'),
   ovTitle=$('ov-title'),ovSub=$('ov-sub');
 let bannerT=0;
-function banner(txt,sub){
+function banner(txt,sub,dur){
   bannerEl.innerHTML=txt+(sub?'<small>'+sub+'</small>':'');
-  bannerEl.classList.add('show');bannerT=2.0;
+  bannerEl.classList.add('show');bannerT=dur||2.0;
 }
 function toast(txt){
   const d=document.createElement('div');d.className='toast';d.textContent=txt;
@@ -5027,6 +5048,25 @@ function fpImportantToast(faction,head,eff,sub){
   if(sub!=null&&String(sub).length)d.appendChild(mk('fp-sub',String(sub)));
   toastsEl.appendChild(d);setTimeout(()=>{try{d.remove();}catch(_x){}},4600);
   return d;
+}
+/* B3 §36/§38: indicador persistente da PRESENÇA DE FACÇÃO ativa.
+   Reflete a entidade viva (símbolo/nome/TTL/pacto) com throttle ~4 Hz;
+   some sozinho em qualquer caminho que zere a entidade (expirar,
+   interagir, clear, fim de run). Continue que reconstrói a presença
+   volta a exibir SEM re-anunciar (sem banner/toast). */
+let _fpindAcc=1;
+function fpIndicatorTick(dt){
+  const e=(typeof factionPresenceEntity!=='undefined')?factionPresenceEntity:null;
+  if(!e||!fpindEl){if(fpindEl&&fpindEl.style.display)fpindEl.style.display='';return;}
+  const lab=FACTION_PRESENCE_LABEL[e.faction];if(!lab)return;
+  _fpindAcc+=(dt||0);
+  if(_fpindAcc>=.25||!fpindEl.style.display){
+    _fpindAcc=0;
+    fpindEl.style.setProperty('--fp-col',lab.col);
+    fpindEl.textContent=lab.sym+' PRESENÇA ATIVA · '+lab.nm+' · '+
+      Math.max(1,Math.ceil(e.ttl))+'s'+(e.pactOffer?' · ◆ PACTO DISPONÍVEL':'');
+    fpindEl.style.display='block';
+  }
 }
 const coinsEl=$('coinsp');
 const weapWrapEl=$('weapwrap');
@@ -5159,6 +5199,12 @@ function scheduleBossVictoryTimer(fn,delay){
   return entry.id;
 }
 let shopOffers=[], shopItems=[], shopGuns=[], rerollCost=10, shopLock=null;
+/* B3 §31/§32: calibrações compradas na visita ANTERIOR da loja pesam ×0.7
+   na visita SEGUINTE — reduz a sensação de "acabei de comprar e já voltou"
+   SEM proibir especialização. Rastreio por visita (openShop incrementa);
+   nunca persiste; janela = exatamente 1 loja. */
+let shopVisitN=0,shopBoughtAtVisit=-1;
+const shopBoughtIds=[];
 let shopRecent=[], shopRollSeq=0;
 const DOM_NAME={comp:'ALTRUÍSTA',greed:'AVARENTO',viol:'BRUTAL',neutro:'NEUTRO'};
 const DOM_SHORT={comp:'ALTR',greed:'AVAR',viol:'BRUT',neutro:'NEUT'};
@@ -6007,9 +6053,26 @@ const ATTUNE_STATES=[
   {id:'attuned',  lab:'SINTONIZADA',c:'#8ff6ff', min:.50, mul:1.06,eco:1.03},
   {id:'resonant', lab:'RESSONANTE', c:'#ffd166', min:.78, mul:1.12,eco:1.06}];
 const ATTUNE_NEUTRAL=ATTUNE_STATES[2];
-/* score determinístico 0..1 (null para módulo neutro) */
+/* score determinístico 0..1 (null = sem leitura de build nem moral).
+   B2: a FONTE principal é a COMPATIBILIDADE DE BUILD (arma/operador/
+   módulos/stats/comportamento); a moral vira modulador LEVE (alvo
+   ±2 p.p., BUILD_MORAL_MOD). Módulos sem leitura de build herdam o
+   modelo moral puro do PR 9. Faixas de estado (ATTUNE_STATES) e os
+   modificadores `attune:*` permanecem EXATAMENTE os mesmos. */
 function attunementScore(itemId,prof){
-  return calcMoralAffinityMatch(getItemMoralAffinity(itemId),prof||getMoralProfile());
+  prof=prof||getMoralProfile();
+  if(!buildHasAffinity(itemId))
+    return calcMoralAffinityMatch(getItemMoralAffinity(itemId),prof);
+  const c=buildCompat(itemId);
+  let s=.34+c*.9;      /* c=0→NEUTRA(.34) · c≈+.18→AFINADA · c≈+.49→RESSONANTE
+                          c≈−.18→INSTÁVEL · c≈−.35→DIVERGENTE
+                          RESSONANTE = build dedicada (não é fácil, nem deve ser) */
+  const ma=getItemMoralAffinity(itemId);
+  if(ma){
+    const m=calcMoralAffinityMatch(ma,prof);
+    if(m!=null)s+=BUILD_MORAL_MOD*(m-1/3);
+  }
+  return clamp(s,0,1);
 }
 function attunementStateFor(score){
   if(score==null)return ATTUNE_NEUTRAL;
@@ -6103,22 +6166,39 @@ function calcAttuneFieldCache(p,prof){
   }
   return out;
 }
-/* texto curto para UI: estado + eixo + efeito. Puro. */
+/* texto curto para UI: estado + motivo + efeito. Puro.
+   B2: para módulos com leitura de build, o motivo vem do PERFIL DE
+   BUILD (razões em attunementReasons); o eixo moral continua sendo o
+   motivo dos módulos genéricos (sem afinidade de build). */
 function attunementInfo(itemId,prof){
   prof=prof||getMoralProfile();
   const aff=getItemMoralAffinity(itemId);
-  if(!aff)return null;
+  const byBuild=buildHasAffinity(itemId);
+  /* B2: há SINTONIA se o módulo tem leitura de BUILD OU afinidade moral.
+     (luneta/lente/espectro/prisma2 eram neutros morais — hoje têm leitura
+     de build e o tooltip/carta mostram a sintonia de compatibilidade.) */
+  if(!aff&&!byBuild)return null;
   const score=attunementScore(itemId,prof),st=attunementStateFor(score);
-  const axes=moralAffinityAxes(aff);
+  const axes=aff?moralAffinityAxes(aff):[];
   const k=attunementMul(itemId,prof);
   const pct=Math.round((k-1)*100);
-  const n=prof.normalized;
-  /* motivo resumido: eixo principal do módulo está alto ou baixo no perfil */
-  const main=axes[0];
-  const reason=st.id==='neutral'?'perfil equilibrado'
-    :(st.id==='attuned'||st.id==='resonant')?MORAL_AXIS_LABEL[main]+' ↑'
-    :MORAL_AXIS_LABEL[main]+' baixa';
-  return {id:itemId,score,state:st,axes,mul:k,pct,reason,economic:attuneIsEconomic(itemId),
+  const reasons=byBuild?attunementReasons(itemId):[];
+  let reason;
+  if(byBuild){
+    const plus=reasons.find(r=>r.kind==='plus'),minus=reasons.find(r=>r.kind==='minus');
+    reason=plus?('combina com '+plus.lab)
+      :minus?minus.lab
+      :((buildProfileSummary().state==='indefinido')?'build ainda indefinida'
+      :'build equilibrada');
+  }else{
+    const main=axes[0];
+    const n=prof.normalized;
+    reason=st.id==='neutral'?'perfil equilibrado'
+      :(st.id==='attuned'||st.id==='resonant')?MORAL_AXIS_LABEL[main]+' ↑'
+      :MORAL_AXIS_LABEL[main]+' baixa';
+  }
+  return {id:itemId,score,state:st,axes,mul:k,pct,reason,reasons,byBuild,
+    economic:attuneIsEconomic(itemId),
     effect:pct===0?'efeito base':(pct>0?'efeito +'+pct+'%':'efeito reduzido: '+pct+'%')};
 }
 
@@ -6212,7 +6292,17 @@ function moralAffinityAxes(aff){
 const MORAL_AXIS_COLOR={comp:'#7dffc4',greed:'#ffd166',viol:'#ff5c7a'};
 function moralAffinityTagHTML(itemId,showCurrent,compact){
   const aff=getItemMoralAffinity(itemId);
-  if(!aff)return '';
+  if(!aff){
+    /* B2: módulo SEM afinidade moral mas COM leitura de build
+       (lente/luneta/espectro/colmeia/prisma2) mostra a sintonia de
+       COMPATIBILIDADE — antes estes ficavam sem tag nenhum. */
+    if(!buildHasAffinity(itemId))return '';
+    if(!showCurrent||!player)return '';
+    const bi=attunementInfo(itemId);
+    if(!bi||bi.state.id==='neutral')return '';   /* neutro silencioso: card limpo */
+    return '<div class="cmoral">SINTONIA: <b style="color:'+bi.state.c+'">'+bi.state.lab+'</b>'+
+      '<br><span style="opacity:.8">'+bi.reason+' · '+bi.effect+'</span></div>';
+  }
   /* B5.5: no card, sintonia em UMA linha (estado + efeito); eixos e motivo
      continuam no tooltip (versão completa). Contrato B4 mantido: o HTML
      do card contém state.lab e info.effect. */
@@ -6241,6 +6331,361 @@ function moralAffinityPhrase(itemId){
   const txt=axes.map(a=>ph[a]).join(' e ');
   return 'Este módulo responde melhor a '+txt+'.';
 }
+
+/* =====================================================================
+   PR14.5 · B2 — PERFIL DE BUILD (derivado, nunca salvo)
+   ---------------------------------------------------------------------
+   "Como esta run está sendo construída MECANICAMENTE?"
+
+   · SEPARADO do PERFIL MORAL (comp/greed/viol — intacto). O Perfil de
+     Build lê ARMA + OPERADOR + MÓDULOS OWNED + STATS FINAIS +
+     COMPORTAMENTO (runSt, PR 8) + Tema do Diretor (influência mínima).
+   · 8 arquétipos, score 0..1 cada — híbridos são válidos (vários altos).
+   · Tudo é DERIVADO e recalculável: NADA aqui é persistido. Continue/
+     reload recomputam do estado da run (a composição sozinha já gera um
+     perfil coerente; o comportamento recalibra ao longo da run — e o
+     runSt sobrevive ao checkpoint, então o comportamento também volta).
+   · Anti-snowball: cada componente é comprimido (tanh/clamp), a
+     contribuição dos módulos satura e o peso da arma principal domina
+     desde a onda 1. A Loja usa pesos SUAVES (máx ×1.35) — ver B2-C.
+   · DEV pode forçar um perfil (DEV.forceBuildProfile) para playtest;
+     o override é transiente e entra na chave de cache.
+   ===================================================================== */
+const BUILD_ARCH={
+  melee  :{nm:'MELEE',   col:'#ff9d3c'},
+  ranged :{nm:'RANGED',  col:'#46e0ff'},
+  crit   :{nm:'CRIT',    col:'#ffd166'},
+  status :{nm:'STATUS',  col:'#a8ff3d'},
+  shield :{nm:'ESCUDO',  col:'#8ff6ff'},
+  dash   :{nm:'DASH',    col:'#7df9ff'},
+  economy:{nm:'ECONOMIA',col:'#ffb347'},
+  echo   :{nm:'ECHO',    col:'#ff4df0'}
+};
+const BUILD_ARCH_IDS=Object.keys(BUILD_ARCH);
+/* pesos da combinação (somam 1.00) — arma e operador dominam cedo */
+const BUILD_WEIGHTS={weapon:.38,operator:.22,items:.22,stats:.12,behavior:.06};
+/* modulação moral da Sintonia: leve por design (alvo ±2 p.p. no score) */
+const BUILD_MORAL_MOD=.024;   /* span real: −0.8..+1.6 p.p. ≈ ±2 p.p. */
+/* identidade inicial do OPERADOR (leitura estrutural dos perks/stats) */
+const OPERATOR_BUILD_HINTS={
+  vector  :{},
+  wraith  :{dash:.55,crit:.35,melee:.25},
+  bulwark :{shield:.75},
+  pyre    :{status:.65},
+  warden  :{status:.45,shield:.25},
+  nomad   :{economy:.75},
+  echo0   :{echo:.75},
+  revenant:{melee:.40,crit:.25,dash:.20}
+};
+/* identidade da ARMA — os campos estruturados (melee/range/fx/crit/
+   chain/lifesteal/farBonus…) já dizem quase tudo; estes pesos apenas
+   consolidam essa leitura em arquétipos. Valores 0..1. */
+const WEAPON_BUILD_HINTS={
+  plasma  :{ranged:.5},
+  shotgun :{melee:.45,ranged:.25},
+  orb     :{ranged:.45},
+  blade   :{melee:1},
+  beam    :{ranged:.7},
+  flamer  :{ranged:.35,status:.8},
+  rail    :{ranged:.9},
+  smg     :{ranged:.5},
+  cryo    :{ranged:.4,status:.7},
+  tesla   :{ranged:.45,status:.6},
+  acid    :{ranged:.35,status:.75},
+  nail    :{ranged:.5,status:.5},
+  boomer  :{ranged:.5,melee:.2},
+  homing  :{ranged:.6},
+  mine    :{ranged:.25,status:.2},
+  sniper  :{ranged:.95,crit:.3},
+  scythe  :{melee:.9},
+  hammer  :{melee:.8,status:.3},
+  void    :{ranged:.5},
+  ricochet:{ranged:.5},
+  gatling :{ranged:.6},
+  prism   :{ranged:.5},
+  plague  :{ranged:.35,status:.85},
+  katana  :{melee:.85,crit:.6},
+  chains  :{melee:.8,status:.3},
+  gaunt   :{melee:.9},
+  glaive  :{melee:.8,status:.5}
+};
+/* Tema do Diretor: influência PEQUENA e contextual — nunca identidade */
+const THEME_BUILD_HINTS={
+  collapse :{status:.05},
+  siege    :{shield:.05},
+  hunt     :{dash:.05},
+  anomaly  :{},
+  resonance:{echo:.05},
+  scarcity :{economy:.05}
+};
+/* =====================================================================
+   BUILD_AFFINITY — afinidade do MÓDULO com cada arquétipo (−1..+1).
+   Positivo: o módulo AMPLIFICA a identidade. Negativo: CONFLITA.
+   Módulos ausentes daqui caem no fallback por tags (itemTags) — e se
+   não houver sinal de build algum, permanecem NEUTROS de build (a
+   sintonia moral pura do PR 9 continua valendo para eles).
+   ===================================================================== */
+const BUILD_AFFINITY={
+  rebob      :{dash:.7,melee:.2},
+  lente      :{ranged:.5},
+  coracao    :{ranged:.4,crit:.2},
+  iman       :{economy:.6},
+  placa      :{shield:.7},
+  olho       :{crit:1},
+  paradoxo   :{echo:1},
+  luneta     :{ranged:1,melee:-.8},
+  estilhaco  :{melee:1,ranged:-.8},
+  pirostase  :{status:.9},
+  criostase  :{status:.8,shield:.2},
+  condutor   :{status:.5,crit:.5},
+  catalis    :{status:.9},
+  ferrao     :{status:.9},
+  sifao      :{status:.5,shield:.2},
+  reator     :{ranged:.7},
+  espectro   :{dash:.9},
+  vinganca   :{melee:.3,dash:.2,shield:-.8},
+  usura      :{economy:.9},
+  ressonador :{echo:.9},
+  carapaca   :{shield:.7,melee:.2},
+  prisma2    :{ranged:.4,crit:.3},
+  ampulheta  :{dash:.8},
+  talisma    :{shield:.3},
+  espinho    :{shield:.6,melee:.2},
+  su_vampiro :{melee:.5},
+  su_imante  :{economy:.6},
+  su_critcura:{crit:.8},
+  su_exec    :{crit:.5,ranged:.3},
+  su_dotcrit :{status:1},
+  sb_pulso   :{shield:.7},
+  sb_janela  :{shield:.7,crit:.3},
+  sb_grilhao :{shield:.7,status:.3},
+  fs_prisma  :{shield:.8,crit:.4},
+  fs_casulo  :{shield:.8},
+  fs_cinetica:{shield:.6,dash:.5},
+  rg_condensador:{shield:.9},
+  rg_peso    :{shield:.9},
+  rg_lagrima :{shield:.9,dash:.3},
+  crit_cadeia:{crit:1},
+  crit_garra :{crit:.9,status:.4},
+  st_inverno :{status:.9},
+  st_corrosivo:{status:.9},
+  dash_eco   :{dash:.9},
+  dash_fase  :{dash:.9,crit:.3},
+  eco_risco  :{economy:.9},
+  eco_divida :{economy:.9},
+  trans_fratura:{shield:.6,ranged:.3},
+  trans_ressonante:{echo:1},
+  trans_conclusao:{status:.7,crit:.5},
+  trans_temporal:{economy:.9},
+  trans_espectral:{dash:.9,crit:.4}
+};
+/* resolves afinidade de build: tabela explícita → fallback por tags → null */
+function buildAffinityOf(itemId){
+  if(itemId==null)return null;
+  if(BUILD_AFFINITY[itemId])return BUILD_AFFINITY[itemId];
+  const tags=itemTags(itemId);
+  if(!tags||!tags.length)return null;
+  const out={};let any=false;
+  const TAG_AFF={shield:.4,status:.4,crit_build:.4,dash:.4,economy:.4,echo:.4,ranged:.3,melee:.3};
+  for(const tg of tags){
+    if(TAG_AFF[tg]!=null){out[tg]=Math.max(out[tg]||0,TAG_AFF[tg]);any=true;}
+  }
+  return any?out:null;
+}
+/* módulo tem LEITURA de build (tabela ou tags)? */
+function buildHasAffinity(itemId){
+  const a=buildAffinityOf(itemId);
+  return !!(a&&BUILD_ARCH_IDS.some(k=>a[k]));
+}
+/* ---- estado DEV (transiente) para forçar um perfil no playtest ---- */
+let _bpOverride=null;
+/* ---- componentes 0..1 por arquétipo ---- */
+function _bpWeaponComp(p){
+  const out={};
+  if(!p)return out;
+  const owned=(p.owned&&p.owned.length)?p.owned:[p.wi|0];
+  const main=WEAPON_BUILD_HINTS[(WEAPONS[clamp(p.wi|0,0,WEAPONS.length-1)]||{}).id]||null;
+  for(const a of BUILD_ARCH_IDS){
+    let v=(main&&main[a])||0;
+    for(const wi of owned){
+      if((wi|0)===(p.wi|0))continue;
+      const h=WEAPON_BUILD_HINTS[(WEAPONS[clamp(wi|0,0,WEAPONS.length-1)]||{}).id];
+      if(h&&h[a])v+=.35*h[a];
+    }
+    out[a]=clamp(v,0,1);
+  }
+  return out;
+}
+function _bpOperatorComp(p){
+  const h=(p&&OPERATOR_BUILD_HINTS[p.charId])||{};
+  const out={};
+  for(const a of BUILD_ARCH_IDS)out[a]=clamp(h[a]||0,0,1);
+  return out;
+}
+function _bpItemsComp(p){
+  const out={};
+  for(const a of BUILD_ARCH_IDS)out[a]=0;
+  if(!p||!p.items)return out;
+  const sums={};
+  for(const a of BUILD_ARCH_IDS)sums[a]=0;
+  for(const id of p.items){
+    const aff=buildAffinityOf(id);
+    if(!aff)continue;
+    for(const a in aff)if(sums[a]!=null)sums[a]+=aff[a];
+  }
+  /* compressão: satura sem inverter sinal; antagonismo cancela */
+  for(const a of BUILD_ARCH_IDS)out[a]=clamp(Math.tanh(sums[a]/2.2),0,1);
+  return out;
+}
+function _bpStatsComp(p){
+  const out={};
+  for(const a of BUILD_ARCH_IDS)out[a]=0;
+  if(!p)return out;
+  try{
+    out.crit  =clamp(((smGet(p,'crit'))-.20)*2,0,1);
+    const rr=smGet(p,'rangedRange'),mr=smGet(p,'meleeRange');
+    const ratio=(rr+mr)>0?(rr-mr)/(rr+mr):0;
+    out.ranged=clamp(ratio,0,1);out.melee=clamp(-ratio,0,1);
+    out.economy=clamp((smGet(p,'coinMul')-1.6)/1.2,0,1);
+    out.echo=clamp((p.echoBoost||0)*1.2,0,1);
+    out.status=clamp(((p.stBoost||1)-1.1)/.9,0,1);
+    out.shield=clamp(((p.shieldMax||0)-45)/75,0,1);
+    out.dash=clamp((1.9-(p.dashCdMax||2.1))/1.2,0,1);
+  }catch(e){}
+  return out;
+}
+/* comportamento REAL da run (runSt, PR 8) — peso pequeno; sinais cegos
+   (crit/economia/escudo/eco) não são inventados e ficam em 0. */
+function _bpBehaviorComp(){
+  const out={};
+  for(const a of BUILD_ARCH_IDS)out[a]=0;
+  const st=runSt;
+  if(!st)return out;
+  const s=Math.max(1,st.s|0);
+  const close=(st.mw+st.rw)>4?clamp(st.mw/(st.mw+st.rw),0,1):null;
+  if(close!=null){out.melee=clamp(close,0,1);out.ranged=clamp(1-close,0,1);}
+  if(st.dN>4){
+    const rangePref=clamp(((st.dS/st.dN)-140)/220,0,1);
+    out.ranged=clamp(Math.max(out.ranged,rangePref*.7),0,1);
+  }
+  out.dash=clamp(st.dsh/Math.max(1,s*.02),0,1);
+  out.status=clamp(st.ctl/Math.max(1,s*.008),0,1);
+  if(st.mv+st.fv>16){
+    const kite=clamp(st.mv/(st.mv+st.fv),0,1);
+    out.ranged=clamp(Math.max(out.ranged,kite*.5),0,1);
+  }
+  return out;
+}
+function _bpThemeComp(){
+  const h=(fractureRun&&THEME_BUILD_HINTS[fractureRun.theme])||{};
+  const out={};
+  for(const a of BUILD_ARCH_IDS)out[a]=clamp(h[a]||0,0,1);
+  return out;
+}
+/* chave de cache: tudo que pode alterar o perfil (barato de compor) */
+let _bpCache=null,_bpKey='';
+function _bpKeyOf(p){
+  let k=(p&&p.charId)||'?';
+  k+='|'+(p?(p.wi|0):'')+'|'+((p&&p.owned)?p.owned.join(','):'');
+  k+='|'+((p&&p.items)?p.items.join(','):'');
+  try{
+    k+='|'+smGet(p,'crit').toFixed(2)+'|'+smGet(p,'coinMul').toFixed(2)+
+       '|'+smGet(p,'rangedRange').toFixed(2)+'|'+smGet(p,'meleeRange').toFixed(2);
+  }catch(e){}
+  if(p){
+    k+='|'+(p.echoBoost||0).toFixed(2)+'|'+(p.stBoost||1).toFixed(2)+
+       '|'+(p.shieldMax||0)+'|'+(p.dashCdMax||2.1).toFixed(2);
+  }
+  k+='|'+((typeof echoes!=='undefined'&&echoes)?echoes.length:0);
+  k+='|'+(fractureRun?fractureRun.theme:'-');
+  const st=runSt;
+  if(st)k+='|'+[st.s>>3,st.mw>>3,st.rw>>3,st.dsh,st.ctl>>2,st.mv>>3,st.fv>>3,st.dN>>2].join('.');
+  if(_bpOverride)k+='|ov:'+JSON.stringify(_bpOverride);
+  return k;
+}
+/* PERFIL DE BUILD — scores 0..1 por arquétipo. Derivado, nunca salvo. */
+function buildProfile(p){
+  p=p||player;
+  const key=_bpKeyOf(p);
+  if(_bpCache&&_bpKey===key)return _bpCache;
+  const comps={
+    weapon:_bpWeaponComp(p),operator:_bpOperatorComp(p),
+    items:_bpItemsComp(p),stats:_bpStatsComp(p),
+    behavior:_bpBehaviorComp()
+  };
+  const out={};
+  for(const a of BUILD_ARCH_IDS){
+    let v=0;
+    for(const c in BUILD_WEIGHTS)v+=(comps[c][a]||0)*BUILD_WEIGHTS[c];
+    v+=_bpThemeComp()[a]||0;                 // tema: adicional, já pequeno
+    out[a]=clamp(v,0,1);
+  }
+  if(_bpOverride)for(const a in _bpOverride)out[a]=clamp(+_bpOverride[a]||0,0,1);
+  const prof={scores:out,key};
+  _bpCache=prof;_bpKey=key;
+  return prof;
+}
+/* resumo para UI/Loja: dominante + secundário + estado.
+   Aceita o PRÓPRIO perfil ({scores}) ou o player (conveniência p/ TAB). */
+function buildProfileSummary(prof){
+  if(prof&&!prof.scores)prof=buildProfile(prof);
+  prof=prof||buildProfile();
+  const rank=BUILD_ARCH_IDS.map(a=>({a,s:prof.scores[a]})).sort((x,y)=>y.s-x.s);
+  const top=rank[0],sec=rank[1];
+  /* HÍBRIDO: dois caminhos próximos — além do corte absoluto (top<.55 e
+     gap<.10), comparação RELATIVA (gap/top) para reconhecer builds duplas
+     dedicadas de verdade (scores altos empatados NÃO fingem dominante). */
+  const relGap=top.s>0?(top.s-sec.s)/top.s:1;
+  let state,lab;
+  if(top.s<.30){state='indefinido';lab='INDEFINIDO';}
+  else if((top.s<.55&&top.s-sec.s<.10)||relGap<.12){state='hibrido';lab='HÍBRIDO '+BUILD_ARCH[top.a].nm+'/'+BUILD_ARCH[sec.a].nm;}
+  else{state='definido';lab=BUILD_ARCH[top.a].nm;}
+  return {dom:top.a,domScore:top.s,sec:sec.a,secScore:sec.s,
+    rank:rank.slice(0,4),state,lab};
+}
+/* compatibilidade bruta de um módulo com o perfil atual (−1..+1) */
+function buildCompat(itemId,prof){
+  const aff=buildAffinityOf(itemId);
+  if(!aff)return null;
+  prof=prof||buildProfile();
+  let c=0;
+  for(const a in aff)if(prof.scores[a]!=null)c+=aff[a]*prof.scores[a];
+  return clamp(c,-1,1);
+}
+/* peso SUAVE da oferta de módulo na loja: NEUTRO ×1.00 · compatível até
+   ×1.35 · conflitante no mínimo ×0.75. NUNCA zera, NUNCA garanta. */
+const BUILD_SHOP_W_MAX=.35,BUILD_SHOP_W_MIN=-.25;
+function buildShopWeight(item,prof){
+  const c=buildCompat(item&&item.id,prof);
+  if(c==null)return 1;
+  return clamp(1+c*BUILD_SHOP_W_MAX,1+BUILD_SHOP_W_MIN,1+BUILD_SHOP_W_MAX);
+}
+/* razões legíveis ("por que combina/conflita") — 1 a 3 linhas curtas */
+function attunementReasons(itemId,prof){
+  const aff=buildAffinityOf(itemId);
+  if(!aff)return [];
+  prof=prof||buildProfile();
+  const plus=[],minus=[];
+  for(const a in aff){
+    const contrib=aff[a]*prof.scores[a];
+    if(contrib>=.18)plus.push({arch:a,k:contrib});
+    else if(contrib<=-.14)minus.push({arch:a,k:-contrib});
+  }
+  plus.sort((x,y)=>y.k-x.k);minus.sort((x,y)=>y.k-x.k);
+  const p2=player;
+  const mainW=p2?WEAPONS[clamp(p2.wi|0,0,WEAPONS.length-1)]:null;
+  const out=[];
+  for(const e of plus.slice(0,2)){
+    let lab=BUILD_ARCH[e.arch].nm;
+    if(mainW&&mainW.id&&WEAPON_BUILD_HINTS[mainW.id]&&(WEAPON_BUILD_HINTS[mainW.id][e.arch]||0)>=.4)
+      lab+=' · '+mainW.nm;
+    out.push({kind:'plus',lab:lab+' em alta na sua build'});
+  }
+  for(const e of minus.slice(0,1))
+    out.push({kind:'minus',lab:'conflita com '+BUILD_ARCH[e.arch].nm+' dominante'});
+  return out.slice(0,3);
+}
+
 
 /* ---- LOJA: viés pequeno a favor de módulos afinados (nunca bloqueia) ---- */
 function moralShopWeight(item){
@@ -7010,7 +7455,11 @@ const ITEMS=[
     p.maxHp=Math.max(30,Math.round(p.maxHp*.85));p.hp=Math.min(p.hp,p.maxHp);}},
  {id:'rebob',nm:'REBOBINADOR CINÉTICO',desc:'DASH REFLETE PROJÉTEIS (×2.2 DANO) · +25% RECARGA DO DASH',price:40,color:'#7df9ff',
   apply:p=>{p.dashReflect=true;p.dashCdMax*=1.25;}},
- {id:'lente',nm:'LENTE DE FASE',desc:'PROJÉTEIS PERFURAM +1 ALVO · −12% DANO',price:32,color:'#9d7bff',
+ /* B3 §19/§20: REWORK — deixou de ser "perfuração pior e mais cara".
+    Identidade: atravessar inimigos CARREGA o tiro (×1.20 por perfuração,
+    em vez da queda ×0.82) — a perfuração vira uma escolha de dano em
+    movimento. sm ids/campos preservados (save-safe). */
+ {id:'lente',nm:'LENTE DE FASE',desc:'PROJÉTEIS PERFURAM +1 ALVO · ATRAVESSAR CARREGA O TIRO: +20% DE DANO POR PERFURAÇÃO · −12% DANO',price:32,color:'#9d7bff',
   apply:p=>{smFlat(p,'pierce','module.lente.pierce','LENTE +1 PERFURAÇÃO',1);
     smMul(p,'damage','module.lente.damage','LENTE −12% DANO',.88);}},
  {id:'coracao',nm:'CORAÇÃO SOBRECARREGADO',desc:'+35% CADÊNCIA · +15% DANO RECEBIDO',price:33,color:'#ffb347',
@@ -7126,10 +7575,15 @@ const ITEMS=[
   apply:p=>{p.thorns=(p.thorns||0)+.35;
     smMul(p,'dmgTaken','module.espinho.dmgTaken','ESPINHO +10% DANO RECEBIDO',1.10);}},
 
+ /* B3 §17/§18: REWORK — deixou de ser "lifesteal melhor que o DRENO".
+    Calibração (DRENO) investe em sustain quantitativo; o MÓDULO muda COMO
+    o sustain funciona: abates acumulam FOME e a 3ª presa cura (proc
+    determinístico, sem RNG), com sinergia em CURA RECEBIDA. */
  {id:'su_vampiro',nm:'PRESAS DE VÁCUO',rar:2,
-  desc:'VAMPIRISMO +9% · +20% DE CURA RECEBIDA',
+  desc:'A CADA 3 ABATES: +8 DE VIDA (FOME DE VÁCUO) · +20% DE CURA RECEBIDA',
   price:42,color:'#ff3d68',
-  apply:p=>{p.globalLifesteal=(p.globalLifesteal||0)+.09;
+  apply:p=>{p.killHealEvery=3;
+    p.killHealAmount=(p.killHealAmount||0)+8;
     p.medBoost=(p.medBoost||1)*1.20;}},
 
  {id:'su_imante',nm:'CAMPO MAGNÉTICO AMPLO',rar:1,
@@ -7178,6 +7632,50 @@ const ITEMS=[
     w.rar = p>=86?4 : p>=76?3 : p>=66?2 : p>=58?1 : 0;
   }
 })();
+/* =====================================================================
+   PR14.5 · B2 — FAMÍLIAS DE MÓDULO + EXCLUSIVIDADE LEVE
+   ---------------------------------------------------------------------
+   Família = subidentidade mecânica que não faz sentido empilhar.
+   EXCLUSIVIDADE LEVE: comprar/possuir um membro de família exclusiva
+   tira os OUTROS membros das NOVAS OFERTAS da Loja (nunca remove nada
+   do inventário). Runs antigas com 2 da mesma família permanecem
+   válidas (GRANDFATHERING — save intocado; a regra vale só para
+   novas aquisições via oferta).
+   Escolha das famílias exclusivas: somente onde a coexistência REAL
+   se anula ou repete (B1 §M):
+     · shield_regen: condensador/peso/lágrima se contradizem no
+       triângulo regen×max×delay — 1 firmware de recarga por run.
+     · focus_range: luneta×estilhaco é antisinergia direta de alcance
+       — a build escolhe UM foco (pivotar = abrir mão do outro).
+     · credit: usura/eco_risco/eco_divida são variações do MESMO
+       contrato de crédito — assina-se um só (trans_temporal é
+       transformador e fica fora da exclusividade de propósito).
+   ===================================================================== */
+const ITEM_FAMILIES={
+  shield_regen:{nm:'REGEN DE ESCUDO',exclusive:true,
+    ids:['rg_condensador','rg_peso','rg_lagrima']},
+  focus_range:{nm:'FOCO DE ALCANCE',exclusive:true,
+    ids:['luneta','estilhaco']},
+  credit:{nm:'CONTRATO DE CRÉDITO',exclusive:true,
+    ids:['usura','eco_risco','eco_divida']}
+};
+const ITEM_FAMILY_BY_ID=(function(){
+  const o={};
+  for(const f in ITEM_FAMILIES)for(const id of ITEM_FAMILIES[f].ids)o[id]=f;
+  return o;
+})();
+/* família do módulo (id → chave de família ou null) */
+function itemFamily(id){return ITEM_FAMILY_BY_ID[id]||null;}
+function itemFamilies(id){const f=itemFamily(id);return f?[f]:[];}
+/* id de membro DA MESMA família exclusiva que já está instalado
+   (null se o módulo pode ser oferecido) */
+function familyBlocker(id){
+  const f=itemFamily(id);
+  if(!f||!ITEM_FAMILIES[f].exclusive)return null;
+  const owned=ITEM_FAMILIES[f].ids.find(x=>x!==id&&ownsItem(x));
+  return owned||null;
+}
+function itemFamilyName(f){return (ITEM_FAMILIES[f]&&ITEM_FAMILIES[f].nm)||f;}
 function itemById(id){for(const i of ITEMS)if(i.id===id)return i;return null;}
 function ownsItem(id){return player.items.indexOf(id)>=0;}
 function buffEchoes(){
@@ -7199,9 +7697,9 @@ function giveItem(it,free){
   if(_aff){
     const _st=attunementState(it.id);
     if(_st.id==='attuned'||_st.id==='resonant')
-      toast('SINTONIA '+_st.lab+' · O MÓDULO RESPONDE AO SEU PERFIL');
+      toast('SINTONIA '+_st.lab+' · O MÓDULO COMBINA COM SUA BUILD');
     else if(_st.id==='divergent')
-      toast('SINTONIA DIVERGENTE · O MÓDULO RENDE MENOS COM ESTE PERFIL');
+      toast('SINTONIA DIVERGENTE · O MÓDULO RENDE MENOS COM ESTA BUILD');
   }
   floatText(player.x,player.y-32,it.nm,it.color);
   spawnRing(player.x,player.y,it.color,10,115,.6);sLvl();
@@ -7892,6 +8390,13 @@ function rerollBaseCost(){
   const w=Math.max(0,wave||1);
   return Math.max(8,Math.round(10+w*1.0));   // decisão econômica ao longo da run
 }
+/* B2 §31: teto do reroll do OPERADOR = 6× o custo base da onda atual.
+   Antes o custo crescia ×1.6 sem limite e se tornava irrelevante (nunca
+   mais comprável); com o teto ele continua caro, mas volta a ser uma
+   decisão real no late. O reroll temporal da aba ECHO já tinha cap (30). */
+function rerollCap(){
+  return Math.round(rerollBaseCost()*6);
+}
 function pickWeighted(list,waveN,repW){
   const w=o=>rarityWeight(o.rar||0,waveN)*(repW?repW(o):1);
   let tot=0;
@@ -8233,7 +8738,7 @@ function moralStatusLine(){
   const tag=(t,nm,col)=>t?'<b style="color:'+col+'">'+nm+' '+TIER_NAME[t]+'</b>':'';
   const tiers=[tag(tc,'COMPAIXÃO','#7dffc4'),tag(tg,'GANÂNCIA','#ffd166'),
     tag(tv,'VIOLÊNCIA','#ff5c7a')].filter(Boolean).join(' · ');
-  let s='<div class="runstate"><span class="rs-k">PERFIL</span> '+
+  let s='<div class="runstate"><span class="rs-k">PERFIL MORAL</span> '+
     '<b style="color:'+DOM_COLOR[d]+'">'+DOM_NAME[d]+'</b>'+
     (tiers?' <span style="opacity:.85">— '+tiers+'</span>':'')+
     (mEff.conflict?' <b style="color:#ff4df0">[CONFLITO]</b>':'')+'</div>';
@@ -8280,18 +8785,38 @@ function rollShop(){
   const nOff=player.bigShop?6:3;      // ARQUIVO PROIBIDO expande a loja
   shopOffers=lockU?[lockU]:[];
   while(shopOffers.length<nOff&&pool.length){
-    const pick=pickWeighted(pool,wave,o=>shopRepeatWeight(o.id));  // B3-A: raridade + variedade
+    /* B3-A variedade + B3 §31: comprada na visita ANTERIOR pesa ×0.30
+       (comprado hoje NÃO recebe o ×0.42 do repeat — sem a janela ele voltaria
+       com peso cheio; a janela devolve o amortecimento por 1 loja, diluído
+       pelos pesos de raridade ~×0.30/100 sobre base ~100). */
+    const pick=pickWeighted(pool,wave,o=>shopRepeatWeight(o.id)*
+      ((shopVisitN===shopBoughtAtVisit+1&&shopBoughtIds.indexOf(o.id)>=0)?.30:1));
     shopOffers.push(pool.splice(pool.indexOf(pick),1)[0]);
   }
   // ---- MÓDULOS PASSIVOS ----
-  const lockI=(shopLock&&shopLock.kind==='item'&&!ownsItem(shopLock.id))
+  let lockI=(shopLock&&shopLock.kind==='item'&&!ownsItem(shopLock.id))
     ? itemById(shopLock.id) : null;
+  /* B2 §33: trava que ficou IMPOSSÍVEL por família exclusiva é liberada
+     com feedback — nunca estado silencioso quebrado. */
+  if(lockI&&familyBlocker(lockI.id)){
+    const _blk=itemById(familyBlocker(lockI.id));
+    toast('TRAVA LIBERADA · '+itemFamilyName(itemFamily(lockI.id))+': '+
+      (_blk?_blk.nm:'módulo')+' JÁ INSTALADO');
+    AUDIO.ui(320);
+    shopLock=null;lockI=null;
+  }
   /* R5 §2: catálogo próprio do sandbox para itens da loja */
-  const ip=ITEMS.filter(i=>!ownsItem(i.id)&&(!lockI||i.id!==lockI.id)&&
+  /* B2 §16: exclusividade leve — membro de família exclusiva já instalado
+     tira os OUTROS das novas ofertas (posse antiga nunca é tocada). */
+  const ip=ITEMS.filter(i=>!ownsItem(i.id)&&!familyBlocker(i.id)&&(!lockI||i.id!==lockI.id)&&
     (sandboxRun||isItemUnlocked(i.id)));
   shopItems=lockI?[lockI]:[];
   while(shopItems.length<2&&ip.length){
-    const pick=pickWeightedMoral(ip,wave,o=>shopRepeatWeight(o.id));   // PR 9: sintonia + B3-A variedade
+    /* B2 §23: peso SUAVE por compatibilidade de build (×0.75–×1.35),
+       somado à sintonia moral (PR 9, ×1.10 máx) e à variedade (B3-A).
+       NÃO filtra e NÃO garante: 0/1/2 ofertas compatíveis continuam
+       possíveis — a direção aparece ao longo de várias lojas. */
+    const pick=pickWeightedMoral(ip,wave,o=>shopRepeatWeight(o.id)*buildShopWeight(o));
     shopItems.push(ip.splice(ip.indexOf(pick),1)[0]);
   }
   // ---- ARMAS AVANÇADAS ----
@@ -8354,6 +8879,7 @@ function openSlotPicker(wi,price){
   mClose.onclick=()=>{renderShop();};
 }
 function openShop(){
+  shopVisitN++;                // B3 §31: janela do anti-reoferta
   speechClear();               // B2-A: modal de loja não mantém fala órfã
   // VOTO DE POBREZA: a loja é pulada por completo
   if(player.vowPoverty){
@@ -8367,6 +8893,7 @@ function openShop(){
   }
   state='shop';firing=false;curEv=null;
   hideActiveTooltip();          // FIX A: mata tooltip flutuante ao abrir a Loja
+  applyMoralTuning(player);     // B2: sintonia fresca a cada GATE de loja (1×/onda — perfil de build pode ter recalibrado)
   rerollCost=rerollBaseCost();rollShop();renderShop();
   modalEl.classList.add('on');
   sfx(523,.14,'sine',.04,0);setTimeout(()=>sfx(784,.2,'sine',.04,0),110);
@@ -8378,22 +8905,74 @@ function openShop(){
      ENCONTRO FÍSICO da própria facção durante a run (ver fpOpenPactEncounter
      e o scheduler de presença). A Loja voltou a ser só compra/reroll. */
 }
+/* B3 §20: fator de dano por PERFURAÇÃO — LENTE DE FASE transforma a queda
+   padrão (×0.82) em carga (+20%). Puro, lê player, sem estado. */
+function lensChargeMul(){
+  return (player&&player.items&&player.items.indexOf('lente')>=0)?1.20:.82;
+}
+/* =====================================================================
+   B3 — CALIBRAÇÕES DE CAMPO: identidade da 1ª camada da Loja.
+   Calibração = aprimoramento acumulativo (simples, quantitativo,
+   repetível). Rank DERIVADO de player.upgLog (nº de compras da mesma
+   calibração) — upgLog já é persistido pelo checkpoint/Continue e já
+   existe em saves antigos: nenhum campo novo de save, nenhum bump.
+   Sem Sintonia, sem buildWeight, sem cap rígido (IV, V, VI… seguem). */
+function toRomanRank(n){
+  if(!(n>0))return 'I';
+  if(n>39)return String(n);
+  const T=[[10,'X'],[9,'IX'],[5,'V'],[4,'IV'],[1,'I']];let r='';
+  for(const [v,rr] of T)while(n>=v){r+=rr;n-=v;}
+  return r;
+}
+/* rank que a PRÓXIMA compra terá (compras anteriores + 1) */
+function upgRankOf(u){
+  if(!u||!player||!Array.isArray(player.upgLog))return 1;
+  let n=0;for(const x of player.upgLog)if(x===u.nm)n++;
+  return n+1;
+}
+/* tiers auditados (B3 §11-15): apresentados como a MESMA linha de
+   investimento — efeitos/cards preservados (save-safe, §13/§14-B). */
+const UPG_ADVANCED={range2:'LINHA ALCANCE',dmg2:'LINHA DANO',
+  rate2:'LINHA CADÊNCIA',pierce2:'LINHA PERFURAÇÃO',critx:'LINHA CRÍTICO'};
+const UPG_ELITE={omni:1,singul:1};
+function upgRankSpan(u){
+  return ' <span style="color:#ffd166;font-size:var(--fs-sm);letter-spacing:.16em" title="calibração nº '+
+    upgRankOf(u)+' desta run">'+toRomanRank(upgRankOf(u))+'</span>';
+}
+function upgDescHTML(u){
+  if(UPG_ADVANCED[u.id])
+    return '<div style="opacity:.7;font-size:var(--fs-sm);letter-spacing:.2em;margin-bottom:2px">CALIBRAÇÃO AVANÇADA · '+
+      UPG_ADVANCED[u.id]+'</div>'+u.desc;
+  if(UPG_ELITE[u.id])
+    return '<div style="color:#ffd166;opacity:.9;font-size:var(--fs-sm);letter-spacing:.2em;margin-bottom:2px">CALIBRAÇÃO DE ELITE</div>'+u.desc;
+  return u.desc;
+}
 function renderShopOp(){
   mTag.textContent='NÓDULO DE MANUTENÇÃO · ONDA '+String(wave).padStart(2,'0')+' NEUTRALIZADA';
   mTitle.textContent='LOJA TEMPORAL';
   mDesc.innerHTML=moralStatusLine();
   mSect.style.display='none';mReroll.style.display='block';
   mRow.innerHTML='';mRow2.innerHTML='';
-  if(!shopOffers.length)mRow.innerHTML='<div class="cds">ESTOQUE DE UPGRADES ESGOTADO — USE O REROLL.</div>';
+  /* B3 §4/§48: heading próprio das calibrações (não havia) — coerente com
+     ARMAMENTO AVANÇADO e MÓDULOS PASSIVOS, sem inflar a altura da loja. */
+  const uSect=document.createElement('div');
+  uSect.className='sect';uSect.style.cssText='flex:1 1 100%;margin-top:0';
+  uSect.innerHTML='CALIBRAÇÕES DE CAMPO '+
+    '<span style="opacity:.62;font-size:var(--fs-sm);letter-spacing:.24em">'+
+    '· APRIMORAMENTOS ACUMULATIVOS — PERMANECEM NA RUN</span>';
+  mRow.appendChild(uSect);
+  if(!shopOffers.length)mRow.innerHTML='<div class="cds">ESTOQUE DE CALIBRAÇÕES ESGOTADO — USE O REROLL.</div>';
   for(const u of shopOffers){
     const pr=priceUpg(u),poor=player.coins<pr;
     const RC=RARITY[u.rar||0];
     mRow.appendChild(mkCard(
-      '<span style="color:'+RC.c+'">'+u.nm+'</span>'+rarTag(u.rar),
-      u.desc+shopImpactHTML(shopUpgPreview(u)),
+      '<span style="color:'+RC.c+'">'+u.nm+'</span>'+upgRankSpan(u)+rarTag(u.rar),
+      upgDescHTML(u)+shopImpactHTML(shopUpgPreview(u)),
       '<div class="cprice">◈ '+pr+(mEff.upgMul<1?' (DESCONTO EMPÁTICO)':'')+'</div>',
       poor,()=>{
         player.coins-=pr;u.apply(player);player.upgLog.push(u.nm);shopMarkBought(u.id);
+        shopBoughtAtVisit=shopVisitN;            /* B3 §31 */
+        if(shopBoughtIds.indexOf(u.id)<0)shopBoughtIds.push(u.id);
         if(isLocked('upg',u.id))shopLock=null;
         shopOffers.splice(shopOffers.indexOf(u),1);
         toast('UPGRADE: '+u.nm);sLvl();renderShop();
@@ -8448,7 +9027,9 @@ function renderShopOp(){
   }
   const isect=document.createElement('div');
   isect.className='sect';isect.style.cssText='flex:1 1 100%';
-  isect.textContent='MÓDULOS PASSIVOS — TRADE-OFFS REAIS';
+  /* B2 §49: título honesto — nem todo módulo tem tradeoff numérico;
+     o papel deles é IDENTIDADE/sinergia/especialização. */
+  isect.textContent='MÓDULOS PASSIVOS — IDENTIDADE DA BUILD';
   mRow2.appendChild(isect);
   if(!shopItems.length)mRow2.appendChild(Object.assign(document.createElement('div'),
     {className:'cds',innerHTML:'TODOS OS MÓDULOS PASSIVOS JÁ FORAM INSTALADOS.'}));
@@ -8526,7 +9107,8 @@ function renderShopOp(){
       if(player.coins<rCost)return;
       player.coins-=rCost;
       if(rCost<rerollCost)fractureShopRerollUsed();   // desconto vale uma vez
-      rerollCost=Math.round(rerollCost*1.6*mEff.rerollMul);  // Ganância pune
+      /* B2 §31: CAP do reroll do operador (6× base da onda) — antes ×1.6 sem teto. */
+      rerollCost=Math.min(rerollCap(),Math.round(rerollCost*1.6*mEff.rerollMul));  // Ganância pune
     }
     rollShop();renderShop();AUDIO.ui(560);
     checkpointShopPurchase();           // PR 7.5: reroll pago → checkpoint
@@ -13352,6 +13934,16 @@ function killEnemy(e){
       player.hp=Math.min(player.maxHp,player.hp+amt);
       floatText(player.x,player.y-20,'+'+amt+' HP','#7dffc4');
     }
+    // PRESAS DE VÁCUO (B3): cada 3 abates = uma presa consumida → cura fixa
+    if(player.killHealEvery&&player.hp>0){
+      player.killHealN=(player.killHealN||0)+1;
+      if(player.killHealN>=player.killHealEvery){
+        player.killHealN=0;
+        const ka=(player.killHealAmount||8);
+        player.hp=Math.min(player.maxHp,player.hp+ka);
+        floatText(player.x,player.y-20,'+'+ka+' HP','#ff3d68');
+      }
+    }
     // PROTOCOLO DE EXECUÇÃO: execute já foi tratado em damageEnemy
     // REVENANT: cada abate cura e acumula dano até o fim da onda
     if(player.harvestHeal&&player.hp>0){
@@ -16237,7 +16829,10 @@ function updateProjectiles(dt){
             damageEnemy(e,dmgOut,p.x-p.vx*dt,p.y-p.vy*dt,p.crit);
             onProjectileHit(p,e,dmgOut);
             if(p.pierce>0){                       // perfuração
-              p.pierce--;if(!p.hits)p.hits=[];p.hits.push(e);p.dmg*=.82;
+              /* B3: LENTE DE FASE — atravessar CARREGA (×1.20) em vez da
+                 queda padrão (×0.82). Fator puro (testável). */
+              p.pierce--;if(!p.hits)p.hits=[];p.hits.push(e);
+              p.dmg*=lensChargeMul();
               spawnParticles(p.x,p.y,p.color,3,150,.2,2);
             }else dead=true;
           }
@@ -17244,6 +17839,10 @@ function smBuildCheckpoint(reason,waveOverride){
       enemyHpTax:player.enemyHpTax||0,execThreshold:player.execThreshold||0,
       frozenBonus:player.frozenBonus||0,
       healAmount:player.healAmount||14,healChance:player.healChance||0,
+      /* B3: FOME DE VÁCUO (su_vampiro rework) — campos opcionais; save
+         antigo sem eles cai nos defaults (0) sem invalidar nada. */
+      killHealEvery:player.killHealEvery||0,killHealAmount:player.killHealAmount||0,
+      killHealN:player.killHealN||0,
       medBoost:player.medBoost||1,pickupSpd:player.pickupSpd||1,
       stBoost:player.stBoost||1,stDurMul:player.stDurMul||1,
       virulent:player.virulent||1,wraithRush:!!player.wraithRush,
@@ -17425,6 +18024,10 @@ function resumeRun(){
   player.frozenBonus=num(q.frozenBonus,player.frozenBonus||0);
   player.healAmount=num(q.healAmount,player.healAmount||14);
   player.healChance=num(q.healChance,player.healChance||0);
+  /* B3: fome de vácuo — save antigo sem os campos volta a 0 (inofensivo) */
+  player.killHealEvery=num(q.killHealEvery,player.killHealEvery||0);
+  player.killHealAmount=num(q.killHealAmount,player.killHealAmount||0);
+  player.killHealN=num(q.killHealN,player.killHealN||0);
   player.medBoost=num(q.medBoost,player.medBoost||1);
   player.pickupSpd=num(q.pickupSpd,player.pickupSpd||1);
   player.stBoost=num(q.stBoost,player.stBoost||1);
@@ -20189,6 +20792,22 @@ function itemTipHTML(it){
       syn.map(s=>'<span>'+s+'</span>').join('')+'</span>';
   }
   if(it.transformer)h+='<div class="tcard-tr">◆ TRANSFORMADOR — muda como a run é jogada</div>';
+  /* B2 §34: POR QUE COMBINA — razões do PERFIL DE BUILD (1–3 linhas curtas,
+     reusando o estado real da sintonia; nada de números inventados). */
+  if(player&&buildHasAffinity(it.id)){
+    const _ai=attunementInfo(it.id);
+    if(_ai){
+      h+='<span class="tsec">SINTONIA · <b style="color:'+_ai.state.c+'">'+_ai.state.lab+'</b></span>';
+      if(_ai.reasons.length){
+        for(const _r of _ai.reasons)
+          h+='<span class="tline" style="color:'+(_r.kind==='plus'?'#7dffc4':'#ffb386')+'">· '+
+            (_r.kind==='plus'?'COMBINA: ':'CONFLITA: ')+_r.lab+'</span>';
+      }else{
+        h+='<span class="tline" style="opacity:.8">· '+_ai.reason+'</span>';
+      }
+      h+='<span class="tline" style="opacity:.75">· '+_ai.effect+'</span>';
+    }
+  }
   h+=moralAffinityTagHTML(it.id,!!player);   // B4: estado atual/projetado + motivo (puro)
   h+=lockLineFor('i',it.id);
   return h;
@@ -21747,6 +22366,79 @@ const DEV={
     if(id)return one(id);
     return (player?player.items:[]).map(one).filter(Boolean);
   },
+  /* ---- PR14.5 B2: PERFIL DE BUILD — inspector + override de playtest.
+     O override só existe em memória (nunca no save) e fica ISOLADO:
+     sandboxExit/devTaint tratam como qualquer alteração de DEV. ---- */
+  buildProfileInfo(){
+    if(!DEV_MODE)return null;
+    if(!player)return null;
+    const prof=buildProfile();
+    const sm=buildProfileSummary(prof);
+    return {state:sm.state,lab:sm.lab,dom:sm.dom,sec:sm.sec,
+      scores:Object.fromEntries(BUILD_ARCH_IDS.map(a=>[a,+prof.scores[a].toFixed(3)])),
+      rank:sm.rank.map(r=>({a:r.a,s:+r.s.toFixed(3)})),
+      override:_bpOverride?Object.assign({},_bpOverride):null};
+  },
+  buildProfileExplain(id){
+    if(!DEV_MODE)return null;
+    const it=itemById(id);if(!it)return null;
+    const aff=buildAffinityOf(id);
+    const base={id,aff:aff||null,compat:(buildCompat(id)!=null)?+buildCompat(id).toFixed(3):null,
+      score:+attunementScore(id).toFixed(3),state:attunementState(id).lab,
+      mul:+attunementMul(id).toFixed(3),weight:+buildShopWeight(it).toFixed(3),
+      family:itemFamily(id),blocked:!!familyBlocker(id),
+      reasons:attunementReasons(id),profile:DEV.buildProfileInfo()};
+    base.byBuild=buildHasAffinity(id);
+    return base;
+  },
+  forceBuildProfile(scores){
+    if(!DEV_MODE)return null;
+    _bpOverride=(scores&&Object.keys(scores).length)?Object.assign({},scores):null;
+    _bpCache={};
+    applyMoralTuning(player);
+    devTaint();devLog('BUILD PROFILE '+(scores?'FORÇADO '+JSON.stringify(_bpOverride):'LIMPO'));
+    return DEV.buildProfileInfo();
+  },
+  shopWeightsDebug(){
+    if(!DEV_MODE)return null;
+    return shopItems.map(it=>({id:it.id,w:+buildShopWeight(it).toFixed(3),
+      compat:(buildCompat(it.id)!=null?+buildCompat(it.id).toFixed(3):null),
+      family:itemFamily(it.id),blocked:!!familyBlocker(it.id)}));
+  },
+  /* ---- PR14.5 B3: calibrações — inspeção de ranks e injeção p/ playtest.
+     Rank é derivado de player.upgLog (nada é escrito no save). ---- */
+  upgradeRanks(){
+    if(!DEV_MODE)return null;
+    if(!player)return null;
+    const out={};
+    for(const u of UPGRADES){
+      let n=0;for(const x of (player.upgLog||[]))if(x===u.nm)n++;
+      if(n)out[u.id]=n;
+    }
+    return out;
+  },
+  upgradeRank(id){
+    if(!DEV_MODE)return null;
+    const u=UPGRADES.find(x=>x.id===id);if(!u)return null;
+    const bought=upgRankOf(u)-1;
+    return {id,nm:u.nm,bought,rank:bought+1,roman:toRomanRank(bought+1)};
+  },
+  giveUpgrade(id,n){
+    if(!devReady())return false;
+    const u=UPGRADES.find(x=>x.id===id);if(!u)return false;
+    n=Math.max(1,Math.min(30,Math.round(Number(n))||1));
+    for(let i=0;i<n;i++){u.apply(player);player.upgLog.push(u.nm);}
+    devTaint();devLog('CALIBRAÇÃO '+u.nm+' ×'+n+' → RANK '+toRomanRank(upgRankOf(u)));
+    return true;
+  },
+  shopRepeatStats(){
+    if(!DEV_MODE)return null;
+    return {rerollCost,lock:shopLock,visit:shopVisitN,boughtAt:shopBoughtAtVisit,
+      window:shopBoughtIds.slice(),
+      offers:shopOffers.map(u=>({id:u.id,pr:priceUpg(u),rank:upgRankOf(u),
+        rep:+shopRepeatWeight(u.id).toFixed(2),
+        fresh:(shopVisitN===shopBoughtAtVisit+1&&shopBoughtIds.indexOf(u.id)>=0)?.30:1}))};
+  },
   moralRecalc(){
     if(!devReady())return false;
     _moralProfCache=null;_moralProfKey='';
@@ -22247,6 +22939,28 @@ function devRender(){
       devMoralInspectorHTML();
   }
 
+  /* ---- BUILD PROFILE (PR14.5 B2): perfil emergente + override ---- */
+  {
+    const bp=DEV.buildProfileInfo();
+    h+='<h4>BUILD PROFILE'+(bp&&bp.override?' · FORÇADO':'')+'</h4>'+
+      '<div class="dvrow">'+
+      '<select class="dvin" id="dev-bparc">'+
+      BUILD_ARCH_IDS.map(a=>'<option value="'+a+'">'+BUILD_ARCH[a].nm+'</option>').join('')+
+      '</select>'+devBtn('bpforce','FORÇAR ARQUÉTIPO')+
+      devBtn('bpclr','LIMPAR','warn')+devBtn('bpinsp','PERFIL → LOG')+
+      devBtn('bpshop','PESOS LOJA → LOG')+'</div>'+
+      '<div class="dvrow" style="margin-top:5px">'+
+      '<input class="dvin" id="dev-upg" placeholder="id da calibração (ex.: rate)">'+
+      devBtn('upg3','CALIBRAÇÃO ×3')+devBtn('upgranks','RANKS → LOG')+'</div>';
+    if(bp){
+      h+='<div class="insp"><div class="row final"><span>PERFIL</span><b>'+bp.lab+'</b></div>';
+      for(const r of bp.rank.slice(0,4))
+        h+='<div class="row"><span style="color:'+BUILD_ARCH[r.a].col+'">'+BUILD_ARCH[r.a].nm+
+          '</span><b>'+Math.round(r.s*100)+'%</b></div>';
+      h+='</div>';
+    }
+  }
+
   /* ---- EVENT DIRECTOR (PR 10.5): inspetor + forçar + simulação ---- */
   {
     const ei=DEV.eventInspector();
@@ -22513,6 +23227,36 @@ function devCommand(c){
     case 'attinsp':{
       const l=DEV.attunement()||[];
       devLog('SINTONIA B4: '+(l.length?l.map(x=>x.id+'='+x.state+'(×'+x.mul+')').join(' · '):'sem módulos'));
+      return true;
+    }
+    /* ---- BUILD PROFILE (PR14.5 B2) ---- */
+    case 'bpinsp':{
+      const bp=DEV.buildProfileInfo();
+      if(!bp){devLog('sem player');return false;}
+      devLog('BUILD PROFILE: '+bp.lab+' · '+
+        bp.rank.map(r=>BUILD_ARCH[r.a].nm+' '+Math.round(r.s*100)+'%').join(' · ')+
+        (bp.override?' [FORÇADO]':''));
+      return true;
+    }
+    case 'bpforce':{
+      const el=document.getElementById('dev-bparc');
+      const a=el&&el.value?el.value:'crit';
+      return !!DEV.forceBuildProfile({[a]:1});
+    }
+    case 'bpclr':  return !!DEV.forceBuildProfile(null);
+    case 'upgranks':{
+      const r=DEV.upgradeRanks()||{};
+      const ks=Object.keys(r);
+      devLog('CALIBRAÇÕES: '+(ks.length?ks.map(k=>k+' '+toRomanRank(r[k]+1)).join(' · '):'nenhuma comprada'));
+      return true;
+    }
+    case 'upg3':  return !!DEV.giveUpgrade((document.getElementById('dev-upg')||{}).value||'rate',3);
+    case 'bpshop':{
+      const w=DEV.shopWeightsDebug()||[];
+      devLog('PESOS DA LOJA: '+(w.length?
+        w.map(x=>x.id+' ×'+x.w+(x.compat!=null?' c'+x.compat:'')+
+          (x.family?' fam:'+x.family:'')+(x.blocked?' BLOQUEADO':'')).join(' · ')
+        :'loja vazia'));
       return true;
     }
     case 'msimc':      return DEV.simulateMoralChoice('comp',2);
@@ -24158,8 +24902,10 @@ function fracEqCost(it){
 }
 function fracPriceNote(it,cost){
   if(!it||cost===it.price)return '';
+  /* B2 §35: era "(SINTONIA)" — colidia com a Sintonia de build dos
+     módulos. O ajuste de preço aqui é o estado da FACÇÃO de origem. */
   return cost<it.price
-    ?' <span style="color:#7dffc4">(SINTONIA)</span>'
+    ?' <span style="color:#7dffc4">(CONFIANÇA)</span>'
     :' <span style="color:#ff8095">(REPULSA)</span>';
 }
 /* B6: implementação canônica de fracEqTipHTML vive em "UI — tip de
@@ -29593,6 +30339,7 @@ function factionPresenceBeginRun(){
 function factionPresenceEndRun(){
   factionPresenceCleanup();
   factionPresenceRun=null;
+  try{if(typeof fpindEl!=='undefined'&&fpindEl)fpindEl.style.display='';}catch(x){}
   return true;
 }
 function factionPresenceForgetRun(){factionPresenceRun=null;return true;}
@@ -30001,13 +30748,13 @@ function fpEntityAnnounce(e){
   /* B5-FIX.1: presença com PACTO DISPONÍVEL usa banner + toast de facção
      próprios (feedback importante, mais duradouro e hierárquico). */
   if(e.pactOffer){
-    try{if(typeof banner==='function')banner(lab.sym+' '+lab.title,'◆ PACTO DISPONÍVEL — APROXIME-SE PARA NEGOCIAR');}catch(x){}
+    try{if(typeof banner==='function')banner(lab.sym+' '+lab.title,'◆ PACTO DISPONÍVEL — APROXIME-SE PARA NEGOCIAR',3.8);}catch(x){}
     try{if(typeof fpImportantToast==='function')fpImportantToast(e.faction,'◆ PACTO DISPONÍVEL','PROPOSTA DE ALIANÇA','APROXIME-SE PARA NEGOCIAR');}catch(x){}
     try{if(typeof AUDIO!=='undefined'&&AUDIO&&AUDIO.tone){AUDIO.tone(523,.22,'sine',.04,-120);AUDIO.tone(660,.26,'sine',.04,140);}}catch(x){}
     try{if(typeof echoFactionReaction==='function')echoFactionReaction(e.faction,'spawn',e);}catch(x){}
     return;
   }
-  try{if(typeof banner==='function')banner(lab.sym+' '+lab.title,'APROXIME-SE PARA INTERAGIR');}catch(x){}
+  try{if(typeof banner==='function')banner(lab.sym+' '+lab.title,'APROXIME-SE PARA INTERAGIR',3.8);}catch(x){}
   try{if(typeof AUDIO!=='undefined'&&AUDIO&&AUDIO.tone)AUDIO.tone(560,.28,'sine',.04,-160);}catch(x){}
   /* B4: reação contextual do Echo à APARIÇÃO da presença (gatilho 'spawn').
      Narrativa; o cooldown/queue central de fala evita spam (§19). */
@@ -30665,6 +31412,7 @@ function factionPresencePhysicalKitBoot(){
     const _ua=updateAllies;updateAllies=function(dt){
       const r=_ua.apply(this,arguments);
       try{factionPresenceUpdateEntity(dt);}catch(e){}
+      try{fpIndicatorTick(dt);}catch(e){}
       return r;
     };
   }catch(e){}
