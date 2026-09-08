@@ -6652,6 +6652,14 @@ function speechPri(v){
   if(typeof v==='number')return clamp(Math.round(v),0,3);
   return SPEECH_PRI.normal;
 }
+/* B6 §17: a duração continua derivada do TEXTO (determinística, sem estado).
+   Como o balão agora quebra em várias linhas, adicionamos um termo leve por
+   linha estimada — sem medir no canvas (mantém a função pura/testável): a
+   estimativa usa ~34 caracteres por linha na largura máxima do balão. Assim
+   falas longas/multilinha ganham tempo de leitura sem exigir o contexto de
+   render. O CAP superior de 5.0s (contrato B2-A) é PRESERVADO — o termo por
+   linha soma DENTRO desse teto. */
+const SPEECH_EST_CHARS_PER_LINE=34;
 function echoSpeechDuration(txt,pri){
   const p=speechPri(pri);
   const s=String(txt||'');
@@ -6664,6 +6672,8 @@ function echoSpeechDuration(txt,pri){
   else if(chars<=34)d=3.0;
   else d=3.3;
   d+=Math.min(.10*words,1.0);             // palavras extra ganham leitura
+  const estLines=Math.max(1,Math.ceil(chars/SPEECH_EST_CHARS_PER_LINE));
+  if(estLines>1)d+=Math.min(.45*(estLines-1),1.6);  // +tempo por linha extra
   if(p>=SPEECH_PRI.critical)d+=1.2;
   else if(p>=SPEECH_PRI.high)d+=.45;
   return clamp(d,1.6,5.0);
@@ -6715,11 +6725,49 @@ function speechTick(dt){
     speechStart(n);
   }
 }
+/* B6 §13-16: quebra estrutural do texto da fala do Echo em linhas que
+   respeitam a largura máxima do balão. Requer que ctx.font já esteja
+   configurado pelo chamador (a medição usa measureText no mesmo contexto).
+   - quebra por palavra (preserva acentos/símbolos/nomes intactos);
+   - palavra única mais larga que maxW é quebrada por caractere de forma
+     grapheme-safe (Array.from preserva pares substitutos/emoji), NUNCA
+     estourando o retângulo — sem reduzir fonte, truncar ou usar ellipsis;
+   - preserva quebras de linha explícitas ('\n') se existirem.
+   Função pura o suficiente para ser exercida por teste (não desenha nada). */
+function speechWrapLines(txt,maxW){
+  const out=[];
+  const paras=String(txt==null?'':txt).split('\n');
+  for(const para of paras){
+    const words=para.split(/\s+/).filter(Boolean);
+    if(!words.length){out.push('');continue;}
+    let cur='';
+    for(const wd of words){
+      if(ctx.measureText(wd).width>maxW){
+        /* palavra sozinha maior que o balão: descarrega a linha atual e
+           quebra a palavra em pedaços seguros por caractere. */
+        if(cur){out.push(cur);cur='';}
+        let piece='';
+        for(const ch of Array.from(wd)){
+          const t=piece+ch;
+          if(ctx.measureText(t).width>maxW&&piece){out.push(piece);piece=ch;}
+          else piece=t;
+        }
+        if(piece)cur=piece;   // resto vira início da linha (pode agregar próxima palavra)
+        continue;
+      }
+      const test=cur?cur+' '+wd:wd;
+      if(ctx.measureText(test).width>maxW&&cur){out.push(cur);cur=wd;}
+      else cur=test;
+    }
+    if(cur)out.push(cur);
+  }
+  return out.length?out:[''];
+}
 function speechRender(){
   if(!speechActive)return;
   const a=speechActive;
   const src=a.src;
-  const x=(src&&src.alive&&src.x!=null)?src.x:(a.x||0);
+  const x0=(src&&src.alive&&src.x!=null)?src.x:(a.x||0);
   const y=(src&&src.alive&&src.y!=null)?src.y:(a.y||0);
   const r=(src&&src.alive&&src.r!=null)?src.r:12;
   const px=a.pri>=SPEECH_PRI.critical?17:(a.pri>=SPEECH_PRI.high?16:15);
@@ -6729,24 +6777,33 @@ function speechRender(){
   const alpha=clamp((a.life-a.t)/.45,0,1);
   ctx.globalAlpha=alpha;
   const maxW=236;
-  const words=String(a.txt||'').split(/\s+/);
-  const lines=[];let cur='';
-  for(const wd of words){
-    const test=cur?cur+' '+wd:wd;
-    if(ctx.measureText(test).width>maxW&&cur){lines.push(cur);cur=wd;}
-    else cur=test;
-  }
-  if(cur)lines.push(cur);
+  const lines=speechWrapLines(a.txt,maxW);
   const lh=px+6;
   let wid=0;for(const ln of lines)wid=Math.max(wid,ctx.measureText(ln).width);
-  const bh=lines.length*lh+10;
-  const yy=y-r-40;
+  wid=Math.min(wid,maxW);                       // largura máxima razoável do balão
+  const bw=wid+16;                              // largura total do retângulo (com margem)
+  const bh=lines.length*lh+10;                  // altura cresce com o nº de linhas
+  /* B6 §16: clamp de viewport nas 4 bordas. O balão é desenhado em espaço de
+     mundo (ctx já transladado por vw/2-cam.x). A região de mundo visível é
+     [cam.x-vw/2 , cam.x+vw/2] × [cam.y-vh/2 , cam.y+vh/2]. Mantemos o
+     retângulo inteiro dentro dessa janela; se o balão for maior que a tela,
+     alinhamos à borda sem cortar. */
+  const mg=6;
+  const halfW=bw/2;
+  let x=x0;
+  const wl=cam.x-vw/2+mg+halfW, wr=cam.x+vw/2-mg-halfW;
+  if(wl<=wr)x=clamp(x,wl,wr);                   // senão (balão > largura da tela): mantém centralizado
+  let yy=y-r-40;                                 // linha de base do rodapé do balão
+  const boxTop=cam.y-vh/2+mg, boxBot=cam.y+vh/2-mg;
+  if(yy-bh+4<boxTop)yy=boxTop+bh-4;             // não sai por cima
+  if(yy+4>boxBot)yy=boxBot-4;                   // não sai por baixo
+  const rx=x-bw/2, ry=yy-bh+4;
   ctx.fillStyle='rgba(5,10,16,.82)';
-  ctx.fillRect(x-wid/2-8,yy-bh+4,wid+16,bh);
+  ctx.fillRect(rx,ry,bw,bh);
   ctx.strokeStyle=a.color||'#8ff6ff';
   ctx.globalAlpha=alpha*.55;
   ctx.lineWidth=1.2;
-  ctx.strokeRect(x-wid/2-8,yy-bh+4,wid+16,bh);
+  ctx.strokeRect(rx,ry,bw,bh);
   ctx.globalAlpha=alpha;
   ctx.lineJoin='round';
   ctx.strokeStyle='rgba(0,0,0,.92)';
