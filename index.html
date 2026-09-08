@@ -30366,26 +30366,53 @@ function factionPresenceDrawEntity(){
   else if(e.faction==='remnants')fpDrawRemnants(e,col,p,fade);
   else fpDrawDeviants(e,col,p,fade);
   ctx.restore();
-  /* B5-FIX.1: sinal extra de PACTO DISPONÍVEL — aura pulsante + marcador ◆
-     acima da presença. NÃO redesenha a presença: é um adorno sobreposto,
-     claramente distinto do estado comum. */
-  if(e.pactOffer){
-    const pp=.5+.5*Math.sin(e.pulse*2.2);
-    ctx.save();
-    ctx.globalAlpha=.10+.16*pp;ctx.strokeStyle=col;ctx.lineWidth=2;
-    ctx.beginPath();ctx.arc(e.x,e.y,e.r*1.45+4*pp,0,TAU);ctx.stroke();
-    ctx.globalAlpha=.45+.45*pp;ctx.fillStyle=col;
-    ctx.font='14px Consolas,monospace';ctx.textAlign='center';
-    ctx.fillText('◆',e.x,e.y-e.r-36);
-    ctx.restore();
-  }
-  /* rótulo legível: símbolo + nome + tag "PRESENÇA DE FACÇÃO" (distingue de
-     evento comum, que usa só o nome do sinal). */
+  /* rótulo legível: símbolo + nome + tag de estado. A identidade da facção
+     (símbolo + nome) é sempre a linha dominante. Presença comum mantém a tag
+     "PRESENÇA DE FACÇÃO" (distingue de evento comum). */
   ctx.fillStyle=col;ctx.globalAlpha=.45+fade*.55;
   ctx.font='11px Consolas,monospace';ctx.textAlign='center';
   ctx.fillText(lab.sym+' '+lab.nm,e.x,e.y-e.r-24);
-  ctx.globalAlpha=.35+fade*.35;ctx.font='8px Consolas,monospace';
-  ctx.fillText(e.pactOffer?'◆ PACTO DISPONÍVEL':'▣ PRESENÇA DE FACÇÃO',e.x,e.y-e.r-13);
+  if(e.pactOffer){
+    /* B5-FIX.2: tag de pacto MAIS legível — fonte maior, contraste alto, com
+       brilho e afastada do nome (evita sobrepor nome/HP/Echo/inimigos/HUD). */
+    ctx.globalAlpha=.6+fade*.4;ctx.shadowColor=col;ctx.shadowBlur=8;
+    ctx.font='bold 11px Consolas,monospace';
+    ctx.fillText('◆ PACTO DISPONÍVEL',e.x,e.y-e.r-11);
+    ctx.shadowBlur=0;
+  }else{
+    ctx.globalAlpha=.35+fade*.35;ctx.font='8px Consolas,monospace';
+    ctx.fillText('▣ PRESENÇA DE FACÇÃO',e.x,e.y-e.r-13);
+  }
+  ctx.globalAlpha=1;
+  /* B5-FIX.2: sinal extra de PACTO DISPONÍVEL — mais evidente que no FIX.1,
+     porém ainda um ADORNO sobreposto (não redesenha a presença, não é popup
+     central, sem flashing agressivo). Reforços: (1) aura dupla pulsante mais
+     contrastada; (2) losango ◆ orbitando devagar; (3) marcador ◆ maior e mais
+     brilhante acima da presença. A identidade da facção segue dominante. */
+  if(e.pactOffer){
+    const pp=.5+.5*Math.sin(e.pulse*2.2);         // pulso principal (lento, calmo)
+    const orb=e.pulse*1.1;                          // ângulo do losango orbital
+    ctx.save();
+    /* aura externa dupla: um anel mais forte + um halo suave atrás */
+    ctx.globalAlpha=.16+.20*pp;ctx.strokeStyle=col;ctx.lineWidth=2.5;
+    ctx.beginPath();ctx.arc(e.x,e.y,e.r*1.55+5*pp,0,TAU);ctx.stroke();
+    ctx.globalAlpha=.08+.10*pp;ctx.lineWidth=6;
+    ctx.beginPath();ctx.arc(e.x,e.y,e.r*1.55+5*pp,0,TAU);ctx.stroke();
+    /* losango diplomático orbitando a presença (leitura de "oportunidade") */
+    const orbR=e.r*1.55+5*pp;
+    const ox=e.x+Math.cos(orb)*orbR,oy=e.y+Math.sin(orb)*orbR;
+    ctx.globalAlpha=.6+.4*pp;ctx.fillStyle=col;
+    ctx.font='12px Consolas,monospace';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText('◆',ox,oy);
+    ctx.textBaseline='alphabetic';
+    /* marcador principal ◆ acima: maior, com brilho, separado do nome */
+    ctx.shadowColor=col;ctx.shadowBlur=10+6*pp;
+    ctx.globalAlpha=.7+.3*pp;ctx.fillStyle=col;
+    ctx.font='bold 20px Consolas,monospace';
+    ctx.fillText('◆',e.x,e.y-e.r-42);
+    ctx.shadowBlur=0;
+    ctx.restore();
+  }
   ctx.globalAlpha=1;
   ctx.restore();
 }
