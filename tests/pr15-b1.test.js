@@ -2,13 +2,34 @@
 /* =====================================================================
    TESTES — PR15 · B1 · MEMÓRIA TEMPORAL E ASSINATURA DE RUN
    ---------------------------------------------------------------------
-   Cobre §33 (1–37) e §34 (SIMULAÇÕES A/B/C) do brief literal:
-   contrato v3 aditivo · compat v2 · sanitização · validade (kills/wave/
-   dur) · abort · vitória · Sandbox · DEV · N-1/N-2/cap 2 · morte inválida
-   não desloca · operador/moral/personalidade/Build Profile/arma/módulos/
-   Tema/seed · death cause (+unknown/reset) · save/load · old save ·
-   corrupt/partial · isolamento dos 3 slots · Continue (+morte/abort
-   pós-Continue) · Echos legados · trail · nenhuma presença/scheduler PR15.
+   Cobre §33 (áreas 1–37, ordem literal do brief) e §34 (SIMULAÇÕES
+   A/B/C). Mapa 1:1 área → teste:
+
+     1 contrato novo → B1-1        20 arma assinatura → B1-20
+     2 compatibilidade v2 → B1-2   21 módulos assinatura → B1-21
+     3 sanitização → B1-3          22 Tema → B1-22
+     4 run válida por wave → B1-4  23 seed → B1-23
+     5 run válida por duração→B1-5 24 death cause → B1-24
+     6 kills mínimo → B1-6         25 death cause unknown → B1-25
+     7 morte inválida → B1-7       26 reset death cause → B1-26
+     8 abort → B1-8                27 save/load → B1-27
+     9 vitória → B1-9              28 old save → B1-28
+    10 Sandbox → B1-10             29 corrupt/partial record → B1-29
+    11 DEV → B1-11                 30 isolamento dos 3 slots → B1-30
+    12 N-1 → B1-12                 31 Continue → B1-31
+    13 N-2 → B1-13                 32 morte pós-Continue → B1-32
+    14 cap 2 → B1-14               33 abort pós-Continue → B1-33
+    15 memória inválida não        34 Echos legados continuam
+       desloca fila → B1-15            carregando → B1-34
+    16 operador → B1-16            35 trail preservada → B1-35
+    17 moral → B1-17               36 nenhuma presença PR15 criada→B1-36
+    18 personalidade → B1-18       37 nenhum scheduler PR15 criado→B1-37
+    19 Build Profile → B1-19
+
+   SIMULAÇÕES §34: A → SIM-A (10.000 resultados mistos, invariantes de
+   fila) · B → SIM-B (varredura kills 0–10 × wave 0–5 × dur 0–120) ·
+   C → SIM-C (sanitização: corpus hostil, nenhum explode load/destrói
+   slot/gera NaN/quebra makeEcho).
 
    NOTA de contrato (design PR15·b1):
    · em MEMÓRIA o registro da morte válida é o runData legado (kills/mh,
@@ -17,6 +38,8 @@
      e voltam a aparecer em memória após loadEchoes/activateSlot.
    · o `v` só é materializado no slim de save; por isso asserts de versão
      sempre leem o arquivo (ou a fila recarregada).
+   · `out` é sempre 'death' (só mortes reais válidas entram na fila); não
+     existe campo `outcode` nem armazenamento paralelo de outcomes.
    ===================================================================== */
 const assert=require('assert');
 const vm=require('vm');
