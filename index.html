@@ -899,8 +899,9 @@
       <div class="hudgrp" id="grp-temporal">
         <!-- #frac-hud-theme (FRACTURA) é inserido aqui quando relevante -->
         <!-- PR 11.5: só o perfil dominante no HUD — detalhes no TAB. -->
-        <div class="chip" id="moralp" title="Perfil moral — detalhes no TAB [TAB]">
-          <span class="lbl">PERFIL</span>
+        <!-- B2 §36: rótulo explícito MORAL — o PERFIL DE BUILD é outro sistema. -->
+        <div class="chip" id="moralp" title="Perfil MORAL — detalhes no TAB [TAB]">
+          <span class="lbl">MORAL</span>
           <b id="moral-dom">NEUTRO</b>
           <span id="moral-tiers"></span>
         </div>
@@ -2657,6 +2658,18 @@ function sheetRender(force){
   const syn=activeSynergies(p);
   h+=syn.length?'<div class="ssyn">'+syn.map(s=>'<span>'+s+'</span>').join('')+'</div>'
     :'<div class="srow"><span class="k">NENHUMA SINERGIA ATIVA AINDA</span></div>';
+  /* B2 §37: PERFIL DE BUILD — "minha build está se tornando o quê?"
+     Derivado (nunca salvo); híbridos são válidos. UX mínima no TAB. */
+  {
+    const _bp=buildProfileSummary(p);
+    const _bpTops=_bp.rank.filter(r=>r.s>=.15).slice(0,3)
+      .map(r=>'<span style="color:'+BUILD_ARCH[r.a].col+'">'+BUILD_ARCH[r.a].nm+
+        ' '+Math.round(r.s*100)+'%</span>').join(' · ');
+    h+='<div class="srow" style="margin-top:10px"><span class="k">PERFIL DE BUILD</span>'+
+      '<span class="v" style="font-size:var(--fs-sm)"><b style="color:'+
+      (BUILD_ARCH[_bp.dom]?BUILD_ARCH[_bp.dom].col:'#9db8c8')+'">'+_bp.lab+'</b>'+
+      (_bpTops?'<br><span style="opacity:.85">'+_bpTops+'</span>':'')+'</span></div>';
+  }
   h+='<div style="margin-top:12px">';
   if(p.items.length){
     for(const id of p.items){
@@ -2678,7 +2691,7 @@ function sheetRender(force){
   };
   const prof=getMoralProfile();
   h+='<div class="ssect"><h4>MORALIDADE</h4>'+
-    '<div class="srow"><span class="k">PERFIL</span><span class="v" style="color:'+DOM_COLOR[moralDom()]+'">'+DOM_NAME[moralDom()]+'</span></div>'+
+    '<div class="srow"><span class="k">PERFIL MORAL</span><span class="v" style="color:'+DOM_COLOR[moralDom()]+'">'+DOM_NAME[moralDom()]+'</span></div>'+
     mrow('COMPAIXÃO',moral.comp,'#7dffc4')+
     mrow('GANÂNCIA',moral.greed,'#ffd166')+
     mrow('VIOLÊNCIA',moral.viol,'#ff5c7a')+
@@ -6007,9 +6020,26 @@ const ATTUNE_STATES=[
   {id:'attuned',  lab:'SINTONIZADA',c:'#8ff6ff', min:.50, mul:1.06,eco:1.03},
   {id:'resonant', lab:'RESSONANTE', c:'#ffd166', min:.78, mul:1.12,eco:1.06}];
 const ATTUNE_NEUTRAL=ATTUNE_STATES[2];
-/* score determinístico 0..1 (null para módulo neutro) */
+/* score determinístico 0..1 (null = sem leitura de build nem moral).
+   B2: a FONTE principal é a COMPATIBILIDADE DE BUILD (arma/operador/
+   módulos/stats/comportamento); a moral vira modulador LEVE (alvo
+   ±2 p.p., BUILD_MORAL_MOD). Módulos sem leitura de build herdam o
+   modelo moral puro do PR 9. Faixas de estado (ATTUNE_STATES) e os
+   modificadores `attune:*` permanecem EXATAMENTE os mesmos. */
 function attunementScore(itemId,prof){
-  return calcMoralAffinityMatch(getItemMoralAffinity(itemId),prof||getMoralProfile());
+  prof=prof||getMoralProfile();
+  if(!buildHasAffinity(itemId))
+    return calcMoralAffinityMatch(getItemMoralAffinity(itemId),prof);
+  const c=buildCompat(itemId);
+  let s=.34+c*.9;      /* c=0→NEUTRA(.34) · c≈+.18→AFINADA · c≈+.49→RESSONANTE
+                          c≈−.18→INSTÁVEL · c≈−.35→DIVERGENTE
+                          RESSONANTE = build dedicada (não é fácil, nem deve ser) */
+  const ma=getItemMoralAffinity(itemId);
+  if(ma){
+    const m=calcMoralAffinityMatch(ma,prof);
+    if(m!=null)s+=BUILD_MORAL_MOD*(m-1/3);
+  }
+  return clamp(s,0,1);
 }
 function attunementStateFor(score){
   if(score==null)return ATTUNE_NEUTRAL;
@@ -6103,22 +6133,39 @@ function calcAttuneFieldCache(p,prof){
   }
   return out;
 }
-/* texto curto para UI: estado + eixo + efeito. Puro. */
+/* texto curto para UI: estado + motivo + efeito. Puro.
+   B2: para módulos com leitura de build, o motivo vem do PERFIL DE
+   BUILD (razões em attunementReasons); o eixo moral continua sendo o
+   motivo dos módulos genéricos (sem afinidade de build). */
 function attunementInfo(itemId,prof){
   prof=prof||getMoralProfile();
   const aff=getItemMoralAffinity(itemId);
-  if(!aff)return null;
+  const byBuild=buildHasAffinity(itemId);
+  /* B2: há SINTONIA se o módulo tem leitura de BUILD OU afinidade moral.
+     (luneta/lente/espectro/prisma2 eram neutros morais — hoje têm leitura
+     de build e o tooltip/carta mostram a sintonia de compatibilidade.) */
+  if(!aff&&!byBuild)return null;
   const score=attunementScore(itemId,prof),st=attunementStateFor(score);
-  const axes=moralAffinityAxes(aff);
+  const axes=aff?moralAffinityAxes(aff):[];
   const k=attunementMul(itemId,prof);
   const pct=Math.round((k-1)*100);
-  const n=prof.normalized;
-  /* motivo resumido: eixo principal do módulo está alto ou baixo no perfil */
-  const main=axes[0];
-  const reason=st.id==='neutral'?'perfil equilibrado'
-    :(st.id==='attuned'||st.id==='resonant')?MORAL_AXIS_LABEL[main]+' ↑'
-    :MORAL_AXIS_LABEL[main]+' baixa';
-  return {id:itemId,score,state:st,axes,mul:k,pct,reason,economic:attuneIsEconomic(itemId),
+  const reasons=byBuild?attunementReasons(itemId):[];
+  let reason;
+  if(byBuild){
+    const plus=reasons.find(r=>r.kind==='plus'),minus=reasons.find(r=>r.kind==='minus');
+    reason=plus?('combina com '+plus.lab)
+      :minus?minus.lab
+      :((buildProfileSummary().state==='indefinido')?'build ainda indefinida'
+      :'build equilibrada');
+  }else{
+    const main=axes[0];
+    const n=prof.normalized;
+    reason=st.id==='neutral'?'perfil equilibrado'
+      :(st.id==='attuned'||st.id==='resonant')?MORAL_AXIS_LABEL[main]+' ↑'
+      :MORAL_AXIS_LABEL[main]+' baixa';
+  }
+  return {id:itemId,score,state:st,axes,mul:k,pct,reason,reasons,byBuild,
+    economic:attuneIsEconomic(itemId),
     effect:pct===0?'efeito base':(pct>0?'efeito +'+pct+'%':'efeito reduzido: '+pct+'%')};
 }
 
@@ -6212,7 +6259,17 @@ function moralAffinityAxes(aff){
 const MORAL_AXIS_COLOR={comp:'#7dffc4',greed:'#ffd166',viol:'#ff5c7a'};
 function moralAffinityTagHTML(itemId,showCurrent,compact){
   const aff=getItemMoralAffinity(itemId);
-  if(!aff)return '';
+  if(!aff){
+    /* B2: módulo SEM afinidade moral mas COM leitura de build
+       (lente/luneta/espectro/colmeia/prisma2) mostra a sintonia de
+       COMPATIBILIDADE — antes estes ficavam sem tag nenhum. */
+    if(!buildHasAffinity(itemId))return '';
+    if(!showCurrent||!player)return '';
+    const bi=attunementInfo(itemId);
+    if(!bi||bi.state.id==='neutral')return '';   /* neutro silencioso: card limpo */
+    return '<div class="cmoral">SINTONIA: <b style="color:'+bi.state.c+'">'+bi.state.lab+'</b>'+
+      '<br><span style="opacity:.8">'+bi.reason+' · '+bi.effect+'</span></div>';
+  }
   /* B5.5: no card, sintonia em UMA linha (estado + efeito); eixos e motivo
      continuam no tooltip (versão completa). Contrato B4 mantido: o HTML
      do card contém state.lab e info.effect. */
@@ -6241,6 +6298,361 @@ function moralAffinityPhrase(itemId){
   const txt=axes.map(a=>ph[a]).join(' e ');
   return 'Este módulo responde melhor a '+txt+'.';
 }
+
+/* =====================================================================
+   PR14.5 · B2 — PERFIL DE BUILD (derivado, nunca salvo)
+   ---------------------------------------------------------------------
+   "Como esta run está sendo construída MECANICAMENTE?"
+
+   · SEPARADO do PERFIL MORAL (comp/greed/viol — intacto). O Perfil de
+     Build lê ARMA + OPERADOR + MÓDULOS OWNED + STATS FINAIS +
+     COMPORTAMENTO (runSt, PR 8) + Tema do Diretor (influência mínima).
+   · 8 arquétipos, score 0..1 cada — híbridos são válidos (vários altos).
+   · Tudo é DERIVADO e recalculável: NADA aqui é persistido. Continue/
+     reload recomputam do estado da run (a composição sozinha já gera um
+     perfil coerente; o comportamento recalibra ao longo da run — e o
+     runSt sobrevive ao checkpoint, então o comportamento também volta).
+   · Anti-snowball: cada componente é comprimido (tanh/clamp), a
+     contribuição dos módulos satura e o peso da arma principal domina
+     desde a onda 1. A Loja usa pesos SUAVES (máx ×1.35) — ver B2-C.
+   · DEV pode forçar um perfil (DEV.forceBuildProfile) para playtest;
+     o override é transiente e entra na chave de cache.
+   ===================================================================== */
+const BUILD_ARCH={
+  melee  :{nm:'MELEE',   col:'#ff9d3c'},
+  ranged :{nm:'RANGED',  col:'#46e0ff'},
+  crit   :{nm:'CRIT',    col:'#ffd166'},
+  status :{nm:'STATUS',  col:'#a8ff3d'},
+  shield :{nm:'ESCUDO',  col:'#8ff6ff'},
+  dash   :{nm:'DASH',    col:'#7df9ff'},
+  economy:{nm:'ECONOMIA',col:'#ffb347'},
+  echo   :{nm:'ECHO',    col:'#ff4df0'}
+};
+const BUILD_ARCH_IDS=Object.keys(BUILD_ARCH);
+/* pesos da combinação (somam 1.00) — arma e operador dominam cedo */
+const BUILD_WEIGHTS={weapon:.38,operator:.22,items:.22,stats:.12,behavior:.06};
+/* modulação moral da Sintonia: leve por design (alvo ±2 p.p. no score) */
+const BUILD_MORAL_MOD=.024;   /* span real: −0.8..+1.6 p.p. ≈ ±2 p.p. */
+/* identidade inicial do OPERADOR (leitura estrutural dos perks/stats) */
+const OPERATOR_BUILD_HINTS={
+  vector  :{},
+  wraith  :{dash:.55,crit:.35,melee:.25},
+  bulwark :{shield:.75},
+  pyre    :{status:.65},
+  warden  :{status:.45,shield:.25},
+  nomad   :{economy:.75},
+  echo0   :{echo:.75},
+  revenant:{melee:.40,crit:.25,dash:.20}
+};
+/* identidade da ARMA — os campos estruturados (melee/range/fx/crit/
+   chain/lifesteal/farBonus…) já dizem quase tudo; estes pesos apenas
+   consolidam essa leitura em arquétipos. Valores 0..1. */
+const WEAPON_BUILD_HINTS={
+  plasma  :{ranged:.5},
+  shotgun :{melee:.45,ranged:.25},
+  orb     :{ranged:.45},
+  blade   :{melee:1},
+  beam    :{ranged:.7},
+  flamer  :{ranged:.35,status:.8},
+  rail    :{ranged:.9},
+  smg     :{ranged:.5},
+  cryo    :{ranged:.4,status:.7},
+  tesla   :{ranged:.45,status:.6},
+  acid    :{ranged:.35,status:.75},
+  nail    :{ranged:.5,status:.5},
+  boomer  :{ranged:.5,melee:.2},
+  homing  :{ranged:.6},
+  mine    :{ranged:.25,status:.2},
+  sniper  :{ranged:.95,crit:.3},
+  scythe  :{melee:.9},
+  hammer  :{melee:.8,status:.3},
+  void    :{ranged:.5},
+  ricochet:{ranged:.5},
+  gatling :{ranged:.6},
+  prism   :{ranged:.5},
+  plague  :{ranged:.35,status:.85},
+  katana  :{melee:.85,crit:.6},
+  chains  :{melee:.8,status:.3},
+  gaunt   :{melee:.9},
+  glaive  :{melee:.8,status:.5}
+};
+/* Tema do Diretor: influência PEQUENA e contextual — nunca identidade */
+const THEME_BUILD_HINTS={
+  collapse :{status:.05},
+  siege    :{shield:.05},
+  hunt     :{dash:.05},
+  anomaly  :{},
+  resonance:{echo:.05},
+  scarcity :{economy:.05}
+};
+/* =====================================================================
+   BUILD_AFFINITY — afinidade do MÓDULO com cada arquétipo (−1..+1).
+   Positivo: o módulo AMPLIFICA a identidade. Negativo: CONFLITA.
+   Módulos ausentes daqui caem no fallback por tags (itemTags) — e se
+   não houver sinal de build algum, permanecem NEUTROS de build (a
+   sintonia moral pura do PR 9 continua valendo para eles).
+   ===================================================================== */
+const BUILD_AFFINITY={
+  rebob      :{dash:.7,melee:.2},
+  lente      :{ranged:.5},
+  coracao    :{ranged:.4,crit:.2},
+  iman       :{economy:.6},
+  placa      :{shield:.7},
+  olho       :{crit:1},
+  paradoxo   :{echo:1},
+  luneta     :{ranged:1,melee:-.8},
+  estilhaco  :{melee:1,ranged:-.8},
+  pirostase  :{status:.9},
+  criostase  :{status:.8,shield:.2},
+  condutor   :{status:.5,crit:.5},
+  catalis    :{status:.9},
+  ferrao     :{status:.9},
+  sifao      :{status:.5,shield:.2},
+  reator     :{ranged:.7},
+  espectro   :{dash:.9},
+  vinganca   :{melee:.3,dash:.2,shield:-.8},
+  usura      :{economy:.9},
+  ressonador :{echo:.9},
+  carapaca   :{shield:.7,melee:.2},
+  prisma2    :{ranged:.4,crit:.3},
+  ampulheta  :{dash:.8},
+  talisma    :{shield:.3},
+  espinho    :{shield:.6,melee:.2},
+  su_vampiro :{melee:.5},
+  su_imante  :{economy:.6},
+  su_critcura:{crit:.8},
+  su_exec    :{crit:.5,ranged:.3},
+  su_dotcrit :{status:1},
+  sb_pulso   :{shield:.7},
+  sb_janela  :{shield:.7,crit:.3},
+  sb_grilhao :{shield:.7,status:.3},
+  fs_prisma  :{shield:.8,crit:.4},
+  fs_casulo  :{shield:.8},
+  fs_cinetica:{shield:.6,dash:.5},
+  rg_condensador:{shield:.9},
+  rg_peso    :{shield:.9},
+  rg_lagrima :{shield:.9,dash:.3},
+  crit_cadeia:{crit:1},
+  crit_garra :{crit:.9,status:.4},
+  st_inverno :{status:.9},
+  st_corrosivo:{status:.9},
+  dash_eco   :{dash:.9},
+  dash_fase  :{dash:.9,crit:.3},
+  eco_risco  :{economy:.9},
+  eco_divida :{economy:.9},
+  trans_fratura:{shield:.6,ranged:.3},
+  trans_ressonante:{echo:1},
+  trans_conclusao:{status:.7,crit:.5},
+  trans_temporal:{economy:.9},
+  trans_espectral:{dash:.9,crit:.4}
+};
+/* resolves afinidade de build: tabela explícita → fallback por tags → null */
+function buildAffinityOf(itemId){
+  if(itemId==null)return null;
+  if(BUILD_AFFINITY[itemId])return BUILD_AFFINITY[itemId];
+  const tags=itemTags(itemId);
+  if(!tags||!tags.length)return null;
+  const out={};let any=false;
+  const TAG_AFF={shield:.4,status:.4,crit_build:.4,dash:.4,economy:.4,echo:.4,ranged:.3,melee:.3};
+  for(const tg of tags){
+    if(TAG_AFF[tg]!=null){out[tg]=Math.max(out[tg]||0,TAG_AFF[tg]);any=true;}
+  }
+  return any?out:null;
+}
+/* módulo tem LEITURA de build (tabela ou tags)? */
+function buildHasAffinity(itemId){
+  const a=buildAffinityOf(itemId);
+  return !!(a&&BUILD_ARCH_IDS.some(k=>a[k]));
+}
+/* ---- estado DEV (transiente) para forçar um perfil no playtest ---- */
+let _bpOverride=null;
+/* ---- componentes 0..1 por arquétipo ---- */
+function _bpWeaponComp(p){
+  const out={};
+  if(!p)return out;
+  const owned=(p.owned&&p.owned.length)?p.owned:[p.wi|0];
+  const main=WEAPON_BUILD_HINTS[(WEAPONS[clamp(p.wi|0,0,WEAPONS.length-1)]||{}).id]||null;
+  for(const a of BUILD_ARCH_IDS){
+    let v=(main&&main[a])||0;
+    for(const wi of owned){
+      if((wi|0)===(p.wi|0))continue;
+      const h=WEAPON_BUILD_HINTS[(WEAPONS[clamp(wi|0,0,WEAPONS.length-1)]||{}).id];
+      if(h&&h[a])v+=.35*h[a];
+    }
+    out[a]=clamp(v,0,1);
+  }
+  return out;
+}
+function _bpOperatorComp(p){
+  const h=(p&&OPERATOR_BUILD_HINTS[p.charId])||{};
+  const out={};
+  for(const a of BUILD_ARCH_IDS)out[a]=clamp(h[a]||0,0,1);
+  return out;
+}
+function _bpItemsComp(p){
+  const out={};
+  for(const a of BUILD_ARCH_IDS)out[a]=0;
+  if(!p||!p.items)return out;
+  const sums={};
+  for(const a of BUILD_ARCH_IDS)sums[a]=0;
+  for(const id of p.items){
+    const aff=buildAffinityOf(id);
+    if(!aff)continue;
+    for(const a in aff)if(sums[a]!=null)sums[a]+=aff[a];
+  }
+  /* compressão: satura sem inverter sinal; antagonismo cancela */
+  for(const a of BUILD_ARCH_IDS)out[a]=clamp(Math.tanh(sums[a]/2.2),0,1);
+  return out;
+}
+function _bpStatsComp(p){
+  const out={};
+  for(const a of BUILD_ARCH_IDS)out[a]=0;
+  if(!p)return out;
+  try{
+    out.crit  =clamp(((smGet(p,'crit'))-.20)*2,0,1);
+    const rr=smGet(p,'rangedRange'),mr=smGet(p,'meleeRange');
+    const ratio=(rr+mr)>0?(rr-mr)/(rr+mr):0;
+    out.ranged=clamp(ratio,0,1);out.melee=clamp(-ratio,0,1);
+    out.economy=clamp((smGet(p,'coinMul')-1.6)/1.2,0,1);
+    out.echo=clamp((p.echoBoost||0)*1.2,0,1);
+    out.status=clamp(((p.stBoost||1)-1.1)/.9,0,1);
+    out.shield=clamp(((p.shieldMax||0)-45)/75,0,1);
+    out.dash=clamp((1.9-(p.dashCdMax||2.1))/1.2,0,1);
+  }catch(e){}
+  return out;
+}
+/* comportamento REAL da run (runSt, PR 8) — peso pequeno; sinais cegos
+   (crit/economia/escudo/eco) não são inventados e ficam em 0. */
+function _bpBehaviorComp(){
+  const out={};
+  for(const a of BUILD_ARCH_IDS)out[a]=0;
+  const st=runSt;
+  if(!st)return out;
+  const s=Math.max(1,st.s|0);
+  const close=(st.mw+st.rw)>4?clamp(st.mw/(st.mw+st.rw),0,1):null;
+  if(close!=null){out.melee=clamp(close,0,1);out.ranged=clamp(1-close,0,1);}
+  if(st.dN>4){
+    const rangePref=clamp(((st.dS/st.dN)-140)/220,0,1);
+    out.ranged=clamp(Math.max(out.ranged,rangePref*.7),0,1);
+  }
+  out.dash=clamp(st.dsh/Math.max(1,s*.02),0,1);
+  out.status=clamp(st.ctl/Math.max(1,s*.008),0,1);
+  if(st.mv+st.fv>16){
+    const kite=clamp(st.mv/(st.mv+st.fv),0,1);
+    out.ranged=clamp(Math.max(out.ranged,kite*.5),0,1);
+  }
+  return out;
+}
+function _bpThemeComp(){
+  const h=(fractureRun&&THEME_BUILD_HINTS[fractureRun.theme])||{};
+  const out={};
+  for(const a of BUILD_ARCH_IDS)out[a]=clamp(h[a]||0,0,1);
+  return out;
+}
+/* chave de cache: tudo que pode alterar o perfil (barato de compor) */
+let _bpCache=null,_bpKey='';
+function _bpKeyOf(p){
+  let k=(p&&p.charId)||'?';
+  k+='|'+(p?(p.wi|0):'')+'|'+((p&&p.owned)?p.owned.join(','):'');
+  k+='|'+((p&&p.items)?p.items.join(','):'');
+  try{
+    k+='|'+smGet(p,'crit').toFixed(2)+'|'+smGet(p,'coinMul').toFixed(2)+
+       '|'+smGet(p,'rangedRange').toFixed(2)+'|'+smGet(p,'meleeRange').toFixed(2);
+  }catch(e){}
+  if(p){
+    k+='|'+(p.echoBoost||0).toFixed(2)+'|'+(p.stBoost||1).toFixed(2)+
+       '|'+(p.shieldMax||0)+'|'+(p.dashCdMax||2.1).toFixed(2);
+  }
+  k+='|'+((typeof echoes!=='undefined'&&echoes)?echoes.length:0);
+  k+='|'+(fractureRun?fractureRun.theme:'-');
+  const st=runSt;
+  if(st)k+='|'+[st.s>>3,st.mw>>3,st.rw>>3,st.dsh,st.ctl>>2,st.mv>>3,st.fv>>3,st.dN>>2].join('.');
+  if(_bpOverride)k+='|ov:'+JSON.stringify(_bpOverride);
+  return k;
+}
+/* PERFIL DE BUILD — scores 0..1 por arquétipo. Derivado, nunca salvo. */
+function buildProfile(p){
+  p=p||player;
+  const key=_bpKeyOf(p);
+  if(_bpCache&&_bpKey===key)return _bpCache;
+  const comps={
+    weapon:_bpWeaponComp(p),operator:_bpOperatorComp(p),
+    items:_bpItemsComp(p),stats:_bpStatsComp(p),
+    behavior:_bpBehaviorComp()
+  };
+  const out={};
+  for(const a of BUILD_ARCH_IDS){
+    let v=0;
+    for(const c in BUILD_WEIGHTS)v+=(comps[c][a]||0)*BUILD_WEIGHTS[c];
+    v+=_bpThemeComp()[a]||0;                 // tema: adicional, já pequeno
+    out[a]=clamp(v,0,1);
+  }
+  if(_bpOverride)for(const a in _bpOverride)out[a]=clamp(+_bpOverride[a]||0,0,1);
+  const prof={scores:out,key};
+  _bpCache=prof;_bpKey=key;
+  return prof;
+}
+/* resumo para UI/Loja: dominante + secundário + estado.
+   Aceita o PRÓPRIO perfil ({scores}) ou o player (conveniência p/ TAB). */
+function buildProfileSummary(prof){
+  if(prof&&!prof.scores)prof=buildProfile(prof);
+  prof=prof||buildProfile();
+  const rank=BUILD_ARCH_IDS.map(a=>({a,s:prof.scores[a]})).sort((x,y)=>y.s-x.s);
+  const top=rank[0],sec=rank[1];
+  /* HÍBRIDO: dois caminhos próximos — além do corte absoluto (top<.55 e
+     gap<.10), comparação RELATIVA (gap/top) para reconhecer builds duplas
+     dedicadas de verdade (scores altos empatados NÃO fingem dominante). */
+  const relGap=top.s>0?(top.s-sec.s)/top.s:1;
+  let state,lab;
+  if(top.s<.30){state='indefinido';lab='INDEFINIDO';}
+  else if((top.s<.55&&top.s-sec.s<.10)||relGap<.12){state='hibrido';lab='HÍBRIDO '+BUILD_ARCH[top.a].nm+'/'+BUILD_ARCH[sec.a].nm;}
+  else{state='definido';lab=BUILD_ARCH[top.a].nm;}
+  return {dom:top.a,domScore:top.s,sec:sec.a,secScore:sec.s,
+    rank:rank.slice(0,4),state,lab};
+}
+/* compatibilidade bruta de um módulo com o perfil atual (−1..+1) */
+function buildCompat(itemId,prof){
+  const aff=buildAffinityOf(itemId);
+  if(!aff)return null;
+  prof=prof||buildProfile();
+  let c=0;
+  for(const a in aff)if(prof.scores[a]!=null)c+=aff[a]*prof.scores[a];
+  return clamp(c,-1,1);
+}
+/* peso SUAVE da oferta de módulo na loja: NEUTRO ×1.00 · compatível até
+   ×1.35 · conflitante no mínimo ×0.75. NUNCA zera, NUNCA garanta. */
+const BUILD_SHOP_W_MAX=.35,BUILD_SHOP_W_MIN=-.25;
+function buildShopWeight(item,prof){
+  const c=buildCompat(item&&item.id,prof);
+  if(c==null)return 1;
+  return clamp(1+c*BUILD_SHOP_W_MAX,1+BUILD_SHOP_W_MIN,1+BUILD_SHOP_W_MAX);
+}
+/* razões legíveis ("por que combina/conflita") — 1 a 3 linhas curtas */
+function attunementReasons(itemId,prof){
+  const aff=buildAffinityOf(itemId);
+  if(!aff)return [];
+  prof=prof||buildProfile();
+  const plus=[],minus=[];
+  for(const a in aff){
+    const contrib=aff[a]*prof.scores[a];
+    if(contrib>=.18)plus.push({arch:a,k:contrib});
+    else if(contrib<=-.14)minus.push({arch:a,k:-contrib});
+  }
+  plus.sort((x,y)=>y.k-x.k);minus.sort((x,y)=>y.k-x.k);
+  const p2=player;
+  const mainW=p2?WEAPONS[clamp(p2.wi|0,0,WEAPONS.length-1)]:null;
+  const out=[];
+  for(const e of plus.slice(0,2)){
+    let lab=BUILD_ARCH[e.arch].nm;
+    if(mainW&&mainW.id&&WEAPON_BUILD_HINTS[mainW.id]&&(WEAPON_BUILD_HINTS[mainW.id][e.arch]||0)>=.4)
+      lab+=' · '+mainW.nm;
+    out.push({kind:'plus',lab:lab+' em alta na sua build'});
+  }
+  for(const e of minus.slice(0,1))
+    out.push({kind:'minus',lab:'conflita com '+BUILD_ARCH[e.arch].nm+' dominante'});
+  return out.slice(0,3);
+}
+
 
 /* ---- LOJA: viés pequeno a favor de módulos afinados (nunca bloqueia) ---- */
 function moralShopWeight(item){
@@ -7178,6 +7590,50 @@ const ITEMS=[
     w.rar = p>=86?4 : p>=76?3 : p>=66?2 : p>=58?1 : 0;
   }
 })();
+/* =====================================================================
+   PR14.5 · B2 — FAMÍLIAS DE MÓDULO + EXCLUSIVIDADE LEVE
+   ---------------------------------------------------------------------
+   Família = subidentidade mecânica que não faz sentido empilhar.
+   EXCLUSIVIDADE LEVE: comprar/possuir um membro de família exclusiva
+   tira os OUTROS membros das NOVAS OFERTAS da Loja (nunca remove nada
+   do inventário). Runs antigas com 2 da mesma família permanecem
+   válidas (GRANDFATHERING — save intocado; a regra vale só para
+   novas aquisições via oferta).
+   Escolha das famílias exclusivas: somente onde a coexistência REAL
+   se anula ou repete (B1 §M):
+     · shield_regen: condensador/peso/lágrima se contradizem no
+       triângulo regen×max×delay — 1 firmware de recarga por run.
+     · focus_range: luneta×estilhaco é antisinergia direta de alcance
+       — a build escolhe UM foco (pivotar = abrir mão do outro).
+     · credit: usura/eco_risco/eco_divida são variações do MESMO
+       contrato de crédito — assina-se um só (trans_temporal é
+       transformador e fica fora da exclusividade de propósito).
+   ===================================================================== */
+const ITEM_FAMILIES={
+  shield_regen:{nm:'REGEN DE ESCUDO',exclusive:true,
+    ids:['rg_condensador','rg_peso','rg_lagrima']},
+  focus_range:{nm:'FOCO DE ALCANCE',exclusive:true,
+    ids:['luneta','estilhaco']},
+  credit:{nm:'CONTRATO DE CRÉDITO',exclusive:true,
+    ids:['usura','eco_risco','eco_divida']}
+};
+const ITEM_FAMILY_BY_ID=(function(){
+  const o={};
+  for(const f in ITEM_FAMILIES)for(const id of ITEM_FAMILIES[f].ids)o[id]=f;
+  return o;
+})();
+/* família do módulo (id → chave de família ou null) */
+function itemFamily(id){return ITEM_FAMILY_BY_ID[id]||null;}
+function itemFamilies(id){const f=itemFamily(id);return f?[f]:[];}
+/* id de membro DA MESMA família exclusiva que já está instalado
+   (null se o módulo pode ser oferecido) */
+function familyBlocker(id){
+  const f=itemFamily(id);
+  if(!f||!ITEM_FAMILIES[f].exclusive)return null;
+  const owned=ITEM_FAMILIES[f].ids.find(x=>x!==id&&ownsItem(x));
+  return owned||null;
+}
+function itemFamilyName(f){return (ITEM_FAMILIES[f]&&ITEM_FAMILIES[f].nm)||f;}
 function itemById(id){for(const i of ITEMS)if(i.id===id)return i;return null;}
 function ownsItem(id){return player.items.indexOf(id)>=0;}
 function buffEchoes(){
@@ -7199,9 +7655,9 @@ function giveItem(it,free){
   if(_aff){
     const _st=attunementState(it.id);
     if(_st.id==='attuned'||_st.id==='resonant')
-      toast('SINTONIA '+_st.lab+' · O MÓDULO RESPONDE AO SEU PERFIL');
+      toast('SINTONIA '+_st.lab+' · O MÓDULO COMBINA COM SUA BUILD');
     else if(_st.id==='divergent')
-      toast('SINTONIA DIVERGENTE · O MÓDULO RENDE MENOS COM ESTE PERFIL');
+      toast('SINTONIA DIVERGENTE · O MÓDULO RENDE MENOS COM ESTA BUILD');
   }
   floatText(player.x,player.y-32,it.nm,it.color);
   spawnRing(player.x,player.y,it.color,10,115,.6);sLvl();
@@ -7892,6 +8348,13 @@ function rerollBaseCost(){
   const w=Math.max(0,wave||1);
   return Math.max(8,Math.round(10+w*1.0));   // decisão econômica ao longo da run
 }
+/* B2 §31: teto do reroll do OPERADOR = 6× o custo base da onda atual.
+   Antes o custo crescia ×1.6 sem limite e se tornava irrelevante (nunca
+   mais comprável); com o teto ele continua caro, mas volta a ser uma
+   decisão real no late. O reroll temporal da aba ECHO já tinha cap (30). */
+function rerollCap(){
+  return Math.round(rerollBaseCost()*6);
+}
 function pickWeighted(list,waveN,repW){
   const w=o=>rarityWeight(o.rar||0,waveN)*(repW?repW(o):1);
   let tot=0;
@@ -8233,7 +8696,7 @@ function moralStatusLine(){
   const tag=(t,nm,col)=>t?'<b style="color:'+col+'">'+nm+' '+TIER_NAME[t]+'</b>':'';
   const tiers=[tag(tc,'COMPAIXÃO','#7dffc4'),tag(tg,'GANÂNCIA','#ffd166'),
     tag(tv,'VIOLÊNCIA','#ff5c7a')].filter(Boolean).join(' · ');
-  let s='<div class="runstate"><span class="rs-k">PERFIL</span> '+
+  let s='<div class="runstate"><span class="rs-k">PERFIL MORAL</span> '+
     '<b style="color:'+DOM_COLOR[d]+'">'+DOM_NAME[d]+'</b>'+
     (tiers?' <span style="opacity:.85">— '+tiers+'</span>':'')+
     (mEff.conflict?' <b style="color:#ff4df0">[CONFLITO]</b>':'')+'</div>';
@@ -8284,14 +8747,29 @@ function rollShop(){
     shopOffers.push(pool.splice(pool.indexOf(pick),1)[0]);
   }
   // ---- MÓDULOS PASSIVOS ----
-  const lockI=(shopLock&&shopLock.kind==='item'&&!ownsItem(shopLock.id))
+  let lockI=(shopLock&&shopLock.kind==='item'&&!ownsItem(shopLock.id))
     ? itemById(shopLock.id) : null;
+  /* B2 §33: trava que ficou IMPOSSÍVEL por família exclusiva é liberada
+     com feedback — nunca estado silencioso quebrado. */
+  if(lockI&&familyBlocker(lockI.id)){
+    const _blk=itemById(familyBlocker(lockI.id));
+    toast('TRAVA LIBERADA · '+itemFamilyName(itemFamily(lockI.id))+': '+
+      (_blk?_blk.nm:'módulo')+' JÁ INSTALADO');
+    AUDIO.ui(320);
+    shopLock=null;lockI=null;
+  }
   /* R5 §2: catálogo próprio do sandbox para itens da loja */
-  const ip=ITEMS.filter(i=>!ownsItem(i.id)&&(!lockI||i.id!==lockI.id)&&
+  /* B2 §16: exclusividade leve — membro de família exclusiva já instalado
+     tira os OUTROS das novas ofertas (posse antiga nunca é tocada). */
+  const ip=ITEMS.filter(i=>!ownsItem(i.id)&&!familyBlocker(i.id)&&(!lockI||i.id!==lockI.id)&&
     (sandboxRun||isItemUnlocked(i.id)));
   shopItems=lockI?[lockI]:[];
   while(shopItems.length<2&&ip.length){
-    const pick=pickWeightedMoral(ip,wave,o=>shopRepeatWeight(o.id));   // PR 9: sintonia + B3-A variedade
+    /* B2 §23: peso SUAVE por compatibilidade de build (×0.75–×1.35),
+       somado à sintonia moral (PR 9, ×1.10 máx) e à variedade (B3-A).
+       NÃO filtra e NÃO garante: 0/1/2 ofertas compatíveis continuam
+       possíveis — a direção aparece ao longo de várias lojas. */
+    const pick=pickWeightedMoral(ip,wave,o=>shopRepeatWeight(o.id)*buildShopWeight(o));
     shopItems.push(ip.splice(ip.indexOf(pick),1)[0]);
   }
   // ---- ARMAS AVANÇADAS ----
@@ -8367,6 +8845,7 @@ function openShop(){
   }
   state='shop';firing=false;curEv=null;
   hideActiveTooltip();          // FIX A: mata tooltip flutuante ao abrir a Loja
+  applyMoralTuning(player);     // B2: sintonia fresca a cada GATE de loja (1×/onda — perfil de build pode ter recalibrado)
   rerollCost=rerollBaseCost();rollShop();renderShop();
   modalEl.classList.add('on');
   sfx(523,.14,'sine',.04,0);setTimeout(()=>sfx(784,.2,'sine',.04,0),110);
@@ -8448,7 +8927,9 @@ function renderShopOp(){
   }
   const isect=document.createElement('div');
   isect.className='sect';isect.style.cssText='flex:1 1 100%';
-  isect.textContent='MÓDULOS PASSIVOS — TRADE-OFFS REAIS';
+  /* B2 §49: título honesto — nem todo módulo tem tradeoff numérico;
+     o papel deles é IDENTIDADE/sinergia/especialização. */
+  isect.textContent='MÓDULOS PASSIVOS — IDENTIDADE DA BUILD';
   mRow2.appendChild(isect);
   if(!shopItems.length)mRow2.appendChild(Object.assign(document.createElement('div'),
     {className:'cds',innerHTML:'TODOS OS MÓDULOS PASSIVOS JÁ FORAM INSTALADOS.'}));
@@ -8526,7 +9007,8 @@ function renderShopOp(){
       if(player.coins<rCost)return;
       player.coins-=rCost;
       if(rCost<rerollCost)fractureShopRerollUsed();   // desconto vale uma vez
-      rerollCost=Math.round(rerollCost*1.6*mEff.rerollMul);  // Ganância pune
+      /* B2 §31: CAP do reroll do operador (6× base da onda) — antes ×1.6 sem teto. */
+      rerollCost=Math.min(rerollCap(),Math.round(rerollCost*1.6*mEff.rerollMul));  // Ganância pune
     }
     rollShop();renderShop();AUDIO.ui(560);
     checkpointShopPurchase();           // PR 7.5: reroll pago → checkpoint
@@ -20189,6 +20671,22 @@ function itemTipHTML(it){
       syn.map(s=>'<span>'+s+'</span>').join('')+'</span>';
   }
   if(it.transformer)h+='<div class="tcard-tr">◆ TRANSFORMADOR — muda como a run é jogada</div>';
+  /* B2 §34: POR QUE COMBINA — razões do PERFIL DE BUILD (1–3 linhas curtas,
+     reusando o estado real da sintonia; nada de números inventados). */
+  if(player&&buildHasAffinity(it.id)){
+    const _ai=attunementInfo(it.id);
+    if(_ai){
+      h+='<span class="tsec">SINTONIA · <b style="color:'+_ai.state.c+'">'+_ai.state.lab+'</b></span>';
+      if(_ai.reasons.length){
+        for(const _r of _ai.reasons)
+          h+='<span class="tline" style="color:'+(_r.kind==='plus'?'#7dffc4':'#ffb386')+'">· '+
+            (_r.kind==='plus'?'COMBINA: ':'CONFLITA: ')+_r.lab+'</span>';
+      }else{
+        h+='<span class="tline" style="opacity:.8">· '+_ai.reason+'</span>';
+      }
+      h+='<span class="tline" style="opacity:.75">· '+_ai.effect+'</span>';
+    }
+  }
   h+=moralAffinityTagHTML(it.id,!!player);   // B4: estado atual/projetado + motivo (puro)
   h+=lockLineFor('i',it.id);
   return h;
@@ -21747,6 +22245,45 @@ const DEV={
     if(id)return one(id);
     return (player?player.items:[]).map(one).filter(Boolean);
   },
+  /* ---- PR14.5 B2: PERFIL DE BUILD — inspector + override de playtest.
+     O override só existe em memória (nunca no save) e fica ISOLADO:
+     sandboxExit/devTaint tratam como qualquer alteração de DEV. ---- */
+  buildProfileInfo(){
+    if(!DEV_MODE)return null;
+    if(!player)return null;
+    const prof=buildProfile();
+    const sm=buildProfileSummary(prof);
+    return {state:sm.state,lab:sm.lab,dom:sm.dom,sec:sm.sec,
+      scores:Object.fromEntries(BUILD_ARCH_IDS.map(a=>[a,+prof.scores[a].toFixed(3)])),
+      rank:sm.rank.map(r=>({a:r.a,s:+r.s.toFixed(3)})),
+      override:_bpOverride?Object.assign({},_bpOverride):null};
+  },
+  buildProfileExplain(id){
+    if(!DEV_MODE)return null;
+    const it=itemById(id);if(!it)return null;
+    const aff=buildAffinityOf(id);
+    const base={id,aff:aff||null,compat:(buildCompat(id)!=null)?+buildCompat(id).toFixed(3):null,
+      score:+attunementScore(id).toFixed(3),state:attunementState(id).lab,
+      mul:+attunementMul(id).toFixed(3),weight:+buildShopWeight(it).toFixed(3),
+      family:itemFamily(id),blocked:!!familyBlocker(id),
+      reasons:attunementReasons(id),profile:DEV.buildProfileInfo()};
+    base.byBuild=buildHasAffinity(id);
+    return base;
+  },
+  forceBuildProfile(scores){
+    if(!DEV_MODE)return null;
+    _bpOverride=(scores&&Object.keys(scores).length)?Object.assign({},scores):null;
+    _bpCache={};
+    applyMoralTuning(player);
+    devTaint();devLog('BUILD PROFILE '+(scores?'FORÇADO '+JSON.stringify(_bpOverride):'LIMPO'));
+    return DEV.buildProfileInfo();
+  },
+  shopWeightsDebug(){
+    if(!DEV_MODE)return null;
+    return shopItems.map(it=>({id:it.id,w:+buildShopWeight(it).toFixed(3),
+      compat:(buildCompat(it.id)!=null?+buildCompat(it.id).toFixed(3):null),
+      family:itemFamily(it.id),blocked:!!familyBlocker(it.id)}));
+  },
   moralRecalc(){
     if(!devReady())return false;
     _moralProfCache=null;_moralProfKey='';
@@ -22247,6 +22784,25 @@ function devRender(){
       devMoralInspectorHTML();
   }
 
+  /* ---- BUILD PROFILE (PR14.5 B2): perfil emergente + override ---- */
+  {
+    const bp=DEV.buildProfileInfo();
+    h+='<h4>BUILD PROFILE'+(bp&&bp.override?' · FORÇADO':'')+'</h4>'+
+      '<div class="dvrow">'+
+      '<select class="dvin" id="dev-bparc">'+
+      BUILD_ARCH_IDS.map(a=>'<option value="'+a+'">'+BUILD_ARCH[a].nm+'</option>').join('')+
+      '</select>'+devBtn('bpforce','FORÇAR ARQUÉTIPO')+
+      devBtn('bpclr','LIMPAR','warn')+devBtn('bpinsp','PERFIL → LOG')+
+      devBtn('bpshop','PESOS LOJA → LOG')+'</div>';
+    if(bp){
+      h+='<div class="insp"><div class="row final"><span>PERFIL</span><b>'+bp.lab+'</b></div>';
+      for(const r of bp.rank.slice(0,4))
+        h+='<div class="row"><span style="color:'+BUILD_ARCH[r.a].col+'">'+BUILD_ARCH[r.a].nm+
+          '</span><b>'+Math.round(r.s*100)+'%</b></div>';
+      h+='</div>';
+    }
+  }
+
   /* ---- EVENT DIRECTOR (PR 10.5): inspetor + forçar + simulação ---- */
   {
     const ei=DEV.eventInspector();
@@ -22513,6 +23069,29 @@ function devCommand(c){
     case 'attinsp':{
       const l=DEV.attunement()||[];
       devLog('SINTONIA B4: '+(l.length?l.map(x=>x.id+'='+x.state+'(×'+x.mul+')').join(' · '):'sem módulos'));
+      return true;
+    }
+    /* ---- BUILD PROFILE (PR14.5 B2) ---- */
+    case 'bpinsp':{
+      const bp=DEV.buildProfileInfo();
+      if(!bp){devLog('sem player');return false;}
+      devLog('BUILD PROFILE: '+bp.lab+' · '+
+        bp.rank.map(r=>BUILD_ARCH[r.a].nm+' '+Math.round(r.s*100)+'%').join(' · ')+
+        (bp.override?' [FORÇADO]':''));
+      return true;
+    }
+    case 'bpforce':{
+      const el=document.getElementById('dev-bparc');
+      const a=el&&el.value?el.value:'crit';
+      return !!DEV.forceBuildProfile({[a]:1});
+    }
+    case 'bpclr':  return !!DEV.forceBuildProfile(null);
+    case 'bpshop':{
+      const w=DEV.shopWeightsDebug()||[];
+      devLog('PESOS DA LOJA: '+(w.length?
+        w.map(x=>x.id+' ×'+x.w+(x.compat!=null?' c'+x.compat:'')+
+          (x.family?' fam:'+x.family:'')+(x.blocked?' BLOQUEADO':'')).join(' · ')
+        :'loja vazia'));
       return true;
     }
     case 'msimc':      return DEV.simulateMoralChoice('comp',2);
@@ -24158,8 +24737,10 @@ function fracEqCost(it){
 }
 function fracPriceNote(it,cost){
   if(!it||cost===it.price)return '';
+  /* B2 §35: era "(SINTONIA)" — colidia com a Sintonia de build dos
+     módulos. O ajuste de preço aqui é o estado da FACÇÃO de origem. */
   return cost<it.price
-    ?' <span style="color:#7dffc4">(SINTONIA)</span>'
+    ?' <span style="color:#7dffc4">(CONFIANÇA)</span>'
     :' <span style="color:#ff8095">(REPULSA)</span>';
 }
 /* B6: implementação canônica de fracEqTipHTML vive em "UI — tip de
