@@ -6763,57 +6763,102 @@ function speechWrapLines(txt,maxW){
   }
   return out.length?out:[''];
 }
+/* ---- B6-FIX.1: geometria do balão de fala ----
+   Constantes de layout. O bug do B6 era ter DUAS âncoras Y (caixa ancorada
+   no rodapé, crescendo p/ cima; texto começando no topo e descendo). Agora
+   um ÚNICO layout dirige caixa, texto, clamp e a checagem de bordas. */
+const SPEECH_MAXW=236;         // largura máxima do conteúdo (base; falas reais ⇒ ≤3 linhas)
+const SPEECH_PADX=8;           // padding horizontal interno
+const SPEECH_PADY=6;           // padding vertical interno (topo e base)
+const SPEECH_GAP_ABOVE=14;     // folga entre o topo do Echo e o rodapé do balão
+const SPEECH_VIEW_MARGIN=6;    // margem de segurança contra as bordas da viewport
+/* maior fala REAL do jogo = 3 linhas (auditado no B6-FIX.1). Teto generoso
+   (2×) que NENHUMA fala real alcança; só protege input DEV/artificial. Acima
+   dele, a última linha visível recebe reticências — nunca em fala real. */
+const SPEECH_MAX_LINES=6;
+function speechLineH(px){return px+6;}          // avanço entre baselines-topo (folga p/ descendentes)
+function speechGlyphH(px){return Math.ceil(px*1.2);} // altura visual aproximada de uma linha
+/* trunca uma linha com reticências até caber em maxW (só stress/DEV). */
+function speechEllipsize(line,maxW){
+  let s=String(line);
+  if(ctx.measureText(s+'…').width<=maxW)return s+'…';
+  const chars=Array.from(s);
+  while(chars.length&&ctx.measureText(chars.join('')+'…').width>maxW)chars.pop();
+  return chars.join('')+'…';
+}
+/* Calcula TODO o layout do balão: linhas efetivas (com teto/viewport),
+   largura, altura, retângulo (rx,ry,bw,bh) já com clamp de viewport, e a
+   âncora do texto. Texto e caixa derivam do MESMO rx/ry ⇒ o clamp move os
+   dois juntos por construção. Requer ctx.font já configurado (measureText).
+   Puro o suficiente para ser exercido por teste. */
+function speechLayout(txt,px,ex,ey,er){
+  const padX=SPEECH_PADX,padY=SPEECH_PADY,lh=speechLineH(px),gh=speechGlyphH(px);
+  const maxW=SPEECH_MAXW;
+  let lines=speechWrapLines(txt,maxW);
+  /* teto vertical: nunca ultrapassa o teto de conteúdo NEM a altura da
+     viewport. Falas reais (≤3 linhas) jamais são afetadas. */
+  const viewMax=Math.max(1,Math.floor((vh-2*SPEECH_VIEW_MARGIN-2*padY-SPEECH_GAP_ABOVE)/lh));
+  const maxLines=Math.max(1,Math.min(SPEECH_MAX_LINES,viewMax));
+  let truncated=false;
+  if(lines.length>maxLines){
+    const kept=lines.slice(0,maxLines);
+    kept[kept.length-1]=speechEllipsize(kept[kept.length-1],maxW);
+    lines=kept;truncated=true;
+  }
+  const N=lines.length;
+  let wid=0;for(const ln of lines)wid=Math.max(wid,ctx.measureText(ln).width);
+  wid=Math.min(wid,maxW);
+  const bw=wid+2*padX;
+  /* altura = padding topo + (N-1) avanços + 1 linha de glifo + padding base.
+     Assim a última linha cabe INTEIRA dentro da caixa. */
+  const bh=2*padY+(N-1)*lh+gh;
+  /* posição preferida: centrado no Echo, ACIMA da cabeça. */
+  let rx=ex-bw/2;
+  let ry=(ey-er-SPEECH_GAP_ABOVE)-bh;   // rodapé do balão acima do Echo
+  /* clamp do RETÂNGULO INTEIRO na área útil da viewport (mundo). */
+  const mg=SPEECH_VIEW_MARGIN;
+  const safeL=cam.x-vw/2+mg, safeR=cam.x+vw/2-mg;
+  const safeT=cam.y-vh/2+mg, safeB=cam.y+vh/2-mg;
+  if(bw<=safeR-safeL)rx=clamp(rx,safeL,safeR-bw); else rx=cam.x-bw/2;
+  if(bh<=safeB-safeT)ry=clamp(ry,safeT,safeB-bh); else ry=cam.y-bh/2;
+  /* âncora do texto (textAlign center, textBaseline top): centro horizontal
+     e topo da 1ª linha, ambos derivados de rx/ry. */
+  const textX=rx+bw/2;
+  const textTop=ry+padY;
+  return {lines,N,px,lh,gh,padX,padY,bw,bh,rx,ry,textX,textTop,truncated};
+}
 function speechRender(){
   if(!speechActive)return;
   const a=speechActive;
   const src=a.src;
-  const x0=(src&&src.alive&&src.x!=null)?src.x:(a.x||0);
-  const y=(src&&src.alive&&src.y!=null)?src.y:(a.y||0);
-  const r=(src&&src.alive&&src.r!=null)?src.r:12;
+  const ex=(src&&src.alive&&src.x!=null)?src.x:(a.x||0);
+  const ey=(src&&src.alive&&src.y!=null)?src.y:(a.y||0);
+  const er=(src&&src.alive&&src.r!=null)?src.r:12;
   const px=a.pri>=SPEECH_PRI.critical?17:(a.pri>=SPEECH_PRI.high?16:15);
   ctx.save();
   ctx.font=px+'px Consolas,monospace';
   ctx.textAlign='center';
+  ctx.textBaseline='top';                        // âncora Y determinística p/ o layout
   const alpha=clamp((a.life-a.t)/.45,0,1);
   ctx.globalAlpha=alpha;
-  const maxW=236;
-  const lines=speechWrapLines(a.txt,maxW);
-  const lh=px+6;
-  let wid=0;for(const ln of lines)wid=Math.max(wid,ctx.measureText(ln).width);
-  wid=Math.min(wid,maxW);                       // largura máxima razoável do balão
-  const bw=wid+16;                              // largura total do retângulo (com margem)
-  const bh=lines.length*lh+10;                  // altura cresce com o nº de linhas
-  /* B6 §16: clamp de viewport nas 4 bordas. O balão é desenhado em espaço de
-     mundo (ctx já transladado por vw/2-cam.x). A região de mundo visível é
-     [cam.x-vw/2 , cam.x+vw/2] × [cam.y-vh/2 , cam.y+vh/2]. Mantemos o
-     retângulo inteiro dentro dessa janela; se o balão for maior que a tela,
-     alinhamos à borda sem cortar. */
-  const mg=6;
-  const halfW=bw/2;
-  let x=x0;
-  const wl=cam.x-vw/2+mg+halfW, wr=cam.x+vw/2-mg-halfW;
-  if(wl<=wr)x=clamp(x,wl,wr);                   // senão (balão > largura da tela): mantém centralizado
-  let yy=y-r-40;                                 // linha de base do rodapé do balão
-  const boxTop=cam.y-vh/2+mg, boxBot=cam.y+vh/2-mg;
-  if(yy-bh+4<boxTop)yy=boxTop+bh-4;             // não sai por cima
-  if(yy+4>boxBot)yy=boxBot-4;                   // não sai por baixo
-  const rx=x-bw/2, ry=yy-bh+4;
+  const L=speechLayout(a.txt,px,ex,ey,er);
+  /* caixa */
   ctx.fillStyle='rgba(5,10,16,.82)';
-  ctx.fillRect(rx,ry,bw,bh);
+  ctx.fillRect(L.rx,L.ry,L.bw,L.bh);
   ctx.strokeStyle=a.color||'#8ff6ff';
   ctx.globalAlpha=alpha*.55;
   ctx.lineWidth=1.2;
-  ctx.strokeRect(rx,ry,bw,bh);
+  ctx.strokeRect(L.rx,L.ry,L.bw,L.bh);
+  /* texto — mesma origem/âncora da caixa (L.rx/L.ry). */
   ctx.globalAlpha=alpha;
   ctx.lineJoin='round';
   ctx.strokeStyle='rgba(0,0,0,.92)';
   ctx.lineWidth=3;
   ctx.fillStyle=a.color||'#8ff6ff';
-  let ty=yy-6;
-  for(const ln of lines){
-    ctx.strokeText(ln,x,ty);
-    ctx.fillText(ln,x,ty);
-    ty+=lh;
+  for(let i=0;i<L.lines.length;i++){
+    const ty=L.textTop+i*L.lh;
+    ctx.strokeText(L.lines[i],L.textX,ty);
+    ctx.fillText(L.lines[i],L.textX,ty);
   }
   ctx.restore();
 }
