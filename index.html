@@ -8272,8 +8272,9 @@ function openShop(){
      Fica DEPOIS do early-return do voto de pobreza (loja pulada não abre)
      e NÃO em renderShop (que roda de novo a cada compra e a cada reroll). */
   fractureOnShopOpen();
-  /* B5: proposta de pacto diplomático (decisão explícita), uma vez por loja. */
-  try{if(typeof b5MaybeOfferPact==='function')b5MaybeOfferPact();}catch(e){}
+  /* B5-FIX.1: a proposta de pacto NÃO acontece mais na Loja. Ela nasce do
+     ENCONTRO FÍSICO da própria facção durante a run (ver fpOpenPactEncounter
+     e o scheduler de presença). A Loja voltou a ser só compra/reroll. */
 }
 function renderShopOp(){
   mTag.textContent='NÓDULO DE MANUTENÇÃO · ONDA '+String(wave).padStart(2,'0')+' NEUTRALIZADA';
@@ -20797,6 +20798,23 @@ const DEV={
     devTaint();devLog('PACTO '+faction+(ok?' ROMPIDO':' (não havia pacto)'));
     return ok;
   },
+  /* B5-FIX.1: força uma PRESENÇA FÍSICA com PACTO DISPONÍVEL para playtest do
+     novo fluxo (encontro → proposta). Garante os pré-requisitos (conhecimento
+     + afinidade FAVORÁVEL, eixo livre) e marca a entidade com pactOffer.
+     Respeita o cap; NÃO consolida sozinho (a proposta é interativa). */
+  forcePactOffer(faction){
+    if(!devReady())return false;
+    if(!fracRun||!FRACTION_BY_ID[faction])return false;
+    if(typeof factionPresenceDevForcePactOffer!=='function')return false;
+    /* pré-requisitos diplomáticos para o pacto ser elegível */
+    if(typeof fracDisc!=='undefined'&&fracDisc[faction]&&fracDisc[faction].indexOf('contact')<0)
+      fracDisc[faction].push('contact');
+    if((fracRun.aff[faction]|0)<FACTION_PACT_MIN)fracRun.aff[faction]=FACTION_PACT_MIN;
+    if(fracRun.pactBroke)fracRun.pactBroke[faction]=0;
+    const ok=factionPresenceDevForcePactOffer(faction);
+    devTaint();devLog('PACTO-OFERTA '+faction+(ok?' → PRESENÇA COM PROPOSTA':' RECUSADA (cap/regra)'));
+    return ok;
+  },
   /* cenários de playtest §51 (força um par diplomático + presença opcional). */
   diploScenario(n){
     if(!devReady()||!fracRun)return false;
@@ -22643,6 +22661,14 @@ const FACTION_RIVAL={anchor:'deviants',deviants:'anchor',
 /* afinidade mínima para PODER consolidar um pacto. FAVORÁVEL (>=58) é
    alcançável por quem se posiciona (auditado); ALIADA(85) seria inatingível. */
 const FACTION_PACT_MIN=58;
+/* B5-FIX.1: quantas ONDAS depois de MANTER INDEPENDÊNCIA a mesma facção pode
+   voltar a propor pacto num futuro encontro físico. Reoferta MODERADA — não
+   spam, não "some para sempre". Determinístico (compara ondas, sem RNG). */
+const FACTION_PACT_REOFFER_COOLDOWN=3;
+/* B5-FIX.1: quantas ONDAS após ficar elegível (aff>=58) até a facção poder
+   trazer a PROPOSTA de pacto numa presença física. "Progressão primeiro,
+   proposta depois": nunca oferece no instante do +58. Determinístico. */
+const FACTION_PACT_OFFER_DELAY=2;
 /* penalidade ao romper: a antiga aliada cai para DESCONFIADA (topo da faixa). */
 const FACTION_RUPTURE_AFF=-40;
 /* teto imposto à rival de uma facção com pacto: NEUTRA (não pode passar de 0). */
@@ -22745,79 +22771,17 @@ function factionDiplomacySnapshot(){
   return out;
 }
 /* =====================================================================
-   PR14 · B5 — PROMPT DE PACTO DIPLOMÁTICO (decisão explícita §9/§14/§16)
+   PR14 · B5-FIX.1 — PACTO REMOVIDO DA LOJA
    ---------------------------------------------------------------------
-   Surge no NÓDULO DE MANUTENÇÃO (loja, tempo congelado) quando uma facção
-   conhecida está elegível a pacto (FAVORÁVEL+) OU quando há um pacto ativo
-   que o operador pode romper. É uma DECISÃO: consolidar / manter independência
-   / romper. Uma facção por abertura de loja (sem spam). Só na run real.
-   Reutiliza o modal compartilhado; NÃO cria HUD/barra persistente (§37). */
-let _b5PactPromptWave=-1;
-function b5EligiblePactFaction(){
-  if(!fracRun)return null;
-  /* prioriza consolidação; determinístico pela ordem de FACTION_IDS */
-  for(const id of FACTION_IDS){
-    if(typeof factionCanPact==='function'&&factionCanPact(id))return {id:id,mode:'offer'};
-  }
-  return null;
-}
-function b5MaybeOfferPact(){
-  if(!fracRun||sandboxMode||sandboxRun)return false;
-  if(state!=='shop')return false;
-  if(_b5PactPromptWave===(wave|0))return false;           // uma vez por loja
-  const cand=b5EligiblePactFaction();
-  if(!cand)return false;
-  _b5PactPromptWave=wave|0;
-  b5OpenPactModal(cand.id);
-  return true;
-}
-function b5OpenPactModal(id){
-  const f=FRACTION_BY_ID[id];if(!f)return;
-  const rv=fracRival(id),fr=rv?FRACTION_BY_ID[rv]:null;
-  speechClear();
-  state='event';firing=false;curEv=null;
-  if(typeof hideActiveTooltip==='function')hideActiveTooltip();
-  const _mtabs=document.getElementById('m-tabs');
-  if(_mtabs){_mtabs.style.display='none';_mtabs.innerHTML='';}
-  mSect.style.display='none';mRow2.innerHTML='';mReroll.style.display='none';
-  mTag.textContent='PROPOSTA DIPLOMÁTICA · TEMPO CONGELADO';
-  mCoins.textContent='◈ '+(player?player.coins:0)+' CRÉDITOS';
-  mOwned.innerHTML=(typeof ownedLine==='function')?ownedLine():'';
-  mTitle.textContent=f.sym+' '+f.nm+' — '+(FACTION_PACT_NAME[id]||'PACTO');
-  mDesc.innerHTML=(FACTION_PACT_LINE[id]||'Uma aliança profunda foi oferecida.')+
-    '<br><span style="opacity:.8">'+f.frase+'</span>';
-  mClose.textContent='(ESCOLHA UMA OPÇÃO)';mClose.className='btn dis';mClose.onclick=null;
-  modalEl.classList.add('on');
-  mRow.innerHTML='';
-  /* impactos declarativos (UX §16): consolidar prejudica a rival ideológica */
-  const impConsolidate=[{k:f.nm,v:'ALIANÇA',t:'gain'}];
-  if(fr)impConsolidate.push({k:fr.nm,v:'RELAÇÃO PREJUDICADA',t:'loss'});
-  impConsolidate.push({k:'PRESENÇA FÍSICA',v:'PASSA A COOPERAR',t:'neutral'});
-  mRow.appendChild(mkCard('CONSOLIDAR '+(FACTION_PACT_NAME[id]||'PACTO'),
-    'Selar a aliança com '+f.nm+'. '+(fr?('A rivalidade com '+fr.nm+' será reconhecida — a relação com eles se deteriora e fica limitada nesta run.'):'')+
-    ' Um compromisso por eixo ideológico.',
-    (typeof evImpactHTML==='function'?evImpactHTML(impConsolidate):''),false,()=>{
-      factionPactConsolidate(id);
-      b5ClosePactModal();
-    }));
-  mRow.appendChild(mkCard('MANTER INDEPENDÊNCIA',
-    'Recusar o pacto por enquanto. A relação com '+f.nm+' permanece '+
-    (fracStateOf(id).lab)+' — nada muda, e a oferta pode voltar.',
-    '',false,()=>{
-      if(typeof toast==='function')toast('INDEPENDÊNCIA MANTIDA · '+f.nm);
-      b5ClosePactModal();
-    }));
-  if(typeof sfx==='function')sfx(300,.35,'sine',.05,-120);
-}
-function b5ClosePactModal(){
-  modalEl.classList.remove('on');
-  /* retoma a loja (a proposta acontece DENTRO da visita à loja) */
-  state='shop';curEv=null;
-  mReroll.style.display='block';
-  if(typeof renderShop==='function')renderShop();
-  modalEl.classList.add('on');
-}
-/* PR14·fim b5-diplomacy.js */
+   O antigo prompt de pacto da Loja Temporal (b5MaybeOfferPact /
+   b5OpenPactModal / b5ClosePactModal / b5EligiblePactFaction /
+   _b5PactPromptWave) foi REMOVIDO. A proposta de pacto agora nasce do
+   ENCONTRO FÍSICO da própria facção durante a run — ver, na camada de
+   presença física: fpPactOfferReady / fpFirstPactOfferReady (scheduler),
+   o estado pactOffer da entidade e fpOpenPactEncounter (modal excepcional).
+   A lógica diplomática de fundo (factionCanPact / factionPactConsolidate /
+   teto / eixos / ruptura) permanece intacta e é reutilizada de lá.
+   ===================================================================== */
 /* Parâmetros do REROLL TEMPORAL (auditados no Bloco 3 §24): o custo começa
    em REROLL_BASE, cresce ×REROLL_SCALE (arredondado) e estaciona em REROLL_CAP.
    NUNCA reseta por trocar de aba/fechar/reabrir — só com a run (fracFresh).
@@ -29226,7 +29190,11 @@ function fpMakePresence(o){
     state:state,
     wave:clamp(Math.round(Number(o.wave))||0,0,MAX_WAVE),
     seed:(Math.round(Number(o.seed))||0)>>>0,       // seed determinística da decisão
-    reason:String(o.reason==null?'':o.reason).slice(0,24)
+    reason:String(o.reason==null?'':o.reason).slice(0,24),
+    /* B5-FIX.1: esta presença carrega uma PROPOSTA DE PACTO ("PACTO DISPONÍVEL").
+       Flag lógica (0/1), decidida DETERMINISTICAMENTE no agendamento; nunca
+       concede pacto sozinha — só habilita a proposta ao interagir. */
+    pactOffer:o.pactOffer?1:0
   };
 }
 
@@ -29239,7 +29207,18 @@ function factionPresenceFresh(){
     active:null,       // presença ativa (cap=1) ou null
     scheduled:null,    // intenção agendada aguardando ativação (B3)
     lastWave:0,        // última onda em que agendou (cooldown)
-    history:[]         // histórico compacto (cap FACTION_PRESENCE_HIST_MAX)
+    history:[],        // histórico compacto (cap FACTION_PRESENCE_HIST_MAX)
+    /* B5-FIX.1: última onda em que o operador RECUSOU (MANTER INDEPENDÊNCIA)
+       a proposta de pacto de cada facção. -1 = nunca recusou. Controla a
+       REOFERTA moderada (FACTION_PACT_REOFFER_COOLDOWN ondas). Determinístico,
+       run-scoped, serializável. Aceitar vira pacto (nunca reoferece); recusar
+       não penaliza — só adia a próxima oportunidade. */
+    pactDecl:{anchor:-1,remnants:-1,consortium:-1,deviants:-1},
+    /* B5-FIX.1: onda em que cada facção FICOU elegível a pacto pela 1ª vez
+       (aff>=58 etc.). -1 = ainda não. Garante "progressão primeiro, proposta
+       depois": a oferta física só surge algumas ondas DEPOIS do +58, nunca no
+       instante. Determinístico, run-scoped, serializável. */
+    pactEligWave:{anchor:-1,remnants:-1,consortium:-1,deviants:-1}
   };
 }
 let factionPresenceRun=null;
@@ -29332,6 +29311,58 @@ function fpEmitFactionReaction(p,reason){
   });
 }
 
+/* =====================================================================
+   B5-FIX.1 — PACTO COMO ENCONTRO FÍSICO (não mais na Loja)
+   ---------------------------------------------------------------------
+   O pacto deixou de ser um prompt da Loja Temporal. Agora ele nasce da
+   PRESENÇA FÍSICA da própria facção: quando uma facção fica elegível
+   (FAVORÁVEL, aff>=58, sem pacto, eixo livre), uma futura presença dela
+   assume o estado "PACTO DISPONÍVEL" e, ao interagir, abre a proposta.
+   Tudo determinístico e run-scoped — sem segundo scheduler, sem RNG raro.
+   ===================================================================== */
+/* leitura pura: um pacto PODE ser proposto a esta facção agora? (ignora o
+   timing — só as regras B5 de eixo/limiar/conhecimento/ruptura). */
+function fpPactBaseEligible(faction){
+  if(!fracRun)return false;
+  if(typeof factionCanPact!=='function')return false;
+  return factionCanPact(faction);
+}
+/* rastreia, por onda, a 1ª onda em que cada facção ficou elegível a pacto.
+   Se deixar de ser elegível (aff caiu, rival pactuou), reinicia a janela.
+   Garante "progressão primeiro, proposta depois" (FACTION_PACT_OFFER_DELAY). */
+function fpTrackPactEligibility(n){
+  const fp=factionPresenceRun;if(!fp||!fp.pactEligWave)return;
+  for(const id of FACTION_IDS){
+    if(fpPactBaseEligible(id)){
+      if((fp.pactEligWave[id]|0)<0)fp.pactEligWave[id]=n;
+    }else{
+      fp.pactEligWave[id]=-1;
+    }
+  }
+}
+/* a facção está PRONTA para trazer a proposta numa presença física agora?
+   Requer: elegível de base + janela de progressão cumprida + fora do
+   cooldown de reoferta (se já recusou antes). Determinístico (só ondas). */
+function fpPactOfferReady(faction,n){
+  const fp=factionPresenceRun;if(!fp)return false;
+  if(!fpIsPhysical(faction))return false;
+  if(!fpPactBaseEligible(faction))return false;
+  n=clamp(Math.round(Number(n))||0,0,MAX_WAVE);
+  const elig=fp.pactEligWave?(fp.pactEligWave[faction]|0):-1;
+  if(elig<0||(n-elig)<FACTION_PACT_OFFER_DELAY)return false;   // progressão primeiro
+  const decl=fp.pactDecl?(fp.pactDecl[faction]|0):-1;
+  if(decl>=0&&(n-decl)<FACTION_PACT_REOFFER_COOLDOWN)return false; // reoferta moderada
+  return true;
+}
+/* primeira facção pronta a propor pacto (ordem determinística de FACTION_IDS).
+   Prioridade CONTROLADA: se existe, a próxima presença agendada será dela com
+   PACTO DISPONÍVEL — garante que a oportunidade aparece (nunca "some"), mas
+   sem monopolizar (após aceitar/recusar, volta ao sorteio normal). */
+function fpFirstPactOfferReady(n){
+  for(const id of FACTION_IDS)if(fpPactOfferReady(id,n))return id;
+  return null;
+}
+
 /* ---- scheduler determinístico (B2-H / B2-I).
    Decide, para a onda n, se uma presença é AGENDADA. Só intenção: não
    spawna nada visual (isso é B3). Determinístico por (seed, wave). Não lê
@@ -29342,6 +29373,10 @@ function factionPresenceSchedule(n){
   if(!fp)return null;
   n=clamp(Math.round(Number(n))||0,0,MAX_WAVE);
   if(n<FACTION_PRESENCE_MIN_WAVE)return null;
+  /* B5-FIX.1: atualiza a janela de elegibilidade de pacto a cada onda, ANTES
+     dos early-returns (o rastreio é puro e barato; mantém a proposta viva
+     mesmo quando há presença ativa segurando o cap). */
+  fpTrackPactEligibility(n);
   /* cap: nunca mais de 1 ativa; não substitui silenciosamente (B2-E) */
   if(fp.active)return null;
   /* uma intenção por onda: não duplica na mesma wave (B2-K) */
@@ -29352,12 +29387,21 @@ function factionPresenceSchedule(n){
   /* portão determinístico: ~40% das ondas elegíveis geram intenção. B2 NÃO
      ajusta essa frequência (tuning é B6); só precisa ser determinística. */
   if(rng()>=0.40)return null;
-  const faction=fpPickFaction(rng);
+  /* B5-FIX.1: prioridade controlada — se alguma facção está pronta para
+     propor pacto, ela é escolhida (com PACTO DISPONÍVEL) em vez do sorteio.
+     Sem segundo scheduler; reutiliza este mesmo portão/onda. Em runs sem
+     diplomacia (afinidade 0, testes B2) nenhuma facção fica pronta ⇒ o
+     comportamento é IDÊNTICO ao anterior. */
+  let faction,wantPact=false;
+  const pactCand=fpFirstPactOfferReady(n);
+  if(pactCand){faction=pactCand;wantPact=true;}
+  else faction=fpPickFaction(rng);
   if(!faction)return null;
   const kind=FACTION_PRESENCE_KINDS[Math.floor(rng()*FACTION_PRESENCE_KINDS.length)]||'signal';
   fp.serial=(fp.serial|0)+1;
   const p=fpMakePresence({id:fp.serial,faction:faction,kind:kind,
-    state:'scheduled',wave:n,seed:fpDeterministicSeed(n),reason:'scheduler'});
+    state:'scheduled',wave:n,seed:fpDeterministicSeed(n),reason:wantPact?'pact_offer':'scheduler',
+    pactOffer:wantPact?1:0});
   fp.scheduled=p;
   fp.lastWave=n;
   fpHistPush(p);
@@ -29424,6 +29468,13 @@ function factionPresencePack(){
     lastWave:clamp(fp.lastWave|0,0,MAX_WAVE),
     active:fp.active?fpMakePresence(fp.active):null,
     scheduled:fp.scheduled?fpMakePresence(fp.scheduled):null,
+    /* B5-FIX.1: proposta de pacto sobrevive ao Continue — a facção que já
+       recusou não reoferece cedo demais; a janela de elegibilidade é mantida
+       para não reoferecer imediatamente ao retomar. */
+    pactDecl:(function(){const o={};for(const id of FACTION_IDS)
+      o[id]=fp.pactDecl?(fp.pactDecl[id]|0):-1;return o;})(),
+    pactEligWave:(function(){const o={};for(const id of FACTION_IDS)
+      o[id]=fp.pactEligWave?(fp.pactEligWave[id]|0):-1;return o;})(),
     history:fp.history.slice(-FACTION_PRESENCE_HIST_MAX)
       .map(h=>({id:h.id|0,faction:fpValidFaction(h.faction)?h.faction:null,
         kind:FACTION_PRESENCE_KIND_SET[h.kind]?h.kind:'signal',
@@ -29439,6 +29490,14 @@ function factionPresenceUnpack(cp){
   fp.lastWave=clamp(Math.round(Number(p.lastWave))||0,0,MAX_WAVE);
   fp.active=(p.active&&fpValidFaction(p.active.faction))?fpMakePresence(p.active):null;
   fp.scheduled=(p.scheduled&&fpValidFaction(p.scheduled.faction))?fpMakePresence(p.scheduled):null;
+  /* B5-FIX.1: restaura decisões/janela de pacto. Save antigo (sem os campos)
+     cai em defaults seguros (-1 = nunca recusou / ainda não elegível). */
+  for(const id of FACTION_IDS){
+    const d=(p.pactDecl&&p.pactDecl[id]!=null)?(p.pactDecl[id]|0):-1;
+    fp.pactDecl[id]=(d<0)?-1:clamp(d,0,MAX_WAVE);
+    const e=(p.pactEligWave&&p.pactEligWave[id]!=null)?(p.pactEligWave[id]|0):-1;
+    fp.pactEligWave[id]=(e<0)?-1:clamp(e,0,MAX_WAVE);
+  }
   if(Array.isArray(p.history))
     fp.history=p.history.filter(h=>h&&typeof h==='object')
       .slice(-FACTION_PRESENCE_HIST_MAX)
@@ -29755,12 +29814,17 @@ function factionPresenceBuildEntity(p,opts){
   const pos=fpEntityPos(p);
   const useBeacon=(typeof canUseBeaconForFactionPresence==='function')
     ?canUseBeaconForFactionPresence():false;
+  /* B5-FIX.1: a entidade herda "PACTO DISPONÍVEL" da presença lógica, mas só
+     se AINDA for válido no momento do spawn (a afinidade pode ter mudado
+     entre agendar e ativar). Nunca concede pacto — só habilita a proposta. */
+  const pactOffer=!!(p.pactOffer&&typeof factionCanPact==='function'&&factionCanPact(p.faction));
   factionPresenceEntity={
     presenceId:p.id|0,faction:p.faction,kind:p.kind,
     x:pos.x,y:pos.y,r:FACTION_PRESENCE_ENTITY_R,
     interactR:FACTION_PRESENCE_INTERACT_R,
     ttl:FACTION_PRESENCE_TTL,ttlMax:FACTION_PRESENCE_TTL,
-    state:'active',beacon:!!useBeacon,pulse:0,consumed:false
+    state:'active',beacon:!!useBeacon,pulse:0,consumed:false,
+    pactOffer:pactOffer?1:0
   };
   return factionPresenceEntity;
 }
@@ -29792,6 +29856,15 @@ function factionPresenceRebuildEntity(){
 function fpEntityAnnounce(e){
   if(!e)return;
   const lab=FACTION_PRESENCE_LABEL[e.faction];if(!lab)return;
+  /* B5-FIX.1: presença com PACTO DISPONÍVEL usa banner + toast de facção
+     próprios (feedback importante, mais duradouro e hierárquico). */
+  if(e.pactOffer){
+    try{if(typeof banner==='function')banner(lab.sym+' '+lab.title,'◆ PACTO DISPONÍVEL — APROXIME-SE PARA NEGOCIAR');}catch(x){}
+    try{if(typeof fpImportantToast==='function')fpImportantToast(e.faction,'◆ PACTO DISPONÍVEL','PROPOSTA DE ALIANÇA','APROXIME-SE PARA NEGOCIAR');}catch(x){}
+    try{if(typeof AUDIO!=='undefined'&&AUDIO&&AUDIO.tone){AUDIO.tone(523,.22,'sine',.04,-120);AUDIO.tone(660,.26,'sine',.04,140);}}catch(x){}
+    try{if(typeof echoFactionReaction==='function')echoFactionReaction(e.faction,'spawn',e);}catch(x){}
+    return;
+  }
   try{if(typeof banner==='function')banner(lab.sym+' '+lab.title,'APROXIME-SE PARA INTERAGIR');}catch(x){}
   try{if(typeof AUDIO!=='undefined'&&AUDIO&&AUDIO.tone)AUDIO.tone(560,.28,'sine',.04,-160);}catch(x){}
   /* B4: reação contextual do Echo à APARIÇÃO da presença (gatilho 'spawn').
@@ -29814,11 +29887,96 @@ function fpEntityAffinityLabel(faction){
   return 'NEUTRA';
 }
 
+/* =====================================================================
+   B5-FIX.1 — MODAL EXCEPCIONAL DE PACTO (no encontro físico, NÃO na Loja)
+   ---------------------------------------------------------------------
+   Abre a partir da PRESENÇA FÍSICA quando ela traz "PACTO DISPONÍVEL".
+   Congela a run (state='event'), mostra cabeçalho da FACÇÃO + PROPOSTA DE
+   PACTO + texto lore-coerente + IMPACTO NA RUN, e oferece ACEITAR /
+   MANTER INDEPENDÊNCIA. Reutiliza o modal compartilhado e a lógica B5
+   (factionPactConsolidate); NÃO cria HUD/scheduler/segundo modal novo.
+   ===================================================================== */
+function fpClosePactEncounter(){
+  /* resolve a presença lógica e limpa a entidade física (a proposta É a
+     interação: não sobra entidade para farmar efeito depois). Retoma a run. */
+  try{if(typeof factionPresenceResolve==='function')factionPresenceResolve('pact_encounter');}catch(x){}
+  factionPresenceEntity=null;
+  if(typeof modalEl!=='undefined'&&modalEl)modalEl.classList.remove('on');
+  state='play';curEv=null;
+  if(typeof mReroll!=='undefined'&&mReroll)mReroll.style.display='block';
+  try{if(player){firing=false;player.invT=Math.max(player.invT||0,1.0);}}catch(x){}
+}
+function fpOpenPactEncounter(e){
+  if(!e)return;
+  const id=e.faction;
+  const f=(typeof FRACTION_BY_ID!=='undefined')?FRACTION_BY_ID[id]:null;
+  if(!f){ /* sem metadados: degrada para o efeito normal, sem travar */
+    e.pactOffer=0;return factionPresenceInteract();}
+  const rv=(typeof fracRival==='function')?fracRival(id):null;
+  const fr=rv?FRACTION_BY_ID[rv]:null;
+  const lab=FACTION_PRESENCE_LABEL[id]||{sym:f.sym,col:f.col,title:''};
+  try{if(typeof speechClear==='function')speechClear();}catch(x){}
+  state='event';firing=false;curEv=null;
+  try{if(typeof hideActiveTooltip==='function')hideActiveTooltip();}catch(x){}
+  const _mtabs=(typeof document!=='undefined'&&document.getElementById)?document.getElementById('m-tabs'):null;
+  if(_mtabs){_mtabs.style.display='none';_mtabs.innerHTML='';}
+  if(typeof mSect!=='undefined'&&mSect)mSect.style.display='none';
+  if(typeof mRow2!=='undefined'&&mRow2)mRow2.innerHTML='';
+  if(typeof mReroll!=='undefined'&&mReroll)mReroll.style.display='none';
+  mTag.textContent=lab.sym+' ENCONTRO DE FACÇÃO · PROPOSTA DE PACTO · TEMPO CONGELADO';
+  mCoins.textContent='◈ '+(player?player.coins:0)+' CRÉDITOS';
+  mOwned.innerHTML=(typeof ownedLine==='function')?ownedLine():'';
+  mTitle.textContent=f.sym+' '+f.nm+' — '+(FACTION_PACT_NAME[id]||'PACTO');
+  mDesc.innerHTML=(FACTION_PACT_LINE[id]||'Uma aliança profunda foi oferecida.')+
+    '<br><span style="opacity:.8">'+(f.frase||'')+'</span>';
+  mClose.textContent='(ESCOLHA UMA OPÇÃO)';mClose.className='btn dis';mClose.onclick=null;
+  modalEl.classList.add('on');
+  mRow.innerHTML='';
+  /* IMPACTO NA RUN (do B3-FIX): estados, não números crus. */
+  const imp=[{k:f.nm,v:'ALIADA (PACTO)',t:'gain'}];
+  if(fr)imp.push({k:fr.nm,v:'RELAÇÃO RESTRINGIDA',t:'loss'});
+  imp.push({k:'EIXO IDEOLÓGICO',v:'EXCLUSIVO NESTA RUN',t:'neutral'});
+  imp.push({k:'PRESENÇA FÍSICA',v:'PASSA A COOPERAR',t:'neutral'});
+  mRow.appendChild(mkCard('ACEITAR · '+(FACTION_PACT_NAME[id]||'PACTO'),
+    'Selar a aliança com '+f.nm+'. '+
+    (fr?('A rivalidade com '+fr.nm+' será reconhecida — a relação com eles se deteriora e fica limitada nesta run. '):'')+
+    'Um compromisso por eixo ideológico; a partir daqui a facção coopera.',
+    (typeof evImpactHTML==='function'?evImpactHTML(imp):''),false,()=>{
+      try{if(typeof factionPactConsolidate==='function')factionPactConsolidate(id);}catch(x){}
+      fpClosePactEncounter();
+    }));
+  mRow.appendChild(mkCard('MANTER INDEPENDÊNCIA',
+    'Recusar o pacto por enquanto. A relação com '+f.nm+' permanece '+
+    ((typeof fracStateOf==='function')?fracStateOf(id).lab:'FAVORÁVEL')+
+    ' — nada muda, sem custo nem ruptura, e a oferta pode voltar mais adiante.',
+    '',false,()=>{
+      /* registra a recusa por facção (reoferta moderada); sem penalidade. */
+      try{const fp=factionPresenceRun;
+        if(fp&&fp.pactDecl)fp.pactDecl[id]=(typeof wave!=='undefined')?(wave|0):0;}catch(x){}
+      try{if(typeof toast==='function')toast('INDEPENDÊNCIA MANTIDA · '+f.nm);}catch(x){}
+      fpClosePactEncounter();
+    }));
+  try{if(typeof sfx==='function')sfx(300,.35,'sine',.05,-120);}catch(x){}
+}
+
 /* interação one-shot (B3-H/B3-J): aplica o efeito da facção UMA vez, resolve
    a presença (B2) e limpa a entidade. Sem farm: consumida na hora. */
 function factionPresenceInteract(){
   const e=factionPresenceEntity;
   if(!e||e.consumed)return false;
+  /* B5-FIX.1: se esta presença traz uma PROPOSTA DE PACTO ainda válida, o
+     encontro abre o modal excepcional de pacto EM VEZ de aplicar o efeito
+     normal. A entidade NÃO é consumida aqui: o efeito de facção não é
+     "gasto" pela proposta (o operador ainda pode interagir de novo se
+     recusar? não — a proposta é a interação; ver fpOpenPactEncounter).
+     Guardas: só na run real (não Sandbox), só se o pacto ainda é possível. */
+  if(e.pactOffer&&!(typeof sandboxMode!=='undefined'&&sandboxMode)&&
+     !(typeof sandboxRun!=='undefined'&&sandboxRun)&&
+     typeof factionCanPact==='function'&&factionCanPact(e.faction)&&
+     typeof fpOpenPactEncounter==='function'){
+    fpOpenPactEncounter(e);
+    return true;
+  }
   e.consumed=true;
   const lab=FACTION_PRESENCE_LABEL[e.faction]||{nm:'PRESENÇA',col:'#e8fbff'};
   let msg='';
@@ -30208,13 +30366,26 @@ function factionPresenceDrawEntity(){
   else if(e.faction==='remnants')fpDrawRemnants(e,col,p,fade);
   else fpDrawDeviants(e,col,p,fade);
   ctx.restore();
+  /* B5-FIX.1: sinal extra de PACTO DISPONÍVEL — aura pulsante + marcador ◆
+     acima da presença. NÃO redesenha a presença: é um adorno sobreposto,
+     claramente distinto do estado comum. */
+  if(e.pactOffer){
+    const pp=.5+.5*Math.sin(e.pulse*2.2);
+    ctx.save();
+    ctx.globalAlpha=.10+.16*pp;ctx.strokeStyle=col;ctx.lineWidth=2;
+    ctx.beginPath();ctx.arc(e.x,e.y,e.r*1.45+4*pp,0,TAU);ctx.stroke();
+    ctx.globalAlpha=.45+.45*pp;ctx.fillStyle=col;
+    ctx.font='14px Consolas,monospace';ctx.textAlign='center';
+    ctx.fillText('◆',e.x,e.y-e.r-36);
+    ctx.restore();
+  }
   /* rótulo legível: símbolo + nome + tag "PRESENÇA DE FACÇÃO" (distingue de
      evento comum, que usa só o nome do sinal). */
   ctx.fillStyle=col;ctx.globalAlpha=.45+fade*.55;
   ctx.font='11px Consolas,monospace';ctx.textAlign='center';
   ctx.fillText(lab.sym+' '+lab.nm,e.x,e.y-e.r-24);
   ctx.globalAlpha=.35+fade*.35;ctx.font='8px Consolas,monospace';
-  ctx.fillText('▣ PRESENÇA DE FACÇÃO',e.x,e.y-e.r-13);
+  ctx.fillText(e.pactOffer?'◆ PACTO DISPONÍVEL':'▣ PRESENÇA DE FACÇÃO',e.x,e.y-e.r-13);
   ctx.globalAlpha=1;
   ctx.restore();
 }
@@ -30225,7 +30396,7 @@ function factionPresenceEntitySnapshot(){
   if(!e)return null;
   return {presenceId:e.presenceId|0,faction:e.faction,kind:e.kind,
     x:Math.round(e.x),y:Math.round(e.y),ttl:Math.round(e.ttl*10)/10,
-    beacon:!!e.beacon,consumed:!!e.consumed};
+    beacon:!!e.beacon,consumed:!!e.consumed,pactOffer:!!e.pactOffer};
 }
 /* limpa a entidade física (cleanup — B3-S). Idempotente, sem timers órfãos. */
 function factionPresenceEntityClear(){factionPresenceEntity=null;return true;}
@@ -30242,6 +30413,21 @@ function factionPresenceDevForce(faction){
   const w=(typeof wave!=='undefined')?(wave|0):1;
   const p=fpMakePresence({id:fp.serial,faction:faction,kind:'emissary',
     state:'scheduled',wave:w,seed:fpDeterministicSeed(w),reason:'dev'});
+  fp.scheduled=p;
+  const e=factionPresenceSpawnFromScheduled(false);
+  return !!e;
+}
+/* B5-FIX.1: força uma presença física JÁ com "PACTO DISPONÍVEL" (DEV only). */
+function factionPresenceDevForcePactOffer(faction){
+  if(!(typeof DEV_MODE!=='undefined'&&DEV_MODE))return false;
+  if(!fpIsPhysical(faction))return false;
+  const fp=factionPresenceRun;
+  if(!fp)return false;
+  if(fp.active||factionPresenceEntity)return false;      // respeita o cap
+  fp.serial=(fp.serial|0)+1;
+  const w=(typeof wave!=='undefined')?(wave|0):1;
+  const p=fpMakePresence({id:fp.serial,faction:faction,kind:'emissary',
+    state:'scheduled',wave:w,seed:fpDeterministicSeed(w),reason:'dev_pact',pactOffer:1});
   fp.scheduled=p;
   const e=factionPresenceSpawnFromScheduled(false);
   return !!e;
