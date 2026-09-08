@@ -20613,6 +20613,7 @@ function devEnable(){
   if(state!=='title')devTaint();         // ligou no meio da run → run é debug
   devLog('DEV MODE ATIVADO');
   devOpenPanel();
+  devNotifyDesktopDevMode(true);         // libera Ctrl+Shift+I no Electron (só em dev)
   return true;
 }
 function devDisable(){
@@ -20627,8 +20628,18 @@ function devDisable(){
   const i=document.getElementById('devinfo');if(i)i.classList.remove('on');
   const b=document.getElementById('devbadge');if(b)b.classList.remove('on');
   DEV_MODE=false;
+  devNotifyDesktopDevMode(false);        // fecha o DevTools e trava Ctrl+Shift+I
   /* devTainted NÃO é limpo de propósito: desligar o DEV não "lava" a run. */
   return true;
+}
+/* Sincroniza o DEV MODE com o processo principal do Electron (se houver),
+   para habilitar/desabilitar o atalho Ctrl+Shift+I (DevTools). No navegador
+   ou em build sem a ponte, é um no-op silencioso. Nunca afeta gameplay. */
+function devNotifyDesktopDevMode(active){
+  try{
+    const D=(typeof window!=='undefined')&&window.echoDesktop;
+    if(D&&D.isElectron&&typeof D.setDevMode==='function')D.setDevMode(!!active);
+  }catch(e){}
 }
 function devToggle(){
   if(!IS_DEV_BUILD)return false;

@@ -48,6 +48,13 @@ const api = {
   confirmQuit: (runActive) => ipcRenderer.invoke('echo:confirm-quit', !!runActive),
   quit: () => ipcRenderer.send('echo:quit'),
 
+  /* ---- Modo Desenvolvedor ---- */
+  /* Informa o processo principal quando o DEV MODE liga/desliga, para que o
+     Ctrl+Shift+I (DevTools) só funcione em desenvolvimento e enquanto o DEV
+     MODE estiver ativo. Superfície mínima: envia apenas um booleano por um
+     canal fixo. Em release o main ignora (mantém DevTools bloqueado). */
+  setDevMode: (active) => ipcRenderer.send('echo:dev-mode', !!active),
+
   /* ---- Eventos vindos do processo principal ---- */
   on: (channel, listener) => {
     if (!INBOUND.includes(channel) || typeof listener !== 'function') return () => {};

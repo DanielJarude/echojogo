@@ -76,6 +76,18 @@ const gotTheLock = app.requestSingleInstanceLock();
 
 let mainWindow = null;
 
+/* ---------------------------------------------------------------------
+   ESTADO DO DEV MODE (espelho do renderer)
+   O renderer é a ÚNICA fonte de verdade do Modo Desenvolvedor
+   (Ctrl+Shift+D → DEV_MODE). Ele informa o processo principal por IPC
+   (canal 'echo:dev-mode') sempre que ativa/desativa. Guardamos aqui só
+   um booleano, e SEMPRE reforçado por !app.isPackaged: em build de
+   release este espelho jamais fica verdadeiro, mesmo que a mensagem
+   chegue. Serve unicamente para liberar Ctrl+Shift+I (DevTools) durante
+   o desenvolvimento — nunca no jogo distribuído.
+--------------------------------------------------------------------- */
+let devModeActive = false;
+
 if (!gotTheLock) {
   app.quit();
 } else {
@@ -176,7 +188,21 @@ function createWindow() {
     }
     // DevTools apenas em desenvolvimento
     if ((key === 'f12' || (ctrl && input.shift && ['i', 'c', 'j'].includes(key)))) {
+      // Em build de release: sempre bloqueado.
       if (app.isPackaged) { event.preventDefault(); return; }
+      /* Em desenvolvimento, o DevTools só responde quando o jogo está em
+         DEV MODE (Ctrl+Shift+D). Ctrl+Shift+I faz TOGGLE (abre/fecha).
+         Fora do DEV MODE o atalho fica inerte, sem abrir nada. */
+      if (ctrl && input.shift && key === 'i') {
+        event.preventDefault();
+        if (devModeActive && mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.toggleDevTools();
+        }
+        return;
+      }
+      // F12 / Ctrl+Shift+C / Ctrl+Shift+J permanecem sem atalho dedicado.
+      // (o menu do Chromium foi removido; nada os aciona). Sem preventDefault
+      // aqui para não alterar o comportamento pré-existente em dev.
     }
     // No Electron, F11 / Alt+Enter alternam a tela cheia diretamente na
     // BrowserWindow. Isso evita misturar Fullscreen API do DOM com a janela
@@ -291,6 +317,20 @@ ipcMain.handle('echo:confirm-quit', async (_e, runActive) => {
 });
 
 ipcMain.on('echo:quit', () => { app.quit(); });
+
+/* Sincroniza o DEV MODE (renderer → main) para liberar o Ctrl+Shift+I.
+   Reforço de segurança: em build empacotada o espelho é SEMPRE falso e o
+   DevTools é fechado, independentemente do que o renderer mande. Ao sair do
+   DEV MODE (ou desligar em release), fecha o DevTools que porventura esteja
+   aberto — nunca fica DEV_MODE=false com DevTools ainda visível. */
+ipcMain.on('echo:dev-mode', (_e, active) => {
+  devModeActive = !app.isPackaged && !!active;
+  if (!devModeActive && mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.webContents.isDevToolsOpened()) {
+      mainWindow.webContents.closeDevTools();
+    }
+  }
+});
 
 /* ---------------------------------------------------------------------
    6. CICLO DE VIDA
