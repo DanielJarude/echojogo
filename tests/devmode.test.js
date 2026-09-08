@@ -776,10 +776,13 @@ ok('Morte numa run DEV marca o registro como dev e não vira Echo salvo',()=>{
   D.goToWave(3);
   dev.setRunTime(12);
   dev.devClosePanel();
+  const antes=dev.getEchoQueue().length;
   D.killPlayer();
   const q=dev.getEchoQueue();
-  assert(q.length>=1,'a fila em memória recebe o registro');
-  assert.strictEqual(q[0].dev,1,'o registro precisa estar marcado como debug');
+  /* PR15·b1: morte DEV é run inválida — NÃO produz memória nem desloca a
+     fila (nem em memória). O runData dev era descartado pelo revert. */
+  assert.strictEqual(q.length,antes,
+    'a fila em memória NÃO recebe registro de morte DEV (semântica PR15·b1)');
   assert.strictEqual(dev._ls.getItem('echoRuns.v1'),SENTINEL,
     'o arquivo de Ecos não pode ser tocado por uma run DEV');
   assert.strictEqual(dev._ls.getItem('echoProg.v1'),SENTINEL,
