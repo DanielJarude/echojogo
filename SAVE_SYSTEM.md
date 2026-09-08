@@ -283,8 +283,20 @@ tela de vitória (INICIAR NOVO CICLO) e DEV.
 - **MENU PRINCIPAL (pausa)**: agora é "SALVAR E SAIR PARA O MENU" — o
   último checkpoint permanece e o jogador volta ao menu do save
   (CONTINUAR RUN disponível). Quem quer encerrar a run de propósito usa
-  **ABORTAR RUN** (vira Echo·01, tela de morte) — comportamento antigo
-  preservado.
+  **ABORTAR RUN** — encerra o ciclo (progressão + tela de fratura como
+  uma morte) **sem criar memória/Echo**: a fila não é deslocada e nada é
+  gravado (PR15·b1).
+  > **DÍVIDA TÉCNICA (PR15·b1):** até PR15, ABORTAR RUN "virava Echo·01"
+  > (`abortRun → onPlayerDeath`, fila deslocada como morte real — texto
+  > auxiliar do botão dizia "CONVERTE ESTA RUN EM ECHO·01"). O PR15·b1
+  > separou **captura** (só morte real válida gera memória) de **limpeza**
+  > (progressão/tela seguem no `onPlayerDeath`), e o botão passou a dizer
+  > "ENCERRA O CICLO — NENHUMA MEMÓRIA TEMPORAL É CRIADA". Os saves
+  > antigos que já tenham Echos gravados por abort continuam carregando
+  > normalmente (registro v2 legado); o descarte de futuras memórias de
+  > abort é só daqui para frente. Auditorias textuais que citem o fluxo
+  > antigo ("vira Echo 1 e aplica a fila de Ecos" em `abortRun`) devem
+  > ler a semântica nova.
 - **Vitória**: `onVictory()` limpa `activeRun` — nenhum save fantasma.
 
 ---
