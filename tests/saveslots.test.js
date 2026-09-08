@@ -542,11 +542,11 @@ ok('Modificadores temporários (maldição) NÃO sobrevivem ao checkpoint',()=>{
 ok('Morte encerra a run: activeRun some e CONTINUAR RUN desaparece',()=>{
   S.activateSlot(1);
   freshRun(S);
-  S.setWave(8);S.setRunTime(120);
+  S.setWave(8);S.setRunTime(120);S.setKills(15);   // run VÁLIDA (PR15·b1) ⇒ vira Echo
   S.onPlayerDeath();
   assert.strictEqual(S.getState(),'fracture','a tela de morte aparece');
   assert(!S.hasActiveRun(),'activeRun deve ser limpa ao morrer');
-  assert.strictEqual(S.getEchoQueue().length,1,'a run vira Echo normalmente');
+  assert.strictEqual(S.getEchoQueue().length,1,'a run válida vira Echo normalmente');
   assert.strictEqual(S.getProg().runs>=1,true,'progressão finalizada');
   S.activateSlot(1);                      // recarrega do save (como reabrir)
   assert(!S.hasActiveRun(),'não existe "continuar" de uma run morta');

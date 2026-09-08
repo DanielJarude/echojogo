@@ -944,7 +944,7 @@
   <div class="pbtn" id="p-cfg">⚙ CONFIGURAÇÕES<small>ÁUDIO · TELA CHEIA · GRÁFICOS</small></div>
   <div class="pbtn" id="p-codex">◈ ARSENAL<small>CATÁLOGO DE ARMAS E INIMIGOS</small></div>
   <div class="pbtn" id="p-org">⇅ ORGANIZAR ARMAS<small>REORDENAR SLOTS E DESCARTAR</small></div>
-  <div class="pbtn warn" id="p-abort">ABORTAR RUN<small>CONVERTE ESTA RUN EM ECHO·01</small></div>
+  <div class="pbtn warn" id="p-abort">ABORTAR RUN<small>ENCERRA O CICLO — NENHUMA MEMÓRIA TEMPORAL É CRIADA</small></div>
   <div class="pbtn warn" id="p-mainmenu">SALVAR E SAIR PARA O MENU<small>GUARDA O CHECKPOINT DA ONDA E VOLTA AO MENU DO SAVE</small></div>
   <div id="p-hint"><span id="p-ver">ECHO</span><br>O TEMPO ESTÁ CONGELADO — NENHUM DANO PODE TE ALCANÇAR<br>
     AO RETOMAR VOCÊ RECEBE 0.5s DE ESCUDO DE FASE<br>
@@ -3547,14 +3547,17 @@ function saveEchoes(){
   }
   if(!smEnsureSlot())return false;
   try{
-    const slim=echoQueue.filter(r=>r&&!r.dev).map(r=>({v:2,dur:Math.round(r.dur*100)/100,dmgMul:r.dmgMul,
+    const slim=echoQueue.filter(r=>r&&!r.dev).map(r=>({v:(r.id?3:2),dur:Math.round(r.dur*100)/100,dmgMul:r.dmgMul,
       frMul:r.frMul,wave:r.wave,level:r.level,trail:r.trail,
       crit:r.crit,critMul:r.critMul,pierce:r.pierce,aoeMul:r.aoeMul,rangeMul:r.rangeMul,
       /* B3-FIX: alcance separado (B2) viaja no snapshot; rangeMul fica p/ compat. */
       meleeRangeMul:r.meleeRangeMul,rangedRangeMul:r.rangedRangeMul,
       projSpdMul:r.projSpdMul,longRangeBonus:r.longRangeBonus,
       coins:r.coins,items:r.items,upg:r.upg,owned:r.owned,moral:r.moral,dom:r.dom,
-      k:r.kills|0,mh:r.mh||0,st:r.st||null,ps:r.ps||null}));   // PR 8: ps + sinais
+      k:r.kills|0,mh:r.mh||0,st:r.st||null,ps:r.ps||null,   // PR 8: ps + sinais
+      /* PR15·b1: assinatura temporal (v3 aditivo) — ausente em Echos legados */
+      id:r.id,out:r.out,cause:r.cause,op:r.op,theme:r.theme,seed:r.seed,
+      arch:r.arch,sigW:r.sigW,sigItems:r.sigItems}));
     smRoot.slots[curSlot].echoes=slim;
     smCommit();
   }catch(e){/* cota excedida: mantém apenas em memória */}
@@ -12551,7 +12554,7 @@ const ARENA_EVENTS=[
        if(ph<.25&&z.arm===0){z.arm=1;          // detonação
          const d=Math.round((10+wave*1.6)*.7);
          if(player&&!player.devInvuln&&dist2(player.x,player.y,z.x,z.y)<z.r*z.r){
-           player.invT=0;damagePlayer(d);
+           player.invT=0;damagePlayer(d,'event');
          }
          spawnRing(z.x,z.y,'#ff9d3c',10,z.r*2.2,.8);
          spawnShards(z.x,z.y,'#ffd166',12,6);
@@ -13387,7 +13390,7 @@ function fireMelee(src,def,team,mul){
     const dx=player.x-src.x,dy=player.y-src.y,d=Math.hypot(dx,dy);
     if(d<=reach+player.r){
       const da=Math.abs(((Math.atan2(dy,dx)-src.aim+Math.PI*3)%TAU)-Math.PI);
-      if(da<=half)damagePlayer(dmg);
+      if(da<=half)damagePlayer(dmg,pr15CauseOf(src));
     }
   }
   // o corte destrói projéteis inimigos menores no caminho
@@ -13464,7 +13467,7 @@ function fireBeam(src,def,team,mul,dt){
       if(isHostileEcho(best))containEcho(best,dmg,ox,oy);
       else damageEnemy(best,dmg,ox,oy,(src.beamRamp||1)>=def.rampMax*.92);
     }
-    else damagePlayer(dmg);
+    else damagePlayer(dmg,pr15CauseOf(src));
     const hx=ox+ux*bd,hy=oy+uy*bd;
     if(Math.random()<.6)spawnParticles(hx,hy,def.color,2,220,.22,2.2);
     if((src.beamRamp||1)>=def.rampMax*.92&&Math.random()<.25)
@@ -14054,7 +14057,7 @@ function killEnemy(e){
   sKill();if(e.type==='tank'){shake=Math.max(shake,7);sBoom();}
 }
 let _lastHurtAt=-999;   // PR 10: instante do último dano recebido (contenção)
-function damagePlayer(d){
+function damagePlayer(d,cause){
   if(!(d>0))return;                          // só dano válido reinicia o escudo
   // INVULNERABILIDADE DEV — só existe com o Modo Desenvolvedor ativo
   if(DEV_MODE&&player&&player.devInvuln)return;
@@ -14079,6 +14082,7 @@ function damagePlayer(d){
   }
   const real=d*(1-Math.min(.5,dmgRed))*player.dmgTakenMul*mEff.playerDmgTaken;
   if(!(real>0))return;
+  pr15NoteDamage(cause);                 // PR15·b1: causa da morte — run-scoped, sanitizada
   _lastHurtAt=runTime;                      // PR 10: janela de "sobreviveu limpo"
   /* PR 10: o Guardião cobrindo um golpe relevante é um momento de vínculo.
      Cooldown de 20s por motivo + trustMul baixo — a barreira automática
@@ -14760,7 +14764,7 @@ function mbApproach(e,p,dt,mul,keep){
   e.x=clamp(e.x+e.vx*dt,e.r,ARENA.w-e.r);
   e.y=clamp(e.y+e.vy*dt,e.r,ARENA.h-e.r);
   e.aim=angTo(e.aim,Math.atan2(dy,dx),1.9*dt);
-  if(d<e.r+p.r&&e.touchCd<=0){e.touchCd=.8;damagePlayer(e.dmg);}
+  if(d<e.r+p.r&&e.touchCd<=0){e.touchCd=.8;damagePlayer(e.dmg,pr15CauseOf(e));}
 }
 /* investida telegrafada (helper — só quem a tem chama) */
 function mbCharge(e,p,dt,cfg){
@@ -14772,7 +14776,7 @@ function mbCharge(e,p,dt,cfg){
     e.x=clamp(e.x+e.dashDx*sp*dt,e.r,ARENA.w-e.r);
     e.y=clamp(e.y+e.dashDy*sp*dt,e.r,ARENA.h-e.r);
     if(Math.random()<.7)spawnParticles(e.x,e.y,e.color,2,150,.3,4);
-    if(d<e.r+p.r+6&&e.touchCd<=0){e.touchCd=.6;damagePlayer(e.dmg*cfg.dmgMul);shake=Math.max(shake,11);}
+    if(d<e.r+p.r+6&&e.touchCd<=0){e.touchCd=.6;damagePlayer(e.dmg*cfg.dmgMul,pr15CauseOf(e));shake=Math.max(shake,11);}
     if(cfg.onDash)cfg.onDash(e);
     return true;
   }
@@ -14796,7 +14800,7 @@ function mbBurst(e,cnt,spd,color,dmgMul){
     const a=off+i*TAU/cnt;
     projectiles.push({x:e.x+Math.cos(a)*(e.r+6),y:e.y+Math.sin(a)*(e.r+6),
       vx:Math.cos(a)*spd,vy:Math.sin(a)*spd,r:6,dmg:e.dmg*(dmgMul||.42),life:3.4,
-      type:'eorb',team:'enemy',color:color||'#ffb347',aoe:0});
+      type:'eorb',team:'enemy',color:color||'#ffb347',aoe:0,srcC:pr15CauseOf(e)});
   }
   spawnRing(e.x,e.y,color||'#ffb347',e.r,e.r+70,.4);
   AUDIO.tone(rand(300,360),.16,'square',.035,-120);
@@ -14836,7 +14840,7 @@ function updateHerald(e,dt,p){
       const ang=rand(0,TAU),rr=i===0?0:rand(40,110);
       mbHazardAdd(e,{kind:'omen',x:clamp(p.x+Math.cos(ang)*rr,40,ARENA.w-40),y:clamp(p.y+Math.sin(ang)*rr,40,ARENA.h-40),r:90,life:1.5,fuse:1.5,
         tick:(h,dt,p,e)=>{if(h.life<=0){spawnRing(h.x,h.y,'#ffd166',6,h.r,.5);spawnShards(h.x,h.y,'#ffd166',6,4);
-          if(mbPlayerIn(h,p)){damagePlayer(e.dmg*.45);applyStatus(p,'chill',1.8,.25);}AUDIO.tone(280,.15,'square',.025,-80);}}});
+          if(mbPlayerIn(h,p)){damagePlayer(e.dmg*.45,'hazard');applyStatus(p,'chill',1.8,.25);}AUDIO.tone(280,.15,'square',.025,-80);}}});
     }
     AUDIO.tone(440,.2,'sine',.03,-120);
   }
@@ -14859,7 +14863,7 @@ function updateFurnace(e,dt,p){
   const ms=e.ms,ph2=e.phase===2;
   /* tick de queimadura do frame ANTERIOR (hazards rodam depois do updater) */
   ms.fireHitT=(ms.fireHitT||0)-dt;
-  if(ms.fireIn&&ms.fireHitT<=0){ms.fireHitT=.6;damagePlayer(e.dmg*.16);applyStatus(p,'burn',2,.08,e);}
+  if(ms.fireIn&&ms.fireHitT<=0){ms.fireHitT=.6;damagePlayer(e.dmg*.16,'hazard');applyStatus(p,'burn',2,.08,e);}
   ms.fireIn=false;
   mbApproach(e,p,dt,ph2&&ms.hot>0?1.25:1);
   if(ms.hot>0)ms.hot-=dt;
@@ -14875,7 +14879,7 @@ function updateFurnace(e,dt,p){
     ms.novaCd=ph2?5.5:6.5;ms.hot=3;
     const R=260;
     spawnRing(e.x,e.y,'#ff7a2f',14,R,.8);spawnShards(e.x,e.y,'#ff7a2f',16,6);
-    if(dist2(p.x,p.y,e.x,e.y)<R*R)damagePlayer(e.dmg*.8);
+    if(dist2(p.x,p.y,e.x,e.y)<R*R)damagePlayer(e.dmg*.8,'miniboss');
     for(let i=0;i<6;i++){const a=i/6*TAU+rand(0,.4);const d=R*.62;
       mbHazardAdd(e,{kind:'fire',x:clamp(e.x+Math.cos(a)*d,30,ARENA.w-30),y:clamp(e.y+Math.sin(a)*d,30,ARENA.h-30),r:ph2?44:38,life:ph2?6:4.5,max:ph2?6:4.5,
         tick:mbFireTick});}
@@ -14896,7 +14900,7 @@ function updateSentinel(e,dt,p){
     if(ms.stance==='neutral'){ms.stance='guard';ms.stanceT=ph2?3:4;spawnRing(e.x,e.y,'#8ff6ff',e.r,e.r+80,.6);AUDIO.tone(520,.3,'sine',.04,140);}
     else if(ms.stance==='guard'){ms.stance='open';ms.stanceT=ph2?1.8:2.5;spawnRing(e.x,e.y,'#ff5c7a',e.r,e.r+40,.4);AUDIO.tone(700,.2,'square',.03,-200);
       if(ph2){const base=Math.atan2(p.y-e.y,p.x-e.x);for(let i=-2;i<=2;i++){const a=base+i*.22;
-        projectiles.push({x:e.x+Math.cos(a)*(e.r+6),y:e.y+Math.sin(a)*(e.r+6),vx:Math.cos(a)*340,vy:Math.sin(a)*340,r:6,dmg:e.dmg*.4,life:3,type:'eorb',team:'enemy',color:'#8ff6ff',aoe:0});}}}
+        projectiles.push({x:e.x+Math.cos(a)*(e.r+6),y:e.y+Math.sin(a)*(e.r+6),vx:Math.cos(a)*340,vy:Math.sin(a)*340,r:6,dmg:e.dmg*.4,life:3,type:'eorb',team:'enemy',color:'#8ff6ff',aoe:0,srcC:pr15CauseOf(e)});}}}
     else{ms.stance='neutral';ms.stanceT=ph2?2:3.5;}
   }
   /* estados legados lidos pelo renderer/overlays continuam coerentes */
@@ -14931,7 +14935,7 @@ function updateBrood(e,dt,p){
     /* esporos: pressão própria da Matriz mesmo com o enxame no teto */
     if(ph2)mbBurst(e,8,220,'#39d98a',.35);
     else{const base=Math.atan2(p.y-e.y,p.x-e.x);for(let i=-1;i<=1;i++){const a=base+i*.35;
-      projectiles.push({x:e.x+Math.cos(a)*(e.r+6),y:e.y+Math.sin(a)*(e.r+6),vx:Math.cos(a)*200,vy:Math.sin(a)*200,r:7,dmg:e.dmg*.35,life:3.2,type:'eorb',team:'enemy',color:'#39d98a',aoe:0});}}
+      projectiles.push({x:e.x+Math.cos(a)*(e.r+6),y:e.y+Math.sin(a)*(e.r+6),vx:Math.cos(a)*200,vy:Math.sin(a)*200,r:7,dmg:e.dmg*.35,life:3.2,type:'eorb',team:'enemy',color:'#39d98a',aoe:0,srcC:pr15CauseOf(e)});}}
   }
   const need=ph2?2:3,rate=ph2?.030:.022;
   ms.regenOn=kids>=need;
@@ -14952,7 +14956,7 @@ function updateDuelist(e,dt,p){
     const bx=e.x+Math.cos(e.aim)*(e.r+70),by=e.y+Math.sin(e.aim)*(e.r+70);
     const t=Math.max(0,Math.min(1,((p.x-e.x)*(bx-e.x)+(p.y-e.y)*(by-e.y))/((bx-e.x)**2+(by-e.y)**2||1)));
     const cx=e.x+(bx-e.x)*t,cy=e.y+(by-e.y)*t;
-    if(!ms.hit&&dist2(p.x,p.y,cx,cy)<(p.r+14)*(p.r+14)){ms.hit=true;damagePlayer(e.dmg*1.2);shake=Math.max(shake,9);}
+    if(!ms.hit&&dist2(p.x,p.y,cx,cy)<(p.r+14)*(p.r+14)){ms.hit=true;damagePlayer(e.dmg*1.2,'miniboss');shake=Math.max(shake,9);}
     if(ms.slashT<=0){
       if(ms.combo>0){ms.combo--;e.telegraphT=.30;ms.hit=false;ms.chain=(ms.chain|0)+1;}
       else e.skillCd=Math.max(e.skillCd,.9);   // respiro após o último golpe (janela de punição)
@@ -14993,7 +14997,7 @@ function updateColossus(e,dt,p){
   if(ms.sleep==='awake'&&ms.sleepT<=0){ms.sleep='dormant';ms.sleepT=4.5;e.sleepDmgRed=.60;spawnRing(e.x,e.y,'#ff2f5e',e.r,e.r+100,.7);shake=Math.max(shake,8);AUDIO.tone(90,.6,'sine',.06,-24);}
   else if(ms.sleep==='dormant'&&ms.sleepT<=0){ms.sleep='awake';ms.sleepT=7;e.sleepDmgRed=0;
     const R2=340;spawnRing(e.x,e.y,'#ff9d3c',20,R2,.9);shake=Math.max(shake,22);
-    if(dist2(p.x,p.y,e.x,e.y)<R2*R2){damagePlayer(e.dmg*.8);const a2=Math.atan2(p.y-e.y,p.x-e.x);p.vx+=Math.cos(a2)*600;p.vy+=Math.sin(a2)*600;}
+    if(dist2(p.x,p.y,e.x,e.y)<R2*R2){damagePlayer(e.dmg*.8,'miniboss');const a2=Math.atan2(p.y-e.y,p.x-e.x);p.vx+=Math.cos(a2)*600;p.vy+=Math.sin(a2)*600;}
     AUDIO.boom();AUDIO.tone(70,.7,'sine',.09,-24);}
   e.sleepPhase=ms.sleep;e.sleepT=ms.sleepT;
   if(ms.sleep==='dormant'){e.vx*=.85;e.vy*=.85;return;}
@@ -15003,7 +15007,7 @@ function updateColossus(e,dt,p){
     ms.slamCd=ph2?4.2:5;
     const mk=(delay,R)=>mbHazardAdd(e,{kind:'slam',x:e.x,y:e.y,r:R,life:1.1+delay,fuse:1.1+delay,delay,
       tick:(h,dt,p,e)=>{h.x=e.x;h.y=e.y;if(h.life<=0){spawnRing(h.x,h.y,'#ff2f5e',18,h.r,.9);spawnShards(h.x,h.y,'#ff9d3c',14,6);shake=Math.max(shake,14);
-        if(dist2(p.x,p.y,h.x,h.y)<h.r*h.r){damagePlayer(e.dmg*.75);const a=Math.atan2(p.y-h.y,p.x-h.x);p.vx+=Math.cos(a)*520;p.vy+=Math.sin(a)*520;}
+        if(dist2(p.x,p.y,h.x,h.y)<h.r*h.r){damagePlayer(e.dmg*.75,'hazard');const a=Math.atan2(p.y-h.y,p.x-h.x);p.vx+=Math.cos(a)*520;p.vy+=Math.sin(a)*520;}
         AUDIO.boom();AUDIO.tone(70,.6,'sine',.09,-24);}}});
     mk(0,190);if(ph2)mk(.7,300);
     AUDIO.tone(60,.9,'sine',.07,-10);
@@ -15023,8 +15027,8 @@ function updateOracle(e,dt,p){
     ms.predCd=ph2?2.6:3.2;
     const mk=(ox,oy)=>mbHazardAdd(e,{kind:'pred',x:clamp(p.x+p.vx*.9+ox,40,ARENA.w-40),y:clamp(p.y+p.vy*.9+oy,40,ARENA.h-40),r:80,life:1.4,fuse:1.4,
       tick:(h,dt,p,e)=>{if(h.life<=0){spawnRing(h.x,h.y,'#ffd166',8,h.r,.5);
-        if(mbPlayerIn(h,p)){damagePlayer(e.dmg*.55);applyStatus(p,'chill',1.5,.3);}
-        if(e.phase===2){const off=rand(0,TAU);for(let i=0;i<6;i++){const a=off+i*TAU/6;projectiles.push({x:h.x,y:h.y,vx:Math.cos(a)*260,vy:Math.sin(a)*260,r:5,dmg:e.dmg*.3,life:2.4,type:'eorb',team:'enemy',color:'#ffd166',aoe:0});}}
+        if(mbPlayerIn(h,p)){damagePlayer(e.dmg*.55,'hazard');applyStatus(p,'chill',1.5,.3);}
+        if(e.phase===2){const off=rand(0,TAU);for(let i=0;i<6;i++){const a=off+i*TAU/6;projectiles.push({x:h.x,y:h.y,vx:Math.cos(a)*260,vy:Math.sin(a)*260,r:5,dmg:e.dmg*.3,life:2.4,type:'eorb',team:'enemy',color:'#ffd166',aoe:0,srcC:pr15CauseOf(e)});}}
         AUDIO.tone(520,.18,'sine',.03,-160);}}});
     mk(0,0);if(ph2){const a=Math.atan2(p.vy,p.vx)+Math.PI/2;mk(Math.cos(a)*110,Math.sin(a)*110);}
     AUDIO.tone(880,.12,'sine',.025,-300);
@@ -15051,7 +15055,7 @@ function updateLeech(e,dt,p){
     ms.siphonT-=dt;
     const d=Math.hypot(p.x-e.x,p.y-e.y);
     if(d>range||p.dashT>0){ms.siphonT=0;ms.broken=(ms.broken|0)+1;floatText(e.x,e.y-e.r-20,'DRENO ROMPIDO','#e6ffb8');}
-    else{ms.tickT-=dt;if(ms.tickT<=0){ms.tickT=.25;const dd=e.dmg*.11;damagePlayer(dd);e.hp=Math.min(e.maxHp,e.hp+dd*2);ms.drained=(ms.drained||0)+dd;}}
+    else{ms.tickT-=dt;if(ms.tickT<=0){ms.tickT=.25;const dd=e.dmg*.11;damagePlayer(dd,'miniboss');e.hp=Math.min(e.maxHp,e.hp+dd*2);ms.drained=(ms.drained||0)+dd;}}
     if(ms.siphonT<=0&&ph2){mbHazardAdd(e,{kind:'hunger',x:p.x,y:p.y,r:110,life:3,tick:(h,dt,p)=>{if(mbPlayerIn(h,p)){h.in=true;applyStatus(p,'corrode',1,.2);}else h.in=false;}});}
   }else{
     ms.siphonCd-=dt;
@@ -15843,7 +15847,7 @@ function updateBoss(e,dt){
       if(proj>0&&proj<e.beamLen){
         const perp=Math.abs(rx*uy-ry*ux);
         if(perp<12+p.r&&e.beamHit<=0&&p.dashT<=0){
-          e.beamHit=.42;damagePlayer(16);
+          e.beamHit=.42;damagePlayer(16,'boss');
           spawnParticles(p.x,p.y,'#ff4df0',10,260,.35,3);
         }
       }
@@ -15873,7 +15877,7 @@ function updateBoss(e,dt){
       const a=e.spiralAng+k*TAU/arms;
       projectiles.push({x:e.x+Math.cos(a)*(e.r+8),y:e.y+Math.sin(a)*(e.r+8),
         vx:Math.cos(a)*300,vy:Math.sin(a)*300,r:6.5,dmg:11,life:4.2,
-        type:'eorb',team:'enemy',color:'#ff8df5',aoe:0});
+        type:'eorb',team:'enemy',color:'#ff8df5',aoe:0,srcC:'boss'});
     }
     if(e.spiralBurst%6===0)AUDIO.tone(rand(400,470),.06,'square',.014,120);
     if(e.spiralBurst<=0)e.spiralT=e.phase===2?2.6:4.0;
@@ -15915,7 +15919,7 @@ function updateBoss(e,dt){
     s.r+=470*dt;
     const dp=Math.hypot(p.x-s.x,p.y-s.y);
     if(!s.hit&&Math.abs(dp-s.r)<26&&p.dashT<=0){
-      s.hit=true;damagePlayer(19);
+      s.hit=true;damagePlayer(19,'boss');
       const a=Math.atan2(p.y-s.y,p.x-s.x);
       p.vx+=Math.cos(a)*560;p.vy+=Math.sin(a)*560;
       shake=Math.max(shake,9);
@@ -15929,7 +15933,7 @@ function updateBoss(e,dt){
     if(gd<g.r){
       const pull=(1-gd/g.r)*760;
       p.vx+=gx/gd*pull*dt;p.vy+=gy/gd*pull*dt;
-      if(gd<46&&Math.random()<dt*2.4)damagePlayer(5);
+      if(gd<46&&Math.random()<dt*2.4)damagePlayer(5,'hazard');
     }
     if(g.t>g.life)e.gravs.splice(i,1);
   }
@@ -15947,7 +15951,7 @@ function updateBoss(e,dt){
     }
   }
   // contato direto
-  if(d<e.r+p.r&&e.touchCd<=0){e.touchCd=.8;damagePlayer(e.dmg);shake=Math.max(shake,8);}
+  if(d<e.r+p.r&&e.touchCd<=0){e.touchCd=.8;damagePlayer(e.dmg,pr15CauseOf(e));shake=Math.max(shake,8);}
   if(e.touchCd>0)e.touchCd-=dt;
 }
 /* ---------- update dos Ecos Sombrios ---------- */
@@ -15982,11 +15986,11 @@ function updateShadow(e,dt){
         vx:Math.cos(a)*def.speed*.8,vy:Math.sin(a)*def.speed*.8,
         r:def.pr,dmg:def.dmg*e.dmgMul*(crit?e.critMul:1)*.85,
         life:def.life*1.3,type:def.id==='orb'?'eorb':'eorb',team:'enemy',
-        color:e.color,aoe:0});
+        color:e.color,aoe:0,srcC:pr15CauseOf(e)});
     }
     AUDIO.echoShoot();
   }
-  if(d<e.r+p.r&&e.touchCd<=0){e.touchCd=.7;damagePlayer(e.dmg);}
+  if(d<e.r+p.r&&e.touchCd<=0){e.touchCd=.7;damagePlayer(e.dmg,pr15CauseOf(e));}
 }
 
 /* ---------------- cérebro dos inimigos ---------------- */
@@ -16125,7 +16129,7 @@ function updateEnemy(e,dt){
       const a=Math.atan2(dy,dx);
       projectiles.push({x:e.x+Math.cos(a)*(e.r+4),y:e.y+Math.sin(a)*(e.r+4),
         vx:Math.cos(a)*330,vy:Math.sin(a)*330,r:6,dmg:e.dmg,life:3.2,
-        type:'eorb',team:'enemy',color:'#ff5c7a',aoe:0});
+        type:'eorb',team:'enemy',color:'#ff5c7a',aoe:0,srcC:'enemy'});
       spawnParticles(e.x,e.y,'#ff5c7a',3,120,.2,2);
       sfx(300,.08,'square',.015,120);
     }
@@ -16156,7 +16160,7 @@ function updateEnemy(e,dt){
       const a=Math.atan2(dy,dx);
       projectiles.push({x:e.x+Math.cos(a)*(e.r+4),y:e.y+Math.sin(a)*(e.r+4),
         vx:Math.cos(a)*380,vy:Math.sin(a)*380,r:5,dmg:e.dmg,life:2.6,
-        type:'eorb',team:'enemy',color:'#8ff6ff',aoe:0});
+        type:'eorb',team:'enemy',color:'#8ff6ff',aoe:0,srcC:'enemy'});
       AUDIO.tone(520,.06,'square',.012,90);
     }
     if(Math.random()<dt*.18)e.orbDir*=-1;
@@ -16207,7 +16211,7 @@ function updateEnemy(e,dt){
   if(dist2(e.x,e.y,tgt.x,tgt.y)<(e.r+tgt.r)*(e.r+tgt.r)&&e.touchCd<=0){
     e.touchCd=.7/mEff.enemyAggr;
     if(tgt===player){
-      damagePlayer(e.dmg);
+      damagePlayer(e.dmg,'enemy');
       // COROA DE ESPINHOS: reflete dano de contato
       if(player.thorns){
         const prev=curAttacker;curAttacker=player;
@@ -16869,7 +16873,7 @@ function updateProjectiles(dt){
       }
       if(player.hp>0&&player.dashT<=0){
         const rr=player.r+p.r;
-        if(dist2(p.x,p.y,player.x,player.y)<rr*rr){damagePlayer(p.dmg);dead=true;}
+        if(dist2(p.x,p.y,player.x,player.y)<rr*rr){damagePlayer(p.dmg,pr15ProjectileCause(p));dead=true;}
       }
       if(!dead)for(const ec of echoes){ // Ecos ALIADOS absorvem projéteis inimigos
         if(!ec.alive||ec===p.owner)continue;   // não absorve o próprio disparo
@@ -31724,6 +31728,526 @@ function echoFactionReaction(faction,ctx,entity){
 }
 /* ==================== PR14·fim fp3.js ==================== */
 
+
+/* =====================================================================
+   PR15·b1 — MEMÓRIA TEMPORAL E ASSINATURA DE RUN (FUNDAÇÃO DE DADOS)
+   ---------------------------------------------------------------------
+   "Echos entre runs": B1 constrói SOMENTE a fundação de dados sobre o
+   `echoQueue` existente (fonte única). Nada de scheduler, presença,
+   entidade, evento, UI, recompensa ou balanceamento PR15 aqui (B2+).
+
+   DECISÕES FECHADAS (brief §33-§39 literal):
+   · Fila = echoQueue, evoluído de slim v2 → v3 ADITIVO (superset dos
+     Echos legados). NUNCA slot.mems nem segunda fila persistente.
+   · Histórico: máx. 2 memórias VÁLIDAS por slot. N-1 = última run válida
+     morta; N-2 = penúltima; inserção nova→N-1, N-1→N-2, N-2 descartada.
+   · Regra de run válida em UMA função pura (pr15RunIsValid):
+       realDeath && !sandbox && !dev && !abort && !victory
+       && kills>=5 && (wave>=3 || dur>=90)
+   · ABORTAR RUN: não é morte real → não entra na fila, não desloca,
+     não vira Echo, não cria assinatura, não reaproveita causa da morte;
+     limpeza/progressão/tela continuam responsabilidade de
+     onPlayerDeath/abortRun (captura separada da limpeza).
+   · Vitória: nunca cria memória/Echo (legado preservado — onVictory não
+     toca echoQueue) e não gera assinatura.
+   · Morte real FRACA (falha a validade): não entra na fila, não desloca,
+     não cria assinatura — mas progressão e tela de morte seguem como hoje.
+   · Causa da morte: enum curto sanitizado (boss|miniboss|echo|enemy|
+     hazard|event|unknown), contexto run-scoped, resetado entre runs,
+     nunca reutilizada em abort, sem vazar entre fontes; `unknown` quando
+     não há certeza (nunca inferência insegura).
+   · Registro v3: campos legados INTACTOS (trail replay, makeEcho,
+     personalidade, trust, rel/dis, equipamento, escudo, fala) + assinatura
+     compacta nova. Fora da assinatura: itemState/hooks/projéteis/inimigos/
+     posição/fracRun/event-memory/relação/Dissonância/cópia do player.
+   · Sandbox/DEV: totalmente isolados — nada captura; DEV.pr15* são
+     helpers de LEITURA com guarda !DEV_MODE (inertes em release).
+   · Migração: registro v2/parcial/corrupto carrega com fallback seguro;
+     campo corrompido nunca destrói um slot nem os 3 slots.
+   ===================================================================== */
+/* ---------------- enum de causa da morte ---------------- */
+const PR15_DEATH_CAUSES=['boss','miniboss','echo','enemy','hazard','event','unknown'];
+function pr15SanitizeCause(v){return PR15_DEATH_CAUSES.indexOf(v)>=0?v:'unknown';}
+
+/* ---------------- contexto run-scoped de causa da morte ----------------
+   Cada evento de dano REAL (damagePlayer com dano aplicado) incrementa
+   `ev`. Quando o evento tem causa CONFIAVEL (anotada no call-site ou
+   vinda de um pendente de evento), `causeEv` é sincronizado. A causa de
+   uma morte é a do ÚLTIMO evento de dano; se o último evento não tiver
+   causa conhecida → `unknown`. Isso impede: vazamento entre fontes,
+   causa obsoleta e inferência insegura. Resetado em run nova/Continue/
+   abort/troca de slot. Nunca usado em Sandbox/DEV (nada captura lá). */
+let pr15Ctx={ev:0,causeEv:0,cause:null,pending:null,abort:false};
+function pr15ResetCause(){pr15Ctx.ev=0;pr15Ctx.causeEv=0;pr15Ctx.cause=null;pr15Ctx.pending=null;pr15Ctx.abort=false;}
+/* chamado DENTRO de damagePlayer quando o dano é real (pós-guards).
+   `cause` vem do 2º argumento opcional do call-site; se ausente, usa o
+   pendente de evento (evOpt); sem nenhum dos dois, só conta o evento. */
+function pr15NoteDamage(cause){
+  pr15Ctx.ev++;
+  const src=(typeof cause==='string'&&cause)?cause:(pr15Ctx.pending||null);
+  if(src&&PR15_DEATH_CAUSES.indexOf(src)>=0){pr15Ctx.cause=src;pr15Ctx.causeEv=pr15Ctx.ev;}
+}
+function pr15PendingPush(v){pr15Ctx.pending=PR15_DEATH_CAUSES.indexOf(v)>=0?v:null;}
+function pr15PendingPop(){pr15Ctx.pending=null;}
+function pr15ResolveCause(){
+  return (pr15Ctx.causeEv===pr15Ctx.ev&&pr15Ctx.cause)?pr15Ctx.cause:'unknown';
+}
+function pr15CauseCtxSnapshot(){return {ev:pr15Ctx.ev,causeEv:pr15Ctx.causeEv,cause:pr15Ctx.cause,pending:pr15Ctx.pending,abort:pr15Ctx.abort};}
+/* categoria confiável de um ATOR (inimigo/eco) — fallback seguro: nunca
+   inventa boss/miniboss/echo sem o tipo/slot correto. */
+function pr15CauseOf(actor){
+  if(!actor||typeof actor!=='object')return null;
+  if(actor.type==='boss')return 'boss';
+  if(actor.type==='miniboss')return 'miniboss';
+  if(actor.type==='shadow')return 'echo';
+  if(actor.slot!=null)return 'echo';
+  return 'enemy';
+}
+/* causa de dano por PROJÉTIL: tag srcC posta na criação (confiável) ou o
+   dono (Eco hostil usa fireWeaponFrom com owner). Sem tag nem dono → a
+   causa do evento fica desconhecida (seq mismatch ⇒ unknown). */
+function pr15ProjectileCause(p){
+  if(p&&typeof p==='object'){
+    if(typeof p.srcC==='string'&&PR15_DEATH_CAUSES.indexOf(p.srcC)>=0)return p.srcC;
+    if(p.owner)return pr15CauseOf(p.owner);
+  }
+  return undefined;
+}
+
+/* =====================================================================
+   REGRA DE RUN VÁLIDA — ÚNICA função de verdade
+   ===================================================================== */
+function pr15RunIsValid(o){
+  const V=(o&&typeof o==='object')?o:{};
+  const kills=+V.kills,wave=+V.wave,dur=+V.dur;
+  const realDeath=!!V.realDeath&&V.sandbox!==true&&V.dev!==true&&V.abort!==true&&V.victory!==true;
+  const okK=Number.isFinite(kills)&&kills>=5;
+  const okW=Number.isFinite(wave)&&wave>=3;
+  const okD=Number.isFinite(dur)&&dur>=90;
+  return !!(realDeath&&okK&&(okW||okD));
+}
+function pr15ValidityReason(o){
+  const V=(o&&typeof o==='object')?o:{};
+  const kills=+V.kills,wave=+V.wave,dur=+V.dur;
+  const out=[];
+  if(!V.realDeath)out.push('não é morte real');
+  if(V.sandbox)out.push('sandbox');
+  if(V.dev)out.push('DEV/devTainted');
+  if(V.abort)out.push('abort');
+  if(V.victory)out.push('vitória');
+  if(!(Number.isFinite(kills)&&kills>=5))out.push('kills<5');
+  if(!(Number.isFinite(wave)&&wave>=3)&&!(Number.isFinite(dur)&&dur>=90))out.push('onda<3 e duração<90s');
+  return out.length?out.join(', '):'válida';
+}
+/* fila pura (testes/simulações): espelha exatamente a regra da fila real. */
+function pr15QueuePush(queue,o,rec){
+  const q=Array.isArray(queue)?queue:[];
+  if(!pr15RunIsValid(o))return {queue:q.slice(),captured:false,reason:pr15ValidityReason(o)};
+  const entry=(rec&&typeof rec==='object')?rec:{};
+  return {queue:[entry].concat(q).slice(0,2),captured:true,reason:null};
+}
+
+/* =====================================================================
+   ASSINATURA TEMPORAL (campos NOVOS do v3) — captura no momento da morte
+   válida, com o estado vivo. Compacta e determinística:
+     id      : identificador estável da memória — 'e<slot>-<seq>', contador
+               monotônico POR SLOT (slot.seq aditivo; fallback = maior id
+               existente +1). Sobrevive save/load; sem Math.random; sem
+               depender só de timestamp. Compatível com saves antigos.
+     out     : outcome persistido — sempre 'death' (abort/vitória/sandbox/
+               DEV/morte inválida NUNCA entram na fila; logo o único
+               desfecho persistível é death).
+     cause   : enum sanitizado da morte (pr15ResolveCause).
+     op      : operador (player.charId).
+     theme   : Fracture Theme id no momento da morte (null-safe).
+     seed    : Fracture seed (>>>0, null-safe).
+     arch    : Build Profile resumido {dom,sec,state,domS,secS} — derivado
+               de buildProfileSummary() no momento da morte (determinístico).
+     sigW    : arma assinatura — a MAIS USADA na trail (wi amostrado a cada
+               250ms); fallback = arma ativa/slot principal. Determinística.
+     sigItems: 2..4 módulos representativos — compat com o Build Profile
+               (buildCompat desc), desempate por ordem de aquisição e id
+               estável. Máx. 4; se houver menos, guarda o que existe.
+   Os demais elementos da "assinatura conceitual" (wave, kills, dur,
+   moralidade, dom moral, ps, st) JÁ são campos legados do registro v2 —
+   o v3 os preserva; nada é duplicado.
+   ===================================================================== */
+function pr15BuildSignature(){
+  const sig={op:null,theme:null,seed:null,arch:null,sigW:null,sigItems:[]};
+  try{
+    if(player&&typeof player.charId==='string')sig.op=player.charId.slice(0,16);
+    else if(typeof curChar==='function'){const c=curChar();if(c&&typeof c.id==='string')sig.op=c.id.slice(0,16);}
+  }catch(e){}
+  try{const t=(typeof fractureGetThemeId==='function')?fractureGetThemeId():null;
+    if(typeof t==='string'&&t)sig.theme=t.slice(0,24);}catch(e){}
+  try{const s=(typeof fractureGetSeed==='function')?fractureGetSeed():null;
+    if(Number.isFinite(+s)&&+s>0)sig.seed=(+s)>>>0;}catch(e){}
+  try{
+    if(typeof buildProfileSummary==='function'){
+      const sum=buildProfileSummary();
+      if(sum&&typeof sum==='object'&&typeof sum.dom==='string'&&BUILD_ARCH_IDS.indexOf(sum.dom)>=0){
+        sig.arch={dom:sum.dom,
+          sec:(typeof sum.sec==='string'&&BUILD_ARCH_IDS.indexOf(sum.sec)>=0)?sum.sec:null,
+          state:(typeof sum.state==='string')?sum.state:'definido',
+          domS:Number.isFinite(+sum.domScore)?Math.round(+sum.domScore*1000)/1000:null,
+          secS:Number.isFinite(+sum.secScore)?Math.round(+sum.secScore*1000)/1000:null};
+      }
+    }
+  }catch(e){}
+  /* arma assinatura: uso observado na trail (barato: 1 varredura na morte) */
+  try{
+    const cnt=Object.create(null);let best=null,bn=-1;
+    const tr=Array.isArray(recorder)?recorder:[];
+    for(let i=0;i<tr.length;i++){
+      const row=tr[i],wi=Array.isArray(row)?row[5]:undefined;
+      if(Number.isInteger(wi)&&wi>=0&&wi<WEAPONS.length){
+        cnt[wi]=(cnt[wi]||0)+1;
+        const c=cnt[wi];
+        if(c>bn||(c===bn&&(best==null||wi<best))){bn=c;best=wi;}
+      }
+    }
+    if(best==null&&player&&Number.isInteger(player.wi))best=player.wi;
+    if(Number.isInteger(best)&&best>=0&&best<WEAPONS.length&&WEAPONS[best]&&typeof WEAPONS[best].id==='string')
+      sig.sigW=WEAPONS[best].id;
+  }catch(e){}
+  /* módulos assinatura (2..4) — determinístico, sem RNG */
+  try{
+    const items=Array.isArray(player&&player.items)?player.items:[];
+    let prof=null;try{prof=typeof buildProfile==='function'?buildProfile():null;}catch(e){}
+    const scored=[];const seen=Object.create(null);
+    for(let i=0;i<items.length;i++){
+      const id=items[i];
+      if(typeof id!=='string'||!id||seen[id])continue;seen[id]=1;
+      let c=null;
+      try{c=(typeof buildCompat==='function'&&prof)?buildCompat(id,prof):null;}catch(e){}
+      scored.push({id:pr15Trim(id,24),idx:i,c:Number.isFinite(+c)?+c:-Infinity});
+    }
+    scored.sort((a,b)=>(b.c-a.c)||(a.idx-b.idx)||(a.id<b.id?-1:(a.id>b.id?1:0)));
+    sig.sigItems=scored.slice(0,4).map(x=>x.id);
+  }catch(e){}
+  return sig;
+}
+function pr15Trim(s,n){return String(s).slice(0,n);}
+/* próximo id monotônico por slot: max(slot.seq, maior seq já na fila)+1.
+   Garante unicidade mesmo se o save antigo não tiver slot.seq. */
+function pr15SlotIdNext(){
+  let seq=0,slot=1;
+  try{
+    if(curSlot>=1&&curSlot<=3)slot=curSlot;
+    else if(smRoot&&smRoot.lastSlot)slot=clamp(smRoot.lastSlot|0||1,1,3);
+    if(smRoot&&smRoot.slots&&smRoot.slots[slot])seq=(smRoot.slots[slot].seq|0);
+  }catch(e){}
+  try{
+    const q=Array.isArray(echoQueue)?echoQueue:[];
+    for(let i=0;i<q.length;i++){
+      const r=q[i];
+      if(r&&typeof r.id==='string'){
+        const p=r.id.lastIndexOf('-');
+        const n=parseInt(r.id.slice(p+1),10);
+        if(Number.isFinite(n)&&n>seq)seq=n;
+      }
+    }
+  }catch(e){}
+  return {slot:slot,seq:seq+1};
+}
+/* grava os campos da assinatura no registro (runData completo em memória)
+   e avança o contador do slot (persistido junto no próximo saveEchoes). */
+function pr15CommitSig(rec,sig){
+  if(!rec||typeof rec!=='object')return false;
+  const {slot,seq}=pr15SlotIdNext();
+  rec.id='e'+slot+'-'+seq;
+  rec.out='death';
+  rec.cause=pr15ResolveCause();
+  rec.op=(sig&&typeof sig.op==='string')?sig.op:null;
+  rec.theme=(sig&&typeof sig.theme==='string')?sig.theme:null;
+  rec.seed=(sig&&Number.isFinite(+sig.seed)&&+sig.seed>0)?((+sig.seed)>>>0):null;
+  rec.arch=(sig&&sig.arch&&typeof sig.arch==='object')?{
+    dom:(typeof sig.arch.dom==='string')?sig.arch.dom:null,
+    sec:(typeof sig.arch.sec==='string')?sig.arch.sec:null,
+    state:(typeof sig.arch.state==='string')?sig.arch.state:'definido',
+    domS:Number.isFinite(+sig.arch.domS)?(+sig.arch.domS):null,
+    secS:Number.isFinite(+sig.arch.secS)?(+sig.arch.secS):null}:null;
+  rec.sigW=(sig&&typeof sig.sigW==='string')?sig.sigW:null;
+  rec.sigItems=(sig&&Array.isArray(sig.sigItems))
+    ?sig.sigItems.filter(x=>typeof x==='string').slice(0,4):[];
+  try{
+    if(smRoot&&smRoot.slots&&smRoot.slots[slot])smRoot.slots[slot].seq=seq;
+  }catch(e){}
+  return true;
+}
+
+/* =====================================================================
+   SANITIZAÇÃO TOLERANTE DE CARGA (v2 antigo / parcial / corrupto / tipos
+   errados / enums inválidos / arrays grandes / strings inesperadas).
+   Regras: NUNCA lança; NUNCA destrói slot; registros sem condição mínima
+   de replay (trail inexistente ou posição inicial não-numérica) são
+   descartados SÓ em memória (o arquivo do save não é reescrito aqui).
+   Campos de tipo errado caem em defaults seguros; enums inválidos viram
+   campo ausente (leitor trata ausência como neutro/legado); a trail é
+   reparada linha a linha (nova array apenas quando há reparo) para o
+   replay legado nunca receber NaN. makeEcho nunca explode.
+   ===================================================================== */
+const PR15_SAN_DEFAULTS={dmgMul:1,frMul:1,wave:0,level:1,crit:0,critMul:1.8,pierce:0,
+  aoeMul:1,rangeMul:1,meleeRangeMul:1,rangedRangeMul:1,projSpdMul:1,longRangeBonus:0,
+  coins:0,dur:0,mh:0,k:0};
+function pr15Fin(v){const n=+v;return Number.isFinite(n)?n:NaN;}
+function pr15SanitizeRecord(r){
+  if(!r||typeof r!=='object'||Array.isArray(r))return null;
+  const out=Object.assign({},r);
+  /* trail — condição mínima de replay (posição inicial numérica) */
+  if(!Array.isArray(out.trail)||!out.trail.length)return null;
+  const tr0=out.trail[0];
+  if(!Array.isArray(tr0)||!Number.isFinite(pr15Fin(tr0[1]))||!Number.isFinite(pr15Fin(tr0[2])))return null;
+  /* reparo linha a linha (mantém referência quando já está íntegra).
+     Sinaliza necessidade sempre que uma célula não for NUMBER finito —
+     inclusive strings numéricas ('5' → 5) — para o replay legado nunca
+     receber string/NaN/undefined. */
+  let rebuilt=null,need=false;
+  for(let i=0;i<out.trail.length;i++){
+    const row=out.trail[i];
+    if(!Array.isArray(row)){need=true;break;}
+    for(let j=0;j<row.length&&j<6;j++){
+      const v=row[j];
+      if(typeof v!=='number'||!Number.isFinite(v)){need=true;break;}
+    }
+    if(need)break;
+  }
+  if(need){
+    rebuilt=[];
+    let last=[0,0,0,0,0,0];
+    for(let i=0;i<out.trail.length;i++){
+      const row=out.trail[i];
+      if(!Array.isArray(row)){rebuilt.push(last.slice());continue;}
+      const nr=row.slice(0,6);
+      for(let j=0;j<6;j++){
+        let v=nr[j];
+        if(typeof v!=='number'||!Number.isFinite(v)){
+          const f=pr15Fin(v);
+          v=(v!=null&&Number.isFinite(f))?f:(last[j]||0);
+          nr[j]=v;
+        }
+      }
+      while(nr.length<6)nr.push(0);
+      last=nr;rebuilt.push(nr);
+    }
+    out.trail=rebuilt;
+  }
+  /* v2 antigo em memória guarda o abate como `k` (formato do arquivo);
+     o v3 em memória usa `kills`. Migração aditiva: `k` → `kills` na cópia
+     em memória para o re-save (kills→k no slim) nunca zerar o contador de
+     Echos legados. O arquivo do save não é reescrito aqui. */
+  if(out.kills==null&&out.k!=null){
+    const n=pr15Fin(out.k);
+    if(Number.isFinite(n))out.kills=n;
+  }
+  for(const k in PR15_SAN_DEFAULTS){
+    if(out[k]!=null){
+      const n=pr15Fin(out[k]);
+      if(!Number.isFinite(n))out[k]=PR15_SAN_DEFAULTS[k];else if(out[k]!==n)out[k]=n;
+    }
+  }
+  if(out.kills!=null){const n=pr15Fin(out.kills);if(Number.isFinite(n))out.kills=n;else delete out.kills;}
+  /* moral / dom */
+  if(!out.moral||typeof out.moral!=='object'||Array.isArray(out.moral))out.moral={comp:0,greed:0,viol:0};
+  else{
+    const m=out.moral;
+    for(const kk of ['comp','greed','viol']){
+      if(m[kk]==null){m[kk]=0;continue;}
+      const n=pr15Fin(m[kk]);
+      if(Number.isFinite(n))m[kk]=n;else m[kk]=0;
+    }
+  }
+  if(typeof out.dom!=='string')out.dom='neutro';
+  /* listas */
+  if(!Array.isArray(out.items))out.items=[];
+  else out.items=out.items.filter(x=>typeof x==='string'&&x).slice(0,64);
+  if(!Array.isArray(out.upg))out.upg=[];
+  else out.upg=out.upg.filter(x=>typeof x==='string'&&x).slice(0,400);
+  if(!Array.isArray(out.owned))out.owned=STARTER_WEAPONS.slice();
+  else{
+    out.owned=out.owned.filter(wi=>wi==null||(Number.isInteger(wi)&&wi>=0&&wi<WEAPONS.length)).slice(0,8);
+    if(!out.owned.length)out.owned=STARTER_WEAPONS.slice();
+  }
+  if(out.st==null)out.st=null;
+  else if(typeof out.st==='object'&&!Array.isArray(out.st)){
+    const st={};
+    for(const kk in out.st){const n=pr15Fin(out.st[kk]);if(Number.isFinite(n))st[kk]=n;}
+    out.st=st;
+  }else out.st=null;
+  if(out.ps!=null&&(typeof out.ps!=='object'||Array.isArray(out.ps)))delete out.ps;
+  /* assinatura v3: enums/ids inválidos viram campo ausente (leitor usa legado) */
+  if(out.id!=null&&(typeof out.id!=='string'||out.id.length>32))delete out.id;
+  if(out.out!=null&&out.out!=='death')delete out.out;
+  if(out.cause!=null&&PR15_DEATH_CAUSES.indexOf(out.cause)<0)delete out.cause;
+  for(const kk of ['op','theme','sigW']){
+    if(out[kk]!=null&&(typeof out[kk]!=='string'||!out[kk].length||out[kk].length>24))delete out[kk];
+  }
+  if(out.seed!=null&&!Number.isFinite(pr15Fin(out.seed)))delete out.seed;
+  if(out.arch!=null){
+    if(typeof out.arch!=='object'||Array.isArray(out.arch))delete out.arch;
+    else{
+      const a=out.arch;
+      if(typeof a.dom!=='string')a.dom=null;
+      if(typeof a.sec!=='string')a.sec=null;
+      if(typeof a.state!=='string')a.state='definido';
+      for(const kk of ['domS','secS']){
+        const n=pr15Fin(a[kk]);
+        a[kk]=Number.isFinite(n)?n:null;
+      }
+    }
+  }
+  if(out.sigItems!=null&&(!Array.isArray(out.sigItems)||out.sigItems.length>4))delete out.sigItems;
+  else if(Array.isArray(out.sigItems))out.sigItems=out.sigItems.filter(x=>typeof x==='string'&&x).slice(0,4);
+  return out;
+}
+
+/* =====================================================================
+   DEV — helpers de LEITURA (guardados por DEV_MODE; inertes em release).
+   Nenhum deles escreve save nem taint. Leitura, nunca mutação.
+   ===================================================================== */
+function pr15DevHistory(){
+  if(!DEV_MODE)return null;
+  const q=Array.isArray(echoQueue)?echoQueue:[];
+  return q.map(r=>{
+    const c=Object.assign({},r);
+    if(Array.isArray(c.trail))c.trailLen=c.trail.length;
+    delete c.trail;
+    return c;
+  });
+}
+function pr15DevSignature(){
+  if(!DEV_MODE)return null;
+  try{return pr15BuildSignature();}catch(e){return null;}
+}
+function pr15DevValidity(){
+  if(!DEV_MODE)return null;
+  const abort=!!(pr15Ctx&&pr15Ctx.abort);
+  const ver={realDeath:!abort,sandbox:!!sandboxRun,dev:!!devTainted,abort:abort,victory:false,
+    kills:(Number.isFinite(kills)?kills:0),wave:(Number.isFinite(wave)?wave:0),dur:(Number.isFinite(runTime)?runTime:0)};
+  return {verdict:ver,valid:pr15RunIsValid(ver),reason:pr15ValidityReason(ver),
+    cause:pr15ResolveCause(),ctx:pr15CauseCtxSnapshot()};
+}
+function pr15DevDeathCause(){
+  if(!DEV_MODE)return null;
+  return {cause:pr15ResolveCause(),ctx:pr15CauseCtxSnapshot()};
+}
+
+/* =====================================================================
+   KIT — integração por monkey-patch (mesmo padrão dos kits PR12-14).
+   Captura SEPARADA da limpeza: o corpo original de onPlayerDeath (que
+   também faz a limpeza/progressão/tela) NÃO é reescrito; o wrapper decide
+   se a run entra na fila e enriquece o registro com a assinatura v3.
+   ===================================================================== */
+function pr15TemporalKitBoot(){
+  if(pr15TemporalKitBoot.done)return;pr15TemporalKitBoot.done=true;
+  /* 1. morte (real ou abort) — gate de validade + assinatura v3.
+     Ordem dos wrappers: este kit roda por último ⇒ envolve a cadeia
+     anterior (fracture/facção) — por isso a assinatura é calculada ANTES
+     do original (estado vivo: tema/seed do Diretor ainda presentes) e
+     anexada DEPOIS, sobre echoQueue[0] (o runData recem-criado). */
+  try{
+    const _d=onPlayerDeath;
+    onPlayerDeath=function(){
+      if(state!=='play'||sandboxRun)return _d.apply(this,arguments);
+      const preQ=Array.isArray(echoQueue)?echoQueue.slice():[];
+      let sig=null,valid=false;
+      try{
+        const abort=!!(pr15Ctx&&pr15Ctx.abort);
+        const ver={realDeath:!abort,sandbox:false,dev:!!devTainted,abort:abort,victory:false,
+          kills:(Number.isFinite(kills)?kills:0),wave:(Number.isFinite(wave)?wave:0),
+          dur:(Number.isFinite(runTime)?runTime:0)};
+        valid=pr15RunIsValid(ver);
+        if(valid&&!abort&&!devTainted)sig=pr15BuildSignature();
+      }catch(e){valid=false;sig=null;}
+      const r=_d.apply(this,arguments);
+      try{
+        const q=Array.isArray(echoQueue)?echoQueue:[];
+        if(valid&&sig&&q[0]&&!q[0].dev){
+          pr15CommitSig(q[0],sig);
+          saveEchoes();               // segunda gravação: fila v3 com assinatura
+        }else if(q!==preQ){
+          /* inválida (morte fraca/DEV/abort): o original empurrou runData
+             sem validade — reverte memória e disco ao estado anterior. */
+          echoQueue=preQ;
+          saveEchoes();
+        }
+      }catch(e){}
+      try{pr15ResetCause();}catch(e){}
+      return r;
+    };
+  }catch(e){}
+  /* 2. ABORTAR RUN — sinaliza não-morte-real no contexto run-scoped
+     (consumido pelo wrapper de onPlayerDeath; causa nunca reaproveitada). */
+  try{
+    const _a=abortRun;
+    abortRun=function(){
+      if(state!=='paused')return _a.apply(this,arguments);
+      try{pr15Ctx.abort=true;pr15Ctx.pending=null;}catch(e){}
+      return _a.apply(this,arguments);
+    };
+  }catch(e){}
+  /* 3. run nova / Continue / vitória / troca de slot — contexto zerado. */
+  try{
+    const _s=startRun;startRun=function(o){try{pr15ResetCause();}catch(e){}return _s.apply(this,arguments);};
+    const _rs=resumeRun;resumeRun=function(){try{pr15ResetCause();}catch(e){}return _rs.apply(this,arguments);};
+    const _ov=onVictory;onVictory=function(){const r=_ov.apply(this,arguments);try{pr15ResetCause();}catch(e){}return r;};
+  }catch(e){}
+  /* 4. loadEchoes — sanitização tolerante sobre as cópias (nunca lança,
+     nunca destrói o arquivo; registro irrecuperável sai só da memória). */
+  try{
+    const _le=loadEchoes;
+    loadEchoes=function(){
+      const r=_le.apply(this,arguments);
+      if(!Array.isArray(r))return r;
+      try{return r.map(pr15SanitizeRecord).filter(Boolean);}catch(e){return r;}
+    };
+  }catch(e){}
+  /* 5. activateSlot — mesma sanitização na fila em memória do slot +
+     reset do contexto de causa (nunca vaza entre slots). */
+  try{
+    const _as=activateSlot;
+    activateSlot=function(i){
+      const r=_as.apply(this,arguments);
+      try{
+        if(Array.isArray(echoQueue))
+          echoQueue=echoQueue.map(pr15SanitizeRecord).filter(Boolean);
+        pr15ResetCause();
+      }catch(e){}
+      return r;
+    };
+  }catch(e){}
+  /* 6. smClearSlotSave — contexto zerado junto com o slot. */
+  try{
+    const _cs=smClearSlotSave;smClearSlotSave=function(){
+      const r=_cs.apply(this,arguments);try{pr15ResetCause();}catch(e){}return r;
+    };
+  }catch(e){}
+  /* 7. EVENTOS — dano autoinfligido por escolha de evento (evOpt) é
+     atribuído a 'event' com confiança: pendente run-scoped aplicado ao
+     PRÓXIMO dano real dentro da escolha; limpo ao sair da escolha. */
+  try{
+    const _eo=evOpt;
+    evOpt=function(nm,ds,vec,extra,dis,fn,impacts){
+      const wfn=(typeof fn==='function')?function(){
+        try{pr15PendingPush('event');}catch(e){}
+        try{return fn.apply(this,arguments);}
+        finally{try{pr15PendingPop();}catch(e){}}
+      }:fn;
+      return _eo.call(this,nm,ds,vec,extra,dis,wfn,impacts);
+    };
+  }catch(e){}
+  /* 8. DEV.pr15* — leitura, com guarda !DEV_MODE (inertes em release). */
+  try{
+    if(typeof DEV!=='undefined'&&DEV&&typeof DEV==='object'){
+      DEV.pr15History=pr15DevHistory;
+      DEV.pr15Signature=pr15DevSignature;
+      DEV.pr15Validity=pr15DevValidity;
+      DEV.pr15DeathCause=pr15DevDeathCause;
+    }
+  }catch(e){}
+}
+/* ==================== PR15·fim b1 ==================== */
+
 /* =====================================================================
    BOOT
    ===================================================================== */
@@ -31731,6 +32255,7 @@ fracKitBoot();
 fractureKitBoot();   // PR 13: Diretor de Fratura (fundação)
 factionPresenceKitBoot();   // PR 14: Presença de Facção (fundação B2)
 factionPresencePhysicalKitBoot();   // PR 14: Presença física na arena (B3)
+pr15TemporalKitBoot();            // PR15·b1: Memória Temporal — assinatura de run (fundação de dados)
 
 /* ---- expõe o namespace no console apenas em build de desenvolvimento ---- */
 if(IS_DEV_BUILD){
