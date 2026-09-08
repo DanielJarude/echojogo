@@ -22758,6 +22758,15 @@ const FACTION_PACT_LINE={
   consortium:'O MERCADO ABRE UMA LINHA EXCLUSIVA EM SEU NOME.',
   deviants:'A FENDA ACEITA VOCÊ COMO PARTE DA TRANSFORMAÇÃO.'
 };
+/* B5-FIX.2: frase curta do corpo da opção ACEITAR (encontro de pacto). Não
+   repete o que já aparece no IMPACTO NA RUN — só dá o tom lore de cada facção.
+   O detalhamento (aliada/rival/eixo/presença) fica no bloco IMPACTO abaixo. */
+const FACTION_PACT_ACCEPT_LINE={
+  anchor:'Selar a aliança com a ÂNCORA e assumir seu eixo de estabilidade nesta run.',
+  remnants:'Selar o vínculo com os REMANESCENTES e assumir seu eixo de continuidade nesta run.',
+  consortium:'Firmar o acordo com o CONSÓRCIO e assumir seu eixo de acesso nesta run.',
+  deviants:'Aceitar a FENDA dos DESVIADOS e assumir seu eixo de transformação nesta run.'
+};
 /* snapshot read-only da diplomacia inteira (DEV/UI/testes). Nunca escreve. */
 function factionDiplomacySnapshot(){
   const out={};
@@ -29924,8 +29933,13 @@ function fpOpenPactEncounter(e){
   if(typeof mRow2!=='undefined'&&mRow2)mRow2.innerHTML='';
   if(typeof mReroll!=='undefined'&&mReroll)mReroll.style.display='none';
   mTag.textContent=lab.sym+' ENCONTRO DE FACÇÃO · PROPOSTA DE PACTO · TEMPO CONGELADO';
-  mCoins.textContent='◈ '+(player?player.coins:0)+' CRÉDITOS';
-  mOwned.innerHTML=(typeof ownedLine==='function')?ownedLine():'';
+  /* B5-FIX.2: o encontro de pacto é uma DECISÃO DIPLOMÁTICA — créditos e
+     arsenal/módulos (herdados do modal compartilhado de Loja/Evento) não têm
+     função aqui e poluem a leitura. Zeramos SÓ neste contexto; Loja e eventos
+     repopulam esses campos nos seus próprios fluxos (mesma prática do modal de
+     confirmação). Ver B5-FIX.2 §8/§9. */
+  mCoins.textContent='';
+  mOwned.innerHTML='';
   mTitle.textContent=f.sym+' '+f.nm+' — '+(FACTION_PACT_NAME[id]||'PACTO');
   mDesc.innerHTML=(FACTION_PACT_LINE[id]||'Uma aliança profunda foi oferecida.')+
     '<br><span style="opacity:.8">'+(f.frase||'')+'</span>';
@@ -29938,9 +29952,9 @@ function fpOpenPactEncounter(e){
   imp.push({k:'EIXO IDEOLÓGICO',v:'EXCLUSIVO NESTA RUN',t:'neutral'});
   imp.push({k:'PRESENÇA FÍSICA',v:'PASSA A COOPERAR',t:'neutral'});
   mRow.appendChild(mkCard('ACEITAR · '+(FACTION_PACT_NAME[id]||'PACTO'),
-    'Selar a aliança com '+f.nm+'. '+
-    (fr?('A rivalidade com '+fr.nm+' será reconhecida — a relação com eles se deteriora e fica limitada nesta run. '):'')+
-    'Um compromisso por eixo ideológico; a partir daqui a facção coopera.',
+    /* B5-FIX.2: corpo enxuto — o IMPACTO NA RUN abaixo já detalha aliada/rival/
+       eixo/presença; aqui fica só o tom lore, sem repetir a lista. */
+    FACTION_PACT_ACCEPT_LINE[id]||('Selar a aliança com '+f.nm+' e assumir seu eixo diplomático nesta run.'),
     (typeof evImpactHTML==='function'?evImpactHTML(imp):''),false,()=>{
       try{if(typeof factionPactConsolidate==='function')factionPactConsolidate(id);}catch(x){}
       fpClosePactEncounter();
