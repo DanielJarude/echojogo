@@ -293,10 +293,15 @@ test('ITEMS: PRESAS DE VÁCUO / CAMPO MAGNÉTICO AMPLO / TECIDO AUTORREPARADOR r
   assert.ok(im,'su_imante');
   const reg=T.itemById('su_regen');
   assert.ok(reg,'su_regen');
+  /* PR14.5 B3 §18: rework aprovado — PRESAS deixou de ser "lifesteal melhor"
+     (esse papel é do DRENO SANGUÍNEO, calibração) e passou a ser FOME DE
+     VÁCUO: proc determinístico a cada 3 abates (+8 HP) + cura recebida. */
   const p={globalLifesteal:0,medBoost:1};
   vamp.apply(p);
-  assert.ok(Math.abs(p.globalLifesteal-.09)<1e-9);
-  assert.ok(Math.abs(p.medBoost-1.2)<1e-9);
+  assert.strictEqual(p.killHealEvery,3,'fome de vácuo: janela de 3 abates');
+  assert.ok(Math.abs(p.killHealAmount-8)<1e-9,'cura +8 por presa');
+  assert.ok(Math.abs(p.medBoost-1.2)<1e-9,'+20% cura recebida preservado');
+  assert.ok(!(p.globalLifesteal>0),'sem lifesteal (não compete com o DRENO)');
   /* PR 7: o efeito de stat é resolvido pelo PIPELINE a partir da base
      (pickupR base 170) + multiplicadores — não por mutação direta. */
   const q=T.getPlayer();                       // player real do pipeline

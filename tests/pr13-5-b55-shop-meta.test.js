@@ -231,9 +231,12 @@ ok('B55-A11: preview não altera shop history, rerollCost nem economy',()=>{
 function renderShopAndGetCards(){
   fresh();
   T.setWave(3);T.rollShop();X('renderShopOp()');
-  const row=X('document.getElementById("m-row").children');
-  const row2=X('document.getElementById("m-row2").children');
-  return {row:Array.from(row),row2:Array.from(row2)};
+  /* PR14.5 B3: m-row ganhou o heading CALIBRAÇÕES DE CAMPO — selecionar
+     só CARDS (têm cprice), não o heading. */
+  const row=Array.from(X('document.getElementById("m-row").children'))
+    .filter(c=>(c.innerHTML||'').indexOf('cprice')>=0);
+  const row2=Array.from(X('document.getElementById("m-row2").children'));
+  return {row,row2};
 }
 ok('B55-B1: card de upgrade mantém nome, raridade, efeito, preço — e ganha impacto',()=>{
   const {row}=renderShopAndGetCards();
@@ -306,6 +309,10 @@ ok('B55-B4: itens condicionais/proc exibem chip legível sem hover',()=>{
   assert.ok(found,'estoque com item não numérico apareceu na amostra');
 });
 
+function firstCardChild(){
+  return Array.from(X('document.getElementById("m-row").children'))
+    .find(c=>(c.innerHTML||'').indexOf('cprice')>=0);
+}
 function clickEl(el){                           // dispara o handler registrado
   const fns=el._ev&&el._ev.click;
   assert.ok(fns&&fns.length,'elemento tem handler de clique');
@@ -327,7 +334,8 @@ ok('B55-B5: reroll continua funcionando (grátis, pago, história, re-render)',(
   X('mReroll.onclick()');
   assert.strictEqual(p.coins,paidCoins-paidCost,'cobrou o reroll pago');
   assert.ok(X('shopRollSeq')>seq0,'novas visitas registradas');
-  const row=Array.from(X('document.getElementById("m-row").children'));
+  const row=Array.from(X('document.getElementById("m-row").children'))
+    .filter(c=>(c.innerHTML||'').indexOf('cprice')>=0);
   assert.ok(row.length>=1&&row[0].innerHTML.indexOf('cimpact')>=0,
     're-render com impacto (reroll mantém o novo card)');
 });
@@ -337,7 +345,7 @@ ok('B55-B6: compra continua funcionando e cria checkpoint',()=>{
   T.setWave(3);T.rollShop();
   X('player.coins=100000;renderShopOp()');      // nenhuma oferta desabilitada
   const p=T.getPlayer(),coins0=p.coins;
-  clickEl(X('document.getElementById("m-row").children[0]'));
+  clickEl(firstCardChild());
   assert.ok(p.coins<coins0,'cobrou a compra');
   assert.strictEqual(X('hasActiveRun()'),true,'checkpoint de compra criado');
 });
@@ -526,7 +534,7 @@ ok('B55-D1: Sandbox — abrir loja, projetar previews e comprar não contamina s
   /* compra real no laboratório (checkpoint bloqueado por sandboxRun) */
   const p=T.getPlayer();
   const coinsS0=p.coins;
-  clickEl(X('document.getElementById("m-row").children[0]'));
+  clickEl(firstCardChild());
   assert.ok(p.coins<coinsS0,'compra no laboratório consumiu créditos do sandbox');
   X('sandboxExit(true);loadMeta();');
   assert.strictEqual(saveSnap(),save0,'save byte-a-byte');
