@@ -21243,6 +21243,37 @@ const DEV={
     devTaint();devLog('FALA FORÇADA ('+k+') '+(priority||'normal'));
     return k;
   },
+  /* B6 §19: playtest do balão de fala (wrapping/altura/clamp). Só DEV MODE.
+     echoSpeakLong(n): faz o Echo dizer uma fala longa sintética com ~n
+     palavras (default 40) — para verificar quebra de linha, crescimento de
+     altura e clamp de viewport. NÃO altera trust/afinidade/gameplay. */
+  echoSpeakLong(n,slot){
+    if(!devReady())return false;
+    const e=DEV.echo(slot);if(!e||!e.alive)return false;
+    const count=clamp((n|0)||40,1,200);
+    const bag=['FRATURA','RESSONÂNCIA','ECO','VÍNCULO','ANÔMALO','ESTABILIDADE',
+      'DISSONÂNCIA','PROTOCOLO','SINCRONIA','CONTENÇÃO','ADAPTAÇÃO','MEMÓRIA',
+      'PARADOXO','continuidade','desvio-27','αΩ','façanha'];
+    const parts=[];for(let i=0;i<count;i++)parts.push(bag[i%bag.length]);
+    const txt=parts.join(' ')+'.';
+    speechClear();
+    const ok=echoSpeak(e,txt,e.hue,'high');
+    devTaint();devLog('FALA LONGA ('+count+' palavras) '+(ok?'OK':'RECUSADA'));
+    return ok;
+  },
+  /* echoSpeak(txt,slot): faz o Echo dizer um texto arbitrário fornecido pelo
+     operador — útil para testar palavras enormes sem espaço, acentos e
+     símbolos. Só DEV MODE. */
+  echoSpeak(txt,slot){
+    if(!devReady())return false;
+    const e=DEV.echo(slot);if(!e||!e.alive)return false;
+    const s=String(txt==null?'':txt);
+    if(!s.trim())return false;
+    speechClear();
+    const ok=echoSpeak(e,s,e.hue,'high');
+    devTaint();devLog('FALA MANUAL ('+s.length+' chars) '+(ok?'OK':'RECUSADA'));
+    return ok;
+  },
   /* Dissonância usa a MESMA função de produção (enterDissonance). */
   dissonance(slot){
     if(!devReady())return false;
