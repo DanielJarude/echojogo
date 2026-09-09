@@ -220,3 +220,26 @@ Ainda não existem neste bloco:
 
 Esses itens pertencem aos próximos blocos do PR15.5 e devem consumir esta
 fundação sem transferir autoridade mecânica para o renderer.
+
+## PR15.5-A-FIX #1 — Performance
+
+O playtest humano detectou queda leve de FPS com muitos inimigos. A causa foi o
+caminho neutro da fundação: `visualTimelineTick` criava estado em toda entidade,
+`visualHurtPose` sanitizava pose em todo draw e `drawEnemy`/`drawUnit` emitiam
+`translate`, `rotate` e `scale` extras mesmo sem reação ativa.
+
+A correção separa leitura (`visualPeek`) de criação, adiciona retornos imediatos
+para estado ausente/inativo, calcula hurt somente durante seus 0,11 s e não
+emite transforms para pose neutra. Eventos especializados evitam literais por
+hit/disparo. Os perfis das 27 armas passaram a um cache fixo, sem crescimento.
+
+No cenário conceitual de 46 inimigos idle, a contribuição da fundação passou de
+46 estados criados, 46 poses e 138 transforms Canvas adicionais por frame para
+zero estados, zero poses e zero transforms adicionais. Estado previamente
+criado, porém inativo, usa um fast path O(1).
+
+O benchmark reprodutível está em
+`audit_pr155/visual_foundation_benchmark.js`; resultados e metodologia completos
+estão em `PR15_5_A_FIX1_PERFORMANCE.md`. Não houve medição de FPS real do
+Electron neste ambiente: o replaytest humano continua sendo a validação final.
+A suíte específica do fix adiciona 28 checks sem remover os 95 checks originais.

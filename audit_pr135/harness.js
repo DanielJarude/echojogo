@@ -10,7 +10,7 @@ if(!m)throw new Error('script não encontrado em index.html');
 let src=m[1];
 src+='\n;globalThis.__t={'+
   'VISUAL_STATES,VISUAL_EASING,ENEMY_VISUAL_PROFILES,VISUAL_NEUTRAL_POSE,EDEFS,'+
-  'visualFinite,visualClamp01,visualState,visualReset,visualTimelineStart,visualTimelineCancel,visualTimelineProgress,visualTimelineTick,visualNotify,visualPose,visualPoseCompose,enemyVisualProfile,weaponVisualProfile,visualHurtPose,visualWeaponRecoil,'+
+  'visualFinite,visualClamp01,visualPeek,visualState,visualReset,visualTimelineStart,visualTimelineCancel,visualTimelineProgress,visualTimelineTick,visualNotify,visualNotifyHurt,visualNotifyWeaponFire,visualPose,visualPoseCompose,enemyVisualProfile,weaponVisualProfile,weaponVisualProfileBuild,WEAPON_VISUAL_PROFILE_CACHE,visualHurtPose,visualWeaponRecoil,'+
   'ECHO_LINES,PERSONALITIES,MORAL_AFFINITY,MORAL_BALANCE,ITEMS,UPGRADES,WEAPONS,MINIBOSS,'+
   'SM_STATS,SM_ORDER,UNLOCKS,BASE_WEAPONS,BASE_ITEMS,BASE_UPGRADES,CHARS,ECHO_SPEAK_INTERVAL,'+
   'SPEECH_PRI,ECHO_SPEECH_QUEUE_MAX,echoSpeechDuration,speechClear,speechTick,'+

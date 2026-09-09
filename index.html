@@ -4854,6 +4854,7 @@ const VISUAL_EASING={
 };
 function visualFinite(v,fallback){v=Number(v);return isFinite(v)?v:(fallback==null?0:fallback);}
 function visualClamp01(v){return clamp(visualFinite(v,0),0,1);}
+function visualPeek(entity){return entity&&entity.visual&&typeof entity.visual==='object'&&!Array.isArray(entity.visual)?entity.visual:null;}
 function visualState(entity){
   if(!entity)return null;
   let v=entity.visual;
@@ -4884,7 +4885,8 @@ function visualTimelineProgress(entity,easing){
   return visualFinite(fn(p),p);
 }
 function visualTimelineTick(entity,dt){
-  const v=visualState(entity);if(!v)return null;
+  const v=visualPeek(entity);if(!v)return null; // FIX #1: update neutro não cria estado
+  if(!v.active&&!(v.eventT>0)&&!(v.recoil>0))return v; // hot path idle: custo quase zero
   dt=Math.max(0,visualFinite(dt,0));
   if(v.active){v.t=Math.min(v.duration,v.t+dt);if(v.t>=v.duration){v.active=false;v.completed=true;v.state='idle';v.phase=0;}}
   if(v.eventT>0){v.eventT=Math.max(0,v.eventT-dt);if(v.eventT===0){v.event='';v.eventDuration=0;}}
@@ -4900,6 +4902,17 @@ function visualNotify(entity,event,data){
   if(event==='hurt')visualTimelineStart(entity,'hurt',duration,0);
   else if(event==='weaponFire'){v.recoil=1;visualTimelineStart(entity,'recoil',duration,0);}
   return v;
+}
+function visualNotifyHurt(entity,x,y){
+  const v=visualState(entity);if(!v)return null;
+  v.event='hurt';v.eventT=v.eventDuration=.11;
+  v.hitX=visualFinite(x,entity.x||0);v.hitY=visualFinite(y,entity.y||0);
+  v.state='hurt';v.t=0;v.duration=.11;v.phase=0;v.active=true;v.completed=false;return v;
+}
+function visualNotifyWeaponFire(entity){
+  const v=visualState(entity);if(!v)return null;
+  v.event='weaponFire';v.eventT=v.eventDuration=.16;v.recoil=1;
+  v.state='recoil';v.t=0;v.duration=.16;v.phase=0;v.active=true;v.completed=false;return v;
 }
 function visualPose(values,out){
   values=values||{};out=out||{};
@@ -4933,22 +4946,27 @@ const ENEMY_VISUAL_PROFILES={
   singular:{mass:'heavy',material:'void',locomotion:'float',hurt:'pulse',death:'implode',attack:'field'}
 };
 function enemyVisualProfile(entity){return ENEMY_VISUAL_PROFILES[entity&&entity.type]||{mass:'medium',material:'unknown',locomotion:'move',hurt:'flash',death:'shatter',attack:'contact'};}
-function weaponVisualProfile(def){
+function weaponVisualProfileBuild(def){
   def=def||{};
-  return {category:def.melee?'melee':(def.beam?'beam':(def.sprite||'legacy')),
+  return Object.freeze({category:def.melee?'melee':(def.beam?'beam':(def.sprite||'legacy')),
     muzzle:def.beam?'beam':(def.melee?'none':'pulse'),recoil:def.melee?'swing':'linear',
     impact:def.aoe?'area':(def.melee?'contact':'projectile'),trail:def.boomerang?'return':(def.beam?'beam':'projectile'),
-    meleeMotion:def.melee?(def.sprite||'arc'):'none'};
+    meleeMotion:def.melee?(def.sprite||'arc'):'none'});
 }
+/* Cache fixo: exatamente uma entrada para cada uma das 27 definições. */
+const WEAPON_VISUAL_PROFILE_CACHE=new Map(WEAPONS.map(def=>[def,weaponVisualProfileBuild(def)]));
+const WEAPON_VISUAL_PROFILE_FALLBACK=weaponVisualProfileBuild(null);
+function weaponVisualProfile(def){return WEAPON_VISUAL_PROFILE_CACHE.get(def)||WEAPON_VISUAL_PROFILE_FALLBACK;}
 function visualHurtPose(entity,out){
-  const v=entity&&entity.visual;if(!v||v.event!=='hurt'||v.eventT<=0)return visualPose(null,out);
+  const v=visualPeek(entity);if(!v||v.event!=='hurt'||!(v.eventT>0))return null;
   const k=VISUAL_EASING.easeOut(v.eventDuration>0?v.eventT/v.eventDuration:0);
   const dx=(entity.x||0)-v.hitX,dy=(entity.y||0)-v.hitY,dir=Math.atan2(dy,dx)-(entity.aim||0);
-  return visualPose({offsetX:Math.cos(dir)*k*.7,offsetY:Math.sin(dir)*k*.7,
-    rotation:Math.sin(dir)*k*.018,scaleX:1-k*.025,scaleY:1+k*.025,alpha:1},out);
+  out=out||VISUAL_POSE_SCRATCH;out.offsetX=Math.cos(dir)*k*.7;out.offsetY=Math.sin(dir)*k*.7;
+  out.rotation=Math.sin(dir)*k*.018;out.scaleX=1-k*.025;out.scaleY=1+k*.025;
+  out.recoil=out.lean=out.squash=out.stretch=0;out.alpha=1;return out;
 }
 function visualWeaponRecoil(entity){
-  const v=entity&&entity.visual;return v?Math.max(0,visualFinite(v.recoil,0)):0;
+  const v=visualPeek(entity);return v&&v.recoil>0?v.recoil:0;
 }
 
 /* =====================================================================
@@ -13596,7 +13614,7 @@ function fireBeam(src,def,team,mul,dt){
   }
 }
 function fireWeaponFrom(src,def,team,mul){
-  visualNotify(src,'weaponFire',{duration:.16}); // PR15.5-A: não altera cadência/projétil
+  visualNotifyWeaponFire(src); // PR15.5-A-FIX #1: evento sem alocação por disparo
   // SOBRECARGA RESSONANTE: Ecos turbinados temporariamente
   if(src&&src.spBoost&&src.spBoost>1)mul*=src.spBoost;
   if(def.melee){fireMelee(src,def,team,mul);return;}
@@ -13871,7 +13889,7 @@ function damageEnemy(e,d,srcx,srcy,crit,isDot){
     if(e.sleepDmgRed)d*=(1-e.sleepDmgRed);
   }
   d*=statusDmgMul(e);                    // corrosão amplifica todo dano
-  visualNotify(e,'hurt',{x:srcx,y:srcy,duration:.11}); // PR15.5-A: reação só visual
+  visualNotifyHurt(e,srcx,srcy); // PR15.5-A-FIX #1: evento sem literal temporário
   // ---- SINERGIAS DE STATUS ----
   const atk=curAttacker;
   if(atk&&e.st){
@@ -18711,7 +18729,13 @@ function drawUnit(x,y,aim,r,pal,opts){
   ctx.save();
   ctx.globalAlpha=al;
   ctx.translate(x+ox,y+oy);
-  const pose=visualPose(opts.pose,VISUAL_POSE_SCRATCH2);ctx.translate(pose.offsetX,pose.offsetY);ctx.rotate(pose.rotation);ctx.scale(pose.scaleX,pose.scaleY);ctx.globalAlpha*=pose.alpha;
+  const pose=opts.pose;
+  if(pose){ // FIX #1: pose neutra mantém exatamente o caminho Canvas anterior
+    if(pose.offsetX||pose.offsetY)ctx.translate(pose.offsetX||0,pose.offsetY||0);
+    if(pose.rotation)ctx.rotate(pose.rotation);
+    if(pose.scaleX!==1||pose.scaleY!==1)ctx.scale(pose.scaleX,pose.scaleY);
+    if(pose.alpha!==1)ctx.globalAlpha*=pose.alpha;
+  }
   // sombra projetada
   ctx.save();ctx.globalAlpha=al*.34;ctx.fillStyle='#000';
   ctx.beginPath();ctx.ellipse(0,r*.42,r*.92,r*.5,0,0,TAU);ctx.fill();ctx.restore();
@@ -19065,7 +19089,8 @@ function drawEnemy(e){
   const phase0=e.phase0==null?(((e.x||0)*.013+(e.y||0)*.017+(e.type||'').length)%TAU):e.phase0;
   const step=Math.sin(runTime*9+phase0);
   const vp=visualHurtPose(e,VISUAL_POSE_SCRATCH);
-  ctx.translate(e.x,e.y);ctx.rotate(e.aim);ctx.translate(vp.offsetX,vp.offsetY);ctx.rotate(vp.rotation);ctx.scale(vp.scaleX,vp.scaleY);
+  ctx.translate(e.x,e.y);ctx.rotate(e.aim);
+  if(vp){ctx.translate(vp.offsetX,vp.offsetY);ctx.rotate(vp.rotation);ctx.scale(vp.scaleX,vp.scaleY);}
   ctx.lineJoin='round';
   const main=flash?'#ffffff':e.color;
 
