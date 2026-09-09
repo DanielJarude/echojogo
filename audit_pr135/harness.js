@@ -9,6 +9,8 @@ const m=html.match(/<script>([\s\S]*?)<\/script>/);
 if(!m)throw new Error('script não encontrado em index.html');
 let src=m[1];
 src+='\n;globalThis.__t={'+
+  'VISUAL_STATES,VISUAL_EASING,ENEMY_VISUAL_PROFILES,VISUAL_NEUTRAL_POSE,EDEFS,'+
+  'visualFinite,visualClamp01,visualState,visualReset,visualTimelineStart,visualTimelineCancel,visualTimelineProgress,visualTimelineTick,visualNotify,visualPose,visualPoseCompose,enemyVisualProfile,weaponVisualProfile,visualHurtPose,visualWeaponRecoil,'+
   'ECHO_LINES,PERSONALITIES,MORAL_AFFINITY,MORAL_BALANCE,ITEMS,UPGRADES,WEAPONS,MINIBOSS,'+
   'SM_STATS,SM_ORDER,UNLOCKS,BASE_WEAPONS,BASE_ITEMS,BASE_UPGRADES,CHARS,ECHO_SPEAK_INTERVAL,'+
   'SPEECH_PRI,ECHO_SPEECH_QUEUE_MAX,echoSpeechDuration,speechClear,speechTick,'+
@@ -20,7 +22,7 @@ src+='\n;globalThis.__t={'+
   'getMoralProfile,calcMoralAffinityMatch,getItemMoralAffinity,moralTuneFactor,moralAffinityLevel,'+
   'applyMoralTuning,countAttunedItems,smGet,smRefresh,smBreakdown,calcDamageMul,'+
   'smMul,smAdd,smFlat,smAddPct,smRemoveId,smRemoveSource,'+
-  'fireMelee,fireBeam,fireWeaponFrom,updateProjectiles,weaponRange,srcRangeMul,migrateLegacyRangeMods,'+
+  'fireMelee,fireBeam,fireWeaponFrom,updateProjectiles,weaponRange,srcRangeMul,migrateLegacyRangeMods,damageEnemy,spawnEnemy,updateEnemy,updatePlayer,drawWeaponSprite,'+
   'getProjectiles:()=>projectiles,setProjectiles:a=>{projectiles=a;},'+
   'getSwings:()=>swings,setSwings:a=>{swings=a;},'+
   'getEnemies:()=>enemies,setEnemies:a=>{enemies=a;},'+

@@ -4839,6 +4839,119 @@ function calcDamageMul(p){
   return mul;
 }
 /* =====================================================================
+   PR15.5-A · FUNDAÇÃO DE ESTADO, POSE E GRAMÁTICA VISUAL
+   Estado estritamente efêmero: observa gameplay, nunca o controla e nunca
+   entra nos contratos de Save/Continue. Uma entidade mantém só um objeto
+   O(1), sem listeners, callbacks ou arrays por frame.
+   ===================================================================== */
+const VISUAL_STATES={idle:1,move:1,windup:1,active:1,recover:1,hurt:1,dying:1,spawn:1,recoil:1,charge:1};
+const VISUAL_EASING={
+  linear:t=>visualClamp01(t),
+  easeIn:t=>{t=visualClamp01(t);return t*t;},
+  easeOut:t=>{t=visualClamp01(t);return 1-(1-t)*(1-t);},
+  easeInOut:t=>{t=visualClamp01(t);return t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;},
+  overshoot:t=>{t=visualClamp01(t);const c=1.35,u=t-1;return 1+(c+1)*u*u*u+c*u*u;}
+};
+function visualFinite(v,fallback){v=Number(v);return isFinite(v)?v:(fallback==null?0:fallback);}
+function visualClamp01(v){return clamp(visualFinite(v,0),0,1);}
+function visualState(entity){
+  if(!entity)return null;
+  let v=entity.visual;
+  if(!v||typeof v!=='object'||Array.isArray(v)){
+    v=entity.visual={state:'idle',t:0,duration:0,phase:0,active:false,
+      event:'',eventT:0,eventDuration:0,hitX:0,hitY:0,recoil:0,completed:false};
+  }
+  return v;
+}
+function visualReset(entity){
+  if(!entity)return null;
+  entity.visual=null;return visualState(entity);
+}
+function visualTimelineStart(entity,state,duration,phase){
+  const v=visualState(entity);if(!v)return null;
+  v.state=VISUAL_STATES[state]?state:'idle';v.t=0;
+  v.duration=Math.max(0,visualFinite(duration,0));v.phase=Math.max(0,visualFinite(phase,0)|0);
+  v.active=v.duration>0;v.completed=v.duration===0;return v;
+}
+function visualTimelineCancel(entity){
+  const v=visualState(entity);if(!v)return null;
+  v.state='idle';v.t=0;v.duration=0;v.phase=0;v.active=false;v.completed=false;return v;
+}
+function visualTimelineProgress(entity,easing){
+  const v=visualState(entity);if(!v||!v.active)return v&&v.completed?1:0;
+  const p=v.duration>0?visualClamp01(v.t/v.duration):1;
+  const fn=VISUAL_EASING[easing]||VISUAL_EASING.linear;
+  return visualFinite(fn(p),p);
+}
+function visualTimelineTick(entity,dt){
+  const v=visualState(entity);if(!v)return null;
+  dt=Math.max(0,visualFinite(dt,0));
+  if(v.active){v.t=Math.min(v.duration,v.t+dt);if(v.t>=v.duration){v.active=false;v.completed=true;v.state='idle';v.phase=0;}}
+  if(v.eventT>0){v.eventT=Math.max(0,v.eventT-dt);if(v.eventT===0){v.event='';v.eventDuration=0;}}
+  if(v.recoil>0)v.recoil=Math.max(0,v.recoil-dt*7);
+  return v;
+}
+/* Notificação direta e limitada: o evento mais recente substitui o anterior. */
+function visualNotify(entity,event,data){
+  const v=visualState(entity);if(!v)return null;data=data||{};
+  const duration=Math.max(0,visualFinite(data.duration,event==='hurt'?.11:event==='weaponFire'?.16:0));
+  v.event=typeof event==='string'?event:'';v.eventT=duration;v.eventDuration=duration;
+  v.hitX=visualFinite(data.x,entity.x||0);v.hitY=visualFinite(data.y,entity.y||0);
+  if(event==='hurt')visualTimelineStart(entity,'hurt',duration,0);
+  else if(event==='weaponFire'){v.recoil=1;visualTimelineStart(entity,'recoil',duration,0);}
+  return v;
+}
+function visualPose(values,out){
+  values=values||{};out=out||{};
+  out.offsetX=visualFinite(values.offsetX,0);out.offsetY=visualFinite(values.offsetY,0);
+  out.rotation=visualFinite(values.rotation,0);
+  out.scaleX=Math.max(.01,visualFinite(values.scaleX,1));out.scaleY=Math.max(.01,visualFinite(values.scaleY,1));
+  out.recoil=Math.max(0,visualFinite(values.recoil,0));out.lean=visualFinite(values.lean,0);
+  out.squash=visualFinite(values.squash,0);out.stretch=visualFinite(values.stretch,0);
+  out.alpha=visualClamp01(values.alpha==null?1:values.alpha);return out;
+}
+function visualPoseCompose(a,b,out){
+  a=visualPose(a);b=visualPose(b);out=out||{};
+  return visualPose({offsetX:a.offsetX+b.offsetX,offsetY:a.offsetY+b.offsetY,
+    rotation:a.rotation+b.rotation,scaleX:a.scaleX*b.scaleX,scaleY:a.scaleY*b.scaleY,
+    recoil:a.recoil+b.recoil,lean:a.lean+b.lean,squash:a.squash+b.squash,
+    stretch:a.stretch+b.stretch,alpha:a.alpha*b.alpha},out);
+}
+const VISUAL_NEUTRAL_POSE=Object.freeze(visualPose());
+const VISUAL_POSE_SCRATCH=visualPose(),VISUAL_POSE_SCRATCH2=visualPose();
+const ENEMY_VISUAL_PROFILES={
+  chaser:{mass:'light',material:'carapace',locomotion:'runner',hurt:'flex',death:'shatter',attack:'lunge'},
+  shooter:{mass:'light',material:'machine',locomotion:'strafe',hurt:'recoil',death:'shatter',attack:'ranged'},
+  tank:{mass:'heavy',material:'armor',locomotion:'heavy',hurt:'brace',death:'collapse',attack:'contact'},
+  spawner:{mass:'heavy',material:'rift',locomotion:'anchor',hurt:'distort',death:'implode',attack:'summon'},
+  anomaly:{mass:'light',material:'temporal',locomotion:'phase',hurt:'desync',death:'desync',attack:'blink'},
+  swarm:{mass:'tiny',material:'organic',locomotion:'flutter',hurt:'flutter',death:'scatter',attack:'contact'},
+  orbiter:{mass:'light',material:'machine',locomotion:'orbit',hurt:'wobble',death:'orbit-break',attack:'ranged'},
+  bulwark:{mass:'heavy',material:'shield',locomotion:'brace',hurt:'brace',death:'plate-fall',attack:'contact'},
+  splitter:{mass:'medium',material:'fracture',locomotion:'runner',hurt:'split',death:'divide',attack:'contact'},
+  phantom:{mass:'light',material:'spectral',locomotion:'phase',hurt:'ripple',death:'fade',attack:'contact'},
+  singular:{mass:'heavy',material:'void',locomotion:'float',hurt:'pulse',death:'implode',attack:'field'}
+};
+function enemyVisualProfile(entity){return ENEMY_VISUAL_PROFILES[entity&&entity.type]||{mass:'medium',material:'unknown',locomotion:'move',hurt:'flash',death:'shatter',attack:'contact'};}
+function weaponVisualProfile(def){
+  def=def||{};
+  return {category:def.melee?'melee':(def.beam?'beam':(def.sprite||'legacy')),
+    muzzle:def.beam?'beam':(def.melee?'none':'pulse'),recoil:def.melee?'swing':'linear',
+    impact:def.aoe?'area':(def.melee?'contact':'projectile'),trail:def.boomerang?'return':(def.beam?'beam':'projectile'),
+    meleeMotion:def.melee?(def.sprite||'arc'):'none'};
+}
+function visualHurtPose(entity,out){
+  const v=entity&&entity.visual;if(!v||v.event!=='hurt'||v.eventT<=0)return visualPose(null,out);
+  const k=VISUAL_EASING.easeOut(v.eventDuration>0?v.eventT/v.eventDuration:0);
+  const dx=(entity.x||0)-v.hitX,dy=(entity.y||0)-v.hitY,dir=Math.atan2(dy,dx)-(entity.aim||0);
+  return visualPose({offsetX:Math.cos(dir)*k*.7,offsetY:Math.sin(dir)*k*.7,
+    rotation:Math.sin(dir)*k*.018,scaleX:1-k*.025,scaleY:1+k*.025,alpha:1},out);
+}
+function visualWeaponRecoil(entity){
+  const v=entity&&entity.visual;return v?Math.max(0,visualFinite(v.recoil,0)):0;
+}
+
+/* =====================================================================
    ESCALONAMENTO INCREMENTAL DE DIFICULDADE
    Cada onda deixa os inimigos mais resistentes, rápidos e letais.
    A vida cresce linear+quadrática (salto mais agressivo no fim do ciclo);
@@ -13483,6 +13596,7 @@ function fireBeam(src,def,team,mul,dt){
   }
 }
 function fireWeaponFrom(src,def,team,mul){
+  visualNotify(src,'weaponFire',{duration:.16}); // PR15.5-A: não altera cadência/projétil
   // SOBRECARGA RESSONANTE: Ecos turbinados temporariamente
   if(src&&src.spBoost&&src.spBoost>1)mul*=src.spBoost;
   if(def.melee){fireMelee(src,def,team,mul);return;}
@@ -13757,6 +13871,7 @@ function damageEnemy(e,d,srcx,srcy,crit,isDot){
     if(e.sleepDmgRed)d*=(1-e.sleepDmgRed);
   }
   d*=statusDmgMul(e);                    // corrosão amplifica todo dano
+  visualNotify(e,'hurt',{x:srcx,y:srcy,duration:.11}); // PR15.5-A: reação só visual
   // ---- SINERGIAS DE STATUS ----
   const atk=curAttacker;
   if(atk&&e.st){
@@ -16012,6 +16127,7 @@ function pickTarget(e){
   return best;
 }
 function updateEnemy(e,dt){
+  visualTimelineTick(e,dt);
   if(e.type==='boss'){updateBoss(e,dt);return;}
   if(e.type==='miniboss'){updateMiniBoss(e,dt);return;}
   if(e.type==='shadow'){updateShadow(e,dt);return;}
@@ -16319,6 +16435,7 @@ function echoSurvivalAdjust(e,tx,ty){
   return {x:isFinite(bx)?bx:tx,y:isFinite(by)?by:ty};
 }
 function updateEcho(e,dt){
+  visualTimelineTick(e,dt);
   if(!e.alive)return;
   regenEchoShield(e,dt);            // escudo regenera (suspenso durante a ruptura)
   if(e.trustFx)e.trustFx*=Math.pow(.12,dt);
@@ -16455,6 +16572,7 @@ function updateEcho(e,dt){
 /* ---------------- atualização principal ---------------- */
 function updatePlayer(dt){
   const p=player;
+  visualTimelineTick(p,dt);
   let ix=0,iy=0;
   if(keys['KeyW']||keys['ArrowUp'])iy-=1;
   if(keys['KeyS']||keys['ArrowDown'])iy+=1;
@@ -18593,6 +18711,7 @@ function drawUnit(x,y,aim,r,pal,opts){
   ctx.save();
   ctx.globalAlpha=al;
   ctx.translate(x+ox,y+oy);
+  const pose=visualPose(opts.pose,VISUAL_POSE_SCRATCH2);ctx.translate(pose.offsetX,pose.offsetY);ctx.rotate(pose.rotation);ctx.scale(pose.scaleX,pose.scaleY);ctx.globalAlpha*=pose.alpha;
   // sombra projetada
   ctx.save();ctx.globalAlpha=al*.34;ctx.fillStyle='#000';
   ctx.beginPath();ctx.ellipse(0,r*.42,r*.92,r*.5,0,0,TAU);ctx.fill();ctx.restore();
@@ -18687,7 +18806,7 @@ function drawEchoEntity(e){
       visor:hostile?'#ffe0e6':'#eaffff',
       head:hostile?'rgba(110,8,26,.95)':'rgba(70,60,80,.9)',wep:col
     },{alpha:hostile?.9:.78,glitch:true,wi:e.curW|0,walk:.8,
-       recoil:e.recoil||0,phase:e.seed});
+       recoil:Math.max(e.recoil||0,visualWeaponRecoil(e)),phase:e.seed});
     ctx.restore();
     ctx.save();
     // anel de estado: fecha na telegrafia, pulsa na hostilidade, abre no retorno
@@ -18740,11 +18859,11 @@ function drawEchoEntity(e){
     drawUnit(e.x+rand(-3,3),e.y,e.aim,e.r,{
       body:'rgba(90,40,120,.85)',dark:'rgba(40,10,60,.9)',edge:'#46e0ff',
       glow:'#46e0ff',visor:'#bff6ff',head:'rgba(80,40,110,.9)',wep:'#46e0ff'
-    },{alpha:.30,glitch:true,wi:e.curW|0,walk:.6,recoil:e.recoil||0,phase:e.seed});
+    },{alpha:.30,glitch:true,wi:e.curW|0,walk:.6,recoil:Math.max(e.recoil||0,visualWeaponRecoil(e)),phase:e.seed});
     drawUnit(e.x+rand(-3,3),e.y,e.aim,e.r,{
       body:'rgba(150,40,140,.9)',dark:'rgba(60,10,55,.92)',edge:'#ff4df0',
       glow:'#ff4df0',visor:'#ffd9fb',head:'rgba(130,35,125,.92)',wep:'#ff4df0'
-    },{alpha:.58,glitch:true,wi:e.curW|0,walk:.6,recoil:e.recoil||0,phase:e.seed});
+    },{alpha:.58,glitch:true,wi:e.curW|0,walk:.6,recoil:Math.max(e.recoil||0,visualWeaponRecoil(e)),phase:e.seed});
     ctx.globalCompositeOperation='source-over';
     // scanlines cortadas
     ctx.strokeStyle='rgba(255,120,250,.35)';ctx.lineWidth=1;
@@ -18757,7 +18876,7 @@ function drawEchoEntity(e){
     drawUnit(e.x,e.y,e.aim,e.r,{
       body:'rgba(40,120,160,.75)',dark:'rgba(12,45,70,.8)',edge:'#8ff6ff',
       glow:'#46e0ff',visor:'#eaffff',head:'rgba(50,140,180,.8)',wep:'#8ff6ff'
-    },{alpha:.72,glitch:false,wi:e.curW|0,walk:.55,recoil:e.recoil||0,phase:e.seed});
+    },{alpha:.72,glitch:false,wi:e.curW|0,walk:.55,recoil:Math.max(e.recoil||0,visualWeaponRecoil(e)),phase:e.seed});
     ctx.strokeStyle='rgba(140,240,255,.5)';ctx.lineWidth=1;
     ctx.beginPath();ctx.arc(e.x,e.y,e.r+9+Math.sin(runTime*3)*2,runTime,runTime+4.4);ctx.stroke();
   }
@@ -18904,7 +19023,7 @@ function drawShadow(e){
   drawUnit(e.x,e.y,e.aim,e.r,{
     body:'rgba(24,10,40,.95)',dark:'rgba(8,2,16,.98)',edge:e.color,
     glow:e.color,visor:'#ffffff',head:'rgba(30,12,48,.95)',wep:e.color
-  },{alpha:.92*a,glitch:true,wi:e.wi|0,walk:.7,phase:e.srcSlot});
+  },{alpha:.92*a,glitch:true,wi:e.wi|0,walk:.7,recoil:visualWeaponRecoil(e),phase:e.srcSlot});
   ctx.restore();
   ctx.font='11px Consolas,monospace';ctx.textAlign='center';
   ctx.fillStyle=e.color;
@@ -18943,9 +19062,10 @@ function drawEnemy(e){
   ctx.save();ctx.globalAlpha=a;
   const flash=e.flashT>0;
   const R=e.r, s=R/14;
-  if(e.phase0==null)e.phase0=rand(0,TAU);
-  const step=Math.sin(runTime*9+e.phase0);
-  ctx.translate(e.x,e.y);ctx.rotate(e.aim);
+  const phase0=e.phase0==null?(((e.x||0)*.013+(e.y||0)*.017+(e.type||'').length)%TAU):e.phase0;
+  const step=Math.sin(runTime*9+phase0);
+  const vp=visualHurtPose(e,VISUAL_POSE_SCRATCH);
+  ctx.translate(e.x,e.y);ctx.rotate(e.aim);ctx.translate(vp.offsetX,vp.offsetY);ctx.rotate(vp.rotation);ctx.scale(vp.scaleX,vp.scaleY);
   ctx.lineJoin='round';
   const main=flash?'#ffffff':e.color;
 
@@ -19244,7 +19364,7 @@ function drawEnemy(e){
     for(let i=0;i<6;i++){const an=i/6*TAU+.5;
       ctx[i?'lineTo':'moveTo'](Math.cos(an)*R*.58,Math.sin(an)*R*.58);}
     ctx.closePath();ctx.fill();
-    const pl=.5+.5*Math.sin(runTime*4+e.phase0);
+    const pl=.5+.5*Math.sin(runTime*4+phase0);
     ctx.shadowColor='#ff5c7a';ctx.shadowBlur=10+pl*12;
     ctx.fillStyle=flash?'#fff':'#ff5c7a';
     ctx.beginPath();ctx.arc(0,0,R*.24*(.75+pl*.35),0,TAU);ctx.fill();
@@ -19329,7 +19449,7 @@ function drawPlayer(){
     glow:PL.glow, visor:PL.visor,
     head:hurt?'#ff9fb0':PL.head,
     wep:(WEAPONS[p.wi]&&WEAPONS[p.wi].color)||PL.glow
-  },{wi:p.wi,walk:clamp(spd/p.speed,0,1),recoil:p.recoil||0,phase:0});
+  },{wi:p.wi,walk:clamp(spd/p.speed,0,1),recoil:Math.max(p.recoil||0,visualWeaponRecoil(p)),pose:visualHurtPose(p),phase:0});
   // WRAITH: aura de surto pós-dash
   if(p.rushT>0){
     ctx.save();ctx.globalAlpha=.28*(p.rushT/2);
