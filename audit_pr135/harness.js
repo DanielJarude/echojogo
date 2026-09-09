@@ -11,6 +11,8 @@ let src=m[1];
 src+='\n;globalThis.__t={'+
   'VISUAL_STATES,VISUAL_EASING,ENEMY_VISUAL_PROFILES,VISUAL_NEUTRAL_POSE,EDEFS,'+
   'visualFinite,visualClamp01,visualPeek,visualState,visualReset,visualTimelineStart,visualTimelineCancel,visualTimelineProgress,visualTimelineTick,visualAttackObserve,visualAttackTrigger,visualAttackIdle,visualAttackCancel,visualNotify,visualNotifyHurt,visualNotifyWeaponFire,visualPose,visualPoseCompose,enemyVisualProfile,weaponVisualProfile,weaponVisualProfileBuild,WEAPON_VISUAL_PROFILE_CACHE,visualHurtPose,visualEnemyAttackPose,visualWeaponRecoil,'+
+  /* PR15.5-D: animação física do arsenal melee */
+  'MELEE_VISUAL_FAMILIES,MELEE_VISUAL_PROFILES,MELEE_VISUAL_PROFILE_DEFAULT,meleeVisualProfile,meleeVisualStart,meleeVisualCancel,meleeVisualPhaseDuration,meleeVisualPhaseProgress,visualMeleeWeaponPose,visualMeleeBodyPose,visualPlayerDrawPose,meleeVisualTrailAngle,meleeDrawTrail,'+
   'ECHO_LINES,PERSONALITIES,MORAL_AFFINITY,MORAL_BALANCE,ITEMS,UPGRADES,WEAPONS,MINIBOSS,'+
   'SM_STATS,SM_ORDER,UNLOCKS,BASE_WEAPONS,BASE_ITEMS,BASE_UPGRADES,CHARS,ECHO_SPEAK_INTERVAL,'+
   'SPEECH_PRI,ECHO_SPEECH_QUEUE_MAX,echoSpeechDuration,speechClear,speechTick,'+
@@ -22,7 +24,7 @@ src+='\n;globalThis.__t={'+
   'getMoralProfile,calcMoralAffinityMatch,getItemMoralAffinity,moralTuneFactor,moralAffinityLevel,'+
   'applyMoralTuning,countAttunedItems,smGet,smRefresh,smBreakdown,calcDamageMul,'+
   'smMul,smAdd,smFlat,smAddPct,smRemoveId,smRemoveSource,'+
-  'fireMelee,fireBeam,fireWeaponFrom,updateProjectiles,weaponRange,srcRangeMul,migrateLegacyRangeMods,damageEnemy,spawnEnemy,updateEnemy,updatePlayer,drawWeaponSprite,'+
+  'fireMelee,fireBeam,fireWeaponFrom,updateProjectiles,weaponRange,srcRangeMul,migrateLegacyRangeMods,damageEnemy,spawnEnemy,updateEnemy,updatePlayer,drawWeaponSprite,drawPlayer,drawSwings,updateSwings,setWeaponSlot,'+
   'getProjectiles:()=>projectiles,setProjectiles:a=>{projectiles=a;},'+
   'getSwings:()=>swings,setSwings:a=>{swings=a;},'+
   'getEnemies:()=>enemies,setEnemies:a=>{enemies=a;},'+
