@@ -161,6 +161,18 @@
   #spwrap.active #spfill{background:#7dffc4;box-shadow:0 0 14px #7dffc4;}
   @keyframes pulse{50%{opacity:.55;}}
 
+  /* PR15.5-B-FIX.2: diagnóstico discreto, fora da coluna superior direita.
+     Acima da Sincronia e do chip Sandbox inclusive no mínimo 960×540. */
+  #metrics-overlay{position:absolute;left:16px;bottom:178px;width:174px;
+    padding:8px 10px;border:1px solid rgba(70,224,255,.28);border-radius:3px;
+    background:rgba(4,12,20,.88);color:#cfeffc;pointer-events:none;
+    font:11px/17px Consolas,"Cascadia Code",monospace;font-variant-numeric:tabular-nums;}
+  #metrics-overlay[hidden]{display:none;}
+  #metrics-overlay h3{font:inherit;letter-spacing:.16em;color:#8fd6ff;margin-bottom:4px;}
+  #metrics-overlay dl{display:grid;grid-template-columns:1fr auto;column-gap:8px;}
+  #metrics-overlay dt{color:#9db8c8;}
+  #metrics-overlay dd{text-align:right;white-space:nowrap;}
+
   /* ---------- banner / toasts ---------- */
   #banner{position:fixed;top:34%;left:0;right:0;text-align:center;z-index:11;
     pointer-events:none;font-family:Consolas,monospace;font-size:34px;
@@ -933,6 +945,18 @@
     <div id="spbar"><div id="spfill"></div></div>
   </div>
   <div id="weapwrap"></div>
+  <aside id="metrics-overlay" hidden aria-label="Métricas de desempenho">
+    <h3>MÉTRICAS</h3>
+    <dl>
+      <dt>FPS</dt><dd id="metrics-fps">---</dd>
+      <dt>FRAME</dt><dd id="metrics-frame">---</dd>
+      <dt>INIMIGOS</dt><dd id="metrics-enemies">---</dd>
+      <dt>PROJÉTEIS</dt><dd id="metrics-projectiles">---</dd>
+      <dt>FX</dt><dd id="metrics-fx">---</dd>
+      <dt>ECHOS</dt><dd id="metrics-echoes">---</dd>
+      <dt>ENTIDADES</dt><dd id="metrics-total">---</dd>
+    </dl>
+  </aside>
 </div>
 
 <div id="pause-menu"><div class="pbox">
@@ -1379,13 +1403,14 @@ function initAudio(){AUDIO.init();AUDIO.enabled=audioOn;AUDIO.musicOn=musicOn;}
    ===================================================================== */
 const CFG_KEY='echoCfg.v1';
 let cfg={music:1,shake:1,aberr:1,parts:1,quality:1,dmgnum:1,autofire:0,
-  rumble:1,aimAssist:1,
+  rumble:1,aimAssist:1,metrics:0, // diagnóstico global: DESLIGADO por padrão
   /* PR 11.5 — acessibilidade & controle de informação */
   flash:1,            // 1 NORMAL · .55 REDUCED (picos de flash/aberração)
   tabMode:'toggle',   // PR 11.5 §26: TOGGLE é o PADRÃO (TAB abre/fecha); 'hold' continua disponível nas Configurações
   hudPreset:'full'    // 'full' (padrão) — reserva futura p/ HUD mínimo
 };
 function loadCfg(){
+  cfg.metrics=0; // settings antigos/ausentes nunca herdam ON
   try{
     const r=localStorage.getItem(CFG_KEY);
     if(r){const c=JSON.parse(r);
@@ -1395,6 +1420,8 @@ function loadCfg(){
   /* migração: dmgnum legado era binário (1=ligado). O novo 1 é REDUCED;
      quem tinha "ligado" passa a ver FULL — comportamento idêntico ao antigo. */
   if(cfg.dmgnum===true)cfg.dmgnum=2;
+  cfg.metrics=(cfg.metrics===1||cfg.metrics===true)?1:0;
+  metricsHide(); // também no retorno ao título, que recarrega cfg
   applyCfg();
 }
 function saveCfg(){try{localStorage.setItem(CFG_KEY,JSON.stringify(cfg));}catch(e){}}
@@ -18380,6 +18407,7 @@ function hideOverlay(){
    resetRunWorld: parte comum (limpeza total do mundo) usada por
    startRun (run nova) e resumeRun (continuar um checkpoint). */
 function resetRunWorld(){
+  metricsHide(); // mesma instância; nova janela em Nova Run/Continue/Sandbox
   clearBossVictoryTimers();
   if(sheetOpen)sheetHide();              // PR 11.5: ficha nunca atravessa runs
   sheetBrk=Object.create(null);_sheetSig='';
@@ -19839,6 +19867,65 @@ function render(){
   }
 }
 
+/* ---------------- MÉTRICAS — PR15.5-B-FIX.2 ----------------
+   Uma fonte lógica no loop existente; sem timer, RAF ou lista de entidades.
+   DOM fixo, strings somente na janela amostrada (ou ao exibir os neutros).
+   FX é o conjunto global barato, NÃO um inventário de todo efeito do renderer. */
+const METRICS_WINDOW_MS=250;
+const metricsPanel=$('metrics-overlay');
+const metricsEls={fps:$('metrics-fps'),frame:$('metrics-frame'),
+  enemies:$('metrics-enemies'),projectiles:$('metrics-projectiles'),
+  fx:$('metrics-fx'),echoes:$('metrics-echoes'),total:$('metrics-total')};
+let metricsStart=-1,metricsLast=-1,metricsFrames=0,metricsVisible=false;
+function metricsText(el,text){if(el.textContent!==text)el.textContent=text;}
+function metricsNeutral(){
+  metricsText(metricsEls.fps,'---');metricsText(metricsEls.frame,'---');
+  metricsText(metricsEls.enemies,'---');metricsText(metricsEls.projectiles,'---');
+  metricsText(metricsEls.fx,'---');metricsText(metricsEls.echoes,'---');
+  metricsText(metricsEls.total,'---');
+}
+function metricsHide(){
+  if(metricsVisible){metricsPanel.hidden=true;metricsVisible=false;}
+  metricsStart=-1;metricsLast=-1;metricsFrames=0;
+}
+function metricsSetEnabled(on){
+  cfg.metrics=on?1:0;
+  metricsHide(); // OFF esconde imediatamente; ON começa uma janela nova
+  saveCfg();
+}
+function metricsLength(list){
+  return list&&Number.isFinite(list.length)&&list.length>=0?list.length:0;
+}
+function metricsTick(now){
+  if(!cfg.metrics)return; // OFF: nenhum contador, string, objeto ou acesso ao DOM
+  // Banners e ferramentas abertas têm prioridade; pausa/menu não entram no FPS.
+  if(state!=='play'||!player||document.hidden||devPanelOpen||bannerT>0){
+    if(metricsVisible)metricsHide();
+    return;
+  }
+  if(!Number.isFinite(now)||now<0){metricsHide();return;}
+  if(!metricsVisible){metricsPanel.hidden=false;metricsVisible=true;}
+  if(metricsStart<0||now<=metricsLast){
+    metricsStart=now;metricsLast=now;metricsFrames=0;metricsNeutral();return;
+  }
+  metricsLast=now;
+  metricsFrames++;
+  const elapsed=now-metricsStart;
+  if(elapsed<METRICS_WINDOW_MS)return;
+  const fps=metricsFrames*1000/elapsed,frameMs=elapsed/metricsFrames;
+  const enemyN=metricsLength(enemies),projectileN=metricsLength(projectiles);
+  const fxN=metricsLength(parts)+metricsLength(arcs)+metricsLength(swings)+metricsLength(ftexts);
+  // Dois slots reais (inclusive DEV/Sandbox); mortos ficam no array, mas não contam.
+  const echoN=(echoes?.[0]?.alive?1:0)+(echoes?.[1]?.alive?1:0)+(pr15Presence?1:0);
+  metricsText(metricsEls.fps,Number.isFinite(fps)?String(Math.round(fps)):'---');
+  metricsText(metricsEls.frame,Number.isFinite(frameMs)?frameMs.toFixed(1)+' ms':'---');
+  metricsText(metricsEls.enemies,String(enemyN));
+  metricsText(metricsEls.projectiles,String(projectileN));
+  metricsText(metricsEls.fx,String(fxN));metricsText(metricsEls.echoes,String(echoN));
+  metricsText(metricsEls.total,String(enemyN+projectileN+fxN+echoN));
+  metricsStart=now;metricsFrames=0;
+}
+
 /* ---------------- loop ---------------- */
 const TARGET_FPS=60;
 const FRAME_MS=1000/TARGET_FPS;
@@ -20009,6 +20096,7 @@ function loop(now){
   catch(err){if(errGuard++<8)console.error('[ECHO] erro no render (HUD segue):',err);}
   hudAcc+=dt;
   updateHUD();
+  metricsTick(now);             // timestamp real; só frames aceitos pelo gate
   /* PR 11.5 §108: o registro só re-renderiza quando aberta e sob demanda
      (assinatura de estado) — custo fechado é zero, aberto é leve. */
   if(sheetOpen){
@@ -20666,6 +20754,10 @@ function renderConfig(){
     'Alterna entre janela e tela cheia. Atalhos: F11 ou Alt+Enter.',
     isFullscreen()?'ATIVADA':'MODO JANELA',isFullscreen()?'':'off',
     ()=>toggleFullscreen()));
+  cxBody.appendChild(cfgRow('MOSTRAR MÉTRICAS',
+    'Exibe informações de desempenho durante a partida.',
+    cfg.metrics?'LIGADO':'DESLIGADO',cfg.metrics?'':'off',
+    ()=>metricsSetEnabled(!cfg.metrics)));
   cxBody.appendChild(cfgRow('QUALIDADE GRÁFICA',
     'Resolução interna de renderização. Reduza se o jogo estiver travando.',
     QN[cfg.quality],'',
