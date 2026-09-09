@@ -1,0 +1,7605 @@
+{
+  "base": "b4654f191a16214712bd35501c1b242b1b1cbca2",
+  "sha256IndexAuditado": "abedf93c2fcad4fceaa9979263075dc9d1961f92b836a0395c6f4ec4aaf69c14",
+  "nota": "Somente laboratório sintético. Não representa FPS Electron. Tempos não demonstram ganho estável; operações e hashes demonstram equivalência estrutural/visual. Nenhum blur foi removido do release.",
+  "operacoesAntes": {
+    "aviso": "Cenários sintéticos. Operações Canvas reais no mock; tempos mock não medem renderização/GPU/FPS.",
+    "cenarios": [
+      {
+        "id": "A",
+        "nome": "vazio",
+        "inimigos": 0,
+        "projeteis": 0,
+        "fx": 0,
+        "leiturasInimigosPorProjeteis": 0,
+        "leiturasSeparacao": 0,
+        "draw": {
+          "canvas": {
+            "save": 9,
+            "restore": 9,
+            "paths": 14,
+            "arcs": 7,
+            "drawImage": 1,
+            "fill": 18,
+            "stroke": 8,
+            "text": 0,
+            "transforms": 11,
+            "stateWrites": 60,
+            "blurWrites": 11,
+            "shadowDraws": 7
+          },
+          "trig": {
+            "sin": 2,
+            "cos": 0,
+            "atan2": 0,
+            "hypot": 1,
+            "sqrt": 0,
+            "random": 0
+          },
+          "hashCanvas": "92128f38fc4c28e08e4e1f3e62de2c3433383fddfc52e3bd59c31494c0c7ba55"
+        }
+      },
+      {
+        "id": "B",
+        "nome": "leve",
+        "inimigos": 10,
+        "projeteis": 12,
+        "fx": 46,
+        "leiturasInimigosPorProjeteis": 120,
+        "leiturasSeparacao": 100,
+        "draw": {
+          "canvas": {
+            "save": 45,
+            "restore": 45,
+            "paths": 139,
+            "arcs": 66,
+            "drawImage": 20,
+            "fill": 102,
+            "stroke": 60,
+            "text": 4,
+            "transforms": 55,
+            "stateWrites": 466,
+            "blurWrites": 43,
+            "shadowDraws": 30
+          },
+          "trig": {
+            "sin": 56,
+            "cos": 38,
+            "atan2": 0,
+            "hypot": 13,
+            "sqrt": 0,
+            "random": 6
+          },
+          "hashCanvas": "a65c77b9bc355164dc24a50965cb6dd22bd5bb32f3e5d1a8f6d268d5ddfc1d02"
+        }
+      },
+      {
+        "id": "C",
+        "nome": "médio",
+        "inimigos": 25,
+        "projeteis": 60,
+        "fx": 198,
+        "leiturasInimigosPorProjeteis": 1500,
+        "leiturasSeparacao": 625,
+        "draw": {
+          "canvas": {
+            "save": 110,
+            "restore": 110,
+            "paths": 421,
+            "arcs": 214,
+            "drawImage": 91,
+            "fill": 275,
+            "stroke": 185,
+            "text": 12,
+            "transforms": 142,
+            "stateWrites": 1519,
+            "blurWrites": 90,
+            "shadowDraws": 67
+          },
+          "trig": {
+            "sin": 183,
+            "cos": 141,
+            "atan2": 0,
+            "hypot": 61,
+            "sqrt": 0,
+            "random": 24
+          },
+          "hashCanvas": "80e9ca8f29870a5aec642c4f92ec44fead9c6385b364dbd115645e6f738602b6"
+        }
+      },
+      {
+        "id": "D",
+        "nome": "pesado",
+        "inimigos": 46,
+        "projeteis": 150,
+        "fx": 436,
+        "leiturasInimigosPorProjeteis": 6900,
+        "leiturasSeparacao": 2116,
+        "draw": {
+          "canvas": {
+            "save": 210,
+            "restore": 210,
+            "paths": 872,
+            "arcs": 453,
+            "drawImage": 218,
+            "fill": 541,
+            "stroke": 396,
+            "text": 24,
+            "transforms": 279,
+            "stateWrites": 3280,
+            "blurWrites": 161,
+            "shadowDraws": 122
+          },
+          "trig": {
+            "sin": 381,
+            "cos": 303,
+            "atan2": 0,
+            "hypot": 151,
+            "sqrt": 0,
+            "random": 48
+          },
+          "hashCanvas": "d774033e97d43e7244a7407e38237da5f836f345096a89e483b5193c7386668d"
+        }
+      },
+      {
+        "id": "E",
+        "nome": "stress Sandbox",
+        "inimigos": 46,
+        "projeteis": 260,
+        "fx": 758,
+        "leiturasInimigosPorProjeteis": 11960,
+        "leiturasSeparacao": 2116,
+        "draw": {
+          "canvas": {
+            "save": 266,
+            "restore": 266,
+            "paths": 1292,
+            "arcs": 709,
+            "drawImage": 378,
+            "fill": 743,
+            "stroke": 614,
+            "text": 40,
+            "transforms": 379,
+            "stateWrites": 5088,
+            "blurWrites": 169,
+            "shadowDraws": 130
+          },
+          "trig": {
+            "sin": 531,
+            "cos": 453,
+            "atan2": 0,
+            "hypot": 261,
+            "sqrt": 0,
+            "random": 72
+          },
+          "hashCanvas": "ec1364c2a73177926743c53a4a9053356802c98515732c2084832e61117e1b4c"
+        }
+      },
+      {
+        "id": "F",
+        "nome": "Swarm-heavy",
+        "inimigos": 46,
+        "projeteis": 30,
+        "fx": 109,
+        "leiturasInimigosPorProjeteis": 1380,
+        "leiturasSeparacao": 2116,
+        "draw": {
+          "canvas": {
+            "save": 119,
+            "restore": 119,
+            "paths": 377,
+            "arcs": 139,
+            "drawImage": 48,
+            "fill": 315,
+            "stroke": 74,
+            "text": 8,
+            "transforms": 137,
+            "stateWrites": 1074,
+            "blurWrites": 105,
+            "shadowDraws": 147
+          },
+          "trig": {
+            "sin": 145,
+            "cos": 51,
+            "atan2": 0,
+            "hypot": 31,
+            "sqrt": 0,
+            "random": 0
+          },
+          "hashCanvas": "139789a530f80437f9055f2e13d64b9208ded3c3fdfc7946e61549c9ec91e764"
+        }
+      },
+      {
+        "id": "G",
+        "nome": "projectile-heavy",
+        "inimigos": 46,
+        "projeteis": 360,
+        "fx": 116,
+        "leiturasInimigosPorProjeteis": 16560,
+        "leiturasSeparacao": 2116,
+        "draw": {
+          "canvas": {
+            "save": 152,
+            "restore": 152,
+            "paths": 768,
+            "arcs": 194,
+            "drawImage": 378,
+            "fill": 338,
+            "stroke": 495,
+            "text": 12,
+            "transforms": 179,
+            "stateWrites": 4022,
+            "blurWrites": 150,
+            "shadowDraws": 111
+          },
+          "trig": {
+            "sin": 231,
+            "cos": 153,
+            "atan2": 0,
+            "hypot": 361,
+            "sqrt": 0,
+            "random": 18
+          },
+          "hashCanvas": "57d3eecfd8f7348e37a597a68b8dc034611113d8413008f96ec6e1784d5ecb0a"
+        }
+      },
+      {
+        "id": "H",
+        "nome": "FX-heavy",
+        "inimigos": 10,
+        "projeteis": 20,
+        "fx": 976,
+        "leiturasInimigosPorProjeteis": 200,
+        "leiturasSeparacao": 100,
+        "draw": {
+          "canvas": {
+            "save": 960,
+            "restore": 960,
+            "paths": 1043,
+            "arcs": 54,
+            "drawImage": 921,
+            "fill": 83,
+            "stroke": 983,
+            "text": 52,
+            "transforms": 1841,
+            "stateWrites": 6077,
+            "blurWrites": 72,
+            "shadowDraws": 59
+          },
+          "trig": {
+            "sin": 3635,
+            "cos": 3617,
+            "atan2": 0,
+            "hypot": 21,
+            "sqrt": 0,
+            "random": 96
+          },
+          "hashCanvas": "41dd77dcf5ee998a12cde7e33582e54ce52dd45680d1e5cec1dacdc4d78b9e76"
+        }
+      },
+      {
+        "id": "I",
+        "nome": "2 Singular + ranged + Swarm",
+        "inimigos": 46,
+        "projeteis": 150,
+        "fx": 379,
+        "leiturasInimigosPorProjeteis": 6900,
+        "leiturasSeparacao": 2116,
+        "draw": {
+          "canvas": {
+            "save": 198,
+            "restore": 198,
+            "paths": 838,
+            "arcs": 481,
+            "drawImage": 209,
+            "fill": 525,
+            "stroke": 369,
+            "text": 20,
+            "transforms": 264,
+            "stateWrites": 3120,
+            "blurWrites": 145,
+            "shadowDraws": 110
+          },
+          "trig": {
+            "sin": 280,
+            "cos": 174,
+            "atan2": 0,
+            "hypot": 151,
+            "sqrt": 0,
+            "random": 36
+          },
+          "hashCanvas": "78c229eb704fcec8fe7432b01c3742e27fe3a7f312521176fd2c24ed18c12c4c"
+        }
+      }
+    ],
+    "tipos": {
+      "chaser": {
+        "draw": {
+          "canvas": {
+            "save": 2,
+            "restore": 2,
+            "paths": 10,
+            "arcs": 0,
+            "drawImage": 0,
+            "fill": 6,
+            "stroke": 4,
+            "text": 0,
+            "transforms": 2,
+            "stateWrites": 15,
+            "blurWrites": 2,
+            "shadowDraws": 1
+          },
+          "trig": {
+            "sin": 1,
+            "cos": 0,
+            "atan2": 0,
+            "hypot": 0,
+            "sqrt": 0,
+            "random": 0
+          },
+          "hashCanvas": "79d590ddc026853e26ea9dc65218347e5d47314c83152ff79b595838be11bc90"
+        },
+        "update": {
+          "canvas": {
+            "save": 0,
+            "restore": 0,
+            "paths": 0,
+            "arcs": 0,
+            "drawImage": 0,
+            "fill": 0,
+            "stroke": 0,
+            "text": 0,
+            "transforms": 0,
+            "stateWrites": 0,
+            "blurWrites": 0,
+            "shadowDraws": 0
+          },
+          "trig": {
+            "sin": 0,
+            "cos": 0,
+            "atan2": 1,
+            "hypot": 1,
+            "sqrt": 0,
+            "random": 0
+          },
+          "hashCanvas": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        }
+      },
+      "shooter": {
+        "draw": {
+          "canvas": {
+            "save": 4,
+            "restore": 4,
+            "paths": 10,
+            "arcs": 6,
+            "drawImage": 0,
+            "fill": 8,
+            "stroke": 4,
+            "text": 0,
+            "transforms": 5,
+            "stateWrites": 26,
+            "blurWrites": 4,
+            "shadowDraws": 2
+          },
+          "trig": {
+            "sin": 2,
+            "cos": 0,
+            "atan2": 0,
+            "hypot": 0,
+            "sqrt": 0,
+            "random": 0
+          },
+          "hashCanvas": "1b6db05b0f993b819ae773b661296789305d7cc5ab0853ea98dd2a9d281f681e"
+        },
+        "update": {
+          "canvas": {
+            "save": 0,
+            "restore": 0,
+            "paths": 0,
+            "arcs": 0,
+            "drawImage": 0,
+            "fill": 0,
+            "stroke": 0,
+            "text": 0,
+            "transforms": 0,
+            "stateWrites": 0,
+            "blurWrites": 0,
+            "shadowDraws": 0
+          },
+          "trig": {
+            "sin": 0,
+            "cos": 0,
+            "atan2": 1,
+            "hypot": 1,
+            "sqrt": 0,
+            "random": 1
+          },
+          "hashCanvas": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        }
+      },
+      "tank": {
+        "draw": {
+          "canvas": {
+            "save": 4,
+            "restore": 4,
+            "paths": 7,
+            "arcs": 2,
+            "drawImage": 0,
+            "fill": 11,
+            "stroke": 1,
+            "text": 0,
+            "transforms": 6,
+            "stateWrites": 23,
+            "blurWrites": 6,
+            "shadowDraws": 4
+          },
+          "trig": {
+            "sin": 14,
+            "cos": 12,
+            "atan2": 0,
+            "hypot": 0,
+            "sqrt": 0,
+            "random": 0
+          },
+          "hashCanvas": "cbfcb608805d6915215dc0970433d347d684f8bf9d9a18cc7dccaf51ef703548"
+        },
+        "update": {
+          "canvas": {
+            "save": 0,
+            "restore": 0,
+            "paths": 0,
+            "arcs": 0,
+            "drawImage": 0,
+            "fill": 0,
+            "stroke": 0,
+            "text": 0,
+            "transforms": 0,
+            "stateWrites": 0,
+            "blurWrites": 0,
+            "shadowDraws": 0
+          },
+          "trig": {
+            "sin": 0,
+            "cos": 0,
+            "atan2": 1,
+            "hypot": 1,
+            "sqrt": 0,
+            "random": 0
+          },
+          "hashCanvas": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        }
+      },
+      "spawner": {
+        "draw": {
+          "canvas": {
+            "save": 3,
+            "restore": 3,
+            "paths": 9,
+            "arcs": 1,
+            "drawImage": 0,
+            "fill": 4,
+            "stroke": 6,
+            "text": 0,
+            "transforms": 3,
+            "stateWrites": 24,
+            "blurWrites": 6,
+            "shadowDraws": 4
+          },
+          "trig": {
+            "sin": 15,
+            "cos": 14,
+            "atan2": 0,
+            "hypot": 0,
+            "sqrt": 0,
+            "random": 0
+          },
+          "hashCanvas": "59863217f1ee0092c16eea94f7561f1101a21e23fc4ff709606abd81fd75d828"
+        },
+        "update": {
+          "canvas": {
+            "save": 0,
+            "restore": 0,
+            "paths": 0,
+            "arcs": 0,
+            "drawImage": 0,
+            "fill": 0,
+            "stroke": 0,
+            "text": 0,
+            "transforms": 0,
+            "stateWrites": 0,
+            "blurWrites": 0,
+            "shadowDraws": 0
+          },
+          "trig": {
+            "sin": 0,
+            "cos": 0,
+            "atan2": 1,
+            "hypot": 1,
+            "sqrt": 0,
+            "random": 0
+          },
+          "hashCanvas": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        }
+      },
+      "anomaly": {
+        "draw": {
+          "canvas": {
+            "save": 3,
+            "restore": 3,
+            "paths": 8,
+            "arcs": 1,
+            "drawImage": 0,
+            "fill": 5,
+            "stroke": 3,
+            "text": 0,
+            "transforms": 2,
+            "stateWrites": 18,
+            "blurWrites": 2,
+            "shadowDraws": 1
+          },
+          "trig": {
+            "sin": 7,
+            "cos": 6,
+            "atan2": 0,
+            "hypot": 0,
+            "sqrt": 0,
+            "random": 4
+          },
+          "hashCanvas": "cf762b969c529ea2ee1801cccc69fa7b75bcfde337d7fe83220f9295157061ab"
+        },
+        "update": {
+          "canvas": {
+            "save": 0,
+            "restore": 0,
+            "paths": 0,
+            "arcs": 0,
+            "drawImage": 0,
+            "fill": 0,
+            "stroke": 0,
+            "text": 0,
+            "transforms": 0,
+            "stateWrites": 0,
+            "blurWrites": 0,
+            "shadowDraws": 0
+          },
+          "trig": {
+            "sin": 0,
+            "cos": 0,
+            "atan2": 1,
+            "hypot": 1,
+            "sqrt": 0,
+            "random": 1
+          },
+          "hashCanvas": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        }
+      },
+      "swarm": {
+        "draw": {
+          "canvas": {
+            "save": 2,
+            "restore": 2,
+            "paths": 5,
+            "arcs": 1,
+            "drawImage": 0,
+            "fill": 5,
+            "stroke": 0,
+            "text": 0,
+            "transforms": 2,
+            "stateWrites": 10,
+            "blurWrites": 2,
+            "shadowDraws": 3
+          },
+          "trig": {
+            "sin": 2,
+            "cos": 0,
+            "atan2": 0,
+            "hypot": 0,
+            "sqrt": 0,
+            "random": 0
+          },
+          "hashCanvas": "000a8c4271873922e2a0308318e455a1868669362deda032178d4de2053abe6a"
+        },
+        "update": {
+          "canvas": {
+            "save": 0,
+            "restore": 0,
+            "paths": 0,
+            "arcs": 0,
+            "drawImage": 0,
+            "fill": 0,
+            "stroke": 0,
+            "text": 0,
+            "transforms": 0,
+            "stateWrites": 0,
+            "blurWrites": 0,
+            "shadowDraws": 0
+          },
+          "trig": {
+            "sin": 1,
+            "cos": 0,
+            "atan2": 1,
+            "hypot": 2,
+            "sqrt": 0,
+            "random": 1
+          },
+          "hashCanvas": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        }
+      },
+      "orbiter": {
+        "draw": {
+          "canvas": {
+            "save": 2,
+            "restore": 2,
+            "paths": 5,
+            "arcs": 4,
+            "drawImage": 0,
+            "fill": 5,
+            "stroke": 1,
+            "text": 0,
+            "transforms": 2,
+            "stateWrites": 13,
+            "blurWrites": 2,
+            "shadowDraws": 1
+          },
+          "trig": {
+            "sin": 3,
+            "cos": 0,
+            "atan2": 0,
+            "hypot": 0,
+            "sqrt": 0,
+            "random": 0
+          },
+          "hashCanvas": "13d2b5a56f9f92823ff683cc6be45824de80bf631b37c35a42ae095b987511b9"
+        },
+        "update": {
+          "canvas": {
+            "save": 0,
+            "restore": 0,
+            "paths": 0,
+            "arcs": 0,
+            "drawImage": 0,
+            "fill": 0,
+            "stroke": 0,
+            "text": 0,
+            "transforms": 0,
+            "stateWrites": 0,
+            "blurWrites": 0,
+            "shadowDraws": 0
+          },
+          "trig": {
+            "sin": 0,
+            "cos": 0,
+            "atan2": 1,
+            "hypot": 2,
+            "sqrt": 0,
+            "random": 2
+          },
+          "hashCanvas": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        }
+      },
+      "bulwark": {
+        "draw": {
+          "canvas": {
+            "save": 3,
+            "restore": 3,
+            "paths": 6,
+            "arcs": 3,
+            "drawImage": 0,
+            "fill": 3,
+            "stroke": 3,
+            "text": 0,
+            "transforms": 2,
+            "stateWrites": 18,
+            "blurWrites": 3,
+            "shadowDraws": 3
+          },
+          "trig": {
+            "sin": 6,
+            "cos": 5,
+            "atan2": 0,
+            "hypot": 0,
+            "sqrt": 0,
+            "random": 0
+          },
+          "hashCanvas": "36ded982d28ce37a42078da912de9e193103e03d14e9666b6155a248b4ae8598"
+        },
+        "update": {
+          "canvas": {
+            "save": 0,
+            "restore": 0,
+            "paths": 0,
+            "arcs": 0,
+            "drawImage": 0,
+            "fill": 0,
+            "stroke": 0,
+            "text": 0,
+            "transforms": 0,
+            "stateWrites": 0,
+            "blurWrites": 0,
+            "shadowDraws": 0
+          },
+          "trig": {
+            "sin": 0,
+            "cos": 0,
+            "atan2": 2,
+            "hypot": 1,
+            "sqrt": 0,
+            "random": 0
+          },
+          "hashCanvas": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        }
+      },
+      "splitter": {
+        "draw": {
+          "canvas": {
+            "save": 2,
+            "restore": 2,
+            "paths": 3,
+            "arcs": 0,
+            "drawImage": 0,
+            "fill": 2,
+            "stroke": 1,
+            "text": 0,
+            "transforms": 2,
+            "stateWrites": 10,
+            "blurWrites": 2,
+            "shadowDraws": 1
+          },
+          "trig": {
+            "sin": 1,
+            "cos": 0,
+            "atan2": 0,
+            "hypot": 0,
+            "sqrt": 0,
+            "random": 0
+          },
+          "hashCanvas": "ced0501f9c1d0e5b5850208c89e7c7f01e949bd8b1d23025b6d19423fbc38b01"
+        },
+        "update": {
+          "canvas": {
+            "save": 0,
+            "restore": 0,
+            "paths": 0,
+            "arcs": 0,
+            "drawImage": 0,
+            "fill": 0,
+            "stroke": 0,
+            "text": 0,
+            "transforms": 0,
+            "stateWrites": 0,
+            "blurWrites": 0,
+            "shadowDraws": 0
+          },
+          "trig": {
+            "sin": 0,
+            "cos": 0,
+            "atan2": 1,
+            "hypot": 1,
+            "sqrt": 0,
+            "random": 0
+          },
+          "hashCanvas": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        }
+      },
+      "phantom": {
+        "draw": {
+          "canvas": {
+            "save": 2,
+            "restore": 2,
+            "paths": 3,
+            "arcs": 1,
+            "drawImage": 0,
+            "fill": 3,
+            "stroke": 1,
+            "text": 0,
+            "transforms": 2,
+            "stateWrites": 13,
+            "blurWrites": 2,
+            "shadowDraws": 2
+          },
+          "trig": {
+            "sin": 1,
+            "cos": 0,
+            "atan2": 0,
+            "hypot": 0,
+            "sqrt": 0,
+            "random": 0
+          },
+          "hashCanvas": "129caf188a8c72c0dae68787fa784a8b31010ceed62ce132ccf179c8dbaf44b2"
+        },
+        "update": {
+          "canvas": {
+            "save": 0,
+            "restore": 0,
+            "paths": 0,
+            "arcs": 0,
+            "drawImage": 0,
+            "fill": 0,
+            "stroke": 0,
+            "text": 0,
+            "transforms": 0,
+            "stateWrites": 0,
+            "blurWrites": 0,
+            "shadowDraws": 0
+          },
+          "trig": {
+            "sin": 0,
+            "cos": 0,
+            "atan2": 1,
+            "hypot": 1,
+            "sqrt": 0,
+            "random": 1
+          },
+          "hashCanvas": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        }
+      },
+      "singular": {
+        "draw": {
+          "canvas": {
+            "save": 2,
+            "restore": 2,
+            "paths": 6,
+            "arcs": 5,
+            "drawImage": 0,
+            "fill": 3,
+            "stroke": 3,
+            "text": 0,
+            "transforms": 2,
+            "stateWrites": 16,
+            "blurWrites": 2,
+            "shadowDraws": 1
+          },
+          "trig": {
+            "sin": 1,
+            "cos": 0,
+            "atan2": 0,
+            "hypot": 0,
+            "sqrt": 0,
+            "random": 0
+          },
+          "hashCanvas": "91fa8958d46922ab0b3c48e86f7cdac96ee6ad2e5c6976850a099d011cdc1d97"
+        },
+        "update": {
+          "canvas": {
+            "save": 0,
+            "restore": 0,
+            "paths": 0,
+            "arcs": 0,
+            "drawImage": 0,
+            "fill": 0,
+            "stroke": 0,
+            "text": 0,
+            "transforms": 0,
+            "stateWrites": 0,
+            "blurWrites": 0,
+            "shadowDraws": 0
+          },
+          "trig": {
+            "sin": 0,
+            "cos": 0,
+            "atan2": 1,
+            "hypot": 1,
+            "sqrt": 0,
+            "random": 0
+          },
+          "hashCanvas": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        }
+      }
+    },
+    "escritasTextoHUD120": 1440
+  },
+  "operacoesDepois": {
+    "aviso": "Cenários sintéticos. Operações Canvas reais no mock; tempos mock não medem renderização/GPU/FPS.",
+    "cenarios": [
+      {
+        "id": "A",
+        "nome": "vazio",
+        "inimigos": 0,
+        "projeteis": 0,
+        "fx": 0,
+        "leiturasInimigosPorProjeteis": 0,
+        "leiturasSeparacao": 0,
+        "draw": {
+          "canvas": {
+            "save": 9,
+            "restore": 9,
+            "paths": 14,
+            "arcs": 7,
+            "drawImage": 1,
+            "fill": 18,
+            "stroke": 8,
+            "text": 0,
+            "transforms": 11,
+            "stateWrites": 60,
+            "blurWrites": 11,
+            "shadowDraws": 7
+          },
+          "trig": {
+            "sin": 2,
+            "cos": 0,
+            "atan2": 0,
+            "hypot": 1,
+            "sqrt": 0,
+            "random": 0
+          },
+          "hashCanvas": "92128f38fc4c28e08e4e1f3e62de2c3433383fddfc52e3bd59c31494c0c7ba55"
+        }
+      },
+      {
+        "id": "B",
+        "nome": "leve",
+        "inimigos": 10,
+        "projeteis": 12,
+        "fx": 46,
+        "leiturasInimigosPorProjeteis": 120,
+        "leiturasSeparacao": 100,
+        "draw": {
+          "canvas": {
+            "save": 45,
+            "restore": 45,
+            "paths": 139,
+            "arcs": 66,
+            "drawImage": 20,
+            "fill": 102,
+            "stroke": 60,
+            "text": 4,
+            "transforms": 55,
+            "stateWrites": 466,
+            "blurWrites": 43,
+            "shadowDraws": 30
+          },
+          "trig": {
+            "sin": 35,
+            "cos": 17,
+            "atan2": 0,
+            "hypot": 13,
+            "sqrt": 0,
+            "random": 6
+          },
+          "hashCanvas": "a65c77b9bc355164dc24a50965cb6dd22bd5bb32f3e5d1a8f6d268d5ddfc1d02"
+        }
+      },
+      {
+        "id": "C",
+        "nome": "médio",
+        "inimigos": 25,
+        "projeteis": 60,
+        "fx": 198,
+        "leiturasInimigosPorProjeteis": 1500,
+        "leiturasSeparacao": 625,
+        "draw": {
+          "canvas": {
+            "save": 110,
+            "restore": 110,
+            "paths": 421,
+            "arcs": 214,
+            "drawImage": 91,
+            "fill": 275,
+            "stroke": 185,
+            "text": 12,
+            "transforms": 142,
+            "stateWrites": 1519,
+            "blurWrites": 90,
+            "shadowDraws": 67
+          },
+          "trig": {
+            "sin": 93,
+            "cos": 51,
+            "atan2": 0,
+            "hypot": 61,
+            "sqrt": 0,
+            "random": 24
+          },
+          "hashCanvas": "80e9ca8f29870a5aec642c4f92ec44fead9c6385b364dbd115645e6f738602b6"
+        }
+      },
+      {
+        "id": "D",
+        "nome": "pesado",
+        "inimigos": 46,
+        "projeteis": 150,
+        "fx": 436,
+        "leiturasInimigosPorProjeteis": 6900,
+        "leiturasSeparacao": 2116,
+        "draw": {
+          "canvas": {
+            "save": 210,
+            "restore": 210,
+            "paths": 872,
+            "arcs": 453,
+            "drawImage": 218,
+            "fill": 541,
+            "stroke": 396,
+            "text": 24,
+            "transforms": 279,
+            "stateWrites": 3280,
+            "blurWrites": 161,
+            "shadowDraws": 122
+          },
+          "trig": {
+            "sin": 180,
+            "cos": 102,
+            "atan2": 0,
+            "hypot": 151,
+            "sqrt": 0,
+            "random": 48
+          },
+          "hashCanvas": "d774033e97d43e7244a7407e38237da5f836f345096a89e483b5193c7386668d"
+        }
+      },
+      {
+        "id": "E",
+        "nome": "stress Sandbox",
+        "inimigos": 46,
+        "projeteis": 260,
+        "fx": 758,
+        "leiturasInimigosPorProjeteis": 11960,
+        "leiturasSeparacao": 2116,
+        "draw": {
+          "canvas": {
+            "save": 266,
+            "restore": 266,
+            "paths": 1292,
+            "arcs": 709,
+            "drawImage": 378,
+            "fill": 743,
+            "stroke": 614,
+            "text": 40,
+            "transforms": 379,
+            "stateWrites": 5088,
+            "blurWrites": 169,
+            "shadowDraws": 130
+          },
+          "trig": {
+            "sin": 180,
+            "cos": 102,
+            "atan2": 0,
+            "hypot": 261,
+            "sqrt": 0,
+            "random": 72
+          },
+          "hashCanvas": "ec1364c2a73177926743c53a4a9053356802c98515732c2084832e61117e1b4c"
+        }
+      },
+      {
+        "id": "F",
+        "nome": "Swarm-heavy",
+        "inimigos": 46,
+        "projeteis": 30,
+        "fx": 109,
+        "leiturasInimigosPorProjeteis": 1380,
+        "leiturasSeparacao": 2116,
+        "draw": {
+          "canvas": {
+            "save": 119,
+            "restore": 119,
+            "paths": 377,
+            "arcs": 139,
+            "drawImage": 48,
+            "fill": 315,
+            "stroke": 74,
+            "text": 8,
+            "transforms": 137,
+            "stateWrites": 1074,
+            "blurWrites": 105,
+            "shadowDraws": 147
+          },
+          "trig": {
+            "sin": 94,
+            "cos": 0,
+            "atan2": 0,
+            "hypot": 31,
+            "sqrt": 0,
+            "random": 0
+          },
+          "hashCanvas": "139789a530f80437f9055f2e13d64b9208ded3c3fdfc7946e61549c9ec91e764"
+        }
+      },
+      {
+        "id": "G",
+        "nome": "projectile-heavy",
+        "inimigos": 46,
+        "projeteis": 360,
+        "fx": 116,
+        "leiturasInimigosPorProjeteis": 16560,
+        "leiturasSeparacao": 2116,
+        "draw": {
+          "canvas": {
+            "save": 152,
+            "restore": 152,
+            "paths": 768,
+            "arcs": 194,
+            "drawImage": 378,
+            "fill": 338,
+            "stroke": 495,
+            "text": 12,
+            "transforms": 179,
+            "stateWrites": 4022,
+            "blurWrites": 150,
+            "shadowDraws": 111
+          },
+          "trig": {
+            "sin": 180,
+            "cos": 102,
+            "atan2": 0,
+            "hypot": 361,
+            "sqrt": 0,
+            "random": 18
+          },
+          "hashCanvas": "57d3eecfd8f7348e37a597a68b8dc034611113d8413008f96ec6e1784d5ecb0a"
+        }
+      },
+      {
+        "id": "H",
+        "nome": "FX-heavy",
+        "inimigos": 10,
+        "projeteis": 20,
+        "fx": 976,
+        "leiturasInimigosPorProjeteis": 200,
+        "leiturasSeparacao": 100,
+        "draw": {
+          "canvas": {
+            "save": 960,
+            "restore": 960,
+            "paths": 1043,
+            "arcs": 54,
+            "drawImage": 921,
+            "fill": 83,
+            "stroke": 983,
+            "text": 52,
+            "transforms": 1841,
+            "stateWrites": 6077,
+            "blurWrites": 72,
+            "shadowDraws": 59
+          },
+          "trig": {
+            "sin": 35,
+            "cos": 17,
+            "atan2": 0,
+            "hypot": 21,
+            "sqrt": 0,
+            "random": 96
+          },
+          "hashCanvas": "41dd77dcf5ee998a12cde7e33582e54ce52dd45680d1e5cec1dacdc4d78b9e76"
+        }
+      },
+      {
+        "id": "I",
+        "nome": "2 Singular + ranged + Swarm",
+        "inimigos": 46,
+        "projeteis": 150,
+        "fx": 379,
+        "leiturasInimigosPorProjeteis": 6900,
+        "leiturasSeparacao": 2116,
+        "draw": {
+          "canvas": {
+            "save": 198,
+            "restore": 198,
+            "paths": 838,
+            "arcs": 481,
+            "drawImage": 209,
+            "fill": 525,
+            "stroke": 369,
+            "text": 20,
+            "transforms": 264,
+            "stateWrites": 3120,
+            "blurWrites": 145,
+            "shadowDraws": 110
+          },
+          "trig": {
+            "sin": 106,
+            "cos": 0,
+            "atan2": 0,
+            "hypot": 151,
+            "sqrt": 0,
+            "random": 36
+          },
+          "hashCanvas": "78c229eb704fcec8fe7432b01c3742e27fe3a7f312521176fd2c24ed18c12c4c"
+        }
+      }
+    ],
+    "tipos": {
+      "chaser": {
+        "draw": {
+          "canvas": {
+            "save": 2,
+            "restore": 2,
+            "paths": 10,
+            "arcs": 0,
+            "drawImage": 0,
+            "fill": 6,
+            "stroke": 4,
+            "text": 0,
+            "transforms": 2,
+            "stateWrites": 15,
+            "blurWrites": 2,
+            "shadowDraws": 1
+          },
+          "trig": {
+            "sin": 1,
+            "cos": 0,
+            "atan2": 0,
+            "hypot": 0,
+            "sqrt": 0,
+            "random": 0
+          },
+          "hashCanvas": "79d590ddc026853e26ea9dc65218347e5d47314c83152ff79b595838be11bc90"
+        },
+        "update": {
+          "canvas": {
+            "save": 0,
+            "restore": 0,
+            "paths": 0,
+            "arcs": 0,
+            "drawImage": 0,
+            "fill": 0,
+            "stroke": 0,
+            "text": 0,
+            "transforms": 0,
+            "stateWrites": 0,
+            "blurWrites": 0,
+            "shadowDraws": 0
+          },
+          "trig": {
+            "sin": 0,
+            "cos": 0,
+            "atan2": 1,
+            "hypot": 1,
+            "sqrt": 0,
+            "random": 0
+          },
+          "hashCanvas": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        }
+      },
+      "shooter": {
+        "draw": {
+          "canvas": {
+            "save": 4,
+            "restore": 4,
+            "paths": 10,
+            "arcs": 6,
+            "drawImage": 0,
+            "fill": 8,
+            "stroke": 4,
+            "text": 0,
+            "transforms": 5,
+            "stateWrites": 26,
+            "blurWrites": 4,
+            "shadowDraws": 2
+          },
+          "trig": {
+            "sin": 2,
+            "cos": 0,
+            "atan2": 0,
+            "hypot": 0,
+            "sqrt": 0,
+            "random": 0
+          },
+          "hashCanvas": "1b6db05b0f993b819ae773b661296789305d7cc5ab0853ea98dd2a9d281f681e"
+        },
+        "update": {
+          "canvas": {
+            "save": 0,
+            "restore": 0,
+            "paths": 0,
+            "arcs": 0,
+            "drawImage": 0,
+            "fill": 0,
+            "stroke": 0,
+            "text": 0,
+            "transforms": 0,
+            "stateWrites": 0,
+            "blurWrites": 0,
+            "shadowDraws": 0
+          },
+          "trig": {
+            "sin": 0,
+            "cos": 0,
+            "atan2": 1,
+            "hypot": 1,
+            "sqrt": 0,
+            "random": 1
+          },
+          "hashCanvas": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        }
+      },
+      "tank": {
+        "draw": {
+          "canvas": {
+            "save": 4,
+            "restore": 4,
+            "paths": 7,
+            "arcs": 2,
+            "drawImage": 0,
+            "fill": 11,
+            "stroke": 1,
+            "text": 0,
+            "transforms": 6,
+            "stateWrites": 23,
+            "blurWrites": 6,
+            "shadowDraws": 4
+          },
+          "trig": {
+            "sin": 14,
+            "cos": 12,
+            "atan2": 0,
+            "hypot": 0,
+            "sqrt": 0,
+            "random": 0
+          },
+          "hashCanvas": "cbfcb608805d6915215dc0970433d347d684f8bf9d9a18cc7dccaf51ef703548"
+        },
+        "update": {
+          "canvas": {
+            "save": 0,
+            "restore": 0,
+            "paths": 0,
+            "arcs": 0,
+            "drawImage": 0,
+            "fill": 0,
+            "stroke": 0,
+            "text": 0,
+            "transforms": 0,
+            "stateWrites": 0,
+            "blurWrites": 0,
+            "shadowDraws": 0
+          },
+          "trig": {
+            "sin": 0,
+            "cos": 0,
+            "atan2": 1,
+            "hypot": 1,
+            "sqrt": 0,
+            "random": 0
+          },
+          "hashCanvas": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        }
+      },
+      "spawner": {
+        "draw": {
+          "canvas": {
+            "save": 3,
+            "restore": 3,
+            "paths": 9,
+            "arcs": 1,
+            "drawImage": 0,
+            "fill": 4,
+            "stroke": 6,
+            "text": 0,
+            "transforms": 3,
+            "stateWrites": 24,
+            "blurWrites": 6,
+            "shadowDraws": 4
+          },
+          "trig": {
+            "sin": 15,
+            "cos": 14,
+            "atan2": 0,
+            "hypot": 0,
+            "sqrt": 0,
+            "random": 0
+          },
+          "hashCanvas": "59863217f1ee0092c16eea94f7561f1101a21e23fc4ff709606abd81fd75d828"
+        },
+        "update": {
+          "canvas": {
+            "save": 0,
+            "restore": 0,
+            "paths": 0,
+            "arcs": 0,
+            "drawImage": 0,
+            "fill": 0,
+            "stroke": 0,
+            "text": 0,
+            "transforms": 0,
+            "stateWrites": 0,
+            "blurWrites": 0,
+            "shadowDraws": 0
+          },
+          "trig": {
+            "sin": 0,
+            "cos": 0,
+            "atan2": 1,
+            "hypot": 1,
+            "sqrt": 0,
+            "random": 0
+          },
+          "hashCanvas": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        }
+      },
+      "anomaly": {
+        "draw": {
+          "canvas": {
+            "save": 3,
+            "restore": 3,
+            "paths": 8,
+            "arcs": 1,
+            "drawImage": 0,
+            "fill": 5,
+            "stroke": 3,
+            "text": 0,
+            "transforms": 2,
+            "stateWrites": 18,
+            "blurWrites": 2,
+            "shadowDraws": 1
+          },
+          "trig": {
+            "sin": 7,
+            "cos": 6,
+            "atan2": 0,
+            "hypot": 0,
+            "sqrt": 0,
+            "random": 4
+          },
+          "hashCanvas": "cf762b969c529ea2ee1801cccc69fa7b75bcfde337d7fe83220f9295157061ab"
+        },
+        "update": {
+          "canvas": {
+            "save": 0,
+            "restore": 0,
+            "paths": 0,
+            "arcs": 0,
+            "drawImage": 0,
+            "fill": 0,
+            "stroke": 0,
+            "text": 0,
+            "transforms": 0,
+            "stateWrites": 0,
+            "blurWrites": 0,
+            "shadowDraws": 0
+          },
+          "trig": {
+            "sin": 0,
+            "cos": 0,
+            "atan2": 1,
+            "hypot": 1,
+            "sqrt": 0,
+            "random": 1
+          },
+          "hashCanvas": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        }
+      },
+      "swarm": {
+        "draw": {
+          "canvas": {
+            "save": 2,
+            "restore": 2,
+            "paths": 5,
+            "arcs": 1,
+            "drawImage": 0,
+            "fill": 5,
+            "stroke": 0,
+            "text": 0,
+            "transforms": 2,
+            "stateWrites": 10,
+            "blurWrites": 2,
+            "shadowDraws": 3
+          },
+          "trig": {
+            "sin": 2,
+            "cos": 0,
+            "atan2": 0,
+            "hypot": 0,
+            "sqrt": 0,
+            "random": 0
+          },
+          "hashCanvas": "000a8c4271873922e2a0308318e455a1868669362deda032178d4de2053abe6a"
+        },
+        "update": {
+          "canvas": {
+            "save": 0,
+            "restore": 0,
+            "paths": 0,
+            "arcs": 0,
+            "drawImage": 0,
+            "fill": 0,
+            "stroke": 0,
+            "text": 0,
+            "transforms": 0,
+            "stateWrites": 0,
+            "blurWrites": 0,
+            "shadowDraws": 0
+          },
+          "trig": {
+            "sin": 1,
+            "cos": 0,
+            "atan2": 1,
+            "hypot": 2,
+            "sqrt": 0,
+            "random": 1
+          },
+          "hashCanvas": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        }
+      },
+      "orbiter": {
+        "draw": {
+          "canvas": {
+            "save": 2,
+            "restore": 2,
+            "paths": 5,
+            "arcs": 4,
+            "drawImage": 0,
+            "fill": 5,
+            "stroke": 1,
+            "text": 0,
+            "transforms": 2,
+            "stateWrites": 13,
+            "blurWrites": 2,
+            "shadowDraws": 1
+          },
+          "trig": {
+            "sin": 3,
+            "cos": 0,
+            "atan2": 0,
+            "hypot": 0,
+            "sqrt": 0,
+            "random": 0
+          },
+          "hashCanvas": "13d2b5a56f9f92823ff683cc6be45824de80bf631b37c35a42ae095b987511b9"
+        },
+        "update": {
+          "canvas": {
+            "save": 0,
+            "restore": 0,
+            "paths": 0,
+            "arcs": 0,
+            "drawImage": 0,
+            "fill": 0,
+            "stroke": 0,
+            "text": 0,
+            "transforms": 0,
+            "stateWrites": 0,
+            "blurWrites": 0,
+            "shadowDraws": 0
+          },
+          "trig": {
+            "sin": 0,
+            "cos": 0,
+            "atan2": 1,
+            "hypot": 2,
+            "sqrt": 0,
+            "random": 2
+          },
+          "hashCanvas": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        }
+      },
+      "bulwark": {
+        "draw": {
+          "canvas": {
+            "save": 3,
+            "restore": 3,
+            "paths": 6,
+            "arcs": 3,
+            "drawImage": 0,
+            "fill": 3,
+            "stroke": 3,
+            "text": 0,
+            "transforms": 2,
+            "stateWrites": 18,
+            "blurWrites": 3,
+            "shadowDraws": 3
+          },
+          "trig": {
+            "sin": 6,
+            "cos": 5,
+            "atan2": 0,
+            "hypot": 0,
+            "sqrt": 0,
+            "random": 0
+          },
+          "hashCanvas": "36ded982d28ce37a42078da912de9e193103e03d14e9666b6155a248b4ae8598"
+        },
+        "update": {
+          "canvas": {
+            "save": 0,
+            "restore": 0,
+            "paths": 0,
+            "arcs": 0,
+            "drawImage": 0,
+            "fill": 0,
+            "stroke": 0,
+            "text": 0,
+            "transforms": 0,
+            "stateWrites": 0,
+            "blurWrites": 0,
+            "shadowDraws": 0
+          },
+          "trig": {
+            "sin": 0,
+            "cos": 0,
+            "atan2": 2,
+            "hypot": 1,
+            "sqrt": 0,
+            "random": 0
+          },
+          "hashCanvas": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        }
+      },
+      "splitter": {
+        "draw": {
+          "canvas": {
+            "save": 2,
+            "restore": 2,
+            "paths": 3,
+            "arcs": 0,
+            "drawImage": 0,
+            "fill": 2,
+            "stroke": 1,
+            "text": 0,
+            "transforms": 2,
+            "stateWrites": 10,
+            "blurWrites": 2,
+            "shadowDraws": 1
+          },
+          "trig": {
+            "sin": 1,
+            "cos": 0,
+            "atan2": 0,
+            "hypot": 0,
+            "sqrt": 0,
+            "random": 0
+          },
+          "hashCanvas": "ced0501f9c1d0e5b5850208c89e7c7f01e949bd8b1d23025b6d19423fbc38b01"
+        },
+        "update": {
+          "canvas": {
+            "save": 0,
+            "restore": 0,
+            "paths": 0,
+            "arcs": 0,
+            "drawImage": 0,
+            "fill": 0,
+            "stroke": 0,
+            "text": 0,
+            "transforms": 0,
+            "stateWrites": 0,
+            "blurWrites": 0,
+            "shadowDraws": 0
+          },
+          "trig": {
+            "sin": 0,
+            "cos": 0,
+            "atan2": 1,
+            "hypot": 1,
+            "sqrt": 0,
+            "random": 0
+          },
+          "hashCanvas": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        }
+      },
+      "phantom": {
+        "draw": {
+          "canvas": {
+            "save": 2,
+            "restore": 2,
+            "paths": 3,
+            "arcs": 1,
+            "drawImage": 0,
+            "fill": 3,
+            "stroke": 1,
+            "text": 0,
+            "transforms": 2,
+            "stateWrites": 13,
+            "blurWrites": 2,
+            "shadowDraws": 2
+          },
+          "trig": {
+            "sin": 1,
+            "cos": 0,
+            "atan2": 0,
+            "hypot": 0,
+            "sqrt": 0,
+            "random": 0
+          },
+          "hashCanvas": "129caf188a8c72c0dae68787fa784a8b31010ceed62ce132ccf179c8dbaf44b2"
+        },
+        "update": {
+          "canvas": {
+            "save": 0,
+            "restore": 0,
+            "paths": 0,
+            "arcs": 0,
+            "drawImage": 0,
+            "fill": 0,
+            "stroke": 0,
+            "text": 0,
+            "transforms": 0,
+            "stateWrites": 0,
+            "blurWrites": 0,
+            "shadowDraws": 0
+          },
+          "trig": {
+            "sin": 0,
+            "cos": 0,
+            "atan2": 1,
+            "hypot": 1,
+            "sqrt": 0,
+            "random": 1
+          },
+          "hashCanvas": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        }
+      },
+      "singular": {
+        "draw": {
+          "canvas": {
+            "save": 2,
+            "restore": 2,
+            "paths": 6,
+            "arcs": 5,
+            "drawImage": 0,
+            "fill": 3,
+            "stroke": 3,
+            "text": 0,
+            "transforms": 2,
+            "stateWrites": 16,
+            "blurWrites": 2,
+            "shadowDraws": 1
+          },
+          "trig": {
+            "sin": 1,
+            "cos": 0,
+            "atan2": 0,
+            "hypot": 0,
+            "sqrt": 0,
+            "random": 0
+          },
+          "hashCanvas": "91fa8958d46922ab0b3c48e86f7cdac96ee6ad2e5c6976850a099d011cdc1d97"
+        },
+        "update": {
+          "canvas": {
+            "save": 0,
+            "restore": 0,
+            "paths": 0,
+            "arcs": 0,
+            "drawImage": 0,
+            "fill": 0,
+            "stroke": 0,
+            "text": 0,
+            "transforms": 0,
+            "stateWrites": 0,
+            "blurWrites": 0,
+            "shadowDraws": 0
+          },
+          "trig": {
+            "sin": 0,
+            "cos": 0,
+            "atan2": 1,
+            "hypot": 1,
+            "sqrt": 0,
+            "random": 0
+          },
+          "hashCanvas": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        }
+      }
+    },
+    "escritasTextoHUD120": 0
+  },
+  "navegadorAntes": {
+    "ambiente": "Chromium headless / SwiftShader / 1280×720. 7 amostras fixas por cenário. SemBlur é ablação de diagnóstico, NÃO otimização entregue. Readback inclui raster e cópia CPU; tempos inclusivos da sonda não isolam GPU/GC.",
+    "cenarios": [
+      {
+        "id": "A",
+        "nome": "vazio",
+        "submissaoMedianaMs": 0.3,
+        "flushLeituraMedianaMs": 34,
+        "renderComLeituraMedianaMs": 34.3,
+        "semBlurDiagnosticoMedianaMs": null,
+        "hashPixels": "07c475560f32fb4f5bbd46cba17fec3c783e8f66a2d01e8ca8300d8a75efb1a9",
+        "secoes": {
+          "frame_total": {
+            "chamadas": 8,
+            "totalMs": 5.7,
+            "mediaMs": 0.7125,
+            "maxMs": 4
+          },
+          "update_total": {
+            "chamadas": 8,
+            "totalMs": 2.7,
+            "mediaMs": 0.3375,
+            "maxMs": 2.3
+          },
+          "fx_update": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updatePlayer": {
+            "chamadas": 8,
+            "totalMs": 0.9,
+            "mediaMs": 0.1125,
+            "maxMs": 0.8
+          },
+          "updateEcho": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateEnemy": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateMiniBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateProjectiles": {
+            "chamadas": 8,
+            "totalMs": 0.3,
+            "mediaMs": 0.0375,
+            "maxMs": 0.3
+          },
+          "updateSwings": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "updateArcs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateOrbs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updatePickups": {
+            "chamadas": 8,
+            "totalMs": 0.3,
+            "mediaMs": 0.0375,
+            "maxMs": 0.2
+          },
+          "updateAllies": {
+            "chamadas": 8,
+            "totalMs": 0.3,
+            "mediaMs": 0.0375,
+            "maxMs": 0.3
+          },
+          "updateResonance": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "tickArenaEvent": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "tickMicroEvents": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "factionPresenceUpdateEntity": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15PresUpdate": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentUpdate": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "render": {
+            "chamadas": 8,
+            "totalMs": 1.9,
+            "mediaMs": 0.2375,
+            "maxMs": 1.1
+          },
+          "drawGrid": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "drawEnemy": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawMiniBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawProjectile": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawWorldExtras": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "factionPresenceDrawEntity": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawEchoEntity": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawPlayer": {
+            "chamadas": 8,
+            "totalMs": 1.1,
+            "mediaMs": 0.1375,
+            "maxMs": 0.7
+          },
+          "drawBeamFrom": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawSwings": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawArcs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawStatus": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "speechRender": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15PresDraw": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentDraw": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentEdge": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateHUD": {
+            "chamadas": 8,
+            "totalMs": 0.5,
+            "mediaMs": 0.0625,
+            "maxMs": 0.1
+          },
+          "fracHudChip": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "fractureHudChip": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "sheetRender": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "devTick": {
+            "chamadas": 8,
+            "totalMs": 0.3,
+            "mediaMs": 0.0375,
+            "maxMs": 0.3
+          }
+        }
+      },
+      {
+        "id": "B",
+        "nome": "leve",
+        "submissaoMedianaMs": 0.6,
+        "flushLeituraMedianaMs": 95.8,
+        "renderComLeituraMedianaMs": 96.3,
+        "semBlurDiagnosticoMedianaMs": null,
+        "hashPixels": "461657a5d1867cea41c65d0051e497660cd426ceab5049e6177a32d59238f150",
+        "secoes": {
+          "frame_total": {
+            "chamadas": 8,
+            "totalMs": 9.1,
+            "mediaMs": 1.1375,
+            "maxMs": 2.9
+          },
+          "update_total": {
+            "chamadas": 8,
+            "totalMs": 3.5,
+            "mediaMs": 0.4375,
+            "maxMs": 1.6
+          },
+          "fx_update": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updatePlayer": {
+            "chamadas": 8,
+            "totalMs": 0.2,
+            "mediaMs": 0.025,
+            "maxMs": 0.1
+          },
+          "updateEcho": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateEnemy": {
+            "chamadas": 80,
+            "totalMs": 1.7,
+            "mediaMs": 0.02125,
+            "maxMs": 1.1
+          },
+          "updateBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateMiniBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateProjectiles": {
+            "chamadas": 8,
+            "totalMs": 0.5,
+            "mediaMs": 0.0625,
+            "maxMs": 0.2
+          },
+          "updateSwings": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateArcs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateOrbs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updatePickups": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateAllies": {
+            "chamadas": 8,
+            "totalMs": 0.2,
+            "mediaMs": 0.025,
+            "maxMs": 0.1
+          },
+          "updateResonance": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "tickArenaEvent": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "tickMicroEvents": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "factionPresenceUpdateEntity": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15PresUpdate": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentUpdate": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "render": {
+            "chamadas": 8,
+            "totalMs": 5.3,
+            "mediaMs": 0.6625,
+            "maxMs": 1.2
+          },
+          "drawGrid": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "drawEnemy": {
+            "chamadas": 80,
+            "totalMs": 1.9,
+            "mediaMs": 0.02375,
+            "maxMs": 0.2
+          },
+          "drawBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawMiniBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawProjectile": {
+            "chamadas": 96,
+            "totalMs": 0.2,
+            "mediaMs": 0.00208,
+            "maxMs": 0.1
+          },
+          "drawWorldExtras": {
+            "chamadas": 8,
+            "totalMs": 0.5,
+            "mediaMs": 0.0625,
+            "maxMs": 0.4
+          },
+          "factionPresenceDrawEntity": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawEchoEntity": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawPlayer": {
+            "chamadas": 8,
+            "totalMs": 0.7,
+            "mediaMs": 0.0875,
+            "maxMs": 0.1
+          },
+          "drawBeamFrom": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawSwings": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawArcs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawStatus": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "speechRender": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15PresDraw": {
+            "chamadas": 8,
+            "totalMs": 0.2,
+            "mediaMs": 0.025,
+            "maxMs": 0.1
+          },
+          "pr15IntentDraw": {
+            "chamadas": 8,
+            "totalMs": 0.3,
+            "mediaMs": 0.0375,
+            "maxMs": 0.3
+          },
+          "pr15IntentEdge": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateHUD": {
+            "chamadas": 8,
+            "totalMs": 0.3,
+            "mediaMs": 0.0375,
+            "maxMs": 0.1
+          },
+          "fracHudChip": {
+            "chamadas": 8,
+            "totalMs": 0.2,
+            "mediaMs": 0.025,
+            "maxMs": 0.1
+          },
+          "fractureHudChip": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "sheetRender": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "devTick": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          }
+        }
+      },
+      {
+        "id": "C",
+        "nome": "médio",
+        "submissaoMedianaMs": 1.1,
+        "flushLeituraMedianaMs": 179.4,
+        "renderComLeituraMedianaMs": 183.1,
+        "semBlurDiagnosticoMedianaMs": null,
+        "hashPixels": "ec5969e9f2f5e18b422d1cfe62904b49e54d6a59f443f6733b2739070da2a33e",
+        "secoes": {
+          "frame_total": {
+            "chamadas": 8,
+            "totalMs": 11.9,
+            "mediaMs": 1.4875,
+            "maxMs": 2.1
+          },
+          "update_total": {
+            "chamadas": 8,
+            "totalMs": 3.3,
+            "mediaMs": 0.4125,
+            "maxMs": 0.8
+          },
+          "fx_update": {
+            "chamadas": 8,
+            "totalMs": 0.4,
+            "mediaMs": 0.05,
+            "maxMs": 0.2
+          },
+          "updatePlayer": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "updateEcho": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateEnemy": {
+            "chamadas": 200,
+            "totalMs": 1.3,
+            "mediaMs": 0.0065,
+            "maxMs": 0.1
+          },
+          "updateBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateMiniBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateProjectiles": {
+            "chamadas": 8,
+            "totalMs": 1.3,
+            "mediaMs": 0.1625,
+            "maxMs": 0.5
+          },
+          "updateSwings": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateArcs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateOrbs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updatePickups": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateAllies": {
+            "chamadas": 8,
+            "totalMs": 0.2,
+            "mediaMs": 0.025,
+            "maxMs": 0.1
+          },
+          "updateResonance": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "tickArenaEvent": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "tickMicroEvents": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "factionPresenceUpdateEntity": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15PresUpdate": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentUpdate": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "render": {
+            "chamadas": 8,
+            "totalMs": 8.1,
+            "mediaMs": 1.0125,
+            "maxMs": 1.2
+          },
+          "drawGrid": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "drawEnemy": {
+            "chamadas": 200,
+            "totalMs": 3.6,
+            "mediaMs": 0.018,
+            "maxMs": 0.5
+          },
+          "drawBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawMiniBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawProjectile": {
+            "chamadas": 480,
+            "totalMs": 1.1,
+            "mediaMs": 0.00229,
+            "maxMs": 0.2
+          },
+          "drawWorldExtras": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "factionPresenceDrawEntity": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawEchoEntity": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawPlayer": {
+            "chamadas": 8,
+            "totalMs": 0.3,
+            "mediaMs": 0.0375,
+            "maxMs": 0.1
+          },
+          "drawBeamFrom": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawSwings": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawArcs": {
+            "chamadas": 8,
+            "totalMs": 0.2,
+            "mediaMs": 0.025,
+            "maxMs": 0.2
+          },
+          "drawStatus": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "speechRender": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15PresDraw": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentDraw": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentEdge": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateHUD": {
+            "chamadas": 8,
+            "totalMs": 0.5,
+            "mediaMs": 0.0625,
+            "maxMs": 0.2
+          },
+          "fracHudChip": {
+            "chamadas": 8,
+            "totalMs": 0.2,
+            "mediaMs": 0.025,
+            "maxMs": 0.2
+          },
+          "fractureHudChip": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "sheetRender": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "devTick": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          }
+        }
+      },
+      {
+        "id": "D",
+        "nome": "pesado",
+        "submissaoMedianaMs": 1.5,
+        "flushLeituraMedianaMs": 307.9,
+        "renderComLeituraMedianaMs": 309.4,
+        "semBlurDiagnosticoMedianaMs": 161.3,
+        "hashPixels": "5d5689d55388b738851322e75170b43ea5a1ef34dd4dd9b6436c42337c9d1feb",
+        "secoes": {
+          "frame_total": {
+            "chamadas": 8,
+            "totalMs": 28.7,
+            "mediaMs": 3.5875,
+            "maxMs": 5.3
+          },
+          "update_total": {
+            "chamadas": 8,
+            "totalMs": 11.4,
+            "mediaMs": 1.425,
+            "maxMs": 2.7
+          },
+          "fx_update": {
+            "chamadas": 8,
+            "totalMs": 1.4,
+            "mediaMs": 0.175,
+            "maxMs": 0.5
+          },
+          "updatePlayer": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "updateEcho": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateEnemy": {
+            "chamadas": 368,
+            "totalMs": 6.3,
+            "mediaMs": 0.01712,
+            "maxMs": 2
+          },
+          "updateBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateMiniBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateProjectiles": {
+            "chamadas": 8,
+            "totalMs": 3.3,
+            "mediaMs": 0.4125,
+            "maxMs": 1.1
+          },
+          "updateSwings": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateArcs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateOrbs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updatePickups": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateAllies": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateResonance": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "tickArenaEvent": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "tickMicroEvents": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "factionPresenceUpdateEntity": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15PresUpdate": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentUpdate": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "render": {
+            "chamadas": 8,
+            "totalMs": 16.9,
+            "mediaMs": 2.1125,
+            "maxMs": 3
+          },
+          "drawGrid": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "drawEnemy": {
+            "chamadas": 368,
+            "totalMs": 6.3,
+            "mediaMs": 0.01712,
+            "maxMs": 0.8
+          },
+          "drawBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawMiniBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawProjectile": {
+            "chamadas": 1200,
+            "totalMs": 3.4,
+            "mediaMs": 0.00283,
+            "maxMs": 0.3
+          },
+          "drawWorldExtras": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "factionPresenceDrawEntity": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawEchoEntity": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawPlayer": {
+            "chamadas": 8,
+            "totalMs": 0.2,
+            "mediaMs": 0.025,
+            "maxMs": 0.1
+          },
+          "drawBeamFrom": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawSwings": {
+            "chamadas": 8,
+            "totalMs": 0.2,
+            "mediaMs": 0.025,
+            "maxMs": 0.1
+          },
+          "drawArcs": {
+            "chamadas": 8,
+            "totalMs": 0.2,
+            "mediaMs": 0.025,
+            "maxMs": 0.1
+          },
+          "drawStatus": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "speechRender": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15PresDraw": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentDraw": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentEdge": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateHUD": {
+            "chamadas": 8,
+            "totalMs": 0.3,
+            "mediaMs": 0.0375,
+            "maxMs": 0.2
+          },
+          "fracHudChip": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "fractureHudChip": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "sheetRender": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "devTick": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          }
+        }
+      },
+      {
+        "id": "E",
+        "nome": "stress Sandbox",
+        "submissaoMedianaMs": 2.5,
+        "flushLeituraMedianaMs": 410.2,
+        "renderComLeituraMedianaMs": 413.3,
+        "semBlurDiagnosticoMedianaMs": null,
+        "hashPixels": "81148eacf8ab3adb3c4cc388143c871d36e17460a4bdcaa93b152f1e03b9baa9",
+        "secoes": {
+          "frame_total": {
+            "chamadas": 8,
+            "totalMs": 56.5,
+            "mediaMs": 7.0625,
+            "maxMs": 17.7
+          },
+          "update_total": {
+            "chamadas": 8,
+            "totalMs": 12.6,
+            "mediaMs": 1.575,
+            "maxMs": 2.5
+          },
+          "fx_update": {
+            "chamadas": 8,
+            "totalMs": 2.2,
+            "mediaMs": 0.275,
+            "maxMs": 0.6
+          },
+          "updatePlayer": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateEcho": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateEnemy": {
+            "chamadas": 368,
+            "totalMs": 4.1,
+            "mediaMs": 0.01114,
+            "maxMs": 0.6
+          },
+          "updateBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateMiniBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateProjectiles": {
+            "chamadas": 8,
+            "totalMs": 5.9,
+            "mediaMs": 0.7375,
+            "maxMs": 1.5
+          },
+          "updateSwings": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateArcs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateOrbs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updatePickups": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateAllies": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateResonance": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "tickArenaEvent": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "tickMicroEvents": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "factionPresenceUpdateEntity": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15PresUpdate": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentUpdate": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "render": {
+            "chamadas": 8,
+            "totalMs": 43.3,
+            "mediaMs": 5.4125,
+            "maxMs": 16.5
+          },
+          "drawGrid": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "drawEnemy": {
+            "chamadas": 368,
+            "totalMs": 8.7,
+            "mediaMs": 0.02364,
+            "maxMs": 1.8
+          },
+          "drawBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawMiniBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawProjectile": {
+            "chamadas": 2080,
+            "totalMs": 23.4,
+            "mediaMs": 0.01125,
+            "maxMs": 13.5
+          },
+          "drawWorldExtras": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "factionPresenceDrawEntity": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawEchoEntity": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawPlayer": {
+            "chamadas": 8,
+            "totalMs": 0.4,
+            "mediaMs": 0.05,
+            "maxMs": 0.1
+          },
+          "drawBeamFrom": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawSwings": {
+            "chamadas": 8,
+            "totalMs": 0.4,
+            "mediaMs": 0.05,
+            "maxMs": 0.1
+          },
+          "drawArcs": {
+            "chamadas": 8,
+            "totalMs": 0.4,
+            "mediaMs": 0.05,
+            "maxMs": 0.1
+          },
+          "drawStatus": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "speechRender": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15PresDraw": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentDraw": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentEdge": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateHUD": {
+            "chamadas": 8,
+            "totalMs": 0.5,
+            "mediaMs": 0.0625,
+            "maxMs": 0.1
+          },
+          "fracHudChip": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "fractureHudChip": {
+            "chamadas": 8,
+            "totalMs": 0.2,
+            "mediaMs": 0.025,
+            "maxMs": 0.1
+          },
+          "sheetRender": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "devTick": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          }
+        }
+      },
+      {
+        "id": "F",
+        "nome": "Swarm-heavy",
+        "submissaoMedianaMs": 0.7,
+        "flushLeituraMedianaMs": 101.4,
+        "renderComLeituraMedianaMs": 102.1,
+        "semBlurDiagnosticoMedianaMs": 90.2,
+        "hashPixels": "d16f0e038f69342faa18597991f012cae49d014613e69000131aa5c51ff6ff20",
+        "secoes": {
+          "frame_total": {
+            "chamadas": 8,
+            "totalMs": 14,
+            "mediaMs": 1.75,
+            "maxMs": 3.7
+          },
+          "update_total": {
+            "chamadas": 8,
+            "totalMs": 6.6,
+            "mediaMs": 0.825,
+            "maxMs": 2.8
+          },
+          "fx_update": {
+            "chamadas": 8,
+            "totalMs": 0.2,
+            "mediaMs": 0.025,
+            "maxMs": 0.1
+          },
+          "updatePlayer": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateEcho": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateEnemy": {
+            "chamadas": 368,
+            "totalMs": 3.6,
+            "mediaMs": 0.00978,
+            "maxMs": 1.6
+          },
+          "updateBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateMiniBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateProjectiles": {
+            "chamadas": 8,
+            "totalMs": 2.5,
+            "mediaMs": 0.3125,
+            "maxMs": 1.1
+          },
+          "updateSwings": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateArcs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateOrbs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updatePickups": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateAllies": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateResonance": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "tickArenaEvent": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "tickMicroEvents": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "factionPresenceUpdateEntity": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15PresUpdate": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentUpdate": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "render": {
+            "chamadas": 8,
+            "totalMs": 6.9,
+            "mediaMs": 0.8625,
+            "maxMs": 1.3
+          },
+          "drawGrid": {
+            "chamadas": 8,
+            "totalMs": 0.2,
+            "mediaMs": 0.025,
+            "maxMs": 0.1
+          },
+          "drawEnemy": {
+            "chamadas": 368,
+            "totalMs": 3.6,
+            "mediaMs": 0.00978,
+            "maxMs": 0.5
+          },
+          "drawBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawMiniBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawProjectile": {
+            "chamadas": 240,
+            "totalMs": 0.4,
+            "mediaMs": 0.00167,
+            "maxMs": 0.1
+          },
+          "drawWorldExtras": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "factionPresenceDrawEntity": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawEchoEntity": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawPlayer": {
+            "chamadas": 8,
+            "totalMs": 0.4,
+            "mediaMs": 0.05,
+            "maxMs": 0.1
+          },
+          "drawBeamFrom": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawSwings": {
+            "chamadas": 8,
+            "totalMs": 0.3,
+            "mediaMs": 0.0375,
+            "maxMs": 0.2
+          },
+          "drawArcs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawStatus": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "speechRender": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15PresDraw": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentDraw": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentEdge": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateHUD": {
+            "chamadas": 8,
+            "totalMs": 0.5,
+            "mediaMs": 0.0625,
+            "maxMs": 0.2
+          },
+          "fracHudChip": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "fractureHudChip": {
+            "chamadas": 8,
+            "totalMs": 0.3,
+            "mediaMs": 0.0375,
+            "maxMs": 0.1
+          },
+          "sheetRender": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "devTick": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          }
+        }
+      },
+      {
+        "id": "G",
+        "nome": "projectile-heavy",
+        "submissaoMedianaMs": 1.9,
+        "flushLeituraMedianaMs": 258.5,
+        "renderComLeituraMedianaMs": 260.4,
+        "semBlurDiagnosticoMedianaMs": null,
+        "hashPixels": "c6f8d57eff275c69bfd5892c17dc3167c6d6d28a66ce832a9cdef44335a81a03",
+        "secoes": {
+          "frame_total": {
+            "chamadas": 8,
+            "totalMs": 29.3,
+            "mediaMs": 3.6625,
+            "maxMs": 9.9
+          },
+          "update_total": {
+            "chamadas": 8,
+            "totalMs": 7.7,
+            "mediaMs": 0.9625,
+            "maxMs": 1.3
+          },
+          "fx_update": {
+            "chamadas": 8,
+            "totalMs": 0.4,
+            "mediaMs": 0.05,
+            "maxMs": 0.1
+          },
+          "updatePlayer": {
+            "chamadas": 8,
+            "totalMs": 0.2,
+            "mediaMs": 0.025,
+            "maxMs": 0.1
+          },
+          "updateEcho": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateEnemy": {
+            "chamadas": 368,
+            "totalMs": 1.1,
+            "mediaMs": 0.00299,
+            "maxMs": 0.1
+          },
+          "updateBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateMiniBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateProjectiles": {
+            "chamadas": 8,
+            "totalMs": 5.4,
+            "mediaMs": 0.675,
+            "maxMs": 1
+          },
+          "updateSwings": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateArcs": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "updateOrbs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updatePickups": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "updateAllies": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateResonance": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "tickArenaEvent": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "tickMicroEvents": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "factionPresenceUpdateEntity": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15PresUpdate": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentUpdate": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "render": {
+            "chamadas": 8,
+            "totalMs": 21.1,
+            "mediaMs": 2.6375,
+            "maxMs": 9
+          },
+          "drawGrid": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "drawEnemy": {
+            "chamadas": 368,
+            "totalMs": 4.3,
+            "mediaMs": 0.01168,
+            "maxMs": 0.1
+          },
+          "drawBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawMiniBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawProjectile": {
+            "chamadas": 2880,
+            "totalMs": 14.0,
+            "mediaMs": 0.00486,
+            "maxMs": 7.5
+          },
+          "drawWorldExtras": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "factionPresenceDrawEntity": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawEchoEntity": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawPlayer": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "drawBeamFrom": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawSwings": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "drawArcs": {
+            "chamadas": 8,
+            "totalMs": 0.2,
+            "mediaMs": 0.025,
+            "maxMs": 0.1
+          },
+          "drawStatus": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "speechRender": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15PresDraw": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentDraw": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "pr15IntentEdge": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateHUD": {
+            "chamadas": 8,
+            "totalMs": 0.5,
+            "mediaMs": 0.0625,
+            "maxMs": 0.1
+          },
+          "fracHudChip": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "fractureHudChip": {
+            "chamadas": 8,
+            "totalMs": 0.3,
+            "mediaMs": 0.0375,
+            "maxMs": 0.1
+          },
+          "sheetRender": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "devTick": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          }
+        }
+      },
+      {
+        "id": "H",
+        "nome": "FX-heavy",
+        "submissaoMedianaMs": 4.4,
+        "flushLeituraMedianaMs": 510.4,
+        "renderComLeituraMedianaMs": 515.1,
+        "semBlurDiagnosticoMedianaMs": 327.2,
+        "hashPixels": "aac04f8f626aed44958948f560b6fa3b2e2f2149a58894d15bc1c58a05516224",
+        "secoes": {
+          "frame_total": {
+            "chamadas": 8,
+            "totalMs": 56.1,
+            "mediaMs": 7.0125,
+            "maxMs": 14.1
+          },
+          "update_total": {
+            "chamadas": 8,
+            "totalMs": 5.9,
+            "mediaMs": 0.7375,
+            "maxMs": 2.7
+          },
+          "fx_update": {
+            "chamadas": 8,
+            "totalMs": 5.0,
+            "mediaMs": 0.625,
+            "maxMs": 2.5
+          },
+          "updatePlayer": {
+            "chamadas": 8,
+            "totalMs": 0.3,
+            "mediaMs": 0.0375,
+            "maxMs": 0.1
+          },
+          "updateEcho": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateEnemy": {
+            "chamadas": 80,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateMiniBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateProjectiles": {
+            "chamadas": 8,
+            "totalMs": 0.3,
+            "mediaMs": 0.0375,
+            "maxMs": 0.2
+          },
+          "updateSwings": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateArcs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateOrbs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updatePickups": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateAllies": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateResonance": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "tickArenaEvent": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "tickMicroEvents": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "factionPresenceUpdateEntity": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15PresUpdate": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentUpdate": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "render": {
+            "chamadas": 8,
+            "totalMs": 49.6,
+            "mediaMs": 6.2,
+            "maxMs": 13.7
+          },
+          "drawGrid": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawEnemy": {
+            "chamadas": 80,
+            "totalMs": 1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "drawBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawMiniBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawProjectile": {
+            "chamadas": 160,
+            "totalMs": 0.3,
+            "mediaMs": 0.00188,
+            "maxMs": 0.1
+          },
+          "drawWorldExtras": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "factionPresenceDrawEntity": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawEchoEntity": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawPlayer": {
+            "chamadas": 8,
+            "totalMs": 0.5,
+            "mediaMs": 0.0625,
+            "maxMs": 0.1
+          },
+          "drawBeamFrom": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawSwings": {
+            "chamadas": 8,
+            "totalMs": 0.4,
+            "mediaMs": 0.05,
+            "maxMs": 0.1
+          },
+          "drawArcs": {
+            "chamadas": 8,
+            "totalMs": 0.2,
+            "mediaMs": 0.025,
+            "maxMs": 0.1
+          },
+          "drawStatus": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "speechRender": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15PresDraw": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentDraw": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentEdge": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateHUD": {
+            "chamadas": 8,
+            "totalMs": 0.6,
+            "mediaMs": 0.075,
+            "maxMs": 0.2
+          },
+          "fracHudChip": {
+            "chamadas": 8,
+            "totalMs": 0.3,
+            "mediaMs": 0.0375,
+            "maxMs": 0.2
+          },
+          "fractureHudChip": {
+            "chamadas": 8,
+            "totalMs": 0.2,
+            "mediaMs": 0.025,
+            "maxMs": 0.1
+          },
+          "sheetRender": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "devTick": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          }
+        }
+      },
+      {
+        "id": "I",
+        "nome": "2 Singular + ranged + Swarm",
+        "submissaoMedianaMs": 1.7,
+        "flushLeituraMedianaMs": 228.4,
+        "renderComLeituraMedianaMs": 229.7,
+        "semBlurDiagnosticoMedianaMs": null,
+        "hashPixels": "fb28197f5226cadd55fc91af91c60852be40cf2af89e77ca6016e451f820a35e",
+        "secoes": {
+          "frame_total": {
+            "chamadas": 8,
+            "totalMs": 18.2,
+            "mediaMs": 2.275,
+            "maxMs": 3
+          },
+          "update_total": {
+            "chamadas": 8,
+            "totalMs": 5.8,
+            "mediaMs": 0.725,
+            "maxMs": 1
+          },
+          "fx_update": {
+            "chamadas": 8,
+            "totalMs": 0.9,
+            "mediaMs": 0.1125,
+            "maxMs": 0.2
+          },
+          "updatePlayer": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "updateEcho": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateEnemy": {
+            "chamadas": 368,
+            "totalMs": 2.6,
+            "mediaMs": 0.00707,
+            "maxMs": 0.4
+          },
+          "updateBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateMiniBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateProjectiles": {
+            "chamadas": 8,
+            "totalMs": 2.0,
+            "mediaMs": 0.25,
+            "maxMs": 0.5
+          },
+          "updateSwings": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateArcs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateOrbs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updatePickups": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateAllies": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateResonance": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "tickArenaEvent": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "tickMicroEvents": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "factionPresenceUpdateEntity": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15PresUpdate": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentUpdate": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "render": {
+            "chamadas": 8,
+            "totalMs": 12.2,
+            "mediaMs": 1.525,
+            "maxMs": 2.2
+          },
+          "drawGrid": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "drawEnemy": {
+            "chamadas": 368,
+            "totalMs": 4.1,
+            "mediaMs": 0.01114,
+            "maxMs": 0.2
+          },
+          "drawBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawMiniBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawProjectile": {
+            "chamadas": 1200,
+            "totalMs": 2.7,
+            "mediaMs": 0.00225,
+            "maxMs": 0.1
+          },
+          "drawWorldExtras": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "factionPresenceDrawEntity": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawEchoEntity": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawPlayer": {
+            "chamadas": 8,
+            "totalMs": 0.4,
+            "mediaMs": 0.05,
+            "maxMs": 0.1
+          },
+          "drawBeamFrom": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawSwings": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawArcs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawStatus": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "speechRender": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15PresDraw": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentDraw": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentEdge": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateHUD": {
+            "chamadas": 8,
+            "totalMs": 0.2,
+            "mediaMs": 0.025,
+            "maxMs": 0.1
+          },
+          "fracHudChip": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "fractureHudChip": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "sheetRender": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "devTick": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          }
+        }
+      }
+    ],
+    "qualidade": [
+      {
+        "viewport": [
+          960,
+          540
+        ],
+        "qualidade": 0,
+        "renderQuality": 0.62,
+        "dpr": 1,
+        "buffer": [
+          960,
+          540
+        ]
+      },
+      {
+        "viewport": [
+          960,
+          540
+        ],
+        "qualidade": 1,
+        "renderQuality": 0.84,
+        "dpr": 1,
+        "buffer": [
+          960,
+          540
+        ]
+      },
+      {
+        "viewport": [
+          960,
+          540
+        ],
+        "qualidade": 2,
+        "renderQuality": 1,
+        "dpr": 1,
+        "buffer": [
+          960,
+          540
+        ]
+      },
+      {
+        "viewport": [
+          1920,
+          1080
+        ],
+        "qualidade": 0,
+        "renderQuality": 0.62,
+        "dpr": 0.81104,
+        "buffer": [
+          1557,
+          876
+        ]
+      },
+      {
+        "viewport": [
+          1920,
+          1080
+        ],
+        "qualidade": 1,
+        "renderQuality": 0.84,
+        "dpr": 0.94404,
+        "buffer": [
+          1813,
+          1020
+        ]
+      },
+      {
+        "viewport": [
+          1920,
+          1080
+        ],
+        "qualidade": 2,
+        "renderQuality": 1,
+        "dpr": 1,
+        "buffer": [
+          1920,
+          1080
+        ]
+      },
+      {
+        "viewport": [
+          3840,
+          2160
+        ],
+        "qualidade": 0,
+        "renderQuality": 0.62,
+        "dpr": 0.42,
+        "buffer": [
+          1613,
+          907
+        ]
+      },
+      {
+        "viewport": [
+          3840,
+          2160
+        ],
+        "qualidade": 1,
+        "renderQuality": 0.84,
+        "dpr": 0.47202,
+        "buffer": [
+          1813,
+          1020
+        ]
+      },
+      {
+        "viewport": [
+          3840,
+          2160
+        ],
+        "qualidade": 2,
+        "renderQuality": 1,
+        "dpr": 0.51501,
+        "buffer": [
+          1978,
+          1112
+        ]
+      }
+    ],
+    "erros": []
+  },
+  "navegadorDepois": {
+    "ambiente": "Chromium headless / SwiftShader / 1280×720. 7 amostras fixas por cenário. SemBlur é ablação de diagnóstico, NÃO otimização entregue. Readback inclui raster e cópia CPU; tempos inclusivos da sonda não isolam GPU/GC.",
+    "cenarios": [
+      {
+        "id": "A",
+        "nome": "vazio",
+        "submissaoMedianaMs": 0.3,
+        "flushLeituraMedianaMs": 32.5,
+        "renderComLeituraMedianaMs": 32.6,
+        "semBlurDiagnosticoMedianaMs": null,
+        "hashPixels": "07c475560f32fb4f5bbd46cba17fec3c783e8f66a2d01e8ca8300d8a75efb1a9",
+        "secoes": {
+          "frame_total": {
+            "chamadas": 8,
+            "totalMs": 5.8,
+            "mediaMs": 0.725,
+            "maxMs": 3.7
+          },
+          "update_total": {
+            "chamadas": 8,
+            "totalMs": 3.1,
+            "mediaMs": 0.3875,
+            "maxMs": 2.6
+          },
+          "fx_update": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updatePlayer": {
+            "chamadas": 8,
+            "totalMs": 1.4,
+            "mediaMs": 0.175,
+            "maxMs": 1
+          },
+          "updateEcho": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateEnemy": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateMiniBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateProjectiles": {
+            "chamadas": 8,
+            "totalMs": 0.3,
+            "mediaMs": 0.0375,
+            "maxMs": 0.3
+          },
+          "updateSwings": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateArcs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateOrbs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updatePickups": {
+            "chamadas": 8,
+            "totalMs": 0.2,
+            "mediaMs": 0.025,
+            "maxMs": 0.2
+          },
+          "updateAllies": {
+            "chamadas": 8,
+            "totalMs": 0.4,
+            "mediaMs": 0.05,
+            "maxMs": 0.4
+          },
+          "updateResonance": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "tickArenaEvent": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "tickMicroEvents": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "factionPresenceUpdateEntity": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15PresUpdate": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "pr15IntentUpdate": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "render": {
+            "chamadas": 8,
+            "totalMs": 1.8,
+            "mediaMs": 0.225,
+            "maxMs": 0.7
+          },
+          "drawGrid": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "drawEnemy": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawMiniBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawProjectile": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawWorldExtras": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "factionPresenceDrawEntity": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawEchoEntity": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawPlayer": {
+            "chamadas": 8,
+            "totalMs": 1,
+            "mediaMs": 0.125,
+            "maxMs": 0.6
+          },
+          "drawBeamFrom": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawSwings": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawArcs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawStatus": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "speechRender": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15PresDraw": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "pr15IntentDraw": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentEdge": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateHUD": {
+            "chamadas": 8,
+            "totalMs": 0.5,
+            "mediaMs": 0.0625,
+            "maxMs": 0.2
+          },
+          "fracHudChip": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "fractureHudChip": {
+            "chamadas": 8,
+            "totalMs": 0.3,
+            "mediaMs": 0.0375,
+            "maxMs": 0.1
+          },
+          "sheetRender": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "devTick": {
+            "chamadas": 8,
+            "totalMs": 0.2,
+            "mediaMs": 0.025,
+            "maxMs": 0.2
+          }
+        }
+      },
+      {
+        "id": "B",
+        "nome": "leve",
+        "submissaoMedianaMs": 0.6,
+        "flushLeituraMedianaMs": 91.1,
+        "renderComLeituraMedianaMs": 91.7,
+        "semBlurDiagnosticoMedianaMs": null,
+        "hashPixels": "461657a5d1867cea41c65d0051e497660cd426ceab5049e6177a32d59238f150",
+        "secoes": {
+          "frame_total": {
+            "chamadas": 8,
+            "totalMs": 7.1,
+            "mediaMs": 0.8875,
+            "maxMs": 3
+          },
+          "update_total": {
+            "chamadas": 8,
+            "totalMs": 2.4,
+            "mediaMs": 0.3,
+            "maxMs": 1.5
+          },
+          "fx_update": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updatePlayer": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "updateEcho": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateEnemy": {
+            "chamadas": 80,
+            "totalMs": 1.5,
+            "mediaMs": 0.01875,
+            "maxMs": 0.9
+          },
+          "updateBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateMiniBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateProjectiles": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "updateSwings": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateArcs": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "updateOrbs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updatePickups": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateAllies": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "updateResonance": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "tickArenaEvent": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "tickMicroEvents": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "factionPresenceUpdateEntity": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15PresUpdate": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentUpdate": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "render": {
+            "chamadas": 8,
+            "totalMs": 4.2,
+            "mediaMs": 0.525,
+            "maxMs": 1.2
+          },
+          "drawGrid": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "drawEnemy": {
+            "chamadas": 80,
+            "totalMs": 1.4,
+            "mediaMs": 0.0175,
+            "maxMs": 0.1
+          },
+          "drawBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawMiniBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawProjectile": {
+            "chamadas": 96,
+            "totalMs": 0.1,
+            "mediaMs": 0.00104,
+            "maxMs": 0.1
+          },
+          "drawWorldExtras": {
+            "chamadas": 8,
+            "totalMs": 0.4,
+            "mediaMs": 0.05,
+            "maxMs": 0.4
+          },
+          "factionPresenceDrawEntity": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawEchoEntity": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawPlayer": {
+            "chamadas": 8,
+            "totalMs": 0.8,
+            "mediaMs": 0.1,
+            "maxMs": 0.2
+          },
+          "drawBeamFrom": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawSwings": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawArcs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawStatus": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "speechRender": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15PresDraw": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentDraw": {
+            "chamadas": 8,
+            "totalMs": 0.3,
+            "mediaMs": 0.0375,
+            "maxMs": 0.3
+          },
+          "pr15IntentEdge": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateHUD": {
+            "chamadas": 8,
+            "totalMs": 0.3,
+            "mediaMs": 0.0375,
+            "maxMs": 0.1
+          },
+          "fracHudChip": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "fractureHudChip": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "sheetRender": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "devTick": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          }
+        }
+      },
+      {
+        "id": "C",
+        "nome": "médio",
+        "submissaoMedianaMs": 1.1,
+        "flushLeituraMedianaMs": 178.4,
+        "renderComLeituraMedianaMs": 180.6,
+        "semBlurDiagnosticoMedianaMs": null,
+        "hashPixels": "ec5969e9f2f5e18b422d1cfe62904b49e54d6a59f443f6733b2739070da2a33e",
+        "secoes": {
+          "frame_total": {
+            "chamadas": 8,
+            "totalMs": 12.4,
+            "mediaMs": 1.55,
+            "maxMs": 2.2
+          },
+          "update_total": {
+            "chamadas": 8,
+            "totalMs": 3.7,
+            "mediaMs": 0.4625,
+            "maxMs": 1
+          },
+          "fx_update": {
+            "chamadas": 8,
+            "totalMs": 0.6,
+            "mediaMs": 0.075,
+            "maxMs": 0.1
+          },
+          "updatePlayer": {
+            "chamadas": 8,
+            "totalMs": 0.2,
+            "mediaMs": 0.025,
+            "maxMs": 0.1
+          },
+          "updateEcho": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateEnemy": {
+            "chamadas": 200,
+            "totalMs": 1.3,
+            "mediaMs": 0.0065,
+            "maxMs": 0.2
+          },
+          "updateBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateMiniBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateProjectiles": {
+            "chamadas": 8,
+            "totalMs": 1.4,
+            "mediaMs": 0.175,
+            "maxMs": 0.7
+          },
+          "updateSwings": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateArcs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateOrbs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updatePickups": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateAllies": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateResonance": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "tickArenaEvent": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "tickMicroEvents": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "factionPresenceUpdateEntity": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15PresUpdate": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentUpdate": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "render": {
+            "chamadas": 8,
+            "totalMs": 8.5,
+            "mediaMs": 1.0625,
+            "maxMs": 1.5
+          },
+          "drawGrid": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "drawEnemy": {
+            "chamadas": 200,
+            "totalMs": 3.3,
+            "mediaMs": 0.0165,
+            "maxMs": 0.8
+          },
+          "drawBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawMiniBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawProjectile": {
+            "chamadas": 480,
+            "totalMs": 1.3,
+            "mediaMs": 0.00271,
+            "maxMs": 0.3
+          },
+          "drawWorldExtras": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "factionPresenceDrawEntity": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawEchoEntity": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawPlayer": {
+            "chamadas": 8,
+            "totalMs": 0.3,
+            "mediaMs": 0.0375,
+            "maxMs": 0.1
+          },
+          "drawBeamFrom": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawSwings": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "drawArcs": {
+            "chamadas": 8,
+            "totalMs": 0.2,
+            "mediaMs": 0.025,
+            "maxMs": 0.1
+          },
+          "drawStatus": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "speechRender": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15PresDraw": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentDraw": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentEdge": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateHUD": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "fracHudChip": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "fractureHudChip": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "sheetRender": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "devTick": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          }
+        }
+      },
+      {
+        "id": "D",
+        "nome": "pesado",
+        "submissaoMedianaMs": 1.7,
+        "flushLeituraMedianaMs": 309.1,
+        "renderComLeituraMedianaMs": 310.6,
+        "semBlurDiagnosticoMedianaMs": 160.9,
+        "hashPixels": "5d5689d55388b738851322e75170b43ea5a1ef34dd4dd9b6436c42337c9d1feb",
+        "secoes": {
+          "frame_total": {
+            "chamadas": 8,
+            "totalMs": 30.7,
+            "mediaMs": 3.8375,
+            "maxMs": 8.1
+          },
+          "update_total": {
+            "chamadas": 8,
+            "totalMs": 13.9,
+            "mediaMs": 1.7375,
+            "maxMs": 5.7
+          },
+          "fx_update": {
+            "chamadas": 8,
+            "totalMs": 4.5,
+            "mediaMs": 0.5625,
+            "maxMs": 3.7
+          },
+          "updatePlayer": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "updateEcho": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateEnemy": {
+            "chamadas": 368,
+            "totalMs": 6.2,
+            "mediaMs": 0.01685,
+            "maxMs": 2
+          },
+          "updateBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateMiniBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateProjectiles": {
+            "chamadas": 8,
+            "totalMs": 2.7,
+            "mediaMs": 0.3375,
+            "maxMs": 1.1
+          },
+          "updateSwings": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateArcs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateOrbs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updatePickups": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateAllies": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateResonance": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "tickArenaEvent": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "tickMicroEvents": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "factionPresenceUpdateEntity": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15PresUpdate": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentUpdate": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "render": {
+            "chamadas": 8,
+            "totalMs": 16.5,
+            "mediaMs": 2.0625,
+            "maxMs": 2.5
+          },
+          "drawGrid": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawEnemy": {
+            "chamadas": 368,
+            "totalMs": 6.6,
+            "mediaMs": 0.01793,
+            "maxMs": 0.8
+          },
+          "drawBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawMiniBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawProjectile": {
+            "chamadas": 1200,
+            "totalMs": 3.4,
+            "mediaMs": 0.00283,
+            "maxMs": 0.1
+          },
+          "drawWorldExtras": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "factionPresenceDrawEntity": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawEchoEntity": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawPlayer": {
+            "chamadas": 8,
+            "totalMs": 0.4,
+            "mediaMs": 0.05,
+            "maxMs": 0.1
+          },
+          "drawBeamFrom": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawSwings": {
+            "chamadas": 8,
+            "totalMs": 0.3,
+            "mediaMs": 0.0375,
+            "maxMs": 0.1
+          },
+          "drawArcs": {
+            "chamadas": 8,
+            "totalMs": 0.3,
+            "mediaMs": 0.0375,
+            "maxMs": 0.1
+          },
+          "drawStatus": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "speechRender": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15PresDraw": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentDraw": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentEdge": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateHUD": {
+            "chamadas": 8,
+            "totalMs": 0.3,
+            "mediaMs": 0.0375,
+            "maxMs": 0.2
+          },
+          "fracHudChip": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "fractureHudChip": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "sheetRender": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "devTick": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          }
+        }
+      },
+      {
+        "id": "E",
+        "nome": "stress Sandbox",
+        "submissaoMedianaMs": 2.2,
+        "flushLeituraMedianaMs": 410.7,
+        "renderComLeituraMedianaMs": 412.9,
+        "semBlurDiagnosticoMedianaMs": null,
+        "hashPixels": "81148eacf8ab3adb3c4cc388143c871d36e17460a4bdcaa93b152f1e03b9baa9",
+        "secoes": {
+          "frame_total": {
+            "chamadas": 8,
+            "totalMs": 41.1,
+            "mediaMs": 5.1375,
+            "maxMs": 12.5
+          },
+          "update_total": {
+            "chamadas": 8,
+            "totalMs": 11.1,
+            "mediaMs": 1.3875,
+            "maxMs": 2.1
+          },
+          "fx_update": {
+            "chamadas": 8,
+            "totalMs": 1.9,
+            "mediaMs": 0.2375,
+            "maxMs": 0.5
+          },
+          "updatePlayer": {
+            "chamadas": 8,
+            "totalMs": 0.3,
+            "mediaMs": 0.0375,
+            "maxMs": 0.1
+          },
+          "updateEcho": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateEnemy": {
+            "chamadas": 368,
+            "totalMs": 3.5,
+            "mediaMs": 0.00951,
+            "maxMs": 1.1
+          },
+          "updateBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateMiniBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateProjectiles": {
+            "chamadas": 8,
+            "totalMs": 4.7,
+            "mediaMs": 0.5875,
+            "maxMs": 1.2
+          },
+          "updateSwings": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "updateArcs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateOrbs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updatePickups": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateAllies": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateResonance": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "tickArenaEvent": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "tickMicroEvents": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "factionPresenceUpdateEntity": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15PresUpdate": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentUpdate": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "render": {
+            "chamadas": 8,
+            "totalMs": 29.7,
+            "mediaMs": 3.7125,
+            "maxMs": 11.6
+          },
+          "drawGrid": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "drawEnemy": {
+            "chamadas": 368,
+            "totalMs": 8.3,
+            "mediaMs": 0.02255,
+            "maxMs": 2.3
+          },
+          "drawBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawMiniBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawProjectile": {
+            "chamadas": 2080,
+            "totalMs": 14.0,
+            "mediaMs": 0.00673,
+            "maxMs": 9.6
+          },
+          "drawWorldExtras": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "factionPresenceDrawEntity": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawEchoEntity": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawPlayer": {
+            "chamadas": 8,
+            "totalMs": 0.2,
+            "mediaMs": 0.025,
+            "maxMs": 0.1
+          },
+          "drawBeamFrom": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawSwings": {
+            "chamadas": 8,
+            "totalMs": 0.3,
+            "mediaMs": 0.0375,
+            "maxMs": 0.1
+          },
+          "drawArcs": {
+            "chamadas": 8,
+            "totalMs": 0.3,
+            "mediaMs": 0.0375,
+            "maxMs": 0.1
+          },
+          "drawStatus": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "speechRender": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15PresDraw": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentDraw": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentEdge": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateHUD": {
+            "chamadas": 8,
+            "totalMs": 0.3,
+            "mediaMs": 0.0375,
+            "maxMs": 0.1
+          },
+          "fracHudChip": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "fractureHudChip": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "sheetRender": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "devTick": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          }
+        }
+      },
+      {
+        "id": "F",
+        "nome": "Swarm-heavy",
+        "submissaoMedianaMs": 0.8,
+        "flushLeituraMedianaMs": 99.3,
+        "renderComLeituraMedianaMs": 100.4,
+        "semBlurDiagnosticoMedianaMs": 89.4,
+        "hashPixels": "d16f0e038f69342faa18597991f012cae49d014613e69000131aa5c51ff6ff20",
+        "secoes": {
+          "frame_total": {
+            "chamadas": 8,
+            "totalMs": 16.4,
+            "mediaMs": 2.05,
+            "maxMs": 4.5
+          },
+          "update_total": {
+            "chamadas": 8,
+            "totalMs": 6.1,
+            "mediaMs": 0.7625,
+            "maxMs": 2.9
+          },
+          "fx_update": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "updatePlayer": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateEcho": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateEnemy": {
+            "chamadas": 368,
+            "totalMs": 4.8,
+            "mediaMs": 0.01304,
+            "maxMs": 2.1
+          },
+          "updateBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateMiniBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateProjectiles": {
+            "chamadas": 8,
+            "totalMs": 0.6,
+            "mediaMs": 0.075,
+            "maxMs": 0.2
+          },
+          "updateSwings": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateArcs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateOrbs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updatePickups": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateAllies": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "updateResonance": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "tickArenaEvent": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "tickMicroEvents": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "factionPresenceUpdateEntity": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15PresUpdate": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentUpdate": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "render": {
+            "chamadas": 8,
+            "totalMs": 9.8,
+            "mediaMs": 1.225,
+            "maxMs": 2.7
+          },
+          "drawGrid": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "drawEnemy": {
+            "chamadas": 368,
+            "totalMs": 4.4,
+            "mediaMs": 0.01196,
+            "maxMs": 0.3
+          },
+          "drawBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawMiniBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawProjectile": {
+            "chamadas": 240,
+            "totalMs": 1.8,
+            "mediaMs": 0.0075,
+            "maxMs": 1.1
+          },
+          "drawWorldExtras": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "factionPresenceDrawEntity": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawEchoEntity": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawPlayer": {
+            "chamadas": 8,
+            "totalMs": 0.6,
+            "mediaMs": 0.075,
+            "maxMs": 0.2
+          },
+          "drawBeamFrom": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawSwings": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "drawArcs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawStatus": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "speechRender": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15PresDraw": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentDraw": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentEdge": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateHUD": {
+            "chamadas": 8,
+            "totalMs": 0.4,
+            "mediaMs": 0.05,
+            "maxMs": 0.2
+          },
+          "fracHudChip": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "fractureHudChip": {
+            "chamadas": 8,
+            "totalMs": 0.2,
+            "mediaMs": 0.025,
+            "maxMs": 0.1
+          },
+          "sheetRender": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "devTick": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          }
+        }
+      },
+      {
+        "id": "G",
+        "nome": "projectile-heavy",
+        "submissaoMedianaMs": 1.8,
+        "flushLeituraMedianaMs": 256.3,
+        "renderComLeituraMedianaMs": 257.7,
+        "semBlurDiagnosticoMedianaMs": null,
+        "hashPixels": "c6f8d57eff275c69bfd5892c17dc3167c6d6d28a66ce832a9cdef44335a81a03",
+        "secoes": {
+          "frame_total": {
+            "chamadas": 8,
+            "totalMs": 35.3,
+            "mediaMs": 4.4125,
+            "maxMs": 10.5
+          },
+          "update_total": {
+            "chamadas": 8,
+            "totalMs": 8.7,
+            "mediaMs": 1.0875,
+            "maxMs": 1.5
+          },
+          "fx_update": {
+            "chamadas": 8,
+            "totalMs": 0.4,
+            "mediaMs": 0.05,
+            "maxMs": 0.1
+          },
+          "updatePlayer": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateEcho": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateEnemy": {
+            "chamadas": 368,
+            "totalMs": 1.4,
+            "mediaMs": 0.0038,
+            "maxMs": 0.1
+          },
+          "updateBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateMiniBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateProjectiles": {
+            "chamadas": 8,
+            "totalMs": 6,
+            "mediaMs": 0.75,
+            "maxMs": 1.1
+          },
+          "updateSwings": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateArcs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateOrbs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updatePickups": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateAllies": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateResonance": {
+            "chamadas": 8,
+            "totalMs": 0.3,
+            "mediaMs": 0.0375,
+            "maxMs": 0.2
+          },
+          "tickArenaEvent": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "tickMicroEvents": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "factionPresenceUpdateEntity": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15PresUpdate": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentUpdate": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "render": {
+            "chamadas": 8,
+            "totalMs": 26.3,
+            "mediaMs": 3.2875,
+            "maxMs": 9.6
+          },
+          "drawGrid": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "drawEnemy": {
+            "chamadas": 368,
+            "totalMs": 5.8,
+            "mediaMs": 0.01576,
+            "maxMs": 0.2
+          },
+          "drawBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawMiniBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawProjectile": {
+            "chamadas": 2880,
+            "totalMs": 16.0,
+            "mediaMs": 0.00556,
+            "maxMs": 7.7
+          },
+          "drawWorldExtras": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "factionPresenceDrawEntity": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawEchoEntity": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawPlayer": {
+            "chamadas": 8,
+            "totalMs": 0.7,
+            "mediaMs": 0.0875,
+            "maxMs": 0.1
+          },
+          "drawBeamFrom": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawSwings": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawArcs": {
+            "chamadas": 8,
+            "totalMs": 0.2,
+            "mediaMs": 0.025,
+            "maxMs": 0.1
+          },
+          "drawStatus": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "speechRender": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15PresDraw": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentDraw": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "pr15IntentEdge": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateHUD": {
+            "chamadas": 8,
+            "totalMs": 0.2,
+            "mediaMs": 0.025,
+            "maxMs": 0.1
+          },
+          "fracHudChip": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "fractureHudChip": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "sheetRender": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "devTick": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          }
+        }
+      },
+      {
+        "id": "H",
+        "nome": "FX-heavy",
+        "submissaoMedianaMs": 4.7,
+        "flushLeituraMedianaMs": 522.2,
+        "renderComLeituraMedianaMs": 526.7,
+        "semBlurDiagnosticoMedianaMs": 345.5,
+        "hashPixels": "aac04f8f626aed44958948f560b6fa3b2e2f2149a58894d15bc1c58a05516224",
+        "secoes": {
+          "frame_total": {
+            "chamadas": 8,
+            "totalMs": 81.2,
+            "mediaMs": 10.15,
+            "maxMs": 19.9
+          },
+          "update_total": {
+            "chamadas": 8,
+            "totalMs": 3.4,
+            "mediaMs": 0.425,
+            "maxMs": 0.7
+          },
+          "fx_update": {
+            "chamadas": 8,
+            "totalMs": 2.4,
+            "mediaMs": 0.3,
+            "maxMs": 0.6
+          },
+          "updatePlayer": {
+            "chamadas": 8,
+            "totalMs": 0.2,
+            "mediaMs": 0.025,
+            "maxMs": 0.1
+          },
+          "updateEcho": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateEnemy": {
+            "chamadas": 80,
+            "totalMs": 0.3,
+            "mediaMs": 0.00375,
+            "maxMs": 0.1
+          },
+          "updateBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateMiniBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateProjectiles": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "updateSwings": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateArcs": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "updateOrbs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updatePickups": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateAllies": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateResonance": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "tickArenaEvent": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "tickMicroEvents": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "factionPresenceUpdateEntity": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15PresUpdate": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentUpdate": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "render": {
+            "chamadas": 8,
+            "totalMs": 77.3,
+            "mediaMs": 9.6625,
+            "maxMs": 19.6
+          },
+          "drawGrid": {
+            "chamadas": 8,
+            "totalMs": 0.3,
+            "mediaMs": 0.0375,
+            "maxMs": 0.1
+          },
+          "drawEnemy": {
+            "chamadas": 80,
+            "totalMs": 1.5,
+            "mediaMs": 0.01875,
+            "maxMs": 0.1
+          },
+          "drawBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawMiniBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawProjectile": {
+            "chamadas": 160,
+            "totalMs": 0.6,
+            "mediaMs": 0.00375,
+            "maxMs": 0.1
+          },
+          "drawWorldExtras": {
+            "chamadas": 8,
+            "totalMs": 0.2,
+            "mediaMs": 0.025,
+            "maxMs": 0.1
+          },
+          "factionPresenceDrawEntity": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawEchoEntity": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawPlayer": {
+            "chamadas": 8,
+            "totalMs": 0.9,
+            "mediaMs": 0.1125,
+            "maxMs": 0.2
+          },
+          "drawBeamFrom": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawSwings": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "drawArcs": {
+            "chamadas": 8,
+            "totalMs": 0.5,
+            "mediaMs": 0.0625,
+            "maxMs": 0.2
+          },
+          "drawStatus": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "speechRender": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15PresDraw": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentDraw": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentEdge": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "updateHUD": {
+            "chamadas": 8,
+            "totalMs": 0.5,
+            "mediaMs": 0.0625,
+            "maxMs": 0.2
+          },
+          "fracHudChip": {
+            "chamadas": 8,
+            "totalMs": 0.2,
+            "mediaMs": 0.025,
+            "maxMs": 0.2
+          },
+          "fractureHudChip": {
+            "chamadas": 8,
+            "totalMs": 0.2,
+            "mediaMs": 0.025,
+            "maxMs": 0.1
+          },
+          "sheetRender": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "devTick": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          }
+        }
+      },
+      {
+        "id": "I",
+        "nome": "2 Singular + ranged + Swarm",
+        "submissaoMedianaMs": 1.8,
+        "flushLeituraMedianaMs": 248.6,
+        "renderComLeituraMedianaMs": 249.9,
+        "semBlurDiagnosticoMedianaMs": null,
+        "hashPixels": "fb28197f5226cadd55fc91af91c60852be40cf2af89e77ca6016e451f820a35e",
+        "secoes": {
+          "frame_total": {
+            "chamadas": 8,
+            "totalMs": 26,
+            "mediaMs": 3.25,
+            "maxMs": 7.7
+          },
+          "update_total": {
+            "chamadas": 8,
+            "totalMs": 8.2,
+            "mediaMs": 1.025,
+            "maxMs": 2.4
+          },
+          "fx_update": {
+            "chamadas": 8,
+            "totalMs": 1.1,
+            "mediaMs": 0.1375,
+            "maxMs": 0.4
+          },
+          "updatePlayer": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "updateEcho": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateEnemy": {
+            "chamadas": 368,
+            "totalMs": 2.2,
+            "mediaMs": 0.00598,
+            "maxMs": 0.2
+          },
+          "updateBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateMiniBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateProjectiles": {
+            "chamadas": 8,
+            "totalMs": 2.3,
+            "mediaMs": 0.2875,
+            "maxMs": 0.6
+          },
+          "updateSwings": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateArcs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateOrbs": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updatePickups": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateAllies": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateResonance": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "tickArenaEvent": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "tickMicroEvents": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "factionPresenceUpdateEntity": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15PresUpdate": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentUpdate": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "render": {
+            "chamadas": 8,
+            "totalMs": 17.3,
+            "mediaMs": 2.1625,
+            "maxMs": 6.9
+          },
+          "drawGrid": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "drawEnemy": {
+            "chamadas": 368,
+            "totalMs": 4,
+            "mediaMs": 0.01087,
+            "maxMs": 0.1
+          },
+          "drawBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawMiniBoss": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawProjectile": {
+            "chamadas": 1200,
+            "totalMs": 2.5,
+            "mediaMs": 0.00208,
+            "maxMs": 0.1
+          },
+          "drawWorldExtras": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "factionPresenceDrawEntity": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawEchoEntity": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawPlayer": {
+            "chamadas": 8,
+            "totalMs": 0.6,
+            "mediaMs": 0.075,
+            "maxMs": 0.3
+          },
+          "drawBeamFrom": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "drawSwings": {
+            "chamadas": 8,
+            "totalMs": 0.1,
+            "mediaMs": 0.0125,
+            "maxMs": 0.1
+          },
+          "drawArcs": {
+            "chamadas": 8,
+            "totalMs": 0.3,
+            "mediaMs": 0.0375,
+            "maxMs": 0.1
+          },
+          "drawStatus": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "speechRender": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15PresDraw": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentDraw": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "pr15IntentEdge": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "updateHUD": {
+            "chamadas": 8,
+            "totalMs": 0.4,
+            "mediaMs": 0.05,
+            "maxMs": 0.1
+          },
+          "fracHudChip": {
+            "chamadas": 8,
+            "totalMs": 0.2,
+            "mediaMs": 0.025,
+            "maxMs": 0.1
+          },
+          "fractureHudChip": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "sheetRender": {
+            "chamadas": 0,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          },
+          "devTick": {
+            "chamadas": 8,
+            "totalMs": 0,
+            "mediaMs": 0,
+            "maxMs": 0
+          }
+        }
+      }
+    ],
+    "qualidade": [
+      {
+        "viewport": [
+          960,
+          540
+        ],
+        "qualidade": 0,
+        "renderQuality": 0.62,
+        "dpr": 1,
+        "buffer": [
+          960,
+          540
+        ]
+      },
+      {
+        "viewport": [
+          960,
+          540
+        ],
+        "qualidade": 1,
+        "renderQuality": 0.84,
+        "dpr": 1,
+        "buffer": [
+          960,
+          540
+        ]
+      },
+      {
+        "viewport": [
+          960,
+          540
+        ],
+        "qualidade": 2,
+        "renderQuality": 1,
+        "dpr": 1,
+        "buffer": [
+          960,
+          540
+        ]
+      },
+      {
+        "viewport": [
+          1920,
+          1080
+        ],
+        "qualidade": 0,
+        "renderQuality": 0.62,
+        "dpr": 0.81104,
+        "buffer": [
+          1557,
+          876
+        ]
+      },
+      {
+        "viewport": [
+          1920,
+          1080
+        ],
+        "qualidade": 1,
+        "renderQuality": 0.84,
+        "dpr": 0.94404,
+        "buffer": [
+          1813,
+          1020
+        ]
+      },
+      {
+        "viewport": [
+          1920,
+          1080
+        ],
+        "qualidade": 2,
+        "renderQuality": 1,
+        "dpr": 1,
+        "buffer": [
+          1920,
+          1080
+        ]
+      },
+      {
+        "viewport": [
+          3840,
+          2160
+        ],
+        "qualidade": 0,
+        "renderQuality": 0.62,
+        "dpr": 0.42,
+        "buffer": [
+          1613,
+          907
+        ]
+      },
+      {
+        "viewport": [
+          3840,
+          2160
+        ],
+        "qualidade": 1,
+        "renderQuality": 0.84,
+        "dpr": 0.47202,
+        "buffer": [
+          1813,
+          1020
+        ]
+      },
+      {
+        "viewport": [
+          3840,
+          2160
+        ],
+        "qualidade": 2,
+        "renderQuality": 1,
+        "dpr": 0.51501,
+        "buffer": [
+          1978,
+          1112
+        ]
+      }
+    ],
+    "erros": []
+  },
+  "inventarioShadowBlur": {
+    "criterio": "Atribuições textuais ctx.shadowBlur; função top-level precedente. Inclui resets em zero. Frequência dinâmica depende de entidades/estados; veja contagem de pinturas com blur no benchmark.",
+    "total": 146,
+    "ocorrencias": [
+      {
+        "funcao": "drawWorldExtras",
+        "linha": 13047,
+        "expressao": "9"
+      },
+      {
+        "funcao": "drawWorldExtras",
+        "linha": 13051,
+        "expressao": "11"
+      },
+      {
+        "funcao": "drawWorldExtras",
+        "linha": 13062,
+        "expressao": "12"
+      },
+      {
+        "funcao": "drawWorldExtras",
+        "linha": 13072,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawWorldExtras",
+        "linha": 13097,
+        "expressao": "10"
+      },
+      {
+        "funcao": "drawWorldExtras",
+        "linha": 13100,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawWorldExtras",
+        "linha": 13103,
+        "expressao": "10"
+      },
+      {
+        "funcao": "drawWorldExtras",
+        "linha": 13106,
+        "expressao": "8"
+      },
+      {
+        "funcao": "drawWorldExtras",
+        "linha": 13119,
+        "expressao": "20"
+      },
+      {
+        "funcao": "drawWorldExtras",
+        "linha": 13123,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawWorldExtras",
+        "linha": 13129,
+        "expressao": "18+br*14"
+      },
+      {
+        "funcao": "drawWorldExtras",
+        "linha": 13148,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawWorldExtras",
+        "linha": 13170,
+        "expressao": "8"
+      },
+      {
+        "funcao": "drawWorldExtras",
+        "linha": 13173,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawWorldExtras",
+        "linha": 13193,
+        "expressao": "15"
+      },
+      {
+        "funcao": "drawWorldExtras",
+        "linha": 13213,
+        "expressao": "8+pv*10"
+      },
+      {
+        "funcao": "drawWorldExtras",
+        "linha": 13217,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawWorldExtras",
+        "linha": 13236,
+        "expressao": "16"
+      },
+      {
+        "funcao": "drawWorldExtras",
+        "linha": 13257,
+        "expressao": "13"
+      },
+      {
+        "funcao": "drawWorldExtras",
+        "linha": 13261,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawWorldExtras",
+        "linha": 13285,
+        "expressao": "12+br*10"
+      },
+      {
+        "funcao": "drawWorldExtras",
+        "linha": 13292,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawWorldExtras",
+        "linha": 13321,
+        "expressao": "8+br*10"
+      },
+      {
+        "funcao": "drawWorldExtras",
+        "linha": 13324,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawWorldExtras",
+        "linha": 13328,
+        "expressao": "8"
+      },
+      {
+        "funcao": "drawWorldExtras",
+        "linha": 13330,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawWorldExtras",
+        "linha": 13338,
+        "expressao": "9"
+      },
+      {
+        "funcao": "drawWorldExtras",
+        "linha": 13343,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawWorldExtras",
+        "linha": 13351,
+        "expressao": "10"
+      },
+      {
+        "funcao": "drawWorldExtras",
+        "linha": 13354,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawArcs",
+        "linha": 14631,
+        "expressao": "10"
+      },
+      {
+        "funcao": "drawSwings",
+        "linha": 16855,
+        "expressao": "26*k"
+      },
+      {
+        "funcao": "drawSwings",
+        "linha": 16864,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawBeamFrom",
+        "linha": 16885,
+        "expressao": "22+ramp*22"
+      },
+      {
+        "funcao": "drawBeamFrom",
+        "linha": 16888,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawBeamFrom",
+        "linha": 16893,
+        "expressao": "20"
+      },
+      {
+        "funcao": "drawWeaponSprite",
+        "linha": 18562,
+        "expressao": "13"
+      },
+      {
+        "funcao": "drawWeaponSprite",
+        "linha": 18564,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawWeaponSprite",
+        "linha": 18576,
+        "expressao": "10"
+      },
+      {
+        "funcao": "drawWeaponSprite",
+        "linha": 18579,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawWeaponSprite",
+        "linha": 18586,
+        "expressao": "15"
+      },
+      {
+        "funcao": "drawWeaponSprite",
+        "linha": 18588,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawWeaponSprite",
+        "linha": 18595,
+        "expressao": "11"
+      },
+      {
+        "funcao": "drawWeaponSprite",
+        "linha": 18602,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawWeaponSprite",
+        "linha": 18607,
+        "expressao": "13"
+      },
+      {
+        "funcao": "drawWeaponSprite",
+        "linha": 18614,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawWeaponSprite",
+        "linha": 18620,
+        "expressao": "11"
+      },
+      {
+        "funcao": "drawWeaponSprite",
+        "linha": 18623,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawWeaponSprite",
+        "linha": 18630,
+        "expressao": "10"
+      },
+      {
+        "funcao": "drawWeaponSprite",
+        "linha": 18631,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawWeaponSprite",
+        "linha": 18642,
+        "expressao": "12"
+      },
+      {
+        "funcao": "drawWeaponSprite",
+        "linha": 18643,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawWeaponSprite",
+        "linha": 18647,
+        "expressao": "16"
+      },
+      {
+        "funcao": "drawWeaponSprite",
+        "linha": 18654,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawWeaponSprite",
+        "linha": 18659,
+        "expressao": "15"
+      },
+      {
+        "funcao": "drawWeaponSprite",
+        "linha": 18664,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawWeaponSprite",
+        "linha": 18668,
+        "expressao": "9"
+      },
+      {
+        "funcao": "drawWeaponSprite",
+        "linha": 18676,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawWeaponSprite",
+        "linha": 18682,
+        "expressao": "13"
+      },
+      {
+        "funcao": "drawWeaponSprite",
+        "linha": 18685,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawWeaponSprite",
+        "linha": 18689,
+        "expressao": "14"
+      },
+      {
+        "funcao": "drawWeaponSprite",
+        "linha": 18694,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawWeaponSprite",
+        "linha": 18703,
+        "expressao": "12"
+      },
+      {
+        "funcao": "drawWeaponSprite",
+        "linha": 18704,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawWeaponSprite",
+        "linha": 18716,
+        "expressao": "9"
+      },
+      {
+        "funcao": "drawWeaponSprite",
+        "linha": 18723,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawWeaponSprite",
+        "linha": 18735,
+        "expressao": "16"
+      },
+      {
+        "funcao": "drawWeaponSprite",
+        "linha": 18742,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawWeaponSprite",
+        "linha": 18752,
+        "expressao": "17"
+      },
+      {
+        "funcao": "drawWeaponSprite",
+        "linha": 18771,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawWeaponSprite",
+        "linha": 18789,
+        "expressao": "10+pu*14"
+      },
+      {
+        "funcao": "drawWeaponSprite",
+        "linha": 18794,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawWeaponSprite",
+        "linha": 18804,
+        "expressao": "11"
+      },
+      {
+        "funcao": "drawWeaponSprite",
+        "linha": 18807,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawUnit",
+        "linha": 18846,
+        "expressao": "12"
+      },
+      {
+        "funcao": "drawUnit",
+        "linha": 18848,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawUnit",
+        "linha": 18860,
+        "expressao": "9"
+      },
+      {
+        "funcao": "drawUnit",
+        "linha": 18863,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawUnit",
+        "linha": 18880,
+        "expressao": "13"
+      },
+      {
+        "funcao": "drawUnit",
+        "linha": 18883,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawBoss",
+        "linha": 19070,
+        "expressao": "22"
+      },
+      {
+        "funcao": "drawBoss",
+        "linha": 19072,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawBoss",
+        "linha": 19086,
+        "expressao": "26"
+      },
+      {
+        "funcao": "drawBoss",
+        "linha": 19088,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawBoss",
+        "linha": 19096,
+        "expressao": "flash?46:30"
+      },
+      {
+        "funcao": "drawBoss",
+        "linha": 19109,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawEnemy",
+        "linha": 19185,
+        "expressao": "16"
+      },
+      {
+        "funcao": "drawEnemy",
+        "linha": 19228,
+        "expressao": "flash?22:12"
+      },
+      {
+        "funcao": "drawEnemy",
+        "linha": 19237,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawEnemy",
+        "linha": 19263,
+        "expressao": "13"
+      },
+      {
+        "funcao": "drawEnemy",
+        "linha": 19267,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawEnemy",
+        "linha": 19276,
+        "expressao": "14"
+      },
+      {
+        "funcao": "drawEnemy",
+        "linha": 19279,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawEnemy",
+        "linha": 19296,
+        "expressao": "10+chg*22"
+      },
+      {
+        "funcao": "drawEnemy",
+        "linha": 19300,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawEnemy",
+        "linha": 19302,
+        "expressao": "flash?22:12"
+      },
+      {
+        "funcao": "drawEnemy",
+        "linha": 19310,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawEnemy",
+        "linha": 19314,
+        "expressao": "12+chg*20"
+      },
+      {
+        "funcao": "drawEnemy",
+        "linha": 19317,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawEnemy",
+        "linha": 19334,
+        "expressao": "flash?26:16"
+      },
+      {
+        "funcao": "drawEnemy",
+        "linha": 19336,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawEnemy",
+        "linha": 19358,
+        "expressao": "flash?18:9"
+      },
+      {
+        "funcao": "drawEnemy",
+        "linha": 19369,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawEnemy",
+        "linha": 19376,
+        "expressao": "flash?20:11"
+      },
+      {
+        "funcao": "drawEnemy",
+        "linha": 19381,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawEnemy",
+        "linha": 19396,
+        "expressao": "flash?18:9"
+      },
+      {
+        "funcao": "drawEnemy",
+        "linha": 19404,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawEnemy",
+        "linha": 19408,
+        "expressao": "14"
+      },
+      {
+        "funcao": "drawEnemy",
+        "linha": 19422,
+        "expressao": "flash?18:9"
+      },
+      {
+        "funcao": "drawEnemy",
+        "linha": 19429,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawEnemy",
+        "linha": 19438,
+        "expressao": "gh?24:12"
+      },
+      {
+        "funcao": "drawEnemy",
+        "linha": 19445,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawEnemy",
+        "linha": 19461,
+        "expressao": "flash?26:18"
+      },
+      {
+        "funcao": "drawEnemy",
+        "linha": 19466,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawEnemy",
+        "linha": 19490,
+        "expressao": "15"
+      },
+      {
+        "funcao": "drawEnemy",
+        "linha": 19493,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawEnemy",
+        "linha": 19495,
+        "expressao": "flash?24:13"
+      },
+      {
+        "funcao": "drawEnemy",
+        "linha": 19503,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawEnemy",
+        "linha": 19511,
+        "expressao": "10+pl*12"
+      },
+      {
+        "funcao": "drawEnemy",
+        "linha": 19514,
+        "expressao": "0"
+      },
+      {
+        "funcao": "drawPlayer",
+        "linha": 19579,
+        "expressao": "16"
+      },
+      {
+        "funcao": "drawPlayer",
+        "linha": 19620,
+        "expressao": "10"
+      },
+      {
+        "funcao": "drawPlayer",
+        "linha": 19628,
+        "expressao": "0"
+      },
+      {
+        "funcao": "render",
+        "linha": 19663,
+        "expressao": "0"
+      },
+      {
+        "funcao": "render",
+        "linha": 19685,
+        "expressao": "8"
+      },
+      {
+        "funcao": "render",
+        "linha": 19690,
+        "expressao": "0"
+      },
+      {
+        "funcao": "render",
+        "linha": 19778,
+        "expressao": "10"
+      },
+      {
+        "funcao": "fpDrawAnchor",
+        "linha": 31388,
+        "expressao": "8"
+      },
+      {
+        "funcao": "fpDrawAnchor",
+        "linha": 31410,
+        "expressao": "k?4:10+p*6"
+      },
+      {
+        "funcao": "fpDrawAnchor",
+        "linha": 31420,
+        "expressao": "10"
+      },
+      {
+        "funcao": "fpDrawConsortium",
+        "linha": 31433,
+        "expressao": "6"
+      },
+      {
+        "funcao": "fpDrawConsortium",
+        "linha": 31444,
+        "expressao": "8"
+      },
+      {
+        "funcao": "fpDrawConsortium",
+        "linha": 31455,
+        "expressao": "10+p*6"
+      },
+      {
+        "funcao": "fpDrawConsortium",
+        "linha": 31462,
+        "expressao": "8"
+      },
+      {
+        "funcao": "fpDrawRemnants",
+        "linha": 31494,
+        "expressao": "6"
+      },
+      {
+        "funcao": "fpDrawRemnants",
+        "linha": 31498,
+        "expressao": "8"
+      },
+      {
+        "funcao": "fpDrawRemnants",
+        "linha": 31508,
+        "expressao": "12+beat*8"
+      },
+      {
+        "funcao": "fpDrawRemnants",
+        "linha": 31513,
+        "expressao": "6"
+      },
+      {
+        "funcao": "fpDrawDeviants",
+        "linha": 31530,
+        "expressao": "g?4:9"
+      },
+      {
+        "funcao": "fpDrawDeviants",
+        "linha": 31540,
+        "expressao": "7"
+      },
+      {
+        "funcao": "fpDrawDeviants",
+        "linha": 31554,
+        "expressao": "10+Math.abs(ip)*8"
+      },
+      {
+        "funcao": "factionPresenceDrawEntity",
+        "linha": 31601,
+        "expressao": "0"
+      },
+      {
+        "funcao": "factionPresenceDrawEntity",
+        "linha": 31617,
+        "expressao": "8"
+      },
+      {
+        "funcao": "factionPresenceDrawEntity",
+        "linha": 31620,
+        "expressao": "0"
+      },
+      {
+        "funcao": "factionPresenceDrawEntity",
+        "linha": 31648,
+        "expressao": "10+6*pp"
+      },
+      {
+        "funcao": "factionPresenceDrawEntity",
+        "linha": 31652,
+        "expressao": "0"
+      }
+    ]
+  }
+}

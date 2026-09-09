@@ -1,5 +1,10 @@
 # ECHO — PR15.5-B-FIX.2 · Mostrar Métricas
 
+> Atualizado pelo **PR15.5 PERFORMANCE AUDIT #1**: o diagnóstico permanece
+> visível/amostrando em eventos, loja, TAB, pausa, DEV/Sandbox e fim da run.
+> O relatório da auditoria e os ganhos estruturais estão em
+> `PR15_5_PERFORMANCE_AUDIT1.md`. A base de criação abaixo é histórica.
+
 ## Objetivo e escopo
 
 Adicionar uma ferramenta permanente e simples para playtests: números de desempenho e cardinalidade, sem criar um profiler, histórico, gráficos ou novas entidades visuais. A ferramenta é somente observação; não modifica dano, HP, escudo, velocidade, cooldown, ondas, IA, RNG, economia, equipamentos, Echos ou PR15.
@@ -30,7 +35,7 @@ Caminho: **CONFIGURAÇÕES → MOSTRAR MÉTRICAS**, entre **TELA CHEIA** e **QUA
 
 ## Painel, HUD e resolução
 
-Implementação DOM, dentro do `#hud` existente. Um único `<aside id="metrics-overlay" hidden>`, sete valores `<dd>` fixos e referências DOM guardadas uma vez no carregamento. O atributo `hidden` impede aparecimento inicial quando a preferência está OFF.
+Implementação DOM, irmã do `#hud` no `body`, com `position:fixed; z-index:84`. Sair do stacking context de z-index 10 do HUD é necessário para ficar visível acima de modais/DEV. Um único `<aside id="metrics-overlay" hidden>`, sete valores `<dd>` fixos e referências DOM guardadas uma vez no carregamento. O atributo `hidden` impede aparecimento inicial quando a preferência está OFF.
 
 Características: 174 × 158 px, fonte monoespaçada de 11 px com linha de 17 px, algarismos tabulares, fundo escuro, borda ciano discreta, rótulos em pt-BR e números alinhados à direita. Sem animações, transições, blur, glow, sombras, gráficos, Canvas ou interceptação de cliques.
 
@@ -41,7 +46,7 @@ Características: 174 × 158 px, fonte monoespaçada de 11 px com linha de 17 px
 - Superior direito: créditos, resíduos temporais, Fractura, perfil moral e status dos Echos, organizados em `#slots`/grupos. Não foi adicionada informação nessa coluna congestionada.
 - Inferior esquerdo: Sincronia (`#xpwrap`); no Sandbox, o chip `#sb-chip` fica a 132 px do rodapé.
 - Inferior direito: arsenal, Dash, Especial e cooldowns.
-- Centro: banners, mensagens e toasts; painéis DEV/TAB/laboratório têm prioridade sobre o diagnóstico.
+- Centro: banners, mensagens e toasts. Em DEV/TAB/laboratório o diagnóstico usa a margem superior livre, sem cobrir controles nem desaparecer.
 
 Posição escolhida: **`left:16px; bottom:178px`**, na lateral inferior esquerda, acima da Sincronia e do chip Sandbox.
 
@@ -55,7 +60,21 @@ Validação automatizada em Chromium headless, incluindo inspeção das capturas
 
 Em 960 × 540, há **20 px** entre o fim do painel e o início do chip Sandbox. Também foi verificado o preenchimento de todos os números em um cenário sintético, sem overflow de rótulos ou valores.
 
-O painel só aparece com a opção ON, `state==='play'`, jogador existente, documento visível, painel DEV fechado e sem banner ativo (`bannerT>0`). Em banners importantes ele cede espaço; o banner existente ainda pode estar em seu fade-out curto quando o painel reaparece. Em menus, morte, loja, evento modal, vitória, pausa, TAB e laboratório aberto, fica oculto. Não há tentativa de desenhar acima de mensagens/modal.
+Com ON, jogador existente e documento visível, o painel continua em combate,
+pausa, evento, loja, TAB, laboratório, DEV, morte/fratura e vitória. Banners não o
+ocultam nem reiniciam a janela. Só fica oculto fora da sessão (`title`, `slots`,
+`slotMenu`, `slotConfirm`), sem jogador, com documento oculto ou timestamp inválido.
+
+A auditoria de 960×540 comprovou interseção da posição vertical antiga com cards
+no evento/loja, seções do TAB e o painel DEV. Nesses fluxos, no laboratório,
+Configurações/Codex e telas finais, `.metrics-dock` dispõe os **mesmos sete valores**
+numa faixa de **18 px**, `top:1px; left:16px; right:16px`. Ela ocupa a margem antes
+do conteúdo dos modais, sem esconder opções. Não cria outro painel. Combate e
+pausa simples mantêm a posição vertical original. A mudança de classe acontece
+somente na transição de layout; números continuam amostrados em 250 ms.
+
+A nova política passou por 25 verificações de navegador nas três resoluções,
+sem corte de números/rótulos ou interseção com cards/seções/controles auditados.
 
 ## Auditoria dos números: fontes reais
 
@@ -101,9 +120,9 @@ Os arrays existentes são consultados após os updates no loop; `enemies` usa a 
 
 Único hook: `metricsTick(now)` no `loop(now)` existente, depois do gate adaptativo, dos updates, do render e do HUD. RAFs rejeitados pelo gate retornam antes do sampler.
 
-Estado limitado a escalares: `metricsStart`, `metricsLast`, `metricsFrames` e `metricsVisible`.
+Estado limitado a escalares: `metricsStart`, `metricsLast`, `metricsFrames`, `metricsVisible` e `metricsDocked`.
 
-1. A entrada em gameplay elegível mostra `---` e estabelece o timestamp inicial, sem inventar uma amostra.
+1. A primeira entrada na sessão elegível mostra `---` e estabelece o timestamp inicial, sem inventar uma amostra.
 2. Cada frame aceito incrementa um contador escalar. O primeiro callback estabelece a origem e não é contado como um intervalo completo.
 3. `elapsed = now - metricsStart`, usando o timestamp real do RAF. Não usa `dt` suavizado, limitado a 50 ms ou afetado por câmera lenta.
 4. Quando `elapsed >= 250`:
@@ -114,7 +133,7 @@ Estado limitado a escalares: `metricsStart`, `metricsLast`, `metricsFrames` e `m
 
 Frequência nominal: aproximadamente quatro publicações por segundo. O threshold é **250 ms**; a publicação ocorre no primeiro frame aceito que o ultrapassa. Em cadências estáveis entre 30 e 60 FPS, a granularidade é aproximadamente 250–283,3 ms. Em 50 FPS, por exemplo, a janela de teste fecha em 260 ms. Um hitch maior pode atrasar a publicação: não se usa timer paralelo para fingir atualização enquanto o jogo não processa frames.
 
-FPS e FRAME usam **a mesma janela**. Timestamps inválidos ocultam e reiniciam o sampler; repetidos/regressivos reiniciam a janela sem divisão por zero. Valores não finitos de FPS/FRAME não são publicados. Não há exibição de `NaN`, `Infinity`, `undefined` ou `null`.
+FPS e FRAME usam **a mesma janela**, preservada ao abrir/fechar overlays. Em pausa/evento/loja, representam a cadência de renderização, não a frequência da simulação congelada. Timestamps inválidos ocultam e reiniciam o sampler; repetidos/regressivos reiniciam a janela sem divisão por zero. Valores não finitos de FPS/FRAME não são publicados. Não há exibição de `NaN`, `Infinity`, `undefined` ou `null`.
 
 FRAME é **intervalo médio entre frames processados**, não tempo de CPU, GPU, draw call ou profiler. A média também não revela percentis/1% lows, nem necessariamente cada hitch isolado.
 
@@ -135,9 +154,9 @@ O DOM fixo e o objeto de referências DOM são criados uma vez no carregamento, 
 
 Frames elegíveis entre publicações:
 
-- Guards escalares de estado/jogador/visibilidade/banner/painel DEV.
+- Guards escalares de estado/jogador/visibilidade e seleção de layout. O estado do Codex é lido por `classList.contains` no nó já existente, sem query nem leitura geométrica; OFF retorna antes disso.
 - Validação numérica do timestamp, incremento do contador, subtração e comparação da janela.
-- Nenhum loop, consulta de entidades, objeto/array temporário, string ou atualização textual por frame estável.
+- Nenhum loop, consulta de entidades, objeto/array temporário, string ou atualização textual por frame estável. Mudanças de classe/visibilidade ocorrem apenas nas transições, não a cada frame.
 
 A cada janela completa:
 
@@ -148,7 +167,7 @@ A cada janela completa:
 - Sete comparações com `textContent`; escrita apenas nos valores que mudaram.
 - Nenhum objeto/array temporário, lista espelho, classificação, ordenação, serialização ou varredura global.
 
-Na transição de oculto para visível, existe uma escrita de visibilidade e reposição de textos neutros, antes da primeira amostra. Ao sair da gameplay elegível, existe uma escrita de ocultação e reset escalar. São transições, não atualização visual contínua por RAF.
+Na transição de oculto para visível, existe uma escrita de visibilidade e reposição de textos neutros, antes da primeira amostra. Ao sair da sessão elegível (título/seleção/ausência de jogador/documento oculto), existe uma escrita de ocultação e reset escalar. Overlays de gameplay não ocultam nem zeram a janela. São transições, não atualização visual contínua por RAF.
 
 Instrumentação determinística, sem teste frágil de duração de CPU:
 
@@ -168,11 +187,11 @@ Instrumentação determinística, sem teste frágil de duração de CPU:
 - `metricsSetEnabled` persiste a escolha e reinicia/oculta a janela; OFF desaparece imediatamente.
 - `resetRunWorld`, compartilhado por Nova Run, Continue e início/reinício de Sandbox, apenas chama `metricsHide`. Não cria outro sampler nem outro painel.
 - `loadCfg` também reinicia a janela, necessário porque o título recarrega as preferências.
-- Pausa/menu/loja/evento/TAB/laboratório/morte/vitória suspendem a medição no próximo frame aceito. O tempo fora desses estados não contamina uma janela que já foi encerrada.
-- Voltar ao combate apresenta os neutros e começa outra janela. Abrir Configurações repetidamente não adiciona timers nem callbacks.
+- Pausa/loja/evento/TAB/laboratório/morte/vitória **não suspendem mais a medição**. O sampler observa os frames que o loop existente continua renderizando.
+- Abrir/fechar overlays preserva a janela. Título/seleção, toggle, reset de mundo e suspensão detectada do documento reiniciam o sampler. Abrir Configurações repetidamente não adiciona timers nem callbacks.
 - Save/Continue não serializa o sampler nem a preferência. Continue respeita a configuração atual, mesmo que tenha sido desligada depois do checkpoint.
 - Morte, retorno ao título e Nova Run mantêm a escolha gravada. Sandbox não escreve progresso real e não recebe exceção no cálculo de métricas: seu combate também usa `state==='play'`.
-- DEV não é requisito. Com painel DEV aberto, o diagnóstico cede a lateral; fechando a ferramenta, volta a funcionar.
+- DEV não é requisito. Com painel DEV aberto, o diagnóstico continua funcionando na faixa superior; fechando a ferramenta, volta à disposição vertical se nenhum outro overlay exigir a faixa.
 
 ## Testes executados
 
@@ -196,11 +215,13 @@ Também foi executado `node audit_pr155/visual_foundation_benchmark.js`: permane
 
 ### Regressão completa
 
-`npm test`: **50 suítes, 2930 checks, 0 falhas**.
+`npm test` na criação: **50 suítes, 2930 checks, 0 falhas**. Após PERFORMANCE AUDIT #1: **51 suítes, 3041 checks, 0 falhas**, incluindo 111 checks novos. Os 108 checks desta feature foram mantidos, atualizando as expectativas de visibilidade que o novo requisito substituiu.
 
-Inclui arsenal, inimigos, minibosses/boss, balance, Save/Continue, legacy restore, Sandbox, DEV, PR15 B1–B4, Fracture, facções, operadores, itens, escudo, statmods, eventos e demais suítes descobertas. Nenhuma suíte preexistente foi alterada para acomodar a feature.
+Inclui arsenal, inimigos, minibosses/boss, balance, Save/Continue, legacy restore, Sandbox, DEV, PR15 B1–B4, Fracture, facções, operadores, itens, escudo, statmods, eventos e demais suítes descobertas. A suíte de métricas teve apenas as expectativas de visibilidade/posição/estado escalar atualizadas no Audit #1. As regressões mecânicas permanecem intactas.
 
-### Verificação adicional de navegador
+### Verificação adicional de navegador da criação (histórico)
+
+A atualização Audit #1 acrescenta 25 verificações aprovadas do novo contrato de overlays, descritas acima e no relatório próprio.
 
 Chromium headless com Playwright, ferramentas instaladas fora do repositório, sem novas dependências do jogo:
 
@@ -228,7 +249,9 @@ A suíte dedicada conserva esses hashes sem exigir que o histórico Git completo
 
 O diff da implementação não altera funções de gameplay ou renderização de inimigos: mantém remoção de `contactR + 54`, ausência de pose/transform contínuo, Swarm barato, Singular barata, Shooter/Orbiter/Phantom integrados, frente de Bulwark por `shieldAng` e fast paths do A-FIX.
 
-## Arquivos da entrega
+## Arquivos da criação do painel (histórico)
+
+A relação adicional de arquivos do Audit #1 está no relatório dessa auditoria.
 
 **Alterado**
 
@@ -244,11 +267,11 @@ Nenhum arquivo de arsenal, catálogo, economia, save schema, Electron, dependên
 ## Playtest humano necessário no Electron
 
 1. Sem settings novos: confirmar MOSTRAR MÉTRICAS = DESLIGADO e nenhum painel.
-2. Ativar no menu inicial, iniciar/continuar uma run e aguardar o banner de entrada e a primeira janela de aproximadamente 250 ms.
+2. Ativar no menu inicial, iniciar/continuar uma run e aguardar a primeira janela de aproximadamente 250 ms. O banner de entrada não deve esconder o diagnóstico.
 3. Observar FPS/FRAME em combate real, distinguindo quedas para 50/40/30 de uma cadência próxima de 60; não foi prometido FPS nesta entrega.
 4. Alternar OFF/ON em cenários comparáveis e avaliar eventual custo real da própria ferramenta, sem atribuir diferenças de carga de uma onda a ela.
 5. Conferir legibilidade em 960 × 540, tela cheia e escala/DPI usados pelo jogador; testar fases congestionadas, Echos vivos/mortos, presença PR15, boss/miniboss e bastante FX.
-6. Confirmar que o painel não compete com vida, escudo, economia, Fractura/perfis, Echos, habilidades, cooldowns, banners ou objetivos/eventos. Durante banner/modal, o desaparecimento é intencional.
+6. Confirmar que o painel não compete com vida, escudo, economia, Fractura/perfis, Echos, habilidades, cooldowns, banners ou objetivos/eventos. Durante banner/modal, o painel deve continuar visível. Em evento/loja/TAB/DEV, conferir a faixa superior e o retorno à posição normal.
 7. Pausar → Configurações → desligar → retomar: painel ausente. Religar deve começar nova janela sem duplicação.
 8. Morrer/sair, iniciar outra run, Save/Continue e reiniciar o aplicativo: preferência mantida, um único painel, sem alteração mecânica.
 9. Repetir em combate Sandbox e DEV, abrindo/fechando laboratório e painel DEV.

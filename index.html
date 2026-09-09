@@ -163,10 +163,16 @@
 
   /* PR15.5-B-FIX.2: diagnóstico discreto, fora da coluna superior direita.
      Acima da Sincronia e do chip Sandbox inclusive no mínimo 960×540. */
-  #metrics-overlay{position:absolute;left:16px;bottom:178px;width:174px;
+  #metrics-overlay{position:fixed;left:16px;bottom:178px;width:174px;z-index:84;
     padding:8px 10px;border:1px solid rgba(70,224,255,.28);border-radius:3px;
     background:rgba(4,12,20,.88);color:#cfeffc;pointer-events:none;
     font:11px/17px Consolas,"Cascadia Code",monospace;font-variant-numeric:tabular-nums;}
+  /* Audit #1: a lateral cruza cards/TAB/DEV em 960×540. Somente nesses
+     overlays, ocupa a margem superior livre; combate mantém a posição. */
+  #metrics-overlay.metrics-dock{top:1px;bottom:auto;right:16px;width:auto;height:18px;
+    padding:1px 8px;display:flex;align-items:center;gap:12px;font-size:10px;line-height:14px;}
+  #metrics-overlay.metrics-dock h3{margin:0;flex:none;}
+  #metrics-overlay.metrics-dock dl{flex:1;grid-template-columns:repeat(7,auto auto);column-gap:8px;}
   #metrics-overlay[hidden]{display:none;}
   #metrics-overlay h3{font:inherit;letter-spacing:.16em;color:#8fd6ff;margin-bottom:4px;}
   #metrics-overlay dl{display:grid;grid-template-columns:1fr auto;column-gap:8px;}
@@ -945,6 +951,7 @@
     <div id="spbar"><div id="spfill"></div></div>
   </div>
   <div id="weapwrap"></div>
+</div>
   <aside id="metrics-overlay" hidden aria-label="Métricas de desempenho">
     <h3>MÉTRICAS</h3>
     <dl>
@@ -957,7 +964,6 @@
       <dt>ENTIDADES</dt><dd id="metrics-total">---</dd>
     </dl>
   </aside>
-</div>
 
 <div id="pause-menu"><div class="pbox">
   <div id="p-tag">CICLO SUSPENSO</div>
@@ -5101,6 +5107,20 @@ function spawnShards(x,y,color,n,size){
     parts.push(p);
   }
 }
+/* Audit #1: os estilhaços reais têm 3–5 lados. Ângulos unitários são
+   invariantes; preserva EXATAMENTE os argumentos Canvas, sem trig por FX.
+   Tabela fixa de 24 escalares, sem cache por entidade nem crescimento. */
+const SHARD_VERTICES=(()=>{
+  const out={};
+  for(let sides=3;sides<=5;sides++){
+    const points=[];
+    for(let i=0;i<sides;i++){
+      const an=i/sides*TAU;points.push(Math.cos(an),Math.sin(an));
+    }
+    out[sides]=Object.freeze(points);
+  }
+  return Object.freeze(out);
+})();
 /* --- cache de sprites de brilho: um por cor, desenhado uma única vez --- */
 const _glowCache=new Map();
 function glowSprite(color){
@@ -5259,10 +5279,13 @@ function fpIndicatorTick(dt){
 }
 const coinsEl=$('coinsp');
 const weapWrapEl=$('weapwrap');
+/* Audit #1: comparar texto não força layout. Formatação/cadência existentes
+   são preservadas; o DOM só muda quando o conteúdo realmente mudou. */
+function hudText(el,text){if(el.textContent!==text)el.textContent=text;}
 function setChip(el,slot,echo){
   el.className='chip';
-  if(!echo){el.textContent='ECHO·0'+slot+' — INATIVO';return;}
-  if(!echo.alive){el.classList.add('dead');el.textContent='ECHO·0'+slot+' — OFFLINE';return;}
+  if(!echo){hudText(el,'ECHO·0'+slot+' — INATIVO');return;}
+  if(!echo.alive){el.classList.add('dead');hudText(el,'ECHO·0'+slot+' — OFFLINE');return;}
   /* PR 10: o chip do HUD lê a máquina de estados — nunca um boolean solto */
   const _ds=(echo.dis&&echo.dis.st)||'stable';
   if(_ds==='fracturing'||_ds==='hostile'||_ds==='recovering'){
@@ -5270,19 +5293,19 @@ function setChip(el,slot,echo){
     el.style.textDecoration='none';
     el.style.borderColor=_ds==='hostile'?'rgba(255,47,94,.85)':
       (_ds==='fracturing'?'rgba(255,157,60,.85)':'rgba(143,246,255,.85)');
-    el.textContent='ECHO·0'+slot+' — ⚠ '+DIS_LABEL[_ds]+
+    hudText(el,'ECHO·0'+slot+' — ⚠ '+DIS_LABEL[_ds]+
       (_ds==='hostile'&&echo.dis.integMax>0
         ? ' · RUPTURA '+Math.round(clamp(echo.dis.integ/echo.dis.integMax,0,1)*100)+'%'
-        : ' '+fmtSec(Math.max(0,echo.dis.t)));
+        : ' '+fmtSec(Math.max(0,echo.dis.t))));
     return;
   }
   el.style.textDecoration='';
   el.classList.add(slot===1?'on1':'on2');
   const t=trustTier(echo);
   const rs=echoRelState(echo);
-  el.textContent='ECHO·0'+slot+' — '+rs.lab+' · CONF '+TRUST_NAME[t]+
+  hudText(el,'ECHO·0'+slot+' — '+rs.lab+' · CONF '+TRUST_NAME[t]+
     (_ds==='unstable'?' · ⚠ INSTÁVEL':'')+
-    (echo.itemIds.length?' · ◈'+echo.itemIds.length:'');
+    (echo.itemIds.length?' · ◈'+echo.itemIds.length:''));
   if(_ds==='unstable')el.style.borderColor='rgba(255,209,102,.8)';
   else if(t===0)el.style.borderColor='rgba(255,77,109,.55)';
   else if(t===2)el.style.borderColor='rgba(125,255,196,.7)';
@@ -5297,11 +5320,11 @@ function updateHUD(force){
   if(!force&&hudAcc<.09)return;
   hudAcc=0;
   hpfill.style.width=clamp(player.hp/player.maxHp*100,0,100)+'%';
-  hpnum.textContent=Math.max(0,Math.ceil(player.hp))+' / '+fmtNum(player.maxHp);
+  hudText(hpnum,Math.max(0,Math.ceil(player.hp))+' / '+fmtNum(player.maxHp));
   // ---- ESCUDO DO OPERADOR ----
   const shR=clamp(player.shield/(player.shieldMax||1)*100,0,100);
   shfill.style.width=shR+'%';
-  shnum.textContent=Math.max(0,Math.ceil(player.shield))+' / '+fmtNum(player.shieldMax);
+  hudText(shnum,Math.max(0,Math.ceil(player.shield))+' / '+fmtNum(player.shieldMax));
   const _pf=itemStateGet(player,'_perfect','fired',false);
   const _regen=player.shieldMax>0&&player.shieldDelayT<=0&&
     player.shield<player.shieldMax&&player.shieldRegen>0;
@@ -5310,15 +5333,15 @@ function updateHUD(force){
   shbar.classList.toggle('empty',player.shield<=0);
   shbar.classList.toggle('perfect',!!_pf&&player.shieldMax>0&&player.shield>=player.shieldMax);
   shbar.classList.toggle('regen',_regen);   // PR 11.5: regeneração visível (§18)
-  waveEl.textContent=boss?'PARADOXO':(miniBoss?'ARAUTO':
-    ('ONDA '+String(Math.max(1,wave)).padStart(2,'0')+' / 20'));
-  timerEl.textContent=fmtTime(runTime)+' · ABATES '+kills;
+  hudText(waveEl,boss?'PARADOXO':(miniBoss?'ARAUTO':
+    ('ONDA '+String(Math.max(1,wave)).padStart(2,'0')+' / 20')));
+  hudText(timerEl,fmtTime(runTime)+' · ABATES '+kills);
   xpfill.style.width=clamp(player.xp/player.xpNext*100,0,100)+'%';
-  lvlEl.textContent='NV '+player.level+' · '+Math.floor(player.xp)+'/'+player.xpNext;
+  hudText(lvlEl,'NV '+player.level+' · '+Math.floor(player.xp)+'/'+player.xpNext);
   const dr=player.dashCd>0?1-player.dashCd/player.dashCdMax:1;
   dashfill.style.width=(dr*100)+'%';
   dashwrap.classList.toggle('ready',player.dashCd<=0);
-  if(dashlbl)dashlbl.textContent=player.dashCd>0?'DASH '+fmtSec(player.dashCd):'DASH [ESPAÇO]';   // B5-B-FIX: quanto falta
+  if(dashlbl)hudText(dashlbl,player.dashCd>0?'DASH '+fmtSec(player.dashCd):'DASH [ESPAÇO]');   // B5-B-FIX: quanto falta
   // ---- HUD do especial ----
   const C=curChar(),spw=$('spwrap');
   if(spw&&C.sp){
@@ -5328,8 +5351,8 @@ function updateHUD(force){
     const r=act?player.spT/(player.spMax||6)
       :(player.spCd>0?1-player.spCd/C.sp.cd:1);
     $('spfill').style.width=clamp(r*100,0,100)+'%';
-    $('splbl').textContent=act?(C.sp.nm+' '+fmtSec(player.spT))
-      :(player.spCd>0?C.sp.nm+' '+fmtSec(player.spCd):C.sp.nm+' [E]');
+    hudText($('splbl'),act?(C.sp.nm+' '+fmtSec(player.spT))
+      :(player.spCd>0?C.sp.nm+' '+fmtSec(player.spCd):C.sp.nm+' [E]'));
     spw.classList.toggle('ready',player.spCd<=0&&!act);
     spw.classList.toggle('active',act);
   }
@@ -5342,13 +5365,13 @@ function updateHUD(force){
   // busca por SLOT (e não por índice): o Modo DEV pode criar só o Echo·02
   setChip(chip1,1,echoes.find(e=>e&&e.slot===1)||null);
   setChip(chip2,2,echoes.find(e=>e&&e.slot===2)||null);
-  coinsEl.textContent='◈ '+fmtCompact(player.coins);
+  hudText(coinsEl,'◈ '+fmtCompact(player.coins));
   /* PR 11.5: HUD mostra só o PERFIL dominante — percentuais de moralidade
      e tiers ficam no Registro de Combate (TAB) e na pausa (§15). */
   const _dom=moralDom();
   const domEl=$('moral-dom'),tiersEl=$('moral-tiers');
   if(domEl){
-    domEl.textContent=DOM_NAME[_dom];
+    hudText(domEl,DOM_NAME[_dom]);
     domEl.style.color=DOM_COLOR[_dom];
   }
   if(tiersEl){
@@ -19699,9 +19722,12 @@ function render(){
       ctx.save();ctx.translate(pt.x,pt.y);ctx.rotate(pt.rot);
       ctx.strokeStyle=pt.color;ctx.lineWidth=1.4;
       ctx.beginPath();
+      const vertices=SHARD_VERTICES[pt.sides];
       for(let i=0;i<pt.sides;i++){
-        const an=i/pt.sides*TAU;
-        ctx[i?'lineTo':'moveTo'](Math.cos(an)*sz,Math.sin(an)*sz);
+        // Fallback preserva desenhos experimentais fora do contrato 3–5.
+        const an=vertices?0:i/pt.sides*TAU;
+        ctx[i?'lineTo':'moveTo']((vertices?vertices[i*2]:Math.cos(an))*sz,
+          (vertices?vertices[i*2+1]:Math.sin(an))*sz);
       }
       ctx.closePath();ctx.stroke();ctx.restore();
     }else{
@@ -19876,7 +19902,7 @@ const metricsPanel=$('metrics-overlay');
 const metricsEls={fps:$('metrics-fps'),frame:$('metrics-frame'),
   enemies:$('metrics-enemies'),projectiles:$('metrics-projectiles'),
   fx:$('metrics-fx'),echoes:$('metrics-echoes'),total:$('metrics-total')};
-let metricsStart=-1,metricsLast=-1,metricsFrames=0,metricsVisible=false;
+let metricsStart=-1,metricsLast=-1,metricsFrames=0,metricsVisible=false,metricsDocked=false;
 function metricsText(el,text){if(el.textContent!==text)el.textContent=text;}
 function metricsNeutral(){
   metricsText(metricsEls.fps,'---');metricsText(metricsEls.frame,'---');
@@ -19898,12 +19924,19 @@ function metricsLength(list){
 }
 function metricsTick(now){
   if(!cfg.metrics)return; // OFF: nenhum contador, string, objeto ou acesso ao DOM
-  // Banners e ferramentas abertas têm prioridade; pausa/menu não entram no FPS.
-  if(state!=='play'||!player||document.hidden||devPanelOpen||bannerT>0){
+  // Audit #1: mede a cadência de render também em overlays, pausa e fim da run.
+  // Fora de uma sessão (boot/título/seleção de save) não há população útil.
+  if(!player||document.hidden||state==='title'||state==='slots'||
+     state==='slotMenu'||state==='slotConfirm'){
     if(metricsVisible)metricsHide();
     return;
   }
   if(!Number.isFinite(now)||now<0){metricsHide();return;}
+  const docked=state==='event'||state==='shop'||state==='sheet'||state==='sandbox'||
+    state==='victory'||state==='fracture'||devPanelOpen||codexEl.classList.contains('on');
+  if(docked!==metricsDocked){
+    metricsDocked=docked;metricsPanel.classList.toggle('metrics-dock',docked);
+  }
   if(!metricsVisible){metricsPanel.hidden=false;metricsVisible=true;}
   if(metricsStart<0||now<=metricsLast){
     metricsStart=now;metricsLast=now;metricsFrames=0;metricsNeutral();return;
@@ -26620,7 +26653,11 @@ function fracHudChip(){
     const grp=document.getElementById('grp-econ')||hud;
     grp.appendChild(chip);
   }
+  // Audit #1: este wrapper roda mesmo quando o HUD base retorna pelo throttle.
+  // Cache escalar no nó: recriar/remover chip invalida naturalmente; nunca vai ao save.
+  if(chip._echoRes===fracRun.res&&chip.textContent)return;
   chip.textContent=RES_SYM+' '+fmtNum(fracRun.res)+' RESÍDUOS TEMPORAIS';
+  chip._echoRes=fracRun.res;
 }
 /* =====================================================================
    CODEX — ABA FACÇÕES (descoberta por slot; nunca força revelação)

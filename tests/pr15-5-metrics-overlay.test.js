@@ -85,11 +85,11 @@ for(const time of [NaN,Infinity,-Infinity,undefined,null,-1])ok('Timestamp invá
 ok('Timestamp repetido não divide por zero',()=>{ready();M.metricsTick(100);M.metricsTick(100);assert.strictEqual(stats.samples,0);});
 ok('Relógio regressivo reinicia janela sem FPS negativo',()=>{ready();M.metricsTick(300);M.metricsTick(200);assert.strictEqual(run('metricsFrames'),0);M.metricsTick(450);assert.ok(value('fps')>=0);});
 ok('Hitch longo é refletido, não mascarado pelo dt clamp',()=>{ready();M.metricsTick(0);M.metricsTick(2000);assert.strictEqual(value('frame'),2000);assert.ok(value('fps')<=1);});
-for(const state of ['paused','title','slotMenu','shop','event','sheet','sandbox','fracture','victory'])ok('Oculto e sem amostragem em '+state,()=>{ready();M.metricsTick(0);run('state='+JSON.stringify(state));M.metricsTick(250);assert.strictEqual(M.metricsPanel.hidden,true);assert.strictEqual(stats.samples,0);});
+for(const state of ['paused','title','slotMenu','shop','event','sheet','sandbox','fracture','victory'])ok('Visibilidade de sessão em '+state,()=>{ready();M.metricsTick(0);run('state='+JSON.stringify(state));M.metricsTick(250);const fora=['title','slotMenu'].includes(state);assert.strictEqual(M.metricsPanel.hidden,fora);assert.strictEqual(stats.samples,fora?0:1);});
 ok('Sem jogador não exibe painel',()=>{ready();run('player=null');M.metricsTick(0);assert.strictEqual(M.metricsPanel.hidden,true);});
 ok('Aba oculta reinicia sampler sem incluir suspensão',()=>{ready();M.metricsTick(0);sandbox.document.hidden=true;M.metricsTick(9000);assert.strictEqual(M.metricsPanel.hidden,true);sandbox.document.hidden=false;M.metricsTick(10000);assert.strictEqual(stats.samples,0);M.metricsTick(10250);assert.strictEqual(value('frame'),250);});
-ok('Banner importante tem prioridade sobre as métricas',()=>{ready();M.metricsTick(0);run('bannerT=2');M.metricsTick(250);assert.strictEqual(M.metricsPanel.hidden,true);run('bannerT=0');M.metricsTick(500);assert.strictEqual(M.metricsPanel.hidden,false);});
-ok('Painel DEV aberto não disputa a lateral esquerda',()=>{ready();run('DEV_MODE=true;devPanelOpen=true');M.metricsTick(0);assert.strictEqual(M.metricsPanel.hidden,true);});
+ok('Banner não interrompe mais as métricas (Audit #1)',()=>{ready();M.metricsTick(0);run('bannerT=2');M.metricsTick(250);assert.strictEqual(M.metricsPanel.hidden,false);assert.strictEqual(stats.samples,1);run('bannerT=0');M.metricsTick(500);assert.strictEqual(M.metricsPanel.hidden,false);});
+ok('Painel DEV aberto usa métricas na faixa compacta',()=>{ready();run('DEV_MODE=true;devPanelOpen=true');M.metricsTick(0);assert.strictEqual(M.metricsPanel.hidden,false);assert.ok(M.metricsPanel.classList.contains('metrics-dock'));});
 ok('Funciona em DEV com ferramenta fechada',()=>{ready();run('DEV_MODE=true');sample();assert.strictEqual(M.metricsPanel.hidden,false);assert.strictEqual(value('fps'),60);});
 ok('Funciona no combate Sandbox sem depender de DEV',()=>{ready();run('sandboxRun=true');sample();assert.strictEqual(M.metricsPanel.hidden,false);assert.strictEqual(value('fps'),60);});
 ok('Desligar esconde imediatamente, sem esperar frame',()=>{M.metricsSetEnabled(false);assert.strictEqual(M.metricsPanel.hidden,true);assert.strictEqual(run('metricsFrames'),0);});
@@ -99,7 +99,7 @@ ok('Sem loops/filter/map/reduce/sort no módulo inteiro',()=>assert.ok(!/\b(for|
 ok('Sem entidades visuais, Canvas, glow ou partícula novos',()=>assert.ok(!/spawn|createElement|ctx\.|shadowBlur|drawImage/.test(block)));
 ok('Sem arrays espelho ou histórico crescente',()=>assert.ok(!/\.push\(|\.concat\(|\.slice\(|new (Array|Map|Set)|=\s*\[/.test(block)));
 ok('Sem serialização ou cópia de estado para medir',()=>assert.ok(!/JSON\.|Object\.(assign|values|entries)|\.\.\./.test(block)));
-ok('Estado do sampler é escalar e limitado',()=>assert.match(block,/let metricsStart=-1,metricsLast=-1,metricsFrames=0,metricsVisible=false;/));
+ok('Estado do sampler é escalar e limitado',()=>assert.match(block,/let metricsStart=-1,metricsLast=-1,metricsFrames=0,metricsVisible=false,metricsDocked=false;/));
 ok('Antes da janela: nenhum objeto/array/string temporário',()=>{const hot=tick.slice(0,tick.indexOf('const fps='));assert.ok(!/new |\[\]|=\s*\{|String\(|toFixed|toString|`/.test(hot));});
 ok('Hook único no loop depois do gate e do render',()=>{assert.strictEqual((loop.match(/metricsTick\(now\)/g)||[]).length,1);assert.ok(loop.indexOf('metricsTick(now)')>loop.indexOf('if(gateOn)'));assert.ok(loop.indexOf('metricsTick(now)')>loop.indexOf('try{render();}'));});
 ok('Retorno do gate não conta RAF descartado',()=>{ready();run('gateOn=true;frameGate=100;refreshProbe=40');resetStats();M.loop(101);assert.strictEqual(run('metricsStart'),-1);assert.strictEqual(stats.samples,0);run('gateOn=false');});
@@ -116,7 +116,7 @@ ok('Storage indisponível não quebra toggle',()=>{const old=sandbox.localStorag
 ok('Apenas uma instância declarativa do painel',()=>assert.strictEqual((SRC.match(/id="metrics-overlay"/g)||[]).length,1));
 ok('Estilo técnico sem efeitos ou animações',()=>{const css=SRC.slice(SRC.indexOf('  #metrics-overlay{'),SRC.indexOf('  /* ---------- banner'));assert.ok(!/animation|transition|shadow|blur|gradient/.test(css));assert.match(css,/font-variant-numeric:tabular-nums/);assert.match(css,/pointer-events:none/);});
 ok('Rótulos em pt-BR, sem truncamento deliberado',()=>{assert.match(SRC,/<dt>PROJÉTEIS<\/dt>/);assert.match(SRC,/<dt>ENTIDADES<\/dt>/);assert.match(SRC,/Exibe informações de desempenho durante a partida\./);});
-ok('Posição fora da coluna superior direita e acima do chip Sandbox',()=>{assert.match(SRC,/#metrics-overlay\{position:absolute;left:16px;bottom:178px;width:174px/);assert.match(SRC,/#sb-chip\{position:fixed;left:16px;bottom:132px/);});
+ok('Posição fora da coluna superior direita e acima do chip Sandbox',()=>{assert.match(SRC,/#metrics-overlay\{position:fixed;left:16px;bottom:178px;width:174px/);assert.match(SRC,/#sb-chip\{position:fixed;left:16px;bottom:132px/);});
 
 // Hashes dos blocos integrais (LF), extraídos de git show do commit obrigatório.
 // Não dependem de histórico Git disponível na máquina do jogador/CI.
