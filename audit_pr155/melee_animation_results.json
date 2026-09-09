@@ -1,0 +1,323 @@
+{
+  "ref": "4f56b76aa82d0e65323215dfa2ad31dedfb66925",
+  "antes": {
+    "label": "ANTES (4f56b76)",
+    "cenarios": {
+      "A": {
+        "nome": "idle com melee equipada (600 frames)",
+        "frames": 600,
+        "opsFrame": 73,
+        "saveRestore": 14,
+        "paths": 18,
+        "transforms": 8,
+        "blurDraws": 8,
+        "sinCosFrame": 2,
+        "atan2Frame": 0,
+        "randomTotal": 0,
+        "poseEvalsFrame": 0,
+        "meleeStates": 0
+      },
+      "B": {
+        "nome": "ataque melee repetido (limite mecânico, 600 frames)",
+        "frames": 600,
+        "opsFrame": 80.2,
+        "saveRestore": 15.3,
+        "paths": 20,
+        "transforms": 8,
+        "blurDraws": 9.3,
+        "sinCosFrame": 2.09,
+        "atan2Frame": 0,
+        "randomTotal": 54,
+        "poseEvalsFrame": 0,
+        "meleeStates": 0
+      },
+      "C": {
+        "nome": "melee + 25 inimigos (300 frames)",
+        "frames": 300,
+        "opsFrame": 73,
+        "saveRestore": 15.1,
+        "paths": 17.6,
+        "transforms": 8,
+        "blurDraws": 8.1,
+        "sinCosFrame": 2.07,
+        "atan2Frame": 0.07,
+        "randomTotal": 22,
+        "poseEvalsFrame": 0,
+        "meleeStates": 0
+      },
+      "D": {
+        "nome": "melee + 46 inimigos (300 frames)",
+        "frames": 300,
+        "opsFrame": 86,
+        "saveRestore": 14.9,
+        "paths": 21.4,
+        "transforms": 8,
+        "blurDraws": 11.9,
+        "sinCosFrame": 12.76,
+        "atan2Frame": 1.04,
+        "randomTotal": 2764,
+        "poseEvalsFrame": 0,
+        "meleeStates": 0
+      },
+      "E": {
+        "nome": "troca de arma durante combate (600 frames)",
+        "frames": 600,
+        "opsFrame": 82.2,
+        "saveRestore": 16.6,
+        "paths": 19,
+        "transforms": 8,
+        "blurDraws": 8.3,
+        "sinCosFrame": 3.02,
+        "atan2Frame": 0,
+        "randomTotal": 804,
+        "poseEvalsFrame": 0,
+        "meleeStates": 0
+      },
+      "F": {
+        "nome": "hurt durante o swing (600 frames)",
+        "frames": 600,
+        "opsFrame": 70.6,
+        "saveRestore": 14.6,
+        "paths": 15.8,
+        "transforms": 8.6,
+        "blurDraws": 6.5,
+        "sinCosFrame": 3.35,
+        "atan2Frame": 0.29,
+        "randomTotal": 946,
+        "poseEvalsFrame": 0,
+        "meleeStates": 0
+      },
+      "G": {
+        "nome": "Sandbox com FX — render completo (200 frames)",
+        "frames": 200,
+        "opsFrame": 3919.1,
+        "saveRestore": 571.4,
+        "paths": 1067.7,
+        "transforms": 431.4,
+        "blurDraws": 122.8,
+        "sinCosFrame": 287.89,
+        "atan2Frame": 1.92,
+        "randomTotal": 15178,
+        "poseEvalsFrame": 0,
+        "meleeStates": 0
+      },
+      "H": {
+        "nome": "spam katana na cadência máxima (600 frames)",
+        "frames": 600,
+        "opsFrame": 79,
+        "saveRestore": 16,
+        "paths": 19,
+        "transforms": 8,
+        "blurDraws": 9,
+        "sinCosFrame": 2.13,
+        "atan2Frame": 0,
+        "randomTotal": 80,
+        "poseEvalsFrame": 0,
+        "meleeStates": 0
+      }
+    },
+    "trail": {
+      "A": {
+        "paths": 3,
+        "blurDraws": 2,
+        "saveRestore": 2
+      },
+      "B": {
+        "paths": 3,
+        "blurDraws": 2,
+        "saveRestore": 2
+      },
+      "C": {
+        "paths": 3,
+        "blurDraws": 2,
+        "saveRestore": 2
+      },
+      "D": {
+        "paths": 3,
+        "blurDraws": 2,
+        "saveRestore": 2
+      },
+      "E": {
+        "paths": 3,
+        "blurDraws": 2,
+        "saveRestore": 2
+      },
+      "F": {
+        "paths": 3,
+        "blurDraws": 2,
+        "saveRestore": 2
+      },
+      "G": {
+        "paths": 3,
+        "blurDraws": 2,
+        "saveRestore": 2
+      },
+      "H": {
+        "paths": 3,
+        "blurDraws": 2,
+        "saveRestore": 2
+      }
+    },
+    "scratch": "—"
+  },
+  "depois": {
+    "label": "DEPOIS (working tree)",
+    "cenarios": {
+      "A": {
+        "nome": "idle com melee equipada (600 frames)",
+        "frames": 600,
+        "opsFrame": 73,
+        "saveRestore": 14,
+        "paths": 18,
+        "transforms": 8,
+        "blurDraws": 8,
+        "sinCosFrame": 2,
+        "atan2Frame": 0,
+        "randomTotal": 0,
+        "poseEvalsFrame": 2,
+        "meleeStates": 0
+      },
+      "B": {
+        "nome": "ataque melee repetido (limite mecânico, 600 frames)",
+        "frames": 600,
+        "opsFrame": 80.8,
+        "saveRestore": 15,
+        "paths": 19.6,
+        "transforms": 10.1,
+        "blurDraws": 8,
+        "sinCosFrame": 3.57,
+        "atan2Frame": 0,
+        "randomTotal": 54,
+        "poseEvalsFrame": 2,
+        "meleeStates": 27
+      },
+      "C": {
+        "nome": "melee + 25 inimigos (300 frames)",
+        "frames": 300,
+        "opsFrame": 76.3,
+        "saveRestore": 15.2,
+        "paths": 17.8,
+        "transforms": 10.9,
+        "blurDraws": 7,
+        "sinCosFrame": 4.08,
+        "atan2Frame": 0.07,
+        "randomTotal": 22,
+        "poseEvalsFrame": 2,
+        "meleeStates": 11
+      },
+      "D": {
+        "nome": "melee + 46 inimigos (300 frames)",
+        "frames": 300,
+        "opsFrame": 89.9,
+        "saveRestore": 15.1,
+        "paths": 21.7,
+        "transforms": 10.8,
+        "blurDraws": 11,
+        "sinCosFrame": 14.71,
+        "atan2Frame": 1.04,
+        "randomTotal": 2764,
+        "poseEvalsFrame": 2,
+        "meleeStates": 9
+      },
+      "E": {
+        "nome": "troca de arma durante combate (600 frames)",
+        "frames": 600,
+        "opsFrame": 82.4,
+        "saveRestore": 16.5,
+        "paths": 18.8,
+        "transforms": 9,
+        "blurDraws": 7.5,
+        "sinCosFrame": 3.72,
+        "atan2Frame": 0,
+        "randomTotal": 804,
+        "poseEvalsFrame": 2,
+        "meleeStates": 15
+      },
+      "F": {
+        "nome": "hurt durante o swing (600 frames)",
+        "frames": 600,
+        "opsFrame": 71.6,
+        "saveRestore": 14.5,
+        "paths": 15.5,
+        "transforms": 10.7,
+        "blurDraws": 6,
+        "sinCosFrame": 4.52,
+        "atan2Frame": 0.29,
+        "randomTotal": 946,
+        "poseEvalsFrame": 2,
+        "meleeStates": 11
+      },
+      "G": {
+        "nome": "Sandbox com FX — render completo (200 frames)",
+        "frames": 200,
+        "opsFrame": 3929.9,
+        "saveRestore": 570.6,
+        "paths": 1070.7,
+        "transforms": 433.8,
+        "blurDraws": 120.8,
+        "sinCosFrame": 289.64,
+        "atan2Frame": 1.92,
+        "randomTotal": 15178,
+        "poseEvalsFrame": 2.01,
+        "meleeStates": 14
+      },
+      "H": {
+        "nome": "spam katana na cadência máxima (600 frames)",
+        "frames": 600,
+        "opsFrame": 77,
+        "saveRestore": 15.2,
+        "paths": 17.8,
+        "transforms": 10.4,
+        "blurDraws": 7,
+        "sinCosFrame": 3.87,
+        "atan2Frame": 0,
+        "randomTotal": 80,
+        "poseEvalsFrame": 2,
+        "meleeStates": 40
+      }
+    },
+    "trail": {
+      "A": {
+        "paths": 3,
+        "blurDraws": 0,
+        "saveRestore": 2
+      },
+      "B": {
+        "paths": 3,
+        "blurDraws": 0,
+        "saveRestore": 2
+      },
+      "C": {
+        "paths": 3,
+        "blurDraws": 0,
+        "saveRestore": 2
+      },
+      "D": {
+        "paths": 3,
+        "blurDraws": 0,
+        "saveRestore": 2
+      },
+      "E": {
+        "paths": 3,
+        "blurDraws": 0,
+        "saveRestore": 2
+      },
+      "F": {
+        "paths": 2,
+        "blurDraws": 0,
+        "saveRestore": 2
+      },
+      "G": {
+        "paths": 3,
+        "blurDraws": 0,
+        "saveRestore": 2
+      },
+      "H": {
+        "paths": 3,
+        "blurDraws": 0,
+        "saveRestore": 2
+      }
+    },
+    "scratch": "1 scratch reutilizado (0 alocação)"
+  }
+}

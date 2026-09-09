@@ -4894,7 +4894,10 @@ function visualState(entity){
   if(!v||typeof v!=='object'||Array.isArray(v)){
     v=entity.visual={state:'idle',t:0,duration:0,phase:0,active:false,
       event:'',eventT:0,eventDuration:0,hitX:0,hitY:0,recoil:0,completed:false,
-      attackState:'',attackT:0,attackDuration:0,attackP:0,attackDir:0,attackRange:0,attackStyle:''};
+      attackState:'',attackT:0,attackDuration:0,attackP:0,attackDir:0,attackRange:0,attackStyle:'',
+      /* PR15.5-D: sub-objeto fixo O(1) do golpe melee — 1 chave apenas, para
+         não inflar o contrato de estado da fundação (limite 20 chaves). */
+      melee:{state:'',t:0,dir:1,prof:null}};
   }
   return v;
 }
@@ -4920,7 +4923,7 @@ function visualTimelineProgress(entity,easing){
 }
 function visualTimelineTick(entity,dt){
   const v=visualPeek(entity);if(!v)return null; // FIX #1: update neutro não cria estado
-  if(!v.active&&!(v.eventT>0)&&!(v.recoil>0)&&!v.attackState)return v; // hot path idle
+  if(!v.active&&!(v.eventT>0)&&!(v.recoil>0)&&!v.attackState&&!(v.melee&&v.melee.state))return v; // hot path idle
   dt=Math.max(0,visualFinite(dt,0));
   if(v.active){v.t=Math.min(v.duration,v.t+dt);if(v.t>=v.duration){v.active=false;v.completed=true;v.state='idle';v.phase=0;}}
   if(v.eventT>0){v.eventT=Math.max(0,v.eventT-dt);if(v.eventT===0){v.event='';v.eventDuration=0;}}
@@ -4931,6 +4934,23 @@ function visualTimelineTick(entity,dt){
       if(v.attackState==='active'){v.attackState='recover';v.attackT=v.attackDuration=.16;v.attackP=0;}
       else if(v.attackState==='recover'){v.attackState='';v.attackDuration=0;v.attackP=0;v.attackStyle='';}
     }else v.attackP=1-v.attackT/Math.max(.001,v.attackDuration);
+  }
+  /* PR15.5-D · máquina de fases do golpe melee: WINDUP → ACTIVE → RECOVER → ''.
+     Puramente visual: observa o evento REAL de ataque (fireMelee) e nunca
+     o atrasa, modifica ou consulta. Sem listener, array ou timer. */
+  if(v.melee&&v.melee.state){
+    v.melee.t-=dt;
+    /* o excedente de dt atravessa a fronteira de fase (carry-over): o
+       relógio visual acumula EXATAMENTE o mesmo tempo que o swing, então
+       pose e trail nunca divergem. Loop limitado: qualquer dt termina em
+       um estado coerente, sem travar e sem pular fora do vocabulário. */
+    let guard=0;
+    while(!(v.melee.t>0)&&v.melee.state&&guard++<4){
+      const prof=v.melee.prof,over=-(v.melee.t);
+      if(v.melee.state==='windup'){v.melee.state='active';v.melee.t=(prof?prof.active:0)-over;}
+      else if(v.melee.state==='active'){v.melee.state='recover';v.melee.t=(prof?prof.recover:0)-over;}
+      else{v.melee.state='';v.melee.t=0;v.melee.prof=null;}
+    }
   }
   return v;
 }
@@ -5027,6 +5047,209 @@ function visualHurtPose(entity,out){
 }
 function visualWeaponRecoil(entity){
   const v=visualPeek(entity);return v&&v.recoil>0?v.recoil:0;
+}
+/* =====================================================================
+   PR15.5-D · ARSENAL MELEE — ANIMAÇÃO FÍSICA, IDENTIDADE E IMPACTO
+   ---------------------------------------------------------------------
+   O maior débito visual do melee era "arma estática + arco genérico
+   desenhado por cima". Este bloco faz a ARMA executar o golpe:
+   · PERFIL VISUAL por arma (família, fases, ângulos, extensão, corpo);
+   · fases formais WINDUP → ACTIVE → RECOVER sobre o sub-objeto O(1)
+     `visual.melee` da fundação A (sem máquina paralela);
+   · pose rígida braços+mãos+arma girando em torno do peito — aplicada
+     apenas ao RENDER (nunca a x/y/hitbox/mira/cooldown);
+   · trajetória e trail por família, SEM shadowBlur novo (Audit #1);
+   · resposta de contato limitada (1 anel pequeno no pool de partículas).
+
+   Regras absolutas herdadas do PR15.5:
+   · a mecânica NUNCA depende da animação (dano continua instantâneo no
+     evento REAL fireMelee; a timeline apenas observa);
+   · fast path: sem golpe ativo → toda consulta retorna null e o caminho
+     de desenho é byte-a-byte o anterior (zero transforms/pose extra);
+   · zero alocação por frame: poses escrevem em scratches pré-alocados;
+   · zero aleatoriedade, relógio de parede, medição de tempo, listener
+     ou timer neste bloco — só estado derivado do evento real de ataque.
+   ===================================================================== */
+const MELEE_VISUAL_FAMILIES=['light','heavy','thrust','cleave','blunt'];
+/* Perfis PRECOMPUTADOS e congelados — exatamente um por arma melee real
+   do catálogo (7). Nenhum campo mecânico é duplicado: tudo aqui é pose,
+   tempo VISUAL e forma do rastro. Ângulos em radianos, tempos em s,
+   ext/perp/bodyShift como fração do raio da unidade. */
+const MELEE_VISUAL_PROFILES=(()=>{
+  const E=VISUAL_EASING;
+  function P(o){return Object.freeze(Object.assign({
+    family:'light',
+    windup:.05,active:.10,recover:.13,trailFade:.09,   // fases (s)
+    windupAngle:.9,endAngle:1.05,                       // arco da arma (rad)
+    extIn:.06,extOut:.14,perp:.10,                      // punho: recuo/avanço/lateral
+    bodyLean:.10,bodyTurn:.09,bodyShift:.10,            // corpo sutil
+    squash:0,stretch:0,                                 // blunt/trrust
+    easeWindup:E.easeInOut,easeActive:E.easeOut,easeRecover:E.easeOut,
+    trailStyle:'arc',trailWidth:6,trailTail:.95,impactRing:15
+  },o));}
+  return Object.freeze({
+    /* LÂMINA DE ARCO — slash leve: corte diagonal rápido, pouca antecipação. */
+    blade:P({family:'light',windup:.050,active:.100,recover:.130,trailFade:.09,
+      windupAngle:.95,endAngle:1.08,extIn:.06,extOut:.15,perp:.10,
+      bodyLean:.11,bodyTurn:.10,bodyShift:.10,trailStyle:'arc',trailWidth:6.5,trailTail:1.0,impactRing:15}),
+    /* KATANA DE FASE — slash leve extremo: flick quase sem windup. */
+    katana:P({family:'light',windup:.028,active:.075,recover:.100,trailFade:.07,
+      windupAngle:.62,endAngle:.70,extIn:.05,extOut:.12,perp:.08,
+      bodyLean:.08,bodyTurn:.07,bodyShift:.08,trailStyle:'arc',trailWidth:4.5,trailTail:.8,impactRing:12}),
+    /* FOICE HEMOLÍTICA — cleave: ceifada larga que cruza o eixo corporal. */
+    scythe:P({family:'cleave',windup:.085,active:.160,recover:.210,trailFade:.12,
+      windupAngle:1.35,endAngle:1.45,extIn:.08,extOut:.18,perp:.14,
+      bodyLean:.13,bodyTurn:.20,bodyShift:.12,trailStyle:'arc',trailWidth:8,trailTail:1.25,impactRing:18}),
+    /* CORRENTE FLAGELANTE — cleave total: giro amplo, corpo acompanha. */
+    chains:P({family:'cleave',windup:.100,active:.190,recover:.260,trailFade:.13,
+      windupAngle:1.70,endAngle:1.95,extIn:.10,extOut:.22,perp:.16,
+      bodyLean:.15,bodyTurn:.28,bodyShift:.14,easeActive:E.easeInOut,
+      trailStyle:'arc',trailWidth:7,trailTail:1.35,impactRing:16}),
+    /* ALABARDA DE VÁCUO — thrust: compressão, estocada longa, retorno linear. */
+    glaive:P({family:'thrust',windup:.070,active:.110,recover:.190,trailFade:.10,
+      windupAngle:.16,endAngle:.30,extIn:.18,extOut:.95,perp:.02,
+      bodyLean:.07,bodyTurn:.03,bodyShift:.16,stretch:.22,
+      trailStyle:'line',trailWidth:5,trailTail:.5,impactRing:14}),
+    /* MANOPLA DE IMPACTO — thrust curto de soco com leitura de impacto. */
+    gaunt:P({family:'thrust',windup:.045,active:.080,recover:.120,trailFade:.08,
+      windupAngle:.10,endAngle:.18,extIn:.22,extOut:.85,perp:.04,
+      bodyLean:.10,bodyTurn:.04,bodyShift:.14,stretch:.16,
+      trailStyle:'impact',trailWidth:5,trailTail:.4,impactRing:13}),
+    /* MARRETA SÍSMICA — blunt: ergue, desaba acelerando, acomoda pesado. */
+    hammer:P({family:'blunt',windup:.120,active:.110,recover:.290,trailFade:.12,
+      windupAngle:1.50,endAngle:.30,extIn:.10,extOut:.30,perp:.06,
+      bodyLean:.16,bodyTurn:.10,bodyShift:.12,squash:.14,
+      easeActive:E.easeIn,easeRecover:E.easeOut,
+      trailStyle:'impact',trailWidth:9,trailTail:.6,impactRing:20})
+  });
+})();
+const MELEE_VISUAL_PROFILE_DEFAULT=MELEE_VISUAL_PROFILES.blade;
+function meleeVisualProfile(def){
+  return (def&&MELEE_VISUAL_PROFILES[def.id])||MELEE_VISUAL_PROFILE_DEFAULT;
+}
+/* Início da timeline NO EVENTO REAL do ataque (chamado por fireMelee).
+   Reinicia limpo se um golpe novo chega antes do fim do anterior —
+   cadência alta vira um fluxo de golpes, nunca estado preso. */
+function meleeVisualStart(src,def,dir){
+  const v=visualState(src);if(!v)return null;
+  if(!v.melee||typeof v.melee!=='object')v.melee={state:'',t:0,dir:1,prof:null};
+  const prof=meleeVisualProfile(def);
+  v.melee.prof=prof;
+  v.melee.dir=dir===1?1:-1;
+  v.melee.state=prof.windup>0?'windup':'active';
+  v.melee.t=prof.windup>0?prof.windup:prof.active;
+  return v;
+}
+/* Cancelamento puramente visual (troca de arma etc.) — não toca cooldown. */
+function meleeVisualCancel(entity){
+  const v=visualPeek(entity);
+  if(!v||!v.melee||!v.melee.state)return v;
+  v.melee.state='';v.melee.t=0;v.melee.prof=null;
+  return v;
+}
+function meleeVisualPhaseDuration(prof,state){
+  return state==='windup'?prof.windup:(state==='active'?prof.active:prof.recover);
+}
+function meleeVisualPhaseProgress(v){
+  const m=v&&v.melee;
+  if(!m||!m.state||!m.prof)return 0;
+  const dur=meleeVisualPhaseDuration(m.prof,m.state);
+  return visualClamp01(1-m.t/Math.max(.001,dur));
+}
+/* Pose da ARMA (braços+mãos+arma como grupamento rígido em torno do
+   peito). Escreve num scratch fixo — nenhuma alocação, 2 trig por frame
+   e SOMENTE enquanto o golpe dura. Retorna null no fast path. */
+const MELEE_WEAPON_POSE={rot:0,gx:0,gy:0,sx:1,sy:1,a1x:0,a1y:0,a2x:0,a2y:0};
+function visualMeleeWeaponPose(entity,out){
+  const v=visualPeek(entity);
+  if(!v||!v.melee||!v.melee.state||!v.melee.prof)return null;
+  out=out||MELEE_WEAPON_POSE;
+  const prof=v.melee.prof,p=meleeVisualPhaseProgress(v),s=v.melee.dir;
+  const r=(entity&&entity.r)||14;
+  let rot,ext,pp,sx=1,sy=1;
+  if(v.melee.state==='windup'){
+    const k=prof.easeWindup(p);
+    rot=-s*prof.windupAngle*k;                 // arma engatada atrás
+    ext=-prof.extIn*r*k;                       // punho recua (compressão)
+    pp=s*prof.perp*r*k*.5;
+  }else if(v.melee.state==='active'){
+    const k=prof.easeActive(p);
+    rot=-s*prof.windupAngle+s*(prof.windupAngle+prof.endAngle)*k; // varre o arco
+    ext=(-prof.extIn+(prof.extIn+prof.extOut)*k)*r;               // avanço no golpe
+    pp=s*prof.perp*r*k;
+    if(prof.stretch){const tri=k<.5?k*2:2-k*2;sx=1+prof.stretch*tri;sy=1-prof.stretch*.35*tri;}
+    if(prof.squash){const q=k<.6?0:(k-.6)*2.5;sy=1-prof.squash*q;sx=1+prof.squash*.6*q;}
+  }else{                                       // recover: follow-through acomoda
+    const k=1-prof.easeRecover(p);
+    rot=s*prof.endAngle*k;
+    ext=prof.extOut*r*k;
+    pp=s*prof.perp*r*k;
+    if(prof.stretch){sx=1+prof.stretch*.4*k;sy=1-prof.stretch*.14*k;}
+    if(prof.squash){sy=1-prof.squash*.8*k;sx=1+prof.squash*.5*k;}
+  }
+  const ca=Math.cos(rot),sa=Math.sin(rot);
+  const px=r*.10,py=-r*.10;                    // pivô do grupamento (peito)
+  const ex=ext*ca-pp*sa,ey=ext*sa+pp*ca;       // avanço+lateral no eixo da arma
+  out.rot=rot;out.sx=sx;out.sy=sy;
+  out.gx=px+((r*.86)-px)*ca-((-r*.04)-py)*sa+ex;
+  out.gy=py+((r*.86)-px)*sa+((-r*.04)-py)*ca+ey;
+  out.a1x=px+((r*.92)-px)*ca-((-r*.20)-py)*sa+ex;
+  out.a1y=py+((r*.92)-px)*sa+((-r*.20)-py)*ca+ey;
+  out.a2x=px+((r*.92)-px)*ca-((r*.14)-py)*sa+ex;
+  out.a2y=py+((r*.92)-px)*sa+((r*.14)-py)*ca+ey;
+  return out;
+}
+/* Pose CORPORAL sutil (lean/giro/weight shift) — mesma timeline, valores
+   discretos: o personagem nunca teleporta, desliza ou deforma demais. */
+const MELEE_BODY_POSE={offsetX:0,offsetY:0,rotation:0,scaleX:1,scaleY:1,recoil:0,lean:0,squash:0,stretch:0,alpha:1};
+function visualMeleeBodyPose(entity,out){
+  const v=visualPeek(entity);
+  if(!v||!v.melee||!v.melee.state||!v.melee.prof)return null;
+  out=out||MELEE_BODY_POSE;
+  const prof=v.melee.prof,p=meleeVisualPhaseProgress(v),s=v.melee.dir;
+  const r=(entity&&entity.r)||14;
+  let rot=0,lean=0,off=0,sx=1,sy=1;
+  if(v.melee.state==='windup'){
+    const k=prof.easeWindup(p);
+    rot=-s*prof.bodyTurn*.6*k;lean=-s*prof.bodyLean*.5*k;off=-prof.bodyShift*r*k;
+  }else if(v.melee.state==='active'){
+    const k=prof.easeActive(p);
+    rot=s*prof.bodyTurn*(1.6*k-.6);lean=s*prof.bodyLean*(1.5*k-.5);off=prof.bodyShift*r*(2*k-1);
+  }else{
+    const k=1-prof.easeRecover(p);
+    rot=s*prof.bodyTurn*k;lean=s*prof.bodyLean*k;off=prof.bodyShift*r*k;
+    if(prof.squash){sy=1-prof.squash*.8*k;sx=1+prof.squash*.5*k;}
+  }
+  out.offsetX=off;out.offsetY=0;out.rotation=rot;
+  out.scaleX=sx;out.scaleY=sy;out.recoil=0;out.lean=lean;
+  out.squash=0;out.stretch=0;out.alpha=1;
+  return out;
+}
+/* Composição determinística da pose de desenho do jogador:
+   base (melee) + hurt por cima — ordem fixa documentada. Sem alocação. */
+const PLAYER_DRAW_POSE={offsetX:0,offsetY:0,rotation:0,scaleX:1,scaleY:1,recoil:0,lean:0,squash:0,stretch:0,alpha:1};
+function visualPlayerDrawPose(p){
+  const hurt=visualHurtPose(p);           // null ou scratch da fundação
+  const melee=visualMeleeBodyPose(p);     // null ou MELEE_BODY_POSE
+  if(!hurt)return melee;
+  if(!melee)return hurt;
+  const o=PLAYER_DRAW_POSE;
+  o.offsetX=melee.offsetX+hurt.offsetX;o.offsetY=melee.offsetY+hurt.offsetY;
+  o.rotation=melee.rotation+hurt.rotation;
+  o.scaleX=melee.scaleX*hurt.scaleX;o.scaleY=melee.scaleY*hurt.scaleY;
+  o.lean=melee.lean+hurt.lean;
+  o.squash=melee.squash+hurt.squash;o.stretch=melee.stretch+hurt.stretch;
+  o.alpha=melee.alpha*hurt.alpha;o.recoil=0;
+  return o;
+}
+/* Ângulo da lâmina derivado do RELÓGIO do próprio swing (determinístico,
+   independe de src) — usado pelo trail para seguir a arma de verdade. */
+function meleeVisualTrailAngle(s,prof){
+  const t=s.t;
+  if(t<=prof.windup)return -s.dir*prof.windupAngle;
+  if(t>=prof.windup+prof.active)return s.dir*prof.endAngle;
+  const k=prof.easeActive(visualClamp01((t-prof.windup)/prof.active));
+  return -s.dir*prof.windupAngle+s.dir*(prof.windupAngle+prof.endAngle)*k;
 }
 
 /* =====================================================================
@@ -13380,6 +13603,8 @@ function setWeaponSlot(slot){
   player.lastWi=player.wi;
   player.wi=wi;player.fireTimer=Math.min(player.fireTimer,.12);
   player.beamRamp=1;player.beamTarget=null;player.beamT=0;
+  meleeVisualCancel(player);   // PR15.5-D: cancela a pose do golpe anterior —
+                               // sem pose fantasma; cooldown real intocado
   const d=WEAPONS[wi];
   const rg=Math.round(weaponRange(d,player));
   toast('ARMA: '+d.nm+'  ·  ALCANCE '+rg+'px');
@@ -13556,10 +13781,18 @@ function fireMelee(src,def,team,mul){
   const half=def.arc/2;
   const dmg=def.dmg*mul*cm;
   const dir=(src.swingDir=-(src.swingDir||1));
-  swings.push({x:src.x,y:src.y,aim:src.aim,reach,arc:def.arc,t:0,life:.26,
-    team,color:crit?'#fff6b0':def.color,dir,src});
+  const mprof=meleeVisualProfile(def);
+  /* PR15.5-D: o swing carrega o próprio perfil visual — o trail segue o
+     relógio do swing (determinístico) e a vida dele é a soma das fases,
+     não mais um .26 fixo. A estrutura continua 1 objeto por ataque. */
+  swings.push({x:src.x,y:src.y,aim:src.aim,reach,arc:def.arc,t:0,
+    life:mprof.windup+mprof.active+mprof.trailFade,
+    team,color:crit?'#fff6b0':def.color,dir,src,mv:mprof,
+    tx:Math.cos(src.aim),ty:Math.sin(src.aim)});
+  meleeVisualStart(src,def,dir);   // PR15.5-D: timeline visual no evento REAL
   if(src===player&&runSt)runSt.ms++;             // PR 8: golpe corpo a corpo
   let hits=0;
+  let hitX=null,hitY=null;          // PR15.5-D: último ponto de contato real
   if(team==='ally'){
     for(const e of enemies){
       if(e.dead||e.spawnT>0)continue;
@@ -13583,9 +13816,14 @@ function fireMelee(src,def,team,mul){
           player.hp=Math.min(player.maxHp,player.hp+dmg*def.lifesteal);
         spawnShards(e.x,e.y,def.color,4,3);
         if(src===player&&runSt)runSt.mh++;       // PR 8: acerto corpo a corpo
-        hits++;
+        hits++;hitX=e.x;hitY=e.y;
       }
     }
+    /* PR15.5-D: resposta de CONTATO — exatamente 1 anel pequeno no último
+       ponto atingido (pool de partículas, sem blur, sem explosão). Os
+       estilhaços por alvo e o abalo existentes continuam intocados. */
+    if(hitX!=null)
+      spawnRing(hitX,hitY,crit?'#fff6b0':def.color,3,mprof.impactRing,.17);
     /* PR 10 — CONTENÇÃO corpo a corpo: o mesmo arco alcança um Echo
        DISSONANTE, consumindo a integridade da ruptura (sem recompensa). */
     if(src===player)for(const ec of echoes){
@@ -16847,6 +17085,7 @@ function updateSwings(dt){
 }
 function drawSwings(){
   for(const s of swings){
+    if(s.mv){meleeDrawTrail(s,s.mv);continue;}   // PR15.5-D: trail da família
     const k=1-s.t/s.life;
     const sweep=s.arc*(0.35+0.65*(1-k));
     const a0=s.aim-sweep/2, a1=s.aim+sweep/2;
@@ -16868,6 +17107,66 @@ function drawSwings(){
     ctx.lineCap='butt';
     ctx.restore();
   }
+}
+/* PR15.5-D · TRAIL que REFORÇA a trajetória da arma (não a substitui):
+   segue o ângulo real da lâmina a cada frame, com cauda curta e fade
+   determinístico. Um path por camada, alpha simples, cor da arma/crit,
+   ZERO shadowBlur (o arco genérico legado usava 26·k — Audit #1). O
+   fallback acima permanece para swings sintéticos sem perfil (fixtures,
+   cenários de auditoria). */
+function meleeDrawTrail(s,prof){
+  if(s.t<prof.windup)return;                     // antecipação não deixa rastro
+  const total=prof.windup+prof.active;
+  const alpha=s.t<=total?1:Math.max(0,1-(s.t-total)/Math.max(.001,prof.trailFade));
+  if(alpha<=0)return;
+  const k=alpha;
+  const prog=visualClamp01((s.t-prof.windup)/prof.active);
+  if(prof.trailStyle==='line'){                  // THRUST: afterimage longitudinal
+    const R=s.reach*(.45+.55*prog);
+    const x0=s.x+s.tx*10,y0=s.y+s.ty*10,x1=s.x+s.tx*R,y1=s.y+s.ty*R;
+    ctx.save();
+    ctx.globalAlpha=k*.75;
+    ctx.strokeStyle=s.color;ctx.lineWidth=prof.trailWidth*k+1.5;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(x0,y0);ctx.lineTo(x1,y1);ctx.stroke();
+    ctx.globalAlpha=k*.85;
+    ctx.strokeStyle='rgba(255,255,255,.9)';ctx.lineWidth=prof.trailWidth*.3*k+.5;
+    ctx.beginPath();ctx.moveTo(x0,y0);ctx.lineTo(x1,y1);ctx.stroke();
+    ctx.lineCap='butt';
+    ctx.restore();
+    return;
+  }
+  if(prof.trailStyle==='impact'){                // BLUNT: cunha compacta no contato
+    const half=Math.min(s.arc*.5,.95)*Math.min(1,.35+prog*1.1);
+    const R=s.reach*(.85+.15*prog);
+    const a0=s.aim-half,a1=s.aim+half;
+    ctx.save();
+    ctx.globalAlpha=k*.5;
+    ctx.fillStyle=s.color;
+    ctx.beginPath();ctx.moveTo(s.x,s.y);ctx.arc(s.x,s.y,R,a0,a1);ctx.closePath();ctx.fill();
+    ctx.globalAlpha=k*.8;
+    ctx.strokeStyle='rgba(255,255,255,.85)';ctx.lineWidth=2.2*k+.6;
+    ctx.beginPath();ctx.arc(s.x,s.y,R,a0,a1);ctx.stroke();
+    ctx.restore();
+    return;
+  }
+  // SLASH/CLEAVE: arco direcional atrás da lâmina (cauda curta)
+  const rot=meleeVisualTrailAngle(s,prof);
+  const blade=s.aim+rot;
+  const back=blade-s.dir*prof.trailTail;
+  const lo=blade<back?blade:back,hi=blade<back?back:blade;
+  const R=s.reach*(.80+.20*prog);
+  ctx.save();
+  ctx.globalAlpha=k*.85;
+  ctx.strokeStyle=s.color;ctx.lineWidth=prof.trailWidth*k+1.5;ctx.lineCap='round';
+  ctx.beginPath();ctx.arc(s.x,s.y,R,lo,hi);ctx.stroke();
+  ctx.globalAlpha=k*.9;
+  ctx.strokeStyle='rgba(255,255,255,.9)';ctx.lineWidth=prof.trailWidth*.32*k+.5;
+  ctx.beginPath();ctx.arc(s.x,s.y,R,lo,hi);ctx.stroke();
+  ctx.globalAlpha=k*.13;
+  ctx.fillStyle=s.color;
+  ctx.beginPath();ctx.moveTo(s.x,s.y);ctx.arc(s.x,s.y,R,lo,hi);ctx.closePath();ctx.fill();
+  ctx.lineCap='butt';
+  ctx.restore();
 }
 function drawBeamFrom(src,def){
   if(!src||!(src.beamT>0))return;
@@ -18862,18 +19161,36 @@ function drawUnit(x,y,aim,r,pal,opts){
   ctx.beginPath();ctx.moveTo(r*.10,-r*.42);ctx.lineTo(r*.10,r*.42);ctx.stroke();
   ctx.shadowBlur=0;
   // BRAÇOS empunhando a arma à frente
+  // PR15.5-D: com golpe melee ativo, braços+mãos+arma giram como um
+  // grupamento rígido em torno do peito (pose pré-computada em scratch).
+  // Sem golpe (mp null) o caminho é exatamente o anterior.
+  const mp=opts.melee;
   ctx.strokeStyle=pal.body;ctx.lineWidth=r*.30;ctx.lineCap='round';
-  ctx.beginPath();ctx.moveTo(r*.10,-r*.52);ctx.lineTo(r*.92,-r*.20);ctx.stroke();
-  ctx.beginPath();ctx.moveTo(r*.10, r*.52);ctx.lineTo(r*.92, r*.14);ctx.stroke();
+  if(mp){
+    ctx.beginPath();ctx.moveTo(r*.10,-r*.52);ctx.lineTo(mp.a1x,mp.a1y);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(r*.10, r*.52);ctx.lineTo(mp.a2x,mp.a2y);ctx.stroke();
+  }else{
+    ctx.beginPath();ctx.moveTo(r*.10,-r*.52);ctx.lineTo(r*.92,-r*.20);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(r*.10, r*.52);ctx.lineTo(r*.92, r*.14);ctx.stroke();
+  }
   ctx.lineCap='butt';
   // ARMA EMPUNHADA
-  ctx.save();ctx.translate(r*.86,-r*.04);
+  ctx.save();
+  if(mp){
+    ctx.translate(mp.gx,mp.gy);ctx.rotate(mp.rot);
+    if(mp.sx!==1||mp.sy!==1)ctx.scale(mp.sx,mp.sy);
+  }else ctx.translate(r*.86,-r*.04);
   drawWeaponSprite(wi,s,pal.wep||pal.glow,opts.recoil||0);
   ctx.restore();
   // mãos sobre a arma
   ctx.fillStyle=pal.edge;
-  ctx.beginPath();ctx.arc(r*.92,-r*.20,r*.17,0,TAU);ctx.fill();
-  ctx.beginPath();ctx.arc(r*.92, r*.14,r*.17,0,TAU);ctx.fill();
+  if(mp){
+    ctx.beginPath();ctx.arc(mp.a1x,mp.a1y,r*.17,0,TAU);ctx.fill();
+    ctx.beginPath();ctx.arc(mp.a2x,mp.a2y,r*.17,0,TAU);ctx.fill();
+  }else{
+    ctx.beginPath();ctx.arc(r*.92,-r*.20,r*.17,0,TAU);ctx.fill();
+    ctx.beginPath();ctx.arc(r*.92, r*.14,r*.17,0,TAU);ctx.fill();
+  }
   // CABEÇA com visor
   ctx.fillStyle=pal.head||pal.body;ctx.strokeStyle=pal.edge;ctx.lineWidth=Math.max(1,s*.8);
   ctx.beginPath();ctx.arc(r*.10,0,r*.40,0,TAU);ctx.fill();ctx.stroke();
@@ -18922,7 +19239,7 @@ function drawEchoEntity(e){
       visor:hostile?'#ffe0e6':'#eaffff',
       head:hostile?'rgba(110,8,26,.95)':'rgba(70,60,80,.9)',wep:col
     },{alpha:hostile?.9:.78,glitch:true,wi:e.curW|0,walk:.8,
-       recoil:Math.max(e.recoil||0,visualWeaponRecoil(e)),phase:e.seed});
+       recoil:Math.max(e.recoil||0,visualWeaponRecoil(e)),melee:visualMeleeWeaponPose(e),phase:e.seed});
     ctx.restore();
     ctx.save();
     // anel de estado: fecha na telegrafia, pulsa na hostilidade, abre no retorno
@@ -18975,11 +19292,11 @@ function drawEchoEntity(e){
     drawUnit(e.x+rand(-3,3),e.y,e.aim,e.r,{
       body:'rgba(90,40,120,.85)',dark:'rgba(40,10,60,.9)',edge:'#46e0ff',
       glow:'#46e0ff',visor:'#bff6ff',head:'rgba(80,40,110,.9)',wep:'#46e0ff'
-    },{alpha:.30,glitch:true,wi:e.curW|0,walk:.6,recoil:Math.max(e.recoil||0,visualWeaponRecoil(e)),phase:e.seed});
+    },{alpha:.30,glitch:true,wi:e.curW|0,walk:.6,recoil:Math.max(e.recoil||0,visualWeaponRecoil(e)),melee:visualMeleeWeaponPose(e),phase:e.seed});
     drawUnit(e.x+rand(-3,3),e.y,e.aim,e.r,{
       body:'rgba(150,40,140,.9)',dark:'rgba(60,10,55,.92)',edge:'#ff4df0',
       glow:'#ff4df0',visor:'#ffd9fb',head:'rgba(130,35,125,.92)',wep:'#ff4df0'
-    },{alpha:.58,glitch:true,wi:e.curW|0,walk:.6,recoil:Math.max(e.recoil||0,visualWeaponRecoil(e)),phase:e.seed});
+    },{alpha:.58,glitch:true,wi:e.curW|0,walk:.6,recoil:Math.max(e.recoil||0,visualWeaponRecoil(e)),melee:visualMeleeWeaponPose(e),phase:e.seed});
     ctx.globalCompositeOperation='source-over';
     // scanlines cortadas
     ctx.strokeStyle='rgba(255,120,250,.35)';ctx.lineWidth=1;
@@ -18992,7 +19309,7 @@ function drawEchoEntity(e){
     drawUnit(e.x,e.y,e.aim,e.r,{
       body:'rgba(40,120,160,.75)',dark:'rgba(12,45,70,.8)',edge:'#8ff6ff',
       glow:'#46e0ff',visor:'#eaffff',head:'rgba(50,140,180,.8)',wep:'#8ff6ff'
-    },{alpha:.72,glitch:false,wi:e.curW|0,walk:.55,recoil:Math.max(e.recoil||0,visualWeaponRecoil(e)),phase:e.seed});
+    },{alpha:.72,glitch:false,wi:e.curW|0,walk:.55,recoil:Math.max(e.recoil||0,visualWeaponRecoil(e)),melee:visualMeleeWeaponPose(e),phase:e.seed});
     ctx.strokeStyle='rgba(140,240,255,.5)';ctx.lineWidth=1;
     ctx.beginPath();ctx.arc(e.x,e.y,e.r+9+Math.sin(runTime*3)*2,runTime,runTime+4.4);ctx.stroke();
   }
@@ -19139,7 +19456,7 @@ function drawShadow(e){
   drawUnit(e.x,e.y,e.aim,e.r,{
     body:'rgba(24,10,40,.95)',dark:'rgba(8,2,16,.98)',edge:e.color,
     glow:e.color,visor:'#ffffff',head:'rgba(30,12,48,.95)',wep:e.color
-  },{alpha:.92*a,glitch:true,wi:e.wi|0,walk:.7,recoil:visualWeaponRecoil(e),phase:e.srcSlot});
+  },{alpha:.92*a,glitch:true,wi:e.wi|0,walk:.7,recoil:visualWeaponRecoil(e),melee:visualMeleeWeaponPose(e),phase:e.srcSlot});
   ctx.restore();
   ctx.font='11px Consolas,monospace';ctx.textAlign='center';
   ctx.fillStyle=e.color;
@@ -19592,7 +19909,11 @@ function drawPlayer(){
     glow:PL.glow, visor:PL.visor,
     head:hurt?'#ff9fb0':PL.head,
     wep:(WEAPONS[p.wi]&&WEAPONS[p.wi].color)||PL.glow
-  },{wi:p.wi,walk:clamp(spd/p.speed,0,1),recoil:Math.max(p.recoil||0,visualWeaponRecoil(p)),pose:visualHurtPose(p),phase:0});
+  },{wi:p.wi,walk:clamp(spd/p.speed,0,1),recoil:Math.max(p.recoil||0,visualWeaponRecoil(p)),
+    /* PR15.5-D: composição determinística base(melee)+hurt e pose da arma.
+       Sem golpe ativo ambas retornam null → caminho de desenho idêntico
+       ao anterior (fast path, zero custo idle). */
+    pose:visualPlayerDrawPose(p),melee:visualMeleeWeaponPose(p),phase:0});
   // WRAITH: aura de surto pós-dash
   if(p.rushT>0){
     ctx.save();ctx.globalAlpha=.28*(p.rushT/2);

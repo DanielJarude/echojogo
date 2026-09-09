@@ -97,7 +97,12 @@ const mechanical={
   "pickTarget": "d82795f49e277ec2990a908d3bf27560600156c2a58fcafc6676759301614e96",
   "drawEnemy": "8a19b3f713209edd854d5cb28247a3eaac68ad7f627f1901902caabbe965bc33",
   "drawProjectile": "565cdac8706fc659607acab66596631b930430e41d064f20d2fc827631f32399",
-  "drawSwings": "2bda9a67a966aadfd45dbecea43c8d223b411858a2264febd03f20b6bbe04217",
+  /* PR15.5-D: drawSwings re-baselineado — ganhou o despacho para o trail
+     por família (meleeDrawTrail, pinado abaixo). O fallback legado e o
+     comportamento sem RNG permanecem; os goldens A–I comprovam que os
+     cenários sintéticos (swings sem perfil) desenham idêntico à base. */
+  "drawSwings": "8d98d6109726464ef4b2816c3246d2550557e3db671299811204e3aa9dc378e0",
+  "meleeDrawTrail": "c756290f87617435b59587bfcb25f47c20f4a7f8d4c992ee6d1d771c33e77176",
   "drawArcs": "7f31f510dc22eb909d146489f7ad1f0a17cafe555cd7c71fb5fd57f56715bb76",
   "updateRenderGovernor": "42c6df21322a4150a590bfad63e1b4494c14c860da150b9cc3f3142d623f2d1f"
 };
