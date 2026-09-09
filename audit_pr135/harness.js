@@ -111,7 +111,8 @@ src+='\n;globalThis.__t={'+
   'getMiniBossRef:()=>miniBoss,setBoss:v=>{boss=v;},setMiniBossRef:v=>{miniBoss=v;},'+
   'getFactionPresenceEntity:()=>factionPresenceEntity,'+
   'setFactionPresenceEntity:v=>{factionPresenceEntity=v;},'+
-  'ARENA,CHARS,drawUnit,updateAllies,drawWorldExtras,inView,'+
+  'ARENA,drawUnit,updateAllies,drawWorldExtras,inView,'+
+  'updateEcho,drawEchoEntity,damageEcho,regenEchoShield,pickTarget,echoAllied,'+
   'pr15MemIsEligible,getParts:()=>parts,getRunTime:()=>runTime,'+
   'getSandboxRun:()=>sandboxRun,'+
   'sandboxStart,sandboxExit,sandboxRestart,sandboxEndToSetup,sandboxCloseSetup,'+

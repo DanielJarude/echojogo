@@ -32923,6 +32923,7 @@ const PR15_PRES_CFG={
   minPlayerDist:280,    // nunca nasce a menos disto do operador
   maxPlayerDist:560,    // nem tão longe que fique invisível
   minHoldDist:190,      // distância mínima mantida em movimento
+  holdEps:0.25,         // folga do empurrão (evita drift de arredondamento)
   idealDist:320,        // distância de repouso preferida
   orbitSpeed:0.20,      // rad/s — reposicionamento lento, não agressivo
   follow:1.6,           // suavização do deslocamento (1/s)
@@ -33232,7 +33233,11 @@ function pr15PresMove(p,dt){
      o jogador, não altera pathing de ninguém. */
   if(hasP){
     const ddx=nx-px,ddy=ny-py,dd=Math.hypot(ddx,ddy);
-    if(dd>0.001&&dd<C.minHoldDist){nx=px+ddx/dd*C.minHoldDist;ny=py+ddy/dd*C.minHoldDist;}
+    /* holdEps: o empurrão só age quando a invasão é REAL. Sem essa folga, a
+       posição restaurada do checkpoint (arredondada) reentrava no raio por
+       centésimos de pixel e o clamp a deslocava — fazendo o Continue devolver
+       um x/y ligeiramente diferente do salvo. */
+    if(dd>0.001&&dd<C.minHoldDist-C.holdEps){nx=px+ddx/dd*C.minHoldDist;ny=py+ddy/dd*C.minHoldDist;}
     else if(dd<=0.001){nx=px+C.minHoldDist;ny=py;}
   }
   nx=clamp(nx,M,ARENA.w-M);ny=clamp(ny,M,ARENA.h-M);
@@ -33349,6 +33354,10 @@ function pr15PresPack(){
   if(p&&p.phase!=='done'&&!p.dev){
     act={v:PR15_PRES_CFG.version,enc:p.encounterId,mem:p.memoryId,src:p.source,
       res:p.resonance,seed:p.seed>>>0,intent:p.intentSeed|0,wave:p.wave|0,
+      /* posição QUANTIZADA em 0,1 px e idade em 0,01 s — o checkpoint é
+         compacto de propósito. O Continue devolve exatamente o valor
+         gravado; a diferença máxima possível para o instante do save é a
+         própria quantização, imperceptível e sem efeito de gameplay. */
       x:Math.round(p.x*10)/10,y:Math.round(p.y*10)/10,
       ph:p.phase,age:Math.round(p.age*100)/100,fb:p.fb|0};
   }
