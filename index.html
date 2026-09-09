@@ -32249,6 +32249,616 @@ function pr15TemporalKitBoot(){
 /* ==================== PR15·fim b1 ==================== */
 
 /* =====================================================================
+   PR15·b2 — DIRECTOR DE MEMÓRIAS TEMPORAIS (DECISÃO + AGENDAMENTO)
+   ---------------------------------------------------------------------
+   Responsabilidade ÚNICA: decidir, de forma determinística e persistente,
+   SE uma memória histórica (N-1/N-2) vai interferir na run atual, QUAL,
+   EM QUAL onda, e registrar isso num descriptor compacto que o PR15·B3
+   transformará em presença física.
+
+   O B2 NÃO spawna nada: nenhuma entidade, sprite, renderer, colisão,
+   dano, recompensa, combate, diálogo, IA ou UI. Nada aqui altera
+   gameplay. A única saída observável é estado + DEV.
+
+   ARQUITETURA (mesma dos kits PR12/13/14 — monkey-patch explícito, nada
+   costurado dentro das funções de run/onda/save):
+
+     MEMÓRIA N-1/N-2 (echoQueue, fonte única do B1)
+            ↓
+     pr15MemPlan()            ← decisão determinística, UMA vez por run
+            ↓
+     descriptor agendado      ← compacto, referencia memoryId (não copia)
+            ↓
+     cp.pr15mem (checkpoint)  ← sobrevive a save/fechar/Continue
+            ↓
+     [PR15·B3]                ← presença física (fora do escopo deste bloco)
+
+   DETERMINISMO — o agendamento NUNCA toca Math.random nem o RNG global de
+   combate. Tudo deriva de (slot, Fracture seed, memoryId, onda) via FNV-1a
+   + fractureHash32 + fractureRng — os mesmos primitivos determinísticos
+   que o Diretor de Fratura e a Presença de Facção já usam. Abrir menu,
+   salvar, carregar, usar Continue, mudar FPS ou outra função chamar
+   Math.random não altera NENHUMA decisão.
+
+   IDEMPOTÊNCIA — o plano é calculado UMA vez no startRun e persistido. No
+   Continue ele é RESTAURADO, nunca recalculado: mesma memória, mesma onda,
+   mesma seed, mesma ressonância, mesmo status. `waveDone` impede que uma
+   onda seja processada duas vezes (reentrada/reload). Uma oportunidade
+   consumida nunca ressuscita.
+
+   A memória histórica NUNCA é consumida no sentido destrutivo: "consumed"
+   significa "esta oportunidade foi usada nesta run". Não existe aqui
+   echoQueue.splice() nem equivalente — a fila só muda pelas regras do B1.
+   ===================================================================== */
+
+/* ---------------- configuração centralizada ----------------
+   Única fonte dos números de cadência. Nada de magic number espalhado. */
+const PR15_MEM_CFG={
+  version:1,
+  firstWave:4,          // 1ª oportunidade nunca antes desta onda
+  cooldownWaves:3,      // distância mínima entre oportunidades resolvidas
+  maxEncounters:3,      // teto de oportunidades por run
+  conflictShiftMax:2,   // quantas ondas uma oportunidade pode ser adiada
+  n1Chance:0.75,        // N-1 = 75% quando ambas são elegíveis
+  extraChance:0.50,     // vagas 2 e 3 do plano (a 1ª sempre ocorre)
+  unstableN1:0.30,      // chance de ressonância UNSTABLE com Tema diferente
+  unstableN2:0.55,      // N-2 é memória mais distante/instável
+  fallbackSeed:0x51EED1 // seed estável p/ run sem Diretor de Fratura
+};
+const PR15_MEM_STATUS={scheduled:1,consumed:1,skipped:1};
+const PR15_MEM_SOURCES={n1:1,n2:1};
+const PR15_MEM_RESONANCE={high:1,normal:1,unstable:1};
+
+/* ---------------- hash/seed determinístico ----------------
+   FNV-1a sobre uma chave textual estável → fractureHash32. Sem relógio,
+   sem Math.random, sem dependência de ordem de execução. */
+function pr15MemSeedFor(purpose,runSeed,wave,memId){
+  let h=0x811C9DC5;
+  const s=String(purpose||'x')+'|'+(runSeed>>>0)+'|'+(wave|0)+'|'+String(memId||'');
+  for(let i=0;i<s.length;i++){h^=s.charCodeAt(i)&0xFF;h=Math.imul(h,0x01000193)>>>0;}
+  return fractureHash32(h>>>0);
+}
+function pr15MemRng(purpose,runSeed,wave,memId){
+  return fractureRng(pr15MemSeedFor(purpose,runSeed,wave,memId));
+}
+
+/* ---------------- identidade determinística da run ----------------
+   NÃO usa timestamp como identidade lógica. Usa o que o jogo já tem:
+   slot + Fracture seed. A seed do Diretor de Fratura é criada uma única
+   vez no início da run (fractureMakeSeed) e depois só é LIDA do
+   checkpoint — logo (slot, seed) é estável através de save/Continue e já
+   é persistente. Nenhum sistema de save novo é introduzido. */
+function pr15MemRunSeed(){
+  let s=0;
+  try{if(typeof fractureGetSeed==='function')s=fractureGetSeed()>>>0;}catch(e){s=0;}
+  if(!s){try{if(fractureRun)s=fractureRun.seed>>>0;}catch(e){}}
+  return (s>>>0)||(PR15_MEM_CFG.fallbackSeed>>>0);
+}
+function pr15MemSlot(){
+  try{if(curSlot>=1&&curSlot<=3)return curSlot|0;}catch(e){}
+  try{if(smRoot&&smRoot.lastSlot)return clamp(smRoot.lastSlot|0||1,1,3);}catch(e){}
+  return 1;
+}
+function pr15MemRunKey(){return 's'+pr15MemSlot()+':'+pr15MemRunSeed();}
+
+/* =====================================================================
+   ELEGIBILIDADE — quem pode entrar no Director
+   ---------------------------------------------------------------------
+   · v3 válida com id estável → ELEGÍVEL (candidata normal);
+   · v2 legado sem id → NÃO elegível para aparição temporal (continua
+     funcionando normalmente como Eco: trail, makeEcho, personalidade,
+     equipamento — nada disso é tocado);
+   · registro corrompido/incompleto → ignorado com segurança;
+   · NUNCA se destrói um registro histórico por ele ser inelegível: aqui
+     só há LEITURA. A fila é alterada exclusivamente pelas regras do B1.
+   ===================================================================== */
+function pr15MemIsEligible(r){
+  if(!r||typeof r!=='object'||Array.isArray(r))return false;
+  if(r.dev)return false;                                  // run DEV nunca vira memória
+  if(typeof r.id!=='string'||!r.id||r.id.length>32)return false;   // exige identidade v3
+  if(!Array.isArray(r.trail)||!r.trail.length)return false;         // mínimo p/ replay
+  const t0=r.trail[0];
+  if(!Array.isArray(t0))return false;
+  if(!Number.isFinite(+t0[1])||!Number.isFinite(+t0[2]))return false;
+  return true;
+}
+/* Candidatas: echoQueue[0] = N-1 (principal), echoQueue[1] = N-2.
+   Retorna só as elegíveis, preservando a noção de origem. */
+function pr15MemCandidates(queue){
+  const q=Array.isArray(queue)?queue:(Array.isArray(echoQueue)?echoQueue:[]);
+  const out=[];
+  const map=[['n1',0],['n2',1]];
+  for(let i=0;i<map.length;i++){
+    const src=map[i][0],idx=map[i][1];
+    const r=q[idx];
+    if(pr15MemIsEligible(r))out.push({source:src,rec:r,id:r.id});
+  }
+  return out;
+}
+
+/* =====================================================================
+   RESSONÂNCIA COM O FRACTURE THEME
+   ---------------------------------------------------------------------
+   Influência, NUNCA trava: memória com Tema diferente CONTINUA podendo
+   aparecer. Classificação determinística em três níveis:
+     high     — mesmo Tema da run atual (maior ressonância)
+     normal   — Tema diferente, estável
+     unstable — Tema diferente e instável (mais provável para N-2, que é
+                memória mais distante)
+   Sem informação de Tema (memória sem theme ou run sem Diretor) → normal.
+   O B2 apenas REGISTRA isso no descriptor; não vira efeito de gameplay.
+   ===================================================================== */
+function pr15MemResonance(mem,source,wave,runSeed,runTheme){
+  const mt=(mem&&typeof mem.theme==='string'&&mem.theme)?mem.theme:null;
+  const rt=(typeof runTheme==='string'&&runTheme)?runTheme:null;
+  if(!mt||!rt)return 'normal';
+  if(mt===rt)return 'high';
+  const p=(source==='n2')?PR15_MEM_CFG.unstableN2:PR15_MEM_CFG.unstableN1;
+  return pr15MemRng('res',runSeed,wave,mt+'>'+rt)()<p?'unstable':'normal';
+}
+
+/* =====================================================================
+   DESCRIPTOR DO ENCONTRO TEMPORAL — contrato para o PR15·B3
+   ---------------------------------------------------------------------
+   Compacto e sanitizável. REFERENCIA a memória (mem = memoryId), nunca a
+   copia: nada de trail, player, inimigos, projéteis, itemState, entidades
+   ou frame state. Todos os campos são escalares.
+
+     v      : versão do descriptor
+     id     : identificador estável (sobrevive a Continue sem mudar)
+     mem    : memoryId da memória (ex.: 'e1-12') — referência, não cópia
+     src    : 'n1' | 'n2'
+     wave   : onda em que está agendada (pode ser adiada por conflito)
+     base   : onda originalmente planejada (âncora do budget de shift)
+     shift  : quantos adiamentos já foram aplicados (<= conflictShiftMax)
+     res    : 'high' | 'normal' | 'unstable'
+     seed   : seed própria e determinística (B3 usa p/ variação visual)
+     st     : 'scheduled' | 'consumed' | 'skipped'
+     at     : onda em que resolveu (0 = ainda não resolveu)
+     why    : motivo do adiamento/skip ('' quando não se aplica)
+     intent : intentSeed neutro — hook p/ B3/B4 decidirem a intenção
+              (ALIADA/RIVAL/AMBÍGUA). B2 NÃO implementa comportamento.
+   ===================================================================== */
+function pr15MemMakeEncounter(mem,source,baseWave,runSeed,runKey,runTheme){
+  const slot=pr15MemSlot();
+  const id=('p'+slot+'-'+(runSeed>>>0).toString(36)+'-w'+(baseWave|0)).slice(0,32);
+  return {
+    v:PR15_MEM_CFG.version,
+    id:id,
+    mem:String(mem&&mem.id||'').slice(0,32),
+    src:PR15_MEM_SOURCES[source]?source:'n1',
+    wave:baseWave|0,
+    base:baseWave|0,
+    shift:0,
+    res:pr15MemResonance(mem,source,baseWave,runSeed,runTheme),
+    seed:pr15MemSeedFor('enc',runSeed,baseWave,mem&&mem.id),
+    st:'scheduled',
+    at:0,
+    why:'',
+    intent:pr15MemSeedFor('intent',runSeed,baseWave,mem&&mem.id)%100000
+  };
+}
+
+/* ---------------- seleção N-1 vs N-2 (determinística) ---------------- */
+function pr15MemPickSource(cands,runSeed,wave){
+  let n1=null,n2=null;
+  for(let i=0;i<cands.length;i++){
+    if(cands[i].source==='n1'&&!n1)n1=cands[i];
+    else if(cands[i].source==='n2'&&!n2)n2=cands[i];
+  }
+  if(n1&&n2)return pr15MemRng('pick',runSeed,wave)()<PR15_MEM_CFG.n1Chance?n1:n2;
+  return n1||n2||null;
+}
+
+/* =====================================================================
+   ESTADO RUN-SCOPED DO DIRECTOR
+   ===================================================================== */
+function pr15MemFresh(runKey,runSeed){
+  return {
+    v:PR15_MEM_CFG.version,
+    key:String(runKey||'').slice(0,40),
+    slot:pr15MemSlot(),
+    seed:(runSeed>>>0)||0,
+    enc:[],          // descriptors
+    used:[],         // memoryIds consumidos NESTA run (únicos)
+    waveDone:0,      // última onda já processada (idempotência)
+    lastWave:0,      // última onda vista
+    count:0          // oportunidades consumidas nesta run
+  };
+}
+let pr15MemRun=null;
+
+/* =====================================================================
+   PLANO — calculado UMA vez por run. Puro e determinístico.
+   Vagas de onda: firstWave + k*cooldownWaves (4, 7, 10 por padrão).
+   A 1ª vaga sempre ocorre se houver memória elegível; as demais passam
+   por um portão determinístico. Assim uma run longa tem normalmente
+   1–3 oportunidades, nunca "toda onda é evento de memória".
+   ===================================================================== */
+function pr15MemBuildPlan(queue,runSeed,runTheme){
+  const cands=pr15MemCandidates(queue);
+  if(!cands.length)return [];
+  const seed=(runSeed>>>0)||pr15MemRunSeed();
+  const key=pr15MemRunKey();
+  const out=[];
+  for(let k=0;k<PR15_MEM_CFG.maxEncounters;k++){
+    const baseWave=(PR15_MEM_CFG.firstWave+k*PR15_MEM_CFG.cooldownWaves)|0;
+    if(baseWave>MAX_WAVE)break;
+    if(k>0&&pr15MemRng('gate',seed,baseWave)()>=PR15_MEM_CFG.extraChance)continue;
+    const pick=pr15MemPickSource(cands,seed,baseWave);
+    if(!pick)break;
+    out.push(pr15MemMakeEncounter(pick.rec,pick.source,baseWave,seed,key,runTheme));
+  }
+  return out;
+}
+function pr15MemBeginRun(queue){
+  /* Sandbox: estado isolado, nada de agendamento histórico real */
+  if(typeof sandboxRun!=='undefined'&&sandboxRun){pr15MemRun=null;return null;}
+  const seed=pr15MemRunSeed();
+  const key=pr15MemRunKey();
+  const st=pr15MemFresh(key,seed);
+  let theme=null;
+  try{if(typeof fractureGetThemeId==='function')theme=fractureGetThemeId();}catch(e){theme=null;}
+  st.enc=pr15MemBuildPlan(queue,seed,theme);
+  pr15MemRun=st;
+  return st;
+}
+function pr15MemEndRun(){pr15MemRun=null;return true;}
+function pr15MemForgetRun(){pr15MemRun=null;return true;}
+
+/* =====================================================================
+   CONFLITOS — a oportunidade temporal não compete na mesma onda com
+   eventos importantes. Lê EXCLUSIVAMENTE estado real já existente; não
+   modifica o scheduler de nenhum outro sistema.
+   ===================================================================== */
+function pr15MemWaveBusy(n){
+  const w=n|0,reasons=[];
+  try{if(typeof evMem!=='undefined'&&evMem&&((evMem.dw|0)===w))reasons.push('decision');}catch(e){}
+  try{if(typeof beacon!=='undefined'&&beacon)reasons.push('beacon');}catch(e){}
+  try{
+    const fp=(typeof factionPresenceRun!=='undefined')?factionPresenceRun:null;
+    if(fp&&fp.scheduled&&((fp.scheduled.wave|0)===w))reasons.push('presence');
+    else if(fp&&fp.active)reasons.push('presence_active');
+  }catch(e){}
+  try{
+    const f=(typeof fractureRun!=='undefined')?fractureRun:null;
+    if(f&&f.b3&&f.b3.mini&&Object.prototype.hasOwnProperty.call(f.b3.mini,w))reasons.push('miniboss');
+    if(f&&f.b4&&f.b4.sig&&Object.prototype.hasOwnProperty.call(f.b4.sig,w))reasons.push('signature');
+  }catch(e){}
+  return reasons;
+}
+/* cooldown entre oportunidades já RESOLVIDAS desta run */
+function pr15MemCooldownBusy(n){
+  const st=pr15MemRun;if(!st||!Array.isArray(st.enc))return false;
+  let last=0;
+  for(let i=0;i<st.enc.length;i++){
+    const e=st.enc[i];
+    if(e&&e.st==='consumed'&&(e.at|0)>last)last=e.at|0;
+  }
+  return last>0&&((n|0)-last)<PR15_MEM_CFG.cooldownWaves;
+}
+
+/* =====================================================================
+   RESOLUÇÃO POR ONDA — determinística e idempotente.
+   Chamada na fronteira de onda. `waveDone` garante que a mesma onda nunca
+   é processada duas vezes, o que torna o Continue seguro mesmo quando o
+   checkpoint foi gravado antes do processamento daquela onda.
+   Semântica de conflito: adia até conflictShiftMax ondas; sem onda segura
+   dentro da janela, marca 'skipped' com o motivo. Nunca entra em loop.
+   ===================================================================== */
+function pr15MemOnWave(n){
+  const st=pr15MemRun;if(!st)return null;
+  if(typeof sandboxRun!=='undefined'&&sandboxRun)return null;   // Sandbox isolado
+  const w=clamp(Math.round(Number(n))||0,0,MAX_WAVE);
+  if(w<=0)return st;
+  if((st.waveDone|0)>=w)return st;                              // idempotência
+  if(!Array.isArray(st.enc))st.enc=[];
+  const ord=st.enc.slice().sort((a,b)=>((a.wave|0)-(b.wave|0))||((a.base|0)-(b.base|0)));
+  for(let i=0;i<ord.length;i++){
+    const e=ord[i];
+    if(!e||e.st!=='scheduled')continue;
+    const ew=e.wave|0;
+    if(ew>w)continue;                                 // ainda não chegou
+    if(ew<w){e.st='skipped';e.why='perdida';e.at=w;continue;}
+    const busy=pr15MemWaveBusy(w);
+    const cool=pr15MemCooldownBusy(w);
+    if(!busy.length&&!cool){
+      e.st='consumed';e.at=w;e.why='';
+      if(Array.isArray(st.used)&&st.used.indexOf(e.mem)<0)st.used.push(e.mem);
+      st.count=(st.count|0)+1;
+    }else if((e.shift|0)<PR15_MEM_CFG.conflictShiftMax&&(w+1)<=MAX_WAVE){
+      e.wave=w+1;e.shift=(e.shift|0)+1;e.why=cool?'cooldown':busy.slice(0,3).join('|');
+    }else{
+      e.st='skipped';e.why=cool?'cooldown':busy.slice(0,3).join('|');e.at=w;
+    }
+  }
+  st.waveDone=w;st.lastWave=w;
+  return st;
+}
+
+/* =====================================================================
+   SERIALIZAÇÃO / SANITIZAÇÃO TOLERANTE
+   ---------------------------------------------------------------------
+   Ausência do estado B2 (save antigo, save do B1, save com v2/v3, save
+   parcial) ⇒ inicialização segura. Nunca apaga slot, nunca quebra o
+   Continue, nunca invalida Echo legado, nunca toca echoQueue. Descriptor
+   corrompido é descartado individualmente; o resto sobrevive.
+   ===================================================================== */
+function pr15MemSanEnc(e){
+  if(!e||typeof e!=='object'||Array.isArray(e))return null;
+  const o={};
+  if(typeof e.id!=='string'||!e.id||e.id.length>32)return null;   // sem id ⇒ descartar
+  o.v=PR15_MEM_CFG.version;
+  o.id=e.id;
+  if(typeof e.mem!=='string'||!e.mem||e.mem.length>32)return null; // sem memória ⇒ descartar
+  o.mem=e.mem;
+  o.src=PR15_MEM_SOURCES[e.src]?e.src:'n1';
+  const wv=Math.round(+e.wave);
+  o.wave=(Number.isFinite(wv)&&wv>0)?clamp(wv,1,MAX_WAVE):0;
+  const bv=Math.round(+e.base);
+  o.base=(Number.isFinite(bv)&&bv>0)?clamp(bv,1,MAX_WAVE):o.wave;
+  const sh=Math.round(+e.shift);
+  o.shift=(Number.isFinite(sh)&&sh>=0)?clamp(sh,0,PR15_MEM_CFG.conflictShiftMax):0;
+  o.res=PR15_MEM_RESONANCE[e.res]?e.res:'normal';
+  const sd=Math.round(+e.seed);
+  o.seed=(Number.isFinite(sd)&&sd>0)?(sd>>>0):0;
+  o.st=PR15_MEM_STATUS[e.st]?e.st:'scheduled';
+  const at=Math.round(+e.at);
+  o.at=(Number.isFinite(at)&&at>=0)?clamp(at,0,MAX_WAVE):0;
+  o.why=(typeof e.why==='string')?e.why.slice(0,48):'';
+  const it=Math.round(+e.intent);
+  o.intent=(Number.isFinite(it)&&it>=0)?(it%100000):0;
+  return o;
+}
+function pr15MemSanitize(p){
+  const out=pr15MemFresh('',0);
+  if(!p||typeof p!=='object'||Array.isArray(p))return out;
+  if(typeof p.key==='string')out.key=p.key.slice(0,40);
+  const sl=Math.round(+p.slot);
+  out.slot=(Number.isFinite(sl)&&sl>=1&&sl<=3)?(sl|0):pr15MemSlot();
+  const sd=Math.round(+p.seed);
+  out.seed=(Number.isFinite(sd)&&sd>=0)?(sd>>>0):0;
+  out.enc=Array.isArray(p.enc)
+    ?p.enc.slice(0,PR15_MEM_CFG.maxEncounters*2).map(pr15MemSanEnc).filter(Boolean)
+    :[];
+  out.used=Array.isArray(p.used)
+    ?p.used.filter(x=>typeof x==='string'&&x).slice(0,PR15_MEM_CFG.maxEncounters*2)
+    :[];
+  const wd=Math.round(+p.waveDone);
+  out.waveDone=(Number.isFinite(wd)&&wd>=0)?clamp(wd,0,MAX_WAVE):0;
+  const lw=Math.round(+p.lastWave);
+  out.lastWave=(Number.isFinite(lw)&&lw>=0)?clamp(lw,0,MAX_WAVE):0;
+  const ct=Math.round(+p.count);
+  out.count=(Number.isFinite(ct)&&ct>=0)?clamp(ct,0,out.enc.length):0;
+  return out;
+}
+function pr15MemPack(){
+  const s=pr15MemRun;if(!s)return null;
+  return {v:PR15_MEM_CFG.version,key:s.key,slot:s.slot|0,seed:s.seed>>>0,
+    enc:(Array.isArray(s.enc)?s.enc:[]).map(e=>({v:PR15_MEM_CFG.version,id:e.id,
+      mem:e.mem,src:e.src,wave:e.wave|0,base:e.base|0,shift:e.shift|0,res:e.res,
+      seed:e.seed>>>0,st:e.st,at:e.at|0,why:e.why,intent:e.intent|0})),
+    used:(Array.isArray(s.used)?s.used:[]).slice(),
+    waveDone:s.waveDone|0,lastWave:s.lastWave|0,count:s.count|0};
+}
+/* Continue: restaura do checkpoint. Ausência ⇒ estado vazio seguro; NUNCA
+   recalcula o plano (é isso que garante a idempotência). */
+function pr15MemUnpack(cp){
+  const p=(cp&&cp.pr15mem&&typeof cp.pr15mem==='object'&&!Array.isArray(cp.pr15mem))
+    ?cp.pr15mem:null;
+  if(!p){pr15MemRun=null;return null;}
+  pr15MemRun=pr15MemSanitize(p);
+  return pr15MemRun;
+}
+
+/* =====================================================================
+   OBSERVABILIDADE — leitura pura, nunca muta estado.
+   ===================================================================== */
+function pr15MemSnapshot(){
+  const s=pr15MemRun;
+  if(!s)return {active:false,runKey:pr15MemRunKey(),eligible:pr15MemCandidates().map(c=>({source:c.source,id:c.id})),
+    scheduled:[],consumed:[],skipped:[],lastWave:0,count:0,waveDone:0,used:[]};
+  const enc=(Array.isArray(s.enc)?s.enc:[]).map(e=>Object.assign({},e));
+  return {
+    active:true,runKey:s.key,slot:s.slot|0,seed:s.seed>>>0,
+    eligible:pr15MemCandidates().map(c=>({source:c.source,id:c.id})),
+    scheduled:enc.filter(e=>e.st==='scheduled'),
+    consumed:enc.filter(e=>e.st==='consumed'),
+    skipped:enc.filter(e=>e.st==='skipped'),
+    lastWave:s.lastWave|0,count:s.count|0,waveDone:s.waveDone|0,
+    used:(Array.isArray(s.used)?s.used:[]).slice()
+  };
+}
+
+/* =====================================================================
+   DEV — leitura + força diagnóstica. Tudo com guarda !DEV_MODE (inerte em
+   release). A força manual marca a run como devTainted, de modo que o B1
+   nunca a transforma em memória legítima.
+   ===================================================================== */
+function pr15DevMemoryState(){
+  if(!DEV_MODE)return null;
+  return pr15MemSnapshot();
+}
+function pr15DevMemoryCandidates(){
+  if(!DEV_MODE)return null;
+  return pr15MemCandidates().map(c=>({
+    source:c.source,id:c.id,
+    theme:(typeof c.rec.theme==='string')?c.rec.theme:null,
+    seed:(c.rec.seed!=null&&Number.isFinite(+c.rec.seed))?(+c.rec.seed>>>0):null,
+    op:(typeof c.rec.op==='string')?c.rec.op:null,
+    cause:(typeof c.rec.cause==='string')?c.rec.cause:null,
+    /* Build Profile/personalidade apenas ACESSÍVEIS por memoryId — o B2
+       não implementa comportamento baseado neles (isso é B3/B4/PR16). */
+    arch:(c.rec.arch&&typeof c.rec.arch==='object')?Object.assign({},c.rec.arch):null,
+    moral:(c.rec.moral&&typeof c.rec.moral==='object')?Object.assign({},c.rec.moral):null,
+    dom:(typeof c.rec.dom==='string')?c.rec.dom:null,
+    sigW:(typeof c.rec.sigW==='string')?c.rec.sigW:null,
+    sigItems:Array.isArray(c.rec.sigItems)?c.rec.sigItems.slice():[]
+  }));
+}
+function pr15DevMemorySchedule(){
+  if(!DEV_MODE)return null;
+  const s=pr15MemSnapshot();
+  return {runKey:s.runKey,cfg:Object.assign({},PR15_MEM_CFG),
+    plan:s.scheduled.concat(s.consumed,s.skipped).map(e=>Object.assign({},e)),
+    busy:pr15MemWaveBusy((typeof wave!=='undefined')?wave|0:0),
+    cooldown:pr15MemCooldownBusy((typeof wave!=='undefined')?wave|0:0)};
+}
+/* força diagnóstica: substitui o estado run-scoped por uma decisão
+   escolhida à mão. Só com DEV_MODE; tainta a run; inerte em release. */
+function pr15DevMemoryForce(o){
+  if(!DEV_MODE)return null;
+  const O=(o&&typeof o==='object')?o:{};
+  try{devTaint();}catch(e){}
+  const seed=pr15MemRunSeed(),key=pr15MemRunKey();
+  const st=pr15MemFresh(key,seed);
+  const cands=pr15MemCandidates();
+  const want=(O.source==='n2')?'n2':'n1';
+  let pick=null;
+  for(let i=0;i<cands.length;i++)if(cands[i].source===want){pick=cands[i];break;}
+  if(!pick)pick=cands[0]||null;
+  if(!pick){pr15MemRun=st;return {ok:false,reason:'sem memória elegível',state:pr15MemSnapshot()};}
+  let theme=null;
+  try{if(typeof fractureGetThemeId==='function')theme=fractureGetThemeId();}catch(e){theme=null;}
+  const w=clamp(Math.round(Number(O.wave))||PR15_MEM_CFG.firstWave,
+    PR15_MEM_CFG.firstWave,MAX_WAVE);
+  const enc=pr15MemMakeEncounter(pick.rec,pick.source,w,seed,key,theme);
+  st.enc=[enc];
+  pr15MemRun=st;
+  return {ok:true,reason:'forçado via DEV',state:pr15MemSnapshot()};
+}
+
+/* =====================================================================
+   SANDBOX — contexto isolado. O estado real é guardado de lado e devolvido
+   na saída: o Sandbox não cria agendamento histórico, não consome memória
+   real, não altera estado persistente e não polui o Continue.
+   ===================================================================== */
+let pr15MemSandboxStash=null;
+function pr15MemSandboxContextStart(){
+  pr15MemSandboxStash=pr15MemRun;pr15MemRun=null;return true;
+}
+function pr15MemSandboxTearDown(){
+  pr15MemRun=(pr15MemSandboxStash!==null&&pr15MemSandboxStash!==undefined)
+    ?pr15MemSandboxStash:null;
+  pr15MemSandboxStash=null;return true;
+}
+
+/* =====================================================================
+   KIT — integração por monkey-patch (mesmo padrão de PR12/13/14/B1).
+   ===================================================================== */
+function pr15MemoryKitBoot(){
+  if(pr15MemoryKitBoot.done)return;pr15MemoryKitBoot.done=true;
+  /* 1. checkpoint: cp.pr15mem */
+  try{
+    const _bc=smBuildCheckpoint;smBuildCheckpoint=function(reason,waveOverride){
+      const cp=_bc.apply(this,arguments);
+      try{if(cp&&typeof cp==='object')cp.pr15mem=pr15MemPack();}catch(e){}
+      return cp;
+    };
+  }catch(e){}
+  /* 2. slot: nada vaza entre Save 1/2/3 */
+  try{
+    const _as=activateSlot;activateSlot=function(i){
+      const r=_as.apply(this,arguments);
+      try{pr15MemForgetRun();}catch(e){}
+      return r;
+    };
+    const _cs=smClearSlotSave;smClearSlotSave=function(){
+      const r=_cs.apply(this,arguments);
+      try{pr15MemForgetRun();}catch(e){}
+      return r;
+    };
+  }catch(e){}
+  /* 3. início de run: plano ANTES do 1º checkpoint, usando o histórico
+     ATUAL (N-1/N-2 das runs anteriores — a morte desta run só entra na
+     fila no fim, pelas regras do B1). */
+  try{
+    const _st=startRun;startRun=function(opts){
+      try{pr15MemBeginRun(Array.isArray(echoQueue)?echoQueue:[]);}catch(e){pr15MemRun=null;}
+      return _st.apply(this,arguments);
+    };
+    /* 4. Continue: RESTAURA o plano; nunca o recalcula (idempotência). */
+    const _rs=resumeRun;resumeRun=function(){
+      const r=_rs.apply(this,arguments);
+      try{pr15MemUnpack((typeof hasActiveRun==='function'&&hasActiveRun())?activeRun:null);}catch(e){}
+      return r;
+    };
+    /* 5. fim de run: estado run-scoped morre junto (morte, vitória, abort).
+       Nenhuma pendência vira memória — isso continua sendo exclusividade
+       das regras de validade do B1. */
+    const _pd=onPlayerDeath;onPlayerDeath=function(){
+      const r=_pd.apply(this,arguments);
+      try{pr15MemEndRun();}catch(e){}
+      return r;
+    };
+    const _ov=onVictory;onVictory=function(){
+      const r=_ov.apply(this,arguments);
+      try{pr15MemEndRun();}catch(e){}
+      return r;
+    };
+    const _sv=showVictory;showVictory=function(){
+      const r=_sv.apply(this,arguments);
+      try{pr15MemEndRun();}catch(e){}
+      return r;
+    };
+    const _ab=abortRun;abortRun=function(){
+      const r=_ab.apply(this,arguments);
+      try{pr15MemEndRun();}catch(e){}
+      return r;
+    };
+  }catch(e){}
+  /* 6. ondas: resolve agendamentos na fronteira de onda. Gate duplo:
+     Sandbox (estado isolado) e ausência de estado. Roda DEPOIS do corpo de
+     spawnWave — a mesma janela que o scheduler de Presença de Facção usa —
+     para enxergar a presença agendada para esta onda. */
+  try{
+    const _sw=spawnWave;spawnWave=function(n){
+      const r=_sw.apply(this,arguments);
+      try{pr15MemOnWave(n);}catch(e){}
+      return r;
+    };
+  }catch(e){}
+  /* 7. Sandbox: contexto próprio, nada persiste */
+  try{
+    const _ss=sandboxStart;sandboxStart=function(){
+      const r=_ss.apply(this,arguments);
+      if(r){try{pr15MemSandboxContextStart();}catch(e){}}
+      return r;
+    };
+    const _sr=sandboxRestart;sandboxRestart=function(){
+      const r=_sr.apply(this,arguments);
+      try{pr15MemSandboxContextStart();}catch(e){}
+      return r;
+    };
+    const _se=sandboxEndToSetup;sandboxEndToSetup=function(){
+      const r=_se.apply(this,arguments);
+      try{pr15MemSandboxTearDown();}catch(e){}
+      return r;
+    };
+    const _sx=sandboxExit;sandboxExit=function(m){
+      const r=_sx.apply(this,arguments);
+      try{pr15MemSandboxTearDown();}catch(e){}
+      return r;
+    };
+    const _sc=sandboxCloseSetup;sandboxCloseSetup=function(){
+      const r=_sc.apply(this,arguments);
+      try{pr15MemSandboxTearDown();}catch(e){}
+      return r;
+    };
+  }catch(e){}
+  /* 8. DEV.pr15Memory* — leitura + força diagnóstica, guardados */
+  try{
+    if(typeof DEV!=='undefined'&&DEV&&typeof DEV==='object'){
+      DEV.pr15MemoryState=pr15DevMemoryState;
+      DEV.pr15MemoryCandidates=pr15DevMemoryCandidates;
+      DEV.pr15MemorySchedule=pr15DevMemorySchedule;
+      DEV.pr15MemoryForce=pr15DevMemoryForce;
+    }
+  }catch(e){}
+}
+/* ==================== PR15·fim b2 ==================== */
+
+/* =====================================================================
    BOOT
    ===================================================================== */
 fracKitBoot();
@@ -32256,6 +32866,7 @@ fractureKitBoot();   // PR 13: Diretor de Fratura (fundação)
 factionPresenceKitBoot();   // PR 14: Presença de Facção (fundação B2)
 factionPresencePhysicalKitBoot();   // PR 14: Presença física na arena (B3)
 pr15TemporalKitBoot();            // PR15·b1: Memória Temporal — assinatura de run (fundação de dados)
+pr15MemoryKitBoot();              // PR15·b2: Director de Memórias Temporais (decisão + agendamento)
 
 /* ---- expõe o namespace no console apenas em build de desenvolvimento ---- */
 if(IS_DEV_BUILD){
