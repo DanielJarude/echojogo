@@ -34006,6 +34006,19 @@ function pr15IntentFresh(){
 let pr15IntentRun=pr15IntentFresh();
 /* overrides de DEV (nunca persistidos; taintam a run) */
 let pr15IntentForce=null;
+/* B4-FIX #1 · switch de playtest — DESLIGADO por padrão. Ligado, uma presença
+   DEV pode aplicar efeitos EFÊMEROS da run (mods com duração, escudo, HP).
+   Recursos PERSISTENTES (resíduos, moralidade, reputação) e o save continuam
+   bloqueados mesmo com o switch ligado: ver pr15IntentGuardPersistent. */
+let pr15DevApplyEffects=false;
+/* Estamos em playtest DEV com o switch ligado, sobre uma presença DEV?
+   Quando sim, recurso persistente é SIMULADO: o valor é calculado e
+   comunicado, mas o saldo real não é tocado. */
+function pr15IntentDevSimPossible(){
+  if(!(DEV_MODE&&pr15DevApplyEffects))return false;
+  const p=(typeof pr15Presence!=='undefined')?pr15Presence:null;
+  return !!(p&&p.dev);
+}
 
 function pr15IntentBudLeft(k){
   const b=PR15_INTENT_CFG.budget,r=pr15IntentRun&&pr15IntentRun.bud;
@@ -34403,12 +34416,24 @@ function pr15IntentGuard(){
   try{if(typeof sandboxMode!=='undefined'&&sandboxMode)return false;}catch(e){}
   try{if(typeof state!=='undefined'&&state!=='play')return false;}catch(e){}
   try{if(typeof player!=='undefined'&&!player)return false;}catch(e){}
-  /* presença criada por DEV: playtest visual, zero efeito no mundo real */
+  /* presença criada por DEV: playtest. Por padrão zero efeito no mundo real;
+     com o switch de playtest ligado (B4-FIX #1) os efeitos EFÊMEROS passam —
+     os persistentes seguem barrados por pr15IntentGuardPersistent. */
+  try{
+    const p=(typeof pr15Presence!=='undefined')?pr15Presence:null;
+    if(p&&p.dev)return !!(DEV_MODE&&pr15DevApplyEffects);
+  }catch(e){}
+  return true;
+}
+/* B4-FIX #1 · guarda de recursos PERSISTENTES.
+   Resíduos, moralidade e reputação de facção são progressão salva: o
+   playtest DEV nunca os toca, NEM com o switch ligado. O sandbox também não. */
+function pr15IntentGuardPersistent(){
   try{
     const p=(typeof pr15Presence!=='undefined')?pr15Presence:null;
     if(p&&p.dev)return false;
   }catch(e){}
-  return true;
+  return pr15IntentGuard();
 }
 function pr15IntentAddMod(id,stat,type,value,dur,label){
   try{
@@ -34419,6 +34444,11 @@ function pr15IntentAddMod(id,stat,type,value,dur,label){
   }catch(e){return false;}
 }
 function pr15IntentGrantRes(n,x,y){
+  /* B4-FIX #1: resíduo é progresso salva — o playtest DEV nunca o move.
+     Com o switch ligado o valor é calculado e comunicado (para a variante
+     poder ser testada de ponta a ponta), mas addResidues não é chamado. */
+  if(!pr15IntentGuardPersistent())
+    return pr15IntentDevSimPossible()?pr15IntentSpend('res',n):0;
   const got=pr15IntentSpend('res',n);
   if(got<=0)return 0;
   try{if(typeof addResidues==='function')addResidues(got,'pr15_intent',x,y);}catch(e){return 0;}
@@ -34449,6 +34479,7 @@ function pr15IntentGrantShield(frac){
    binária "bom=aliado". Só acontece em escolha ACEITA pelo jogador. */
 function pr15IntentGrantMoral(axis,n){
   if(['comp','greed','viol'].indexOf(axis)<0)return 0;
+  if(!pr15IntentGuardPersistent())return 0;   // B4-FIX #1: moralidade é progresso salva
   const got=pr15IntentSpend('moral',Math.min(1,Math.abs(+n||0)));
   if(got<=0)return 0;
   try{
@@ -34461,6 +34492,7 @@ function pr15IntentGrantMoral(axis,n){
 /* facções: só reage quando o contexto justifica (pacto OU facção conhecida)
    e sempre dentro do orçamento de reputação. Nunca farming. */
 function pr15IntentFactionReact(kind,variant){
+  if(!pr15IntentGuardPersistent())return 0;   // B4-FIX #1: reputação é progresso salva
   try{
     if(typeof fracRun==='undefined'||!fracRun)return 0;
     if(typeof factionEmit!=='function')return 0;
@@ -34733,7 +34765,14 @@ function pr15IntentTrade(p){
   if(!off.open)return false;
   if(!off.can){pr15IntentMsg(p,'SALDO INSUFICIENTE · ⧗'+C.tradeCost);it.st='declined';return false;}
   let spent=0;
-  try{if(typeof spendResidues==='function'&&spendResidues(off.cost,'pr15_intent_trade'))spent=off.cost;}catch(e){spent=0;}
+  if(pr15IntentGuardPersistent()){
+    /* jogo real: cobra do saldo */
+    try{if(typeof spendResidues==='function'&&spendResidues(off.cost,'pr15_intent_trade'))spent=off.cost;}catch(e){spent=0;}
+  }else if(pr15IntentDevSimPossible()){
+    /* B4-FIX #1 · playtest DEV: o custo é SIMULADO — o saldo real não é
+       tocado, mas a troca completa normalmente para poder ser testada. */
+    spent=off.cost;
+  }
   if(spent<=0){pr15IntentMsg(p,'TROCA RECUSADA');it.st='declined';return false;}
   const ok=pr15IntentAddMod('trade','damage','mult',C.tradeDmg,C.tradeDur,'TROCA TEMPORAL');
   it.st='resolved';
@@ -35310,6 +35349,11 @@ function pr15IntentReset(){
    Forçar TAINTA a run (o B1 nunca a transforma em memória legítima) e
    nunca é persistido.
    ===================================================================== */
+/* rótulos curtos das variantes — uso exclusivo do painel DEV. Os rótulos
+   longos de PR15_VARIANT_LABEL continuam sendo os do mundo do jogo. */
+const PR15_DEV_VARIANT_SHORT={zone:'ZONA',pulse:'PULSO',legacy:'HERANÇA',
+  pressure:'PRESSÃO',trial:'PROVA',scar:'CICATRIZ',
+  trade:'TROCA',unstable:'INSTÁVEL',choice:'ESCOLHA'};
 function pr15DevIntentState(){
   if(!DEV_MODE)return null;
   return pr15IntentSnapshot();
@@ -35361,12 +35405,236 @@ function pr15DevPresenceIntentState(){
 }
 
 /* =====================================================================
+   B4-FIX #1 · PLAYTEST — SEÇÃO VISUAL NO PAINEL DEV
+   ---------------------------------------------------------------------
+   CAUSA DO PROBLEMA: os helpers DEV do B4 (pr15DevIntent*) já existiam,
+   mas o kit só registrava DEV.pr15Intent* no console e NUNCA engatava
+   devRender/devCommand — então nenhuma seção era desenhada no painel e
+   nenhum botão chegava ao B4. O PR14, ao lado, engata os dois (ver
+   factionPresencePhysicalKitBoot, passo 7).
+
+   Esta seção reutiliza a MESMA infraestrutura do PR14 — devBtn(), uma
+   <div> anexada em #devpanel, e um prefixo de comando próprio ('i:') —
+   sem criar uma segunda interface paralela.
+
+   Nada aqui altera mecânica, balanceamento, B1/B2/B3, PR14 ou o
+   algoritmo de intenção: é só uma camada de playtest sobre os helpers
+   que já existiam.
+   ---------------------------------------------------------------------
+   DELIMITADO POR MARCADORES: tudo entre B4-FIX1-DEV-INICIO e
+   B4-FIX1-DEV-FIM é FERRAMENTA DE DESENVOLVIMENTO, guardado por DEV_MODE.
+   Os testes de "sem DOM" e "sem UI permanente" do B4 varrem o bloco FORA
+   desses marcadores — o runtime do jogo continua sem tocar em DOM.
+   ===================================================================== */
+/* ---- B4-FIX1-DEV-INICIO ---- */
+/* Memória sintética de playtest. Existe SÓ para o DEV não ficar bloqueado
+   quando o slot não tem N-1/N-2 elegível. Vive em pr15DevMem:
+     · nunca é empurrada em echoQueue;
+     · nunca é salva (pr15IntentPack devolve null com devTainted, e
+       captureCheckpoint já recusa run tainted);
+     · nunca altera slot, moralidade, reputação ou progressão;
+     · some no limpar e na saída do DEV.
+   Carrega apenas os campos que o B3 e o B4 de fato leem:
+   id, op, arch.dom, cause, theme, moral. */
+let pr15DevMem=null;
+let pr15DevMemSrc='n1';
+let pr15DevIntentSeq=0;
+function pr15DevSyntheticMemory(){
+  return {v:3,id:'dev-synth-mem',dev:true,out:'death',cause:'enemy',op:'vector',
+    theme:'cinza',seed:0x51EED1,
+    arch:{dom:'crit',sec:null,state:'definido',domS:0.5,secS:null},
+    sigW:'pistol',sigItems:[],moral:{comp:1,greed:1,viol:1},dom:'neutro',
+    kills:0,wave:1,dur:0,mh:0,level:1,items:[],upg:[],owned:[],ps:'neutro',trail:[]};
+}
+/* há memória REAL elegível no slot? (o playtest prefere sempre o caso real) */
+function pr15DevRealMemory(){
+  try{
+    const q=Array.isArray(echoQueue)?echoQueue:[];
+    for(let i=0;i<q.length&&i<2;i++){
+      const r=q[i];
+      if(!r||typeof pr15MemIsEligible!=='function')continue;
+      if(pr15MemIsEligible(r))return {rec:r,source:(i===1)?'n2':'n1'};
+    }
+  }catch(e){}
+  return null;
+}
+/* Força intenção/variante e materializa uma presença física, respeitando o
+   ciclo de vida do B3 (a presença anterior sai por pr15PresEnd, não some).
+   o={kind,variant,source,resonance,wave}. Não muda nenhuma mecânica: só
+   chama pr15DevIntentForce / pr15DevIntentForceVariant / pr15PresSpawn. */
+function pr15DevIntentSpawn(o){
+  if(!DEV_MODE)return {ok:false,reason:'fora de DEV'};
+  try{devTaint();}catch(e){}
+  const O=(o&&typeof o==='object')?o:{};
+  /* 1. a presença anterior sai pelo fim normal do B3 (cap = 1) */
+  if(pr15Presence){try{pr15DevPresenceEnd(true);}catch(e){}}
+  /* 2. força declarada ANTES do spawn — é o que pr15IntentAttach lê.
+     A família precisa SEGUIR a variante pedida: pr15DevIntentForceVariant
+     preserva o kind anterior, e uma variante de outra família seria
+     ignorada pelo filtro de família do pr15IntentVariant. */
+  if(O.variant){
+    let owner=null;
+    for(const k of PR15_INTENT_LIST)
+      if((PR15_VARIANTS[k]||[]).indexOf(O.variant)>=0)owner=k;
+    if(owner)pr15DevIntentForce(owner);
+    pr15DevIntentForceVariant(O.variant);
+  }else if(O.kind&&PR15_INTENTS[O.kind]){
+    pr15DevIntentForce(O.kind);
+    pr15DevIntentForceVariant(null);     // família livre → variante natural
+  }
+  /* 3. memória REAL elegível tem prioridade; sintética só como fallback */
+  const real=pr15DevRealMemory();
+  let memId,src,synthetic=false;
+  if(real){
+    memId=real.rec.id;
+    src=(O.source==='n2'||O.source==='n1')?O.source:real.source;
+    pr15DevMem=null;
+  }else{
+    pr15DevMem=pr15DevSyntheticMemory();
+    pr15DevMemSrc=(O.source==='n2')?'n2':'n1';
+    memId=pr15DevMem.id;src=pr15DevMemSrc;synthetic=true;
+  }
+  const rsn=(typeof PR15_MEM_RESONANCE!=='undefined'&&PR15_MEM_RESONANCE[O.resonance])
+    ?O.resonance:'high';
+  const w=clamp(Math.round(+O.wave)||((typeof wave!=='undefined')?(wave|0):1),1,MAX_WAVE);
+  let sd=Math.round(+O.seed);
+  if(!Number.isFinite(sd)||sd<=0){
+    pr15DevIntentSeq=(pr15DevIntentSeq+1)%100000;
+    try{sd=pr15MemSeedFor('devintent'+pr15DevIntentSeq,
+      (typeof pr15MemRunSeed==='function')?pr15MemRunSeed():1,w,memId);}
+    catch(e){sd=0x51EED1;}
+  }
+  const fk=(pr15IntentForce&&pr15IntentForce.kind)||'auto';
+  const fv=(pr15IntentForce&&pr15IntentForce.variant)||'auto';
+  /* id único por spawn: permite repetir a mesma variante na mesma sessão
+     sem cair no registro de encontros já resolvidos */
+  const built=pr15PresSpawn({id:'dev-i-'+fk+'-'+fv+'-'+(sd>>>0),mem:memId,src:src,
+    res:rsn,seed:sd>>>0,intent:0,wave:w},{dev:true});
+  if(!built)return {ok:false,reason:'materialização recusada',synthetic:synthetic};
+  return {ok:true,
+    reason:synthetic?'forçado via DEV (memória sintética)':'forçado via DEV (memória real)',
+    kind:built.it?built.it.kind:null,variant:built.it?built.it.variant:null,
+    synthetic:synthetic,source:src,resonance:rsn};
+}
+/* APLICAR EFEITO — liga/desliga a aplicação de efeitos EFÊMEROS em presença
+   DEV. Desligado por padrão. Nunca libera recurso persistente nem o save. */
+function pr15DevIntentToggleApply(force){
+  if(!DEV_MODE)return {ok:false,reason:'fora de DEV',on:pr15DevApplyEffects};
+  pr15DevApplyEffects=(force===undefined)?!pr15DevApplyEffects:!!force;
+  return {ok:true,on:pr15DevApplyEffects,
+    reason:pr15DevApplyEffects
+      ?'efeitos efêmeros liberados (persistente segue bloqueado)'
+      :'efeitos bloqueados'};
+}
+/* LIMPAR PRESENÇA TEMPORAL — remove o corpo e só o runtime do DEV.
+   echoQueue, moralidade, reputação e progressão não são tocados. */
+function pr15DevIntentClearAll(){
+  if(!DEV_MODE)return {ok:false,reason:'fora de DEV'};
+  try{devTaint();}catch(e){}
+  const had=!!pr15Presence;
+  try{pr15DevPresenceEnd(true);}catch(e){}
+  pr15IntentForce=null;
+  pr15DevMem=null;
+  pr15DevMemSrc='n1';
+  try{pr15IntentReset();}catch(e){}
+  try{pr15PresReset();}catch(e){}
+  return {ok:true,reason:had?'presença removida':'não havia presença',cleared:had};
+}
+/* ---- comandos do painel: prefixo 'i:' (não colide com nenhum existente) ---- */
+function pr15DevIntentCommand(c){
+  if(!(typeof DEV_MODE!=='undefined'&&DEV_MODE))return false;
+  c=String(c||'');
+  let r=null,tag='';
+  if(c.indexOf('force:')===0){
+    const k=c.slice(6);
+    tag='FORCE '+k;
+    r=PR15_INTENTS[k]?pr15DevIntentSpawn({kind:k})
+                   :{ok:false,reason:'intenção inválida'};
+  }else if(c.indexOf('var:')===0){
+    const v=c.slice(4);
+    tag='VARIANT '+v;
+    r=pr15DevIntentSpawn({variant:v});
+  }else if(c==='apply'){
+    tag='APPLY';
+    r=pr15DevIntentToggleApply();
+  }else if(c==='clear'){
+    tag='CLEAR';
+    r=pr15DevIntentClearAll();
+  }else return false;
+  const okv=!!(r&&r.ok);
+  try{
+    if(typeof devLog==='function')devLog('PR15 '+tag+(okv?' → OK':' → RECUSADO')+
+      (r&&r.reason?' ('+r.reason+')':'')+
+      (okv&&r.kind?' '+r.kind+'/'+r.variant:''));
+  }catch(e){}
+  return okv;
+}
+/* ---- seção anexada em #devpanel (mesmo padrão do PR14) ---- */
+function pr15DevIntentSection(){
+  if(!document||typeof document.getElementById!=='function')return;
+  if(!(typeof DEV_MODE!=='undefined'&&DEV_MODE))return;
+  const el=document.getElementById('devpanel');
+  if(!el)return;
+  let sec=document.getElementById('pr15-intent-dev-section');
+  if(!sec){sec=document.createElement('div');
+    sec.id='pr15-intent-dev-section';el.appendChild(sec);}
+  let st=null;try{st=pr15DevPresenceIntentState();}catch(e){st=null;}
+  const pres=(st&&st.presence)?st.presence:null;
+  const act=(st&&st.intent)?st.intent.act:null;
+  const force=(st&&st.intent)?st.intent.force:null;
+  const esc=(typeof escDev==='function')?escDev:String;
+  const nm=k=>(PR15_INTENT_LABEL[k]&&PR15_INTENT_LABEL[k].nm)||k;
+  const vl=v=>PR15_VARIANT_LABEL[v]||v;
+  const srcTxt=s=>(s==='n2')?'N-2':(s==='n1')?'N-1':'—';
+  const lines=[];
+  if(pres&&pres.active){
+    lines.push('PRESENÇA: ATIVA · '+pres.phase+' · ttl '+(+pres.ttl).toFixed(1)+'s');
+    lines.push('INTENÇÃO: '+(act?nm(act.kind):'—'));
+    lines.push('VARIANTE: '+(act?vl(act.variant):'—'));
+    lines.push('ORIGEM: '+srcTxt(pres.source)+(pres.dev?' · DEV':'')+
+      (pr15DevMem?' (memória sintética)':' (memória real)')+
+      ' · RESSONÂNCIA: '+String(pres.resonance||'—'));
+  }else{
+    lines.push('PRESENÇA: nenhuma');
+    lines.push('FORÇA ARMADA: '+(force&&force.kind?nm(force.kind):'nenhuma')+
+      (force&&force.variant?' · '+vl(force.variant):''));
+  }
+  lines.push('APLICAR EFEITO: '+(pr15DevApplyEffects?'LIGADO (efêmero)':'DESLIGADO')+
+    ' · persistente: '+
+    (pr15DevApplyEffects?'SIMULADO (saldo real intocado)':'bloqueado'));
+  let h='<h4 style="margin-top:10px">PR15 · ECHOS ENTRE RUNS — PRESENÇA TEMPORAL</h4>';
+  h+='<div style="font-family:Consolas,monospace;font-size:10px;line-height:1.7;'+
+     'color:#9db8c8;white-space:pre-wrap">'+esc(lines.join('\n'))+'</div>';
+  if(typeof devBtn==='function'){
+    const row=(cells)=>'<div class="dvrow" style="margin-top:5px;flex-wrap:wrap">'+
+      cells.join('')+'</div>';
+    h+=row([devBtn('i:force:allied','◈ FORÇAR ALIADA'),
+            devBtn('i:force:rival','◇ FORÇAR RIVAL'),
+            devBtn('i:force:ambiguous','◬ FORÇAR AMBÍGUA')]);
+    /* as 9 variantes, agrupadas por família — todas testáveis direto */
+    for(const k of PR15_INTENT_LIST){
+      const L=PR15_INTENT_LABEL[k];
+      h+=row((PR15_VARIANTS[k]||[]).map(v=>devBtn('i:var:'+v,
+        (L?L.sym:'·')+' '+PR15_DEV_VARIANT_SHORT[v])));
+    }
+    h+=row([devBtn('i:apply',
+      (pr15DevApplyEffects?'◉':'○')+' APLICAR EFEITO: '+
+      (pr15DevApplyEffects?'LIGADO':'DESLIGADO'))]);
+    h+=row([devBtn('i:clear','✕ LIMPAR PRESENÇA TEMPORAL','warn')]);
+  }
+  sec.innerHTML=h;
+}
+/* ---- B4-FIX1-DEV-FIM ---- */
+
+/* =====================================================================
    SANDBOX — contexto isolado. O laboratório recebe registro vazio e o
    estado real volta intacto. Nenhuma consequência do laboratório toca
    recurso real (pr15IntentGuard já bloqueia aplicação em sandbox).
    ===================================================================== */
 let pr15IntentSandboxStash=null;
 function pr15IntentSandboxContextStart(){
+  pr15DevMem=null;pr15DevMemSrc='n1';      // B4-FIX #1: sintética não entra no laboratório
+  pr15DevApplyEffects=false;               // B4-FIX #1: switch nunca entra no laboratório
   pr15IntentClear((typeof pr15Presence!=='undefined')?pr15Presence:null);
   pr15IntentSandboxStash=pr15IntentRun;
   pr15IntentRun=pr15IntentFresh();
@@ -35515,7 +35783,53 @@ function pr15IntentKitBoot(){
       DEV.pr15ForceIntent=pr15DevIntentForce;
       DEV.pr15ForceVariant=pr15DevIntentForceVariant;
       DEV.pr15PresenceIntentState=pr15DevPresenceIntentState;
+      /* B4-FIX #1 — playtest: os mesmos poderes, alcançáveis pelo painel */
+      DEV.pr15IntentSpawn=pr15DevIntentSpawn;
+      DEV.pr15IntentClear=pr15DevIntentClearAll;
+      DEV.pr15IntentApplyEffects=pr15DevIntentToggleApply;
+      DEV.pr15IntentDevSection=pr15DevIntentSection;
     }
+  }catch(e){}
+  /* 12. B4-FIX #1 — memória sintética: o resolve do B3 passa a reconhECER o
+     registro sintético, mas SOMENTE em DEV e SOMENTE para aquele id.
+     Qualquer outro id segue o caminho real do B3 sem alteração (o bloco B3
+     não é editado; isto é um wrapper aditivo, como os demais deste kit). */
+  try{
+    const _prm=pr15PresResolveMemory;
+    pr15PresResolveMemory=function(memId){
+      if(DEV_MODE&&pr15DevMem&&String(memId)===String(pr15DevMem.id))
+        return {rec:pr15DevMem,idx:0,source:pr15DevMemSrc};
+      return _prm.apply(this,arguments);
+    };
+  }catch(e){}
+  /* 13. B4-FIX #1 — seção no painel DEV + comandos 'i:*'.
+     Mesmo padrão do PR14 (factionPresencePhysicalKitBoot, passo 7). */
+  try{
+    if(typeof devCommand==='function'){
+      const _dc=devCommand;devCommand=function(c){
+        if(typeof c==='string'&&c.indexOf('i:')===0)
+          return pr15DevIntentCommand(c.slice(2));
+        return _dc.apply(this,arguments);
+      };
+    }
+  }catch(e){}
+  try{
+    if(typeof devRender==='function'){
+      const _dr=devRender;devRender=function(){
+        const r=_dr.apply(this,arguments);
+        try{pr15DevIntentSection();}catch(e){}
+        return r;
+      };
+    }
+  }catch(e){}
+  /* 14. B4-FIX #1 — a memória sintética nunca sobrevive ao sandbox */
+  try{
+    const _s0=sandboxStart;sandboxStart=function(){
+      const r=_s0.apply(this,arguments);pr15DevMem=null;return r;
+    };
+    const _s1=sandboxExit;sandboxExit=function(m){
+      const r=_s1.apply(this,arguments);pr15DevMem=null;return r;
+    };
   }catch(e){}
 }
 /* ==================== PR15·fim b4 ==================== */

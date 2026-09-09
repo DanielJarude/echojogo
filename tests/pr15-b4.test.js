@@ -58,6 +58,17 @@ function block(startNeedle,endMarker){
 }
 const B4SRC=block('PR15·b4 — INTENÇÃO','/* ==================== PR15·fim b4 ==================== */');
 const B4CODE=stripComments(B4SRC);
+/* B4-FIX #1 — o bloco ganhou uma FERRAMENTA DE DESENVOLVIMENTO (seção do
+   painel DEV), que por natureza usa DOM. Ela fica delimitada por marcadores
+   no próprio index.html. O RUNTIME DO JOGO continua sendo varrido sem ela:
+   as invariantes "sem DOM" e "sem UI permanente" seguem valendo para tudo
+   que roda em jogo normal. */
+const DEVSEC_A='---- B4-FIX1-DEV-INICIO ----';
+const DEVSEC_B='---- B4-FIX1-DEV-FIM ----';
+const _dA=B4SRC.indexOf(DEVSEC_A),_dB=B4SRC.indexOf(DEVSEC_B);
+assert.ok(_dA>0&&_dB>_dA,'a seção de playtest DEV está delimitada por marcadores');
+const B4DEVSEC=stripComments(B4SRC.slice(_dA,_dB));
+const B4CODE_RUNTIME=stripComments(B4SRC.slice(0,_dA)+B4SRC.slice(_dB));
 const B3SRC=block('PR15·b3 — PRESENÇA TEMPORAL','/* ==================== PR15·fim b3 ==================== */');
 const B2SRC=block('PR15·b2 — DIRECTOR','/* ==================== PR15·fim b2 ==================== */');
 const B1SRC=block('PR15·b1 — MEMÓRIA TEMPORAL','/* ==================== PR15·fim b1 ==================== */');
@@ -1314,10 +1325,23 @@ ok('B4-87 sandbox hooks estão instalados nos 5 pontos do projeto',()=>{
   }
 });
 ok('B4-88 o laboratório não escreve memória nem contamina o slot',()=>{
-  assert.ok(B4CODE.indexOf('echoQueue')<0,'B4 nunca toca echoQueue');
+  /* POR QUE ESTA ASSERT MUDOU (B4-FIX #1): antes o B4 nem sequer LIA
+     echoQueue, então "não contém a palavra" bastava. O playtest DEV precisa
+     LER a fila para preferir uma memória real quando ela existe
+     (pr15DevRealMemory). O invariante que interessa nunca foi "não menciona",
+     e sim "não ESCREVE" — então a varredura agora é sobre padrões de escrita,
+     que é estritamente mais precisa do que a anterior. */
+  for(const w in {'echoQueue.push':1,'echoQueue.splice':1,'echoQueue.unshift':1,
+    'echoQueue.length=':1,'echoQueue=[':1,'echoQueue =[':1,'echoQueue[0]':1,
+    'echoQueue[1]':1})
+    assert.ok(B4CODE.indexOf(w)<0,'B4 nunca escreve em echoQueue ('+w+')');
   assert.ok(B4CODE.indexOf('saveEchoes')<0);
   assert.ok(B4CODE.indexOf('smCommit')<0);
   assert.ok(B4CODE.indexOf('smRoot')<0,'não escreve no save');
+  /* leitura permitida é só a do helper DEV, e só leitura */
+  const leituras=(B4CODE.match(/echoQueue/g)||[]).length;
+  assert.ok(leituras<=3,'echoQueue aparece só na leitura DEV ('+leituras+'×)');
+  /* e o comportamento é verificado de verdade em B4F1-09 */
 });
 
 /* =====================================================================
@@ -1573,12 +1597,26 @@ ok('B4-108 cp.pr15presence continua byte-a-byte como no B3',()=>{
 });
 ok('B4-109 os blocos B1/B2/B3 não foram editados internamente',()=>{
   /* o B4 só pode tocar o jogo por monkey-patch; nenhuma função antiga reescrita */
+  /* POR QUE 'pr15PresResolveMemory=function' SAIU DA LISTA DE PROIBIDOS
+     (B4-FIX #1): o playtest DEV precisa que uma memória SINTÉTICA seja
+     resolvível, e o B3 só procura em echoQueue. Como o bloco B3 não pode ser
+     editado, o B4 embrulha a função — exatamente o mecanismo que este mesmo
+     teste já aceita para pr15PresSpawn/pr15PresEnd/resumeRun. O wrapper é
+     guardado por DEV_MODE, só reconhece o id sintético e DELEGA todo o resto
+     ao original (verificado abaixo e em B4F1-20). */
   for(const bad of ['pr15PresUpdate=function','pr15PresDraw=function',
-    'pr15PresResolveMemory=function','pr15MemBuildPlan=function','pr15CommitSig=function'])
+    'pr15MemBuildPlan=function','pr15CommitSig=function'])
     assert.ok(B4CODE.indexOf(bad)<0,'B4 não reescreve '+bad);
   for(const good of ['pr15PresSpawn=function','pr15PresEnd=function','updateAllies=function',
-    'drawWorldExtras=function','render=function','smBuildCheckpoint=function','resumeRun=function'])
+    'drawWorldExtras=function','render=function','smBuildCheckpoint=function',
+    'resumeRun=function','pr15PresResolveMemory=function'])
     assert.ok(B4CODE.indexOf(good)>=0,'hook presente: '+good);
+  /* o wrapper do resolve precisa delegar ao original — senão o B3 muda de
+     comportamento fora do DEV */
+  assert.ok(/pr15PresResolveMemory=function[\s\S]{0,400}_prm\.apply/.test(B4CODE),
+    'o wrapper do resolve delega ao original');
+  assert.ok(/pr15PresResolveMemory=function[\s\S]{0,200}DEV_MODE/.test(B4CODE),
+    'o wrapper do resolve é guardado por DEV_MODE');
 });
 
 /* =====================================================================
@@ -1615,10 +1653,18 @@ ok('B4-112 não há varredura cara por frame: update faz early-return sem presen
   assert.ok(ms<2000,'200k chamadas vazias em '+ms.toFixed(0)+'ms');
 });
 ok('B4-113 o renderer não aloca por frame além do previsto e não toca DOM',()=>{
-  assert.ok(B4CODE.indexOf('document.')<0,'sem DOM no bloco');
-  assert.ok(B4CODE.indexOf('innerHTML')<0);
-  assert.ok(B4CODE.indexOf('createElement')<0);
-  assert.ok(B4CODE.indexOf('getElementById')<0);
+  /* POR QUE PASSOU A VARRER B4CODE_RUNTIME (B4-FIX #1): a seção do painel DEV
+     é uma ferramenta de desenvolvimento e usa DOM — assim como a seção do
+     PR14 ao lado. O que este teste protege é o RENDERER DO JOGO, e ele
+     continua sem tocar em DOM. A DOM fica confinada entre os marcadores e
+     guardada por DEV_MODE, o que é verificado logo abaixo. */
+  assert.ok(B4CODE_RUNTIME.indexOf('document.')<0,'sem DOM no runtime do jogo');
+  assert.ok(B4CODE_RUNTIME.indexOf('innerHTML')<0);
+  assert.ok(B4CODE_RUNTIME.indexOf('createElement')<0);
+  assert.ok(B4CODE_RUNTIME.indexOf('getElementById')<0);
+  /* e a ferramenta DEV só existe dentro dos marcadores, com guarda */
+  assert.ok(B4DEVSEC.indexOf('DEV_MODE')>=0,'seção DEV guardada por DEV_MODE');
+  assert.ok(B4DEVSEC.indexOf('devpanel')>=0,'anexa no painel DEV existente');
 });
 
 /* =====================================================================
@@ -1658,10 +1704,17 @@ ok('B4-116 variantes interativas exibem o custo/benefício ANTES da escolha',()=
   }
 });
 ok('B4-117 nenhuma UI permanente: o bloco não cria elemento nem HUD novo',()=>{
-  assert.ok(B4CODE.indexOf('appendChild')<0);
-  assert.ok(B4CODE.indexOf('toastsEl')<0,'usa toast(), não o container');
-  assert.ok(B4CODE.indexOf('bannerEl')<0);
-  assert.ok(B4CODE.indexOf('style.display')<0);
+  /* POR QUE PASSOU A VARRER B4CODE_RUNTIME (B4-FIX #1): o único appendChild
+     do bloco é o que anexa a seção no #devpanel, dentro dos marcadores DEV.
+     Em jogo normal nenhuma UI permanente é criada — que é o que este teste
+     protege. A seção DEV reusa dvb/dvrow do painel e não cria HUD novo. */
+  assert.ok(B4CODE_RUNTIME.indexOf('appendChild')<0,'runtime não cria elemento');
+  assert.ok(B4CODE_RUNTIME.indexOf('toastsEl')<0,'usa toast(), não o container');
+  assert.ok(B4CODE_RUNTIME.indexOf('bannerEl')<0);
+  assert.ok(B4CODE_RUNTIME.indexOf('style.display')<0);
+  /* a seção DEV não vira HUD: só é desenhada quando DEV_MODE está ligado */
+  assert.ok(/pr15DevIntentSection\(\)\{[\s\S]{0,200}DEV_MODE[\s\S]{0,80}return;/.test(B4SRC),
+    'a seção sai imediatamente fora de DEV');
 });
 ok('B4-118 indicador off-screen aparece só quando a presença está fora da janela',()=>{
   reset();
@@ -2129,6 +2182,455 @@ ok('SIM-F: balanceamento — 900 runs × 3 encontros, teto de orçamento real',(
     ' · cura '+worst.heal+' · escudo '+worst.shield.toFixed(3)+' · rep '+worst.rep+
     ' · moral '+worst.moral+' · teto mordeu em '+capHit+'/900');
 });
+
+/* =====================================================================
+   B4-FIX #1 · PLAYTEST HUMANO — CONTROLES DEV DA PRESENÇA TEMPORAL
+   ---------------------------------------------------------------------
+   Achado do playtest: os helpers DEV do B4 existiam mas só pelo console;
+   o kit nunca engatava devRender/devCommand, então nenhuma seção aparecia
+   no painel. Esta seção testa a camada visual acrescentada.
+
+   Nada aqui muda mecânica: os testes abaixo verificam a CAMADA DE
+   PLAYTEST, não o algoritmo de intenção (que segue coberto por B4-06..16).
+   ===================================================================== */
+/* player completo para o devRender não quebrar em inspetores de outros PRs */
+function devWorld(){
+  reset();
+  T.setPlayer({x:1100,y:725,r:14,hp:80,maxHp:100,vx:0,vy:0,shield:0,shieldMax:60,
+    shieldDelayT:0,charId:'vector',items:[],sm:[]});
+  X('DEV_MODE=true');
+  X('echoQueue=[]');            // slot SEM memória elegível: o pior caso
+  return true;
+}
+function devPanelHTML(){
+  return String(X('document.getElementById("pr15-intent-dev-section").innerHTML'));
+}
+function devClearPanel(){X('document.getElementById("pr15-intent-dev-section").innerHTML=""');}
+
+ok('B4F1-01 controles DEV do B4 existem e estão engatados no painel',()=>{
+  devWorld();
+  for(const f of ['pr15DevIntentSpawn','pr15DevIntentClearAll','pr15DevIntentCommand',
+    'pr15DevIntentSection','pr15DevSyntheticMemory','pr15DevRealMemory'])
+    assert.strictEqual(typeof T[f],'function',f+' existe');
+  /* a causa do achado: o kit precisa engatar devRender E devCommand */
+  assert.ok(/devRender[\s\S]{0,400}pr15DevIntentSection/.test(B4CODE),
+    'o kit engata pr15DevIntentSection no devRender');
+  assert.ok(/devCommand[\s\S]{0,400}pr15DevIntentCommand/.test(B4CODE),
+    'o kit engata pr15DevIntentCommand no devCommand');
+  /* e os mesmos poderes continuam alcançáveis pelo console */
+  const D=T.getDEV();
+  for(const k of ['pr15IntentSpawn','pr15IntentClear','pr15IntentDevSection'])
+    assert.strictEqual(typeof D[k],'function','DEV.'+k+' registrado');
+});
+
+ok('B4F1-02 FORÇAR ALIADA cria uma presença ALIADA física',()=>{
+  devWorld();
+  assert.strictEqual(T.pr15DevIntentCommand('force:allied'),true);
+  const p=P();
+  assert.ok(p,'presença materializada');
+  assert.strictEqual(p.it.kind,'allied');
+  assert.ok(V(T.PR15_VARIANTS).allied.indexOf(p.it.variant)>=0,
+    'variante pertence à família ALIADA ('+p.it.variant+')');
+  assert.strictEqual(p.dev,true,'marcada como DEV');
+  assert.strictEqual(p.phase,'spawning','respeita o lifecycle do B3 (entra por spawning)');
+});
+
+ok('B4F1-03 FORÇAR RIVAL cria uma presença RIVAL física',()=>{
+  devWorld();
+  assert.strictEqual(T.pr15DevIntentCommand('force:rival'),true);
+  const p=P();
+  assert.ok(p&&p.it.kind==='rival','RIVAL forçada');
+  assert.ok(V(T.PR15_VARIANTS).rival.indexOf(p.it.variant)>=0,'variante de RIVAL');
+});
+
+ok('B4F1-04 FORÇAR AMBÍGUA cria uma presença AMBÍGUA física',()=>{
+  devWorld();
+  assert.strictEqual(T.pr15DevIntentCommand('force:ambiguous'),true);
+  const p=P();
+  assert.ok(p&&p.it.kind==='ambiguous','AMBÍGUA forçada');
+  assert.ok(V(T.PR15_VARIANTS).ambiguous.indexOf(p.it.variant)>=0,'variante de AMBÍGUA');
+});
+
+ok('B4F1-05 as 9 variantes são forçáveis uma a uma, em sequência',()=>{
+  devWorld();
+  const esperadas=[];
+  for(const k of ['allied','rival','ambiguous'])
+    for(const v of V(T.PR15_VARIANTS)[k])esperadas.push(k+'/'+v);
+  const obtidas=[];
+  for(const kv of esperadas){
+    const v=kv.split('/')[1];
+    assert.strictEqual(T.pr15DevIntentCommand('var:'+v),true,'i:var:'+v+' aceito');
+    const p=P();
+    obtidas.push(p?(p.it.kind+'/'+p.it.variant):'(nenhuma)');
+  }
+  assert.deepStrictEqual(obtidas,esperadas,
+    'cada botão de variante produz exatamente a variante pedida');
+});
+
+ok('B4F1-06 LIMPAR PRESENÇA TEMPORAL remove o corpo e libera a próxima',()=>{
+  devWorld();
+  T.pr15DevIntentCommand('force:rival');
+  assert.ok(P(),'presença ativa antes do limpar');
+  assert.strictEqual(T.pr15DevIntentCommand('clear'),true);
+  assert.strictEqual(P(),null,'corpo removido');
+  assert.strictEqual(T.getPr15IntentForce(),null,'força desarmada');
+  /* outra intenção pode ser testada imediatamente, na mesma sessão */
+  assert.strictEqual(T.pr15DevIntentCommand('force:allied'),true);
+  assert.strictEqual(P().it.kind,'allied','nova intenção no lugar');
+});
+
+ok('B4F1-07 qualquer controle DEV tainta a run',()=>{
+  for(const cmd of ['force:allied','force:rival','force:ambiguous','var:zone',
+    'var:pressure','var:trade','clear']){
+    devWorld();
+    X('devTainted=false');
+    T.pr15DevIntentCommand(cmd);
+    assert.strictEqual(T.getDevTainted(),true,'devTaint() disparou para '+cmd);
+  }
+});
+
+ok('B4F1-08 slot sem N-1/N-2 elegível NÃO impede o teste',()=>{
+  devWorld();
+  assert.strictEqual(V(X('echoQueue.length')),0,'slot vazio de propósito');
+  assert.strictEqual(T.pr15DevRealMemory(),null,'nenhuma memória real elegível');
+  assert.strictEqual(T.pr15DevIntentCommand('force:rival'),true);
+  assert.ok(P(),'presença criada mesmo assim');
+  /* e o helper antigo do B3 continua recusando — o fallback é só do B4-FIX */
+  T.pr15DevIntentCommand('clear');
+  const r3=V(T.pr15DevPresenceSpawn({source:'n1',resonance:'high'}));
+  assert.strictEqual(r3.ok,false,'pr15DevPresenceSpawn (B3) segue recusando sem memória');
+  assert.strictEqual(r3.reason,'sem memória elegível');
+});
+
+ok('B4F1-09 a memória sintética nunca entra em echoQueue nem no histórico',()=>{
+  devWorld();
+  X('echoQueue=[]');
+  const q0=JSON.stringify(V(X('echoQueue')));
+  for(const c of ['force:allied','force:rival','force:ambiguous','var:scar','clear'])
+    T.pr15DevIntentCommand(c);
+  assert.strictEqual(JSON.stringify(V(X('echoQueue'))),q0,'echoQueue intocado');
+  /* o registro sintético é mínimo e marcado como dev */
+  const m=V(T.pr15DevSyntheticMemory());
+  assert.strictEqual(m.dev,true,'marcada dev:true (pr15MemIsEligible recusa dev)');
+  assert.strictEqual(T.pr15MemIsEligible(m),false,'nunca vira memória legítima');
+  for(const k of ['id','op','cause','theme','moral','arch'])
+    assert.ok(k in m,'campo mínimo presente: '+k);
+  /* e depois do limpar ela some do runtime */
+  T.pr15DevIntentCommand('clear');
+  assert.strictEqual(V(X('pr15DevMem')),null,'memória sintética descartada');
+});
+
+ok('B4F1-10 save real não é contaminado pelo playtest DEV',()=>{
+  devWorld();
+  T.pr15DevIntentCommand('var:scar');
+  toActive(P());
+  assert.strictEqual(T.getDevTainted(),true);
+  assert.strictEqual(T.pr15IntentPack(),null,'cp.pr15intent nunca é gravado');
+  assert.strictEqual(T.captureCheckpoint('playtest'),false,'captureCheckpoint recusa');
+  /* moralidade, reputação e progressão não se movem */
+  const moral0=JSON.stringify(V(X('moral')));
+  const frac0=JSON.stringify(V(X('fracRun')));
+  T.pr15DevIntentCommand('clear');
+  assert.strictEqual(JSON.stringify(V(X('moral'))),moral0,'moralidade intocada');
+  assert.strictEqual(JSON.stringify(V(X('fracRun'))),frac0,'facções intocadas');
+});
+
+ok('B4F1-11 fora de DEV a seção não aparece e os comandos são inertes',()=>{
+  devWorld();
+  X('DEV_MODE=false');
+  devClearPanel();
+  T.pr15DevIntentSection();
+  assert.strictEqual(devPanelHTML(),'','nenhuma seção desenhada fora de DEV');
+  for(const c of ['force:allied','force:rival','force:ambiguous','var:zone','clear'])
+    assert.strictEqual(T.pr15DevIntentCommand(c),false,'comando '+c+' inerte');
+  assert.strictEqual(T.pr15DevIntentSpawn({kind:'rival'}).ok,false,'spawn recusado');
+  assert.strictEqual(T.pr15DevIntentClearAll().ok,false,'limpar recusado');
+  assert.strictEqual(P(),null,'nenhuma presença criada fora de DEV');
+});
+
+ok('B4F1-12 PR14 continua independente (prefixos não colidem)',()=>{
+  devWorld();
+  /* o prefixo do B4 é 'i:'; o do PR14 é 'fp:' — nenhum intercepta o outro */
+  const antes=JSON.stringify(V(T.getFactionPresenceEntity()||null));
+  assert.strictEqual(T.pr15DevIntentCommand('fp:force:anchor'),false,
+    'comando do PR14 não é engolido pelo handler do B4');
+  assert.strictEqual(JSON.stringify(V(T.getFactionPresenceEntity()||null)),antes,
+    'estado do PR14 intocado pelo B4');
+  /* e os comandos nativos que começam com "i" não têm dois-pontos */
+  for(const c of ['info','invuln'])
+    assert.ok(c.indexOf(':')<0,c+' não colide com o prefixo i:');
+  assert.ok(B4CODE.indexOf("c.indexOf('i:')===0")>=0,'prefixo i: usado pelo B4');
+  assert.ok(B4CODE.indexOf("c.indexOf('fp:'")<0,'B4 não intercepta fp:');
+});
+
+ok('B4F1-13 Sandbox continua isolado do playtest DEV',()=>{
+  devWorld();
+  T.pr15DevIntentCommand('force:rival');
+  assert.ok(P(),'presença de playtest criada fora do sandbox');
+  T.pr15IntentSandboxContextStart();
+  assert.strictEqual(V(X('pr15DevMem')),null,'memória sintética não entra no laboratório');
+  assert.strictEqual(T.getPr15IntentForce(),null,'força não entra no laboratório');
+  assert.strictEqual(T.pr15IntentGuard(),false,'guard bloqueia aplicação no sandbox');
+  T.pr15IntentSandboxTearDown();
+});
+
+ok('B4F1-14 o painel renderiza os 14 botões com os comandos certos',()=>{
+  devWorld();
+  devClearPanel();
+  T.pr15DevIntentSection();
+  const h=devPanelHTML();
+  assert.ok(h.length>0,'seção desenhada');
+  const cmds=(h.match(/data-c="([^"]+)"/g)||[]).map(x=>x.slice(8,-1));
+  const esperados=['i:force:allied','i:force:rival','i:force:ambiguous',
+    'i:var:zone','i:var:pulse','i:var:legacy',
+    'i:var:pressure','i:var:trial','i:var:scar',
+    'i:var:trade','i:var:unstable','i:var:choice','i:apply','i:clear'];
+  assert.deepStrictEqual(cmds,esperados,'os 14 comandos, na ordem');
+  assert.ok(h.indexOf('APLICAR EFEITO')>=0,'switch visível no painel');
+  for(const t of ['FORÇAR ALIADA','FORÇAR RIVAL','FORÇAR AMBÍGUA',
+    'LIMPAR PRESENÇA TEMPORAL'])
+    assert.ok(h.indexOf(t)>=0,'rótulo presente: '+t);
+  for(const t of ['ZONA','PULSO','HERANÇA','PRESSÃO','PROVA','CICATRIZ',
+    'TROCA','INSTÁVEL','ESCOLHA'])
+    assert.ok(h.indexOf(t)>=0,'variante presente: '+t);
+  assert.ok(h.indexOf('PR15')>=0&&h.indexOf('PRESENÇA TEMPORAL')>=0,'seção identificada');
+  /* reaproveita a infraestrutura do PR14, não cria interface paralela */
+  assert.ok(/class="dvb/.test(h)&&/class="dvrow/.test(h),'usa dvb/dvrow do painel');
+});
+
+ok('B4F1-15 o estado compacto mostra presença/intenção/variante/origem',()=>{
+  devWorld();
+  T.pr15DevIntentCommand('var:scar');
+  toActive(P());
+  devClearPanel();
+  T.pr15DevIntentSection();
+  const h=devPanelHTML();
+  for(const t of ['PRESENÇA: ATIVA','INTENÇÃO:','VARIANTE:','ORIGEM:'])
+    assert.ok(h.indexOf(t)>=0,'campo presente: '+t);
+  assert.ok(h.indexOf('DESAFIO TEMPORAL')>=0,'intenção legível');
+  assert.ok(h.indexOf('CICATRIZ DA MORTE')>=0,'variante legível');
+  assert.ok(/ORIGEM: N-[12]/.test(h),'origem N-1/N-2');
+  assert.ok(h.indexOf('RESSONÂNCIA')>=0,'ressonância mostrada');
+  assert.ok(h.indexOf('DEV')>=0,'marcada como DEV');
+  /* sem despejo de JSON grande no painel */
+  assert.ok(/APLICAR EFEITO: (LIGADO|DESLIGADO)/.test(h),'estado do switch no painel');
+  assert.ok(/persistente: (bloqueado|SIMULADO)/.test(h),
+    'o painel diz com todas as letras o que acontece com recurso persistente');
+  assert.ok(h.length<3000,'painel compacto ('+h.length+' chars)');
+  assert.ok(h.indexOf('{')<0,'nenhum objeto cru no painel');
+});
+
+ok('B4F1-16 ALIADA → limpar → RIVAL → limpar → AMBÍGUA na mesma sessão',()=>{
+  devWorld();
+  const vistos=[];
+  for(const k of ['allied','rival','ambiguous']){
+    assert.strictEqual(T.pr15DevIntentCommand('force:'+k),true,k+' forçada');
+    const p=P();
+    vistos.push(p.it.kind+'/'+p.it.variant);
+    assert.strictEqual(T.pr15DevIntentCommand('clear'),true,'limpou depois de '+k);
+    assert.strictEqual(P(),null);
+  }
+  assert.deepStrictEqual(vistos.map(v=>v.split('/')[0]),['allied','rival','ambiguous']);
+  assert.strictEqual(new Set(vistos).size,3,'três encontros distintos na mesma sessão');
+});
+
+ok('B4F1-17 a interação fica observável no playtest (rótulo, oferta, âncora)',()=>{
+  devWorld();
+  T.pr15DevIntentCommand('var:trade');
+  const p=P();
+  toActive(p);
+  X('addResidues(50,"t")');
+  settleOffer(p);
+  assert.ok(Number.isFinite(T.pr15IntentNodeDist(p)),'âncora definida');
+  const label=T.pr15IntentInteractLabel(p);
+  assert.ok(label&&label.indexOf(String(C.tradeCost))>=0,'custo comunicado no rótulo');
+  assert.ok(p.it.t>=C.offerAfter,'oferta amadureceu');
+  assert.strictEqual(T.pr15IntentOfferable(p),true,'interação disponível');
+  assert.strictEqual(typeof T.pr15IntentEdge(),'boolean','indicador off-screen responde');
+  /* com o switch DESLIGADO (padrão) o guard segue bloqueando — B4-92 intacto */
+  assert.strictEqual(X('pr15DevApplyEffects'),false,'switch desligado por padrão');
+  assert.strictEqual(T.pr15IntentGuard(),false,'guard de DEV bloqueia');
+  const r0=T.getResidues(),mods0=V(T.getSmMods()).length;
+  T.pr15IntentUpdate(0.05);
+  assert.strictEqual(T.getResidues(),r0,'nada cobrado');
+  assert.strictEqual(V(T.getSmMods()).length,mods0,'nenhum mod aplicado');
+  assert.strictEqual(p.it.st,'idle','estado não avançou');
+});
+
+ok('B4F1-18 forçar a mesma variante repetidamente não esbarra em encontro resolvido',()=>{
+  devWorld();
+  for(let i=0;i<5;i++){
+    assert.strictEqual(T.pr15DevIntentCommand('var:legacy'),true,'repetição '+(i+1));
+    const p=P();
+    assert.strictEqual(p.it.variant,'legacy','variante pedida');
+    assert.strictEqual(p.it.st,'idle','encontro fresco, não "resolved"');
+    toActive(p);
+    finish(p);
+  }
+});
+
+/* helper: presença DEV já em 'active', com o switch no estado pedido */
+function devPresence(variant,apply,activate){
+  devWorld();
+  T.pr15DevIntentToggleApply(!!apply);
+  X('addResidues(50,"base")');
+  T.pr15DevIntentCommand('var:'+variant);
+  const p=P();
+  /* activate=false deixa a presença em 'spawning': a HERANÇA DE BUILD resolve
+     no primeiro tick 'active', então medir depois de toActive veria o efeito
+     já aplicado e a variante pareceria inativa. */
+  if(activate!==false)toActive(p);
+  return p;
+}
+
+ok('B4F1-20 o wrapper do resolve só reconhece o id sintético e delega o resto',()=>{
+  devWorld();
+  /* com a sintética armada, ela resolve */
+  T.pr15DevIntentCommand('var:scar');
+  assert.strictEqual(V(X('pr15DevMem.id')),'dev-synth-mem');
+  const r1=V(X('pr15PresResolveMemory("dev-synth-mem")'));
+  assert.ok(r1&&r1.rec&&r1.rec.id==='dev-synth-mem','sintética resolvível em DEV');
+  assert.strictEqual(r1.rec.dev,true);
+  /* qualquer outro id cai no caminho real do B3 (fila vazia → null) */
+  assert.strictEqual(V(X('pr15PresResolveMemory("e1-2")')),null,
+    'id real segue o caminho do B3');
+  /* fora de DEV, nem a sintética resolve */
+  X('DEV_MODE=false');
+  assert.strictEqual(V(X('pr15PresResolveMemory("dev-synth-mem")')),null,
+    'fora de DEV o wrapper não age');
+  /* e com memória REAL na fila, o playtest usa a real — nunca a sintética */
+  devWorld();
+  T.setEchoQueue(stdQueue());
+  T.pr15DevIntentCommand('force:allied');
+  const p=P();
+  assert.ok(p,'presença criada');
+  assert.strictEqual(p.memoryId,'e1-2','memória REAL preferida à sintética');
+  assert.strictEqual(V(X('pr15DevMem')),null,'sintética nem foi criada');
+});
+
+ok('B4F1-19 B1/B2/B3 e PR14 não foram editados pelo B4-FIX #1',()=>{
+  /* o acréscimo é aditivo: nenhum bloco anterior perdeu linha */
+  const marcas=['PR15·b1','PR15·fim b1','PR15·b2','PR15·fim b2',
+    'PR15·b3','PR15·fim b3','PR14·bloco fp2.js','PR14·fim fp2.js'];
+  for(const m of marcas)assert.ok(SRCN.indexOf(m)>0,'marcador presente: '+m);
+  const b1=SRCN.lastIndexOf('PR15·b1',SRCN.indexOf('PR15·fim b1'));
+  const b4=SRCN.lastIndexOf('PR15·b4',SRCN.indexOf('PR15·fim b4'));
+  assert.ok(b1<b4,'ordem dos blocos preservada');
+  /* o novo código vive DENTRO do bloco B4 */
+  const fimB3=SRCN.indexOf('PR15·fim b3'),iniB4=SRCN.lastIndexOf('PR15·b4',SRCN.indexOf('PR15·fim b4'));
+  for(const fn of ['pr15DevIntentSpawn','pr15DevIntentSection','pr15DevIntentCommand',
+    'pr15DevSyntheticMemory','PR15_DEV_VARIANT_SHORT']){
+    const at=SRCN.indexOf(fn);
+    assert.ok(at>iniB4&&at<SRCN.indexOf('PR15·fim b4'),fn+' está dentro do bloco B4');
+  }
+  void fimB3;
+});
+
+
+ok('B4F1-21 APLICAR EFEITO começa desligado e é um toggle',()=>{
+  devWorld();
+  assert.strictEqual(X('pr15DevApplyEffects'),false,'desligado por padrão');
+  assert.strictEqual(T.pr15DevIntentCommand('i:apply'.slice(2)),true,'comando aceito');
+  assert.strictEqual(X('pr15DevApplyEffects'),true,'ligou');
+  assert.strictEqual(T.pr15DevIntentCommand('apply'),true);
+  assert.strictEqual(X('pr15DevApplyEffects'),false,'desligou');
+  /* fora de DEV o switch não responde */
+  X('DEV_MODE=false');
+  assert.strictEqual(T.pr15DevIntentToggleApply(true).ok,false,'inerte fora de DEV');
+  assert.strictEqual(X('pr15DevApplyEffects'),false,'não ligou fora de DEV');
+});
+
+ok('B4F1-22 com o switch ligado as 9 variantes aplicam efeito efêmero',()=>{
+  const esperadas=[];
+  for(const k of ['allied','rival','ambiguous'])
+    for(const v of V(T.PR15_VARIANTS)[k])esperadas.push(k+'/'+v);
+  const inativas=[];
+  for(const kv of esperadas){
+    const v=kv.split('/')[1];
+    const p=devPresence(v,true,false);
+    const nd=V(T.pr15IntentNodeOf(p)),pl=T.getPlayer();
+    const antes=JSON.stringify({hp:pl.hp,sh:pl.shield,
+      mods:V(T.getSmMods()).map(m=>m.id+':'+m.value),st:p.it.st});
+    toActive(p);
+    for(let i=0;i<120&&P();i++){
+      if(v==='choice'){const L=V(T.pr15IntentLobes(p));
+        if(L){pl.x=L.cyan.x;pl.y=L.cyan.y;}}
+      else{pl.x=nd.x+10;pl.y=nd.y;}
+      /* a prova conta abates feitos DURANTE ela (k0 é fixado no 1º tick) */
+      if(v==='trial'&&i%4===0)X('kills++');
+      T.pr15PresUpdate(0.05);T.pr15IntentUpdate(0.05);
+    }
+    const depois=JSON.stringify({hp:T.getPlayer().hp,sh:T.getPlayer().shield,
+      mods:V(T.getSmMods()).map(m=>m.id+':'+m.value),st:P()?P().it.st:'-'});
+    if(depois===antes)inativas.push(kv);
+  }
+  assert.deepStrictEqual(inativas,[],
+    'todas as 9 variantes produzem efeito observável com o switch ligado');
+});
+
+ok('B4F1-23 recurso PERSISTENTE continua bloqueado mesmo com o switch ligado',()=>{
+  /* resíduo: a troca não cobra o saldo real */
+  let p=devPresence('trade',true);
+  settleOffer(p);
+  const r0=T.getResidues();
+  T.pr15IntentUpdate(0.05);
+  assert.strictEqual(T.getResidues(),r0,'saldo real intocado');
+  assert.ok(V(T.getSmMods()).some(m=>m.id==='pr15.trade'),'efeito efêmero aplicado');
+  assert.strictEqual(p.it.st,'resolved','variante completou');
+  /* o trial também completa e comunica a recompensa, sem mover o saldo */
+  const pt=devPresence('trial',true);
+  const nt=V(T.pr15IntentNodeOf(pt)),plt=T.getPlayer();
+  const rt=T.getResidues();
+  for(let i=0;i<60&&P();i++){plt.x=nt.x+10;plt.y=nt.y;
+    if(i%4===0)X('kills++');
+    T.pr15PresUpdate(0.05);T.pr15IntentUpdate(0.05);}
+  assert.strictEqual(pt.it.st,'resolved','prova concluída');
+  assert.strictEqual(T.getResidues(),rt,'recompensa de ⧗ simulada, saldo intocado');
+  /* moralidade: a escolha não move eixo nenhum */
+  p=devPresence('choice',true);
+  settleOffer(p);
+  const m0=JSON.stringify(V(X('moral')));
+  const L=V(T.pr15IntentLobes(p)),pl=T.getPlayer();
+  pl.x=L.cyan.x;pl.y=L.cyan.y;
+  T.pr15IntentUpdate(0.05);
+  assert.strictEqual(JSON.stringify(V(X('moral'))),m0,'moralidade intocada');
+  /* facções: nenhuma reação */
+  const f0=JSON.stringify(V(X('fracRun')));
+  p=devPresence('legacy',true);
+  toActive(p);
+  const nd=V(T.pr15IntentNodeOf(p));
+  for(let i=0;i<40;i++){pl.x=nd.x+10;pl.y=nd.y;T.pr15PresUpdate(0.05);T.pr15IntentUpdate(0.05);}
+  assert.strictEqual(JSON.stringify(V(X('fracRun'))),f0,'reputação intocada');
+  /* e a guarda própria é a responsável */
+  assert.strictEqual(T.pr15IntentGuardPersistent(),false,'guarda de persistente bloqueia');
+  assert.strictEqual(T.pr15IntentGuard(),true,'guarda efêmera liberada');
+});
+
+ok('B4F1-24 save e histórico seguem protegidos com o switch ligado',()=>{
+  const p=devPresence('scar',true);
+  settleOffer(p);
+  T.pr15IntentUpdate(0.05);
+  assert.strictEqual(p.it.st,'resolved','cicatriz aplicada');
+  assert.strictEqual(T.getDevTainted(),true);
+  assert.strictEqual(T.pr15IntentPack(),null,'cp.pr15intent nunca gravado');
+  assert.strictEqual(T.captureCheckpoint('playtest'),false,'captureCheckpoint recusa');
+  assert.strictEqual(V(X('echoQueue.length')),0,'echoQueue vazio');
+});
+
+ok('B4F1-25 o switch nunca entra no Sandbox nem sobrevive ao limpar',()=>{
+  devPresence('trade',true);
+  assert.strictEqual(X('pr15DevApplyEffects'),true);
+  T.pr15IntentSandboxContextStart();
+  assert.strictEqual(X('pr15DevApplyEffects'),false,'switch não entra no laboratório');
+  assert.strictEqual(T.pr15IntentGuard(),false,'guard bloqueia no sandbox');
+  T.pr15IntentSandboxTearDown();
+  /* e o limpar devolve o painel ao estado seguro */
+  devPresence('trade',true);
+  T.pr15DevIntentCommand('clear');
+  assert.strictEqual(P(),null,'corpo removido');
+  assert.strictEqual(T.getPr15IntentForce(),null);
+});
+
 
 console.log('');
 if(failed){console.log('FALHAS ('+failed+')');process.exit(1);}

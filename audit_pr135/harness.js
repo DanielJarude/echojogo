@@ -139,6 +139,9 @@ src+='\n;globalThis.__t={'+
   'pr15IntentSanitize,pr15IntentUnpack,pr15IntentRebuild,pr15IntentReset,'+
   'pr15DevIntentState,pr15DevIntentExplain,pr15DevIntentForce,'+
   'pr15DevIntentForceVariant,pr15DevPresenceIntentState,'+
+  'pr15DevSyntheticMemory,pr15DevRealMemory,pr15DevIntentSpawn,pr15DevIntentClearAll,'+
+  'pr15DevIntentCommand,pr15DevIntentSection,PR15_DEV_VARIANT_SHORT,'+
+  'pr15DevIntentToggleApply,pr15IntentGuardPersistent,getPr15DevApplyEffects:()=>pr15DevApplyEffects,'+
   'pr15IntentSandboxContextStart,pr15IntentSandboxTearDown,pr15IntentKitBoot,'+
   'getPr15IntentRun:()=>pr15IntentRun,setPr15IntentRun:v=>{pr15IntentRun=v;},'+
   'getPr15IntentForce:()=>pr15IntentForce,setPr15IntentForce:v=>{pr15IntentForce=v;},'+
