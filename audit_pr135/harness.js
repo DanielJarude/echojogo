@@ -117,6 +117,48 @@ src+='\n;globalThis.__t={'+
   'getSandboxRun:()=>sandboxRun,'+
   'sandboxStart,sandboxExit,sandboxRestart,sandboxEndToSetup,sandboxCloseSetup,'+
   'setActiveRun:v=>{activeRun=v;}'+
+  /* PR15·b4: Intenção + interação + significado das memórias temporais */
+  ','+
+  'PR15_INTENT_CFG,PR15_INTENTS,PR15_INTENT_LIST,PR15_VARIANTS,PR15_ISTATES,'+
+  'PR15_BUDGET_KEYS,PR15_INTENT_LABEL,PR15_VARIANT_LABEL,PR15_INTENT_VIS,'+
+  'PR15_INTENT_REASONS,PR15_INTENT_SIGNALS,PR15_LEGACY_MODS,PR15_LEGACY_FALLBACK,'+
+  'pr15IntentFresh,pr15IntentBudLeft,pr15IntentSpend,pr15IntentAlreadyResolved,'+
+  'pr15IntentMarkResolved,pr15MoralAxis,pr15MoralDistance,pr15IntentFactionNet,'+
+  'pr15IntentFracturePressure,pr15IntentContext,pr15IntentSignalsFor,pr15IntentScores,'+
+  'pr15IntentRng,pr15IntentDecide,pr15IntentRngVar,pr15IntentVariant,'+
+  'pr15IntentAttach,pr15IntentVisState,pr15IntentAnnounce,pr15IntentGuard,'+
+  'pr15IntentAddMod,pr15IntentGrantRes,pr15IntentGrantHeal,pr15IntentGrantShield,'+
+  'pr15IntentGrantMoral,pr15IntentFactionReact,pr15IntentEchoReact,pr15IntentMsg,'+
+  'pr15IntentPlayerDist,pr15IntentZone,pr15IntentPulse,pr15IntentLegacy,'+
+  'pr15IntentPressure,pr15IntentTrial,pr15IntentScarOffer,pr15IntentScarAccept,pr15IntentTradeOffer,'+
+  'pr15IntentTrade,pr15IntentUnstable,pr15IntentLobes,pr15IntentChoice,'+
+  'pr15IntentInteractLabel,pr15IntentOfferable,pr15IntentTryInteract,'+
+  'pr15IntentUpdate,pr15IntentClear,pr15IntentDraw,pr15IntentEdge,'+
+  'pr15IntentNodeDist,pr15IntentNodeOf,'+
+  'pr15IntentSnapshot,pr15IntentExplain,pr15IntentPack,pr15IntentSanRes,'+
+  'pr15IntentSanitize,pr15IntentUnpack,pr15IntentRebuild,pr15IntentReset,'+
+  'pr15DevIntentState,pr15DevIntentExplain,pr15DevIntentForce,'+
+  'pr15DevIntentForceVariant,pr15DevPresenceIntentState,'+
+  'pr15DevSyntheticMemory,pr15DevRealMemory,pr15DevIntentSpawn,pr15DevIntentClearAll,'+
+  'pr15DevIntentCommand,pr15DevIntentSection,PR15_DEV_VARIANT_SHORT,'+
+  'pr15DevIntentToggleApply,pr15IntentGuardPersistent,getPr15DevApplyEffects:()=>pr15DevApplyEffects,'+
+  'pr15IntentSandboxContextStart,pr15IntentSandboxTearDown,pr15IntentKitBoot,'+
+  'getPr15IntentRun:()=>pr15IntentRun,setPr15IntentRun:v=>{pr15IntentRun=v;},'+
+  'getPr15IntentForce:()=>pr15IntentForce,setPr15IntentForce:v=>{pr15IntentForce=v;},'+
+  'getEchoesRef:()=>echoes,setKillsV:v=>{kills=v;},getKillsV:()=>kills,'+
+  'getMoralRef:()=>moral,fracFresh,getFracRunRef:()=>fracRun,setFracRunRef:v=>{fracRun=v;},'+
+  'addResidues,spendResidues,getResidues,factionEmit,factionHasPact,fracRival,fracKnows,'+
+  'fracApplyDelta,FACTION_IDS,FACTION_GRID,FRACTIONS,FRACTION_BY_ID,'+
+  'BUILD_ARCH_IDS,buildProfileSummary,getMoralProfile,applyMoral,applyMoralTuning,'+
+  'smAdd,smRemoveId,smHas,smGet,getSmMods:()=>(player&&player.sm)?player.sm.slice():[],'+
+  'render,cam,getCam:()=>cam,setCam:v=>{cam.x=v.x;cam.y=v.y;},'+
+  'getVw:()=>vw,getVh:()=>vh,getCtxLog:()=>globalThis.__ctxLog,'+
+  'getRunTimeRef:()=>runTime,getToastsEl:()=>toastsEl,getBannerEl:()=>bannerEl,'+
+  'fractureMakeSeed,fractureEnsureTheme,fractureGetIntensity,'+
+  'spawnParticles,floatText,spawnRing,getPartsRef:()=>parts,'+
+  'getEchoSpeechActive:()=>speechActive,getEchoSpeechQueue:()=>speechQueue,'+
+  'setEchoSpeechClock:v=>{_speechClock=v;},'+
+  'AUDIO,sandboxStart,sandboxExit,devEnable,devDisable'+
   '};';
 function makeStyle(){const store={setProperty(k,v){store[k]=String(v);return v;}};return new Proxy(store,{get(t,k){return k in t?t[k]:'';},set(t,k,v){t[k]=String(v);return true;}});}
 function ctx2d(){const grad={addColorStop(){}};const numProps=new Set(['globalAlpha','lineWidth','shadowBlur','font','fillStyle','strokeStyle','lineCap','textAlign','imageSmoothingEnabled']);return new Proxy({},{get(t,k){if(k==='canvas')return{width:0,height:0};if(k==='measureText')return()=>({width:0});if(k==='getImageData')return()=>({data:new Uint8ClampedArray(4)});if(k==='createLinearGradient'||k==='createRadialGradient'||k==='createPattern')return()=>grad;if(numProps.has(k))return 1;return(...args)=>{const L=globalThis.__ctxLog;if(L)L.push([k,args]);};},set(t,k,v){const L=globalThis.__ctxLog;if(L)L.push(['set:'+k,[v]]);return true;}});}

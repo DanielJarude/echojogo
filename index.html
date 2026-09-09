@@ -33787,6 +33787,2055 @@ function pr15PresenceKitBoot(){
 /* ==================== PR15·fim b3 ==================== */
 
 /* =====================================================================
+   PR15·b4 — INTENÇÃO, INTERAÇÃO E SIGNIFICADO DAS MEMÓRIAS TEMPORAIS
+   ---------------------------------------------------------------------
+   BLOCO FINAL DO PR15. Fecha o ciclo aberto por B1/B2/B3:
+
+     RUN ANTERIOR → MEMÓRIA (B1) → DIRECTOR (B2) → PRESENÇA (B3)
+        → INTENÇÃO (B4) → COMPORTAMENTO/INTERAÇÃO (B4)
+        → REAÇÃO DO JOGADOR (B4) → CONSEQUÊNCIA NA RUN ATUAL (B4)
+        → NOVA MEMÓRIA (B1, na morte)
+
+   Até o B3 a memória EXISTIA. Aqui ela passa a SIGNIFICAR alguma coisa.
+
+   ---------------------------------------------------------------------
+   O QUE ESTE BLOCO FAZ
+     · dá ao `intentSeed` do B2 um SIGNIFICADO determinístico:
+       ALIADA · RIVAL · AMBÍGUA;
+     · explica internamente POR QUE escolheu (reason tags) — DEV/testes;
+     · dá a cada família 3 variantes de manifestação legíveis;
+     · integra memória histórica (operador, build, causa da morte, tema,
+       moralidade), Moralidade 2.0 e as quatro facções — SEM dominá-las;
+     · ancora no mundo uma ÂNCORA TEMPORAL fixa no ponto onde a memória
+       se materializou — é ela o objeto interativo (a presença continua
+       orbitando o operador a ~320 px, com piso de 190 px herdado do B3,
+       então NENHUMA interação depende de chegar perto do corpo em
+       movimento: isso seria impossível sem reescrever o B3);
+     · comunica tudo (microcopy + rótulo world-space + indicador de borda);
+     · persiste o mínimo para o Continue não rerollar, não duplicar
+       recompensa e não duplicar custo;
+     · isola Sandbox e DEV e bloqueia os exploits óbvios.
+
+   O QUE ESTE BLOCO **NÃO** FAZ (escopo de PR16+):
+     · IA adaptativa de boss/echo, difficulty director, ML, LLM;
+     · Codex, achievements, progressão meta nova, rework de HUD;
+     · a presença continua SEM hp, SEM hitbox, SEM alvo, SEM projétil:
+       ela NUNCA entra em echoes[] nem em enemies[] e nunca usa makeEcho.
+       Todo "desafio" é posicional, objetivo ou transação — nunca dano
+       inevitável.
+
+   ARQUITETURA — o mesmo monkey-patch aditivo de PR12/13/14/B1/B2/B3.
+   Nenhuma função pré-existente é reescrita por dentro. Os quatro pontos
+   de contato são:
+
+     pr15PresSpawn   → pr15IntentAttach()   (intenção + variante + anúncio)
+     pr15PresEnd     → limpeza do estado de intenção
+     updateAllies    → pr15IntentUpdate(dt) (roda DEPOIS do update do B3)
+     drawWorldExtras → pr15IntentDraw()     (roda DEPOIS do draw do B3)
+     render          → pr15IntentEdge()     (passagem screen-space)
+     smBuildCheckpoint / resumeRun / startRun / … / sandbox* / DEV.*
+
+   DETERMINISMO — nenhum Math.random no bloco. Intenção, variante,
+   consequência estrutural e posicionamento relevante vêm de
+   fractureRng(fractureHash32(...)) sobre (runSeed, encounter.seed,
+   descriptor.intent, memoryId). O bloco também não usa setTimeout,
+   setInterval, requestAnimationFrame nem addEventListener.
+   ===================================================================== */
+
+/* ---------------- configuração centralizada ----------------
+   Única fonte dos números de intenção, interação e recompensa. Cada valor
+   foi comparado com o jogo real (ver racional nos comentários). */
+const PR15_INTENT_CFG={
+  version:1,
+  /* ---- intenção: pesos BASE (nenhum sinal) ----
+     Levemente inclinados para ALIADA porque a maioria das runs reais tem
+     moral/build parecida com a anterior — a distribuição final EMERGE dos
+     sinais, não destes números. */
+  base:{allied:1.00,rival:0.92,ambiguous:0.90},
+  /* ---- interação ---- */
+  interactR:76,         // px + player.r — mesmo patamar da presença de facção (58)
+  offerAfter:1.4,       // s em 'active' antes de a interação ficar disponível
+  /* ---- ALIADA ---- */
+  zoneR:170,            // raio da zona de ressonância
+  zoneTaken:0.88,       // ×dano recebido dentro da zona (−12%; facção Âncora restaura 50% do escudo, então isto é modesto)
+  zoneDur:1.2,          // s — renovado enquanto o jogador está dentro; some sozinho
+  pulseEvery:5.0,       // s entre pulsos de memória
+  pulseR:240,           // raio do pulso
+  pulseShield:0.06,     // fração de shieldMax por pulso
+  pulseHeal:4,          // HP por pulso quando não há escudo (inimigo comum causa 6–32)
+  pulseMax:4,           // tetos por aparição
+  legacyDur:14,         // s da herança de build
+  /* ---- RIVAL ---- */
+  rivalEvery:5.5,       // s entre pulsos de pressão
+  rivalTelegraph:1.4,   // s de aviso ANTES do pulso (agência do jogador)
+  rivalRing:210,        // raio do pulso de pressão
+  rivalTaken:1.12,      // ×dano recebido se estiver dentro (só se não sair)
+  rivalTakenDur:4,      // s
+  trialKills:4,         // abates exigidos pela prova
+  trialTime:14,         // s para cumprir
+  trialReward:3,        // ⧗ de recompensa (presença de facção dá 4)
+  scarCostFrac:0.08,    // fração de maxHp aceita pelo jogador (nunca automática)
+  scarCostMin:4,
+  scarCostMax:14,
+  scarDur:16,           // s do benefício da cicatriz
+  /* ---- AMBÍGUA ---- */
+  tradeCost:4,          // ⧗ da troca temporal
+  tradeDur:12,          // s
+  tradeDmg:1.15,        // ×dano da troca (Desviados dá 1.20/12s — isto é menor)
+  unstableOpt:[         // desfechos da memória instável (peso, nunca negativo)
+    {k:'res',n:2,w:3},{k:'shield',n:0.06,w:3},{k:'heal',n:3,w:2},{k:'none',n:0,w:2}
+  ],
+  lobeDist:110,         // distância dos dois lobos da escolha de ressonância
+  margin:120,           // margem interna da arena p/ âncora e lobos (igual ao B3)
+  choiceDur:10,         // s do efeito da escolha
+  choiceDmg:1.08,       // ×cadência ao ACEITAR (aceitar é o lado menor)
+  /* ---- orçamentos por RUN (anti-snowball, anti-farm) ----
+     Máximo de 3 encontros por run (teto do B2). Estes tetos valem para a
+     SOMA dos três. O de escudo é deliberadamente MENOR do que três
+     aparições cheias conseguiriam (3 × 4 pulsos × 6% = 72%), para que o
+     teto seja de fato o que limita — não um número decorativo. */
+  budget:{res:12,heal:40,shield:0.40,rep:6,moral:3,scar:1},
+  /* ---- caps estruturais ---- */
+  resMax:8,             // tamanho do registro de encontros resolvidos
+  reasonMax:12,         // teto de reason tags por decisão
+  labelHold:6.0,        // s que o rótulo world-space fica visível após anunciar
+  edgePad:52,           // margem do indicador de borda
+  edgeMinAlpha:0.35,
+  /* ---- microcopy ---- */
+  spawnBanner:'RESSONÂNCIA TEMPORAL',
+  speechCooldown:9      // s mínimos entre falas de Echo provocadas por isto
+};
+const PR15_INTENTS={allied:1,rival:1,ambiguous:1};
+const PR15_INTENT_LIST=['allied','rival','ambiguous'];
+const PR15_VARIANTS={
+  allied:['zone','pulse','legacy'],
+  rival:['pressure','trial','scar'],
+  ambiguous:['trade','unstable','choice']
+};
+/* estado de interação — máquina de estados pequena e serializável */
+const PR15_ISTATES={idle:1,offered:1,accepted:1,declined:1,resolved:1};
+/* chaves de orçamento */
+const PR15_BUDGET_KEYS=['res','heal','shield','rep','moral','scar'];
+
+/* ---------------- linguagem voltada ao jogador ----------------
+   A identidade ciano/magenta do B3 é PRESERVADA: cor complementa, nunca
+   substitui. A diferença primária entre famílias é FORMA + RITMO. */
+const PR15_INTENT_LABEL={
+  allied   :{nm:'RESSONÂNCIA COOPERATIVA',short:'COOPERA',     sym:'◈',rhythm:'estável'},
+  rival    :{nm:'DESAFIO TEMPORAL',       short:'DESAFIA',     sym:'◇',rhythm:'tenso'},
+  ambiguous:{nm:'MEMÓRIA INDETERMINADA',  short:'INDETERMINADA',sym:'◬',rhythm:'oscilante'}
+};
+const PR15_VARIANT_LABEL={
+  zone    :'ZONA DE RESSONÂNCIA',
+  pulse   :'PULSO DE MEMÓRIA',
+  legacy  :'HERANÇA DE BUILD',
+  pressure:'PRESSÃO TEMPORAL',
+  trial   :'PROVA DA RUN ANTERIOR',
+  scar    :'CICATRIZ DA MORTE',
+  trade   :'TROCA TEMPORAL',
+  unstable:'MEMÓRIA INSTÁVEL',
+  choice  :'ESCOLHA DE RESSONÂNCIA'
+};
+/* geometria por família — legível em daltonismo (é forma, não cor) */
+const PR15_INTENT_VIS={
+  allied   :{sides:0, spin:0.10, breathe:0.020, ringMul:1.00, spokes:6},
+  rival    :{sides:3, spin:0.55, breathe:0.070, ringMul:1.12, spokes:3},
+  ambiguous:{sides:0, spin:0.28, breathe:0.130, ringMul:0.90, spokes:4}
+};
+/* reason tags — explicabilidade (§6 do brief). Internas: nunca exibidas. */
+const PR15_INTENT_REASONS={
+  MORAL_ECHO:1,BUILD_RESONANCE:1,SAME_OPERATOR:1,DEATH_MEMORY:1,
+  THEME_RESONANCE:1,FACTION_TENSION:1,FRACTURE_CONFLICT:1,
+  MEMORY_AGE:1,COHERENCE:1,INTENT_SEED:1
+};
+/* ---------------- tabela de sinais ----------------
+   Cada linha é um sinal REAL lido do jogo (nada inventado). Os pesos por
+   família são pequenos de propósito: nenhum sinal sozinho decide. */
+const PR15_INTENT_SIGNALS={
+  moralSame   :{allied:+0.55,rival:-0.30,ambiguous:+0.10},
+  moralMixed  :{allied:+0.05,rival:+0.05,ambiguous:+0.45},
+  moralShift  :{allied:-0.35,rival:+0.60,ambiguous:+0.15},
+  archSame    :{allied:+0.45,rival:-0.10,ambiguous:+0.05},
+  archOther   :{allied:-0.10,rival:+0.20,ambiguous:+0.30},
+  opSame      :{allied:+0.30,rival:-0.05,ambiguous:+0.10},
+  opOther     :{allied:-0.05,rival:+0.15,ambiguous:+0.25},
+  causeBoss   :{allied:-0.15,rival:+0.45,ambiguous:+0.05},
+  causeHazard :{allied:+0.35,rival:+0.05,ambiguous:+0.05},
+  causeEcho   :{allied:+0.05,rival:+0.05,ambiguous:+0.40},
+  causeEvent  :{allied:-0.05,rival:+0.05,ambiguous:+0.45},
+  causeEnemy  :{allied:+0.00,rival:+0.22,ambiguous:+0.12},
+  causeUnknown:{allied:+0.05,rival:+0.05,ambiguous:+0.20},
+  themeSame   :{allied:+0.35,rival:-0.10,ambiguous:+0.05},
+  themeOther  :{allied:-0.10,rival:+0.15,ambiguous:+0.25},
+  factionPos  :{allied:+0.40,rival:-0.20,ambiguous:+0.05},
+  factionNeg  :{allied:-0.20,rival:+0.45,ambiguous:+0.10},
+  fractureHigh:{allied:-0.15,rival:+0.35,ambiguous:+0.15},
+  srcN2       :{allied:-0.12,rival:+0.05,ambiguous:+0.30},
+  resUnstable :{allied:-0.15,rival:+0.15,ambiguous:+0.35},
+  resHigh     :{allied:+0.20,rival:-0.05,ambiguous:-0.05}
+};
+/* herança de build: UMA assinatura legível por arquétipo (§13).
+   Magnitudes ≈ metade da presença de facção (Desviados: +20% dano/12s). */
+const PR15_LEGACY_MODS={
+  melee  :{stat:'meleeRange',type:'mult',v:1.18,lab:'HERANÇA · CORPO A CORPO'},
+  ranged :{stat:'rangedRange',type:'mult',v:1.18,lab:'HERANÇA · LONGO ALCANCE'},
+  crit   :{stat:'crit',      type:'add', v:0.06,lab:'HERANÇA · PRECISÃO'},
+  shield :{stat:'shieldMax', type:'mult',v:1.20,lab:'HERANÇA · CONTENÇÃO'},
+  dash   :{stat:'speed',     type:'mult',v:1.10,lab:'HERANÇA · IMPULSO'},
+  economy:{stat:'coinMul',   type:'mult',v:1.15,lab:'HERANÇA · FARO'},
+  status :{stat:'fireRate',  type:'mult',v:1.10,lab:'HERANÇA · CADÊNCIA'},
+  echo   :{stat:'pickupR',   type:'mult',v:1.18,lab:'HERANÇA · VÍNCULO'}
+};
+const PR15_LEGACY_FALLBACK={stat:'damage',type:'mult',v:1.08,lab:'HERANÇA TEMPORAL'};
+
+/* =====================================================================
+   ESTADO RUN-SCOPED DO B4
+   ---------------------------------------------------------------------
+   `res`  — encontros cuja consequência JÁ foi aplicada nesta run. É a
+            única fonte de verdade da idempotência: Continue, reload e
+            interação repetida consultam isto antes de conceder qualquer
+            coisa. Truncado em resMax.
+   `bud`  — quanto de cada recurso esta run já recebeu de memórias
+            temporais. Tetos em PR15_INTENT_CFG.budget.
+   `act`  — buffer de restauração usado entre unpack e attach.
+   ===================================================================== */
+function pr15IntentFresh(){
+  return {v:PR15_INTENT_CFG.version,res:[],
+    bud:{res:0,heal:0,shield:0,rep:0,moral:0,scar:0},act:null};
+}
+let pr15IntentRun=pr15IntentFresh();
+/* overrides de DEV (nunca persistidos; taintam a run) */
+let pr15IntentForce=null;
+/* B4-FIX #1 · switch de playtest — DESLIGADO por padrão. Ligado, uma presença
+   DEV pode aplicar efeitos EFÊMEROS da run (mods com duração, escudo, HP).
+   Recursos PERSISTENTES (resíduos, moralidade, reputação) e o save continuam
+   bloqueados mesmo com o switch ligado: ver pr15IntentGuardPersistent. */
+let pr15DevApplyEffects=false;
+/* Estamos em playtest DEV com o switch ligado, sobre uma presença DEV?
+   Quando sim, recurso persistente é SIMULADO: o valor é calculado e
+   comunicado, mas o saldo real não é tocado. */
+function pr15IntentDevSimPossible(){
+  if(!(DEV_MODE&&pr15DevApplyEffects))return false;
+  const p=(typeof pr15Presence!=='undefined')?pr15Presence:null;
+  return !!(p&&p.dev);
+}
+
+function pr15IntentBudLeft(k){
+  const b=PR15_INTENT_CFG.budget,r=pr15IntentRun&&pr15IntentRun.bud;
+  const cap=(b&&Number.isFinite(b[k]))?b[k]:0;
+  const used=(r&&Number.isFinite(r[k]))?r[k]:0;
+  return Math.max(0,cap-used);
+}
+/* consome orçamento e devolve o valor REALMENTE concedido (pode ser 0).
+   É isto que impede três memórias aliadas de virarem snowball. */
+function pr15IntentSpend(k,n){
+  const r=pr15IntentRun;if(!r||!r.bud)return 0;
+  const want=Math.max(0,+n||0);
+  if(!Number.isFinite(want)||want<=0)return 0;
+  const left=pr15IntentBudLeft(k);
+  const got=Math.min(want,left);
+  if(got<=0)return 0;
+  /* `|0` truncaria para inteiro — e o orçamento de ESCUDO é fracionário
+     (6% por pulso). Com a truncagem o teto de escudo nunca acumulava. */
+  r.bud[k]=Math.round(((+r.bud[k]||0)+got)*1000)/1000;
+  return got;
+}
+function pr15IntentAlreadyResolved(encId){
+  const r=pr15IntentRun,id=String(encId||'');
+  if(!r||!id||!Array.isArray(r.res))return false;
+  for(let i=0;i<r.res.length;i++)if(r.res[i]&&r.res[i].enc===id)return r.res[i];
+  return false;
+}
+function pr15IntentMarkResolved(encId,kind,variant,ok,extra){
+  const r=pr15IntentRun,id=String(encId||'');
+  if(!r||!id)return null;
+  const prev=pr15IntentAlreadyResolved(id);
+  if(prev)return prev;                                  // idempotência dura
+  if(!Array.isArray(r.res))r.res=[];
+  const e={enc:id.slice(0,32),k:(PR15_INTENTS[kind]?kind:'ambiguous'),
+    vr:String(variant||'').slice(0,12),ok:ok?1:0,
+    w:(typeof wave!=='undefined')?clamp(Math.round(+wave)||0,0,MAX_WAVE):0};
+  if(extra&&typeof extra==='object')for(const k in extra){
+    const n=+extra[k];if(Number.isFinite(n))e[k]=Math.round(n*100)/100;
+  }
+  r.res.push(e);
+  while(r.res.length>PR15_INTENT_CFG.resMax)r.res.shift();
+  return e;
+}
+
+/* =====================================================================
+   LEITURA DE CONTEXTO — só leitura, só API existente, nada inventado.
+   ===================================================================== */
+function pr15MoralAxis(m){
+  if(!m||typeof m!=='object'||Array.isArray(m))return null;
+  const c=+m.comp||0,g=+m.greed||0,v=+m.viol||0;
+  const t=c+g+v;
+  if(!(t>0))return null;
+  const best=[['comp',c],['greed',g],['viol',v]].sort((a,b)=>b[1]-a[1]);
+  if(best[1][1]>=best[0][1])return null;               // empate ⇒ eixo indefinido
+  return best[0][0];
+}
+/* distância 0..1 entre dois perfis morais (L1 normalizado) */
+function pr15MoralDistance(a,b){
+  const pa=(typeof getMoralProfile==='function')?getMoralProfile(a||{}):null;
+  const pb=(typeof getMoralProfile==='function')?getMoralProfile(b||{}):null;
+  if(!pa||!pb||!pa.normalized||!pb.normalized)return 0.5;
+  let d=0;
+  for(let i=0;i<3;i++){
+    const k=['comp','greed','viol'][i];
+    d+=Math.abs((+pa.normalized[k]||0)-(+pb.normalized[k]||0));
+  }
+  return clamp(d/2,0,1);
+}
+/* eixo moral da escolha + reação das facções às quais o jogador está
+   ligado AGORA. Reutiliza FACTION_GRID (nada de segunda tabela). */
+function pr15IntentFactionNet(memAxis){
+  if(!memAxis)return 0;
+  const ev=({comp:'compassion_choice',greed:'greed_choice',viol:'violence_choice'})[memAxis];
+  const grid=(typeof FACTION_GRID!=='undefined')?FACTION_GRID[ev]:null;
+  if(!grid)return 0;
+  let net=0;
+  try{
+    const ids=(typeof FACTION_IDS!=='undefined')?FACTION_IDS:[];
+    for(let i=0;i<ids.length;i++){
+      const id=ids[i];
+      const d=+grid[id]||0;
+      if(!d)continue;
+      let sign=0;
+      if(typeof factionHasPact==='function'&&factionHasPact(id))sign=1;
+      else if(typeof fracRival==='function'&&typeof factionHasPact==='function'){
+        const rv=fracRival(id);
+        if(rv&&factionHasPact(rv))sign=-1;
+      }
+      net+=d*sign;
+    }
+  }catch(e){net=0;}
+  return clamp(net,-6,6);
+}
+function pr15IntentFracturePressure(){
+  try{
+    const f=(typeof fractureRun!=='undefined')?fractureRun:null;
+    if(!f)return 0;
+    const i=Number.isFinite(+f.intensity)?+f.intensity:0;
+    return clamp(i,0,1);
+  }catch(e){return 0;}
+}
+/* contexto completo usado pela função de utilidade. Objeto plano,
+   serializável e testável isoladamente. */
+function pr15IntentContext(mem,descriptor){
+  const M=(mem&&typeof mem==='object'&&!Array.isArray(mem))?mem:{};
+  const d=(descriptor&&typeof descriptor==='object'&&!Array.isArray(descriptor))?descriptor:{};
+  const ctx={
+    intentSeed:Number.isFinite(+d.intent)?((+d.intent)%100000):0,
+    seed:Number.isFinite(+d.seed)?((+d.seed)>>>0):0,
+    source:(d.src==='n2')?'n2':'n1',
+    resonance:({high:1,normal:1,unstable:1}[d.res])?d.res:'normal',
+    memoryId:String(M.id||'').slice(0,32),
+    memOp:(typeof M.op==='string')?M.op:null,
+    memArch:(M.arch&&typeof M.arch.dom==='string')?M.arch.dom:null,
+    memCause:(typeof M.cause==='string')?M.cause:null,
+    memTheme:(typeof M.theme==='string')?M.theme:null,
+    memMoralAxis:pr15MoralAxis(M.moral),
+    curOp:null,curArch:null,curTheme:null,curMoralAxis:null,
+    moralDist:0.5,factionNet:0,fracture:0,runSeed:0
+  };
+  try{if(typeof player!=='undefined'&&player&&typeof player.charId==='string')ctx.curOp=player.charId;}catch(e){}
+  try{
+    if(typeof buildProfileSummary==='function'){
+      const s=buildProfileSummary();
+      if(s&&typeof s.dom==='string'&&BUILD_ARCH_IDS.indexOf(s.dom)>=0)ctx.curArch=s.dom;
+    }
+  }catch(e){}
+  try{if(typeof fractureGetThemeId==='function'){const t=fractureGetThemeId();if(typeof t==='string'&&t)ctx.curTheme=t;}}catch(e){}
+  try{if(typeof moral!=='undefined'&&moral)ctx.curMoralAxis=pr15MoralAxis(moral);}catch(e){}
+  try{if(typeof moral!=='undefined'&&moral)ctx.moralDist=pr15MoralDistance(moral,M.moral);}catch(e){}
+  ctx.factionNet=pr15IntentFactionNet(ctx.memMoralAxis);
+  ctx.fracture=pr15IntentFracturePressure();
+  try{if(typeof pr15MemRunSeed==='function')ctx.runSeed=pr15MemRunSeed()>>>0;}catch(e){ctx.runSeed=0;}
+  return ctx;
+}
+
+/* =====================================================================
+   FUNÇÃO DE UTILIDADE — determinística, testável, explicável.
+   ---------------------------------------------------------------------
+   Não é fatiamento de faixa (0–33/34–66/67–99). É soma de pesos: cada
+   sinal real desloca os três scores; o intentSeed resolve a distribuição
+   por sorteio PONDERADO determinístico. Assim a distribuição emerge das
+   regras e nenhuma intenção desaparece.
+   ===================================================================== */
+function pr15IntentSignalsFor(ctx){
+  const c=ctx||{};
+  const out=[];
+  const push=(tag,delta)=>{if(PR15_INTENT_REASONS[tag])out.push({tag:tag,signal:delta});};
+  /* 1 — MORALIDADE: divergência entre a run anterior e esta. NÃO é
+     "bom = aliado": é CONCORDÂNCIA consigo mesmo. Quem mudou de perfil
+     encontra a versão antiga discordando — e isso é RIVAL, não punição. */
+  const md=Number.isFinite(c.moralDist)?c.moralDist:0.5;
+  if(md<0.22)push('MORAL_ECHO','moralSame');
+  else if(md>0.46)push('MORAL_ECHO','moralShift');
+  else push('MORAL_ECHO','moralMixed');
+  /* 2 — BUILD: mesmo arquétipo dominante = herança legível */
+  if(c.memArch&&c.curArch){
+    push('BUILD_RESONANCE',c.memArch===c.curArch?'archSame':'archOther');
+  }
+  /* 3 — OPERADOR: mesmo corpo, mesmos hábitos */
+  if(c.memOp&&c.curOp){
+    push('SAME_OPERATOR',c.memOp===c.curOp?'opSame':'opOther');
+  }
+  /* 4 — CAUSA DA MORTE histórica (só enumera o que o B1 realmente guarda) */
+  const cause=c.memCause;
+  if(cause==='boss'||cause==='miniboss')push('DEATH_MEMORY','causeBoss');
+  else if(cause==='hazard')push('DEATH_MEMORY','causeHazard');
+  else if(cause==='echo')push('DEATH_MEMORY','causeEcho');
+  else if(cause==='event')push('DEATH_MEMORY','causeEvent');
+  else if(cause==='enemy')push('DEATH_MEMORY','causeEnemy');
+  else push('DEATH_MEMORY','causeUnknown');
+  /* 5 — TEMA: mesma fratura = mesma "estação" temporal */
+  if(c.memTheme&&c.curTheme){
+    push('THEME_RESONANCE',c.memTheme===c.curTheme?'themeSame':'themeOther');
+  }
+  /* 6 — FACÇÕES: só quando o jogador está realmente ligado a alguma */
+  if(c.factionNet>=2)push('FACTION_TENSION','factionPos');
+  else if(c.factionNet<=-2)push('FACTION_TENSION','factionNeg');
+  /* 7 — FRATURA: run muito instável cobra postura */
+  if(c.fracture>=0.62)push('FRACTURE_CONFLICT','fractureHigh');
+  /* 8 — IDADE DA MEMÓRIA: N-2 é mais distante (não mais forte) */
+  if(c.source==='n2')push('MEMORY_AGE','srcN2');
+  /* 9 — COERÊNCIA: ressonância instável é menos legível */
+  if(c.resonance==='unstable')push('COHERENCE','resUnstable');
+  else if(c.resonance==='high')push('COHERENCE','resHigh');
+  return out;
+}
+function pr15IntentScores(ctx){
+  const B=PR15_INTENT_CFG.base;
+  const s={allied:+B.allied,rival:+B.rival,ambiguous:+B.ambiguous};
+  const sigs=pr15IntentSignalsFor(ctx);
+  for(let i=0;i<sigs.length;i++){
+    const w=PR15_INTENT_SIGNALS[sigs[i].signal];
+    if(!w)continue;
+    s.allied+=w.allied;s.rival+=w.rival;s.ambiguous+=w.ambiguous;
+  }
+  /* piso positivo: nenhuma intenção pode desaparecer (§SIM-A) */
+  for(const k of PR15_INTENT_LIST)s[k]=Math.max(0.12,Math.round(s[k]*1000)/1000);
+  return s;
+}
+function pr15IntentRng(ctx){
+  const c=ctx||{};
+  const key='pr15intent|'+((+c.runSeed)>>>0)+'|'+((+c.seed)>>>0)+'|'+
+    ((+c.intentSeed)|0)+'|'+String(c.memoryId||'');
+  let h=0x811C9DC5;
+  for(let i=0;i<key.length;i++){h^=key.charCodeAt(i)&0xFF;h=Math.imul(h,0x01000193)>>>0;}
+  return fractureRng(fractureHash32(h>>>0));
+}
+/* decisão completa: intenção + scores + reasons. Pura — não muta nada. */
+function pr15IntentDecide(ctx){
+  const c=ctx||{};
+  const scores=pr15IntentScores(c);
+  let total=0;
+  for(const k of PR15_INTENT_LIST)total+=scores[k];
+  if(!(total>0))total=1;
+  const u=pr15IntentRng(c)();
+  let acc=0,kind=PR15_INTENT_LIST[PR15_INTENT_LIST.length-1];
+  for(let i=0;i<PR15_INTENT_LIST.length;i++){
+    const k=PR15_INTENT_LIST[i];
+    acc+=scores[k]/total;
+    if(u<acc){kind=k;break;}
+  }
+  const sigs=pr15IntentSignalsFor(c);
+  const reasons=[];
+  for(let i=0;i<sigs.length&&reasons.length<PR15_INTENT_CFG.reasonMax;i++)reasons.push(sigs[i].tag);
+  reasons.push('INTENT_SEED');
+  const ranked=PR15_INTENT_LIST.slice().sort((a,b)=>scores[b]-scores[a]||
+    (PR15_INTENT_LIST.indexOf(a)-PR15_INTENT_LIST.indexOf(b)));
+  return {
+    kind:kind,
+    scores:{allied:scores.allied,rival:scores.rival,ambiguous:scores.ambiguous},
+    weights:{allied:Math.round(scores.allied/total*1000)/1000,
+             rival:Math.round(scores.rival/total*1000)/1000,
+             ambiguous:Math.round(scores.ambiguous/total*1000)/1000},
+    reasons:reasons,
+    signals:sigs.slice(0,PR15_INTENT_CFG.reasonMax),
+    ranked:ranked,
+    u:Math.round(u*100000)/100000,
+    forced:null
+  };
+}
+
+/* =====================================================================
+   VARIANTE — UMA por aparição, determinística.
+   A escolha usa o mesmo RNG da decisão (fluxo separado por 'var') e é
+   modulada pelo contexto: a causa da morte força a variante que faz
+   sentido narrativo (§12), o arquétipo histórico escolhe a herança (§13).
+   ===================================================================== */
+function pr15IntentRngVar(ctx){
+  const c=ctx||{};
+  const key='pr15variant|'+((+c.runSeed)>>>0)+'|'+((+c.seed)>>>0)+'|'+
+    ((+c.intentSeed)|0)+'|'+String(c.memoryId||'');
+  let h=0x811C9DC5;
+  for(let i=0;i<key.length;i++){h^=key.charCodeAt(i)&0xFF;h=Math.imul(h,0x01000193)>>>0;}
+  return fractureRng(fractureHash32(h>>>0));
+}
+function pr15IntentVariant(kind,ctx){
+  const c=ctx||{};
+  const list=PR15_VARIANTS[PR15_INTENTS[kind]?kind:'ambiguous']||PR15_VARIANTS.ambiguous;
+  let forced=null;
+  if(pr15IntentForce&&pr15IntentForce.variant&&list.indexOf(pr15IntentForce.variant)>=0)
+    forced=pr15IntentForce.variant;
+  if(forced)return forced;
+  const cause=c.memCause||null;
+  /* viés narrativo (pesos), não trava: nada aqui impede uma variante */
+  const w=list.map(v=>{
+    let x=1;
+    if(kind==='rival'){
+      if(v==='scar'&&(cause==='boss'||cause==='miniboss'||cause==='hazard'))x+=1.4;
+      if(v==='trial'&&(cause==='enemy'||cause==='echo'))x+=1.0;
+      if(v==='pressure'&&cause==='hazard')x+=1.2;
+    }else if(kind==='ambiguous'){
+      if(v==='choice'&&(cause==='event'||cause==='echo'))x+=1.3;
+      if(v==='trade'&&(cause==='event'||cause==='enemy'))x+=0.9;
+      if(v==='unstable'&&c.resonance==='unstable')x+=1.5;
+    }else{
+      if(v==='legacy'&&c.memArch)x+=1.2;
+      if(v==='zone'&&(cause==='hazard'||cause==='enemy'))x+=0.8;
+    }
+    return Math.max(0.05,x);
+  });
+  let tot=0;for(let i=0;i<w.length;i++)tot+=w[i];
+  const u=pr15IntentRngVar(ctx||{})()*(tot||1);
+  let acc=0;
+  for(let i=0;i<w.length;i++){acc+=w[i];if(u<acc)return list[i];}
+  return list[list.length-1];
+}
+
+/* =====================================================================
+   ANEXAÇÃO À PRESENÇA — chamado pelo wrapper de pr15PresSpawn, então
+   cobre os três caminhos reais: Director (B2/B3), Continue e DEV.
+   NUNCA re-rola: em restauração, intenção e variante vêm do save.
+   ===================================================================== */
+function pr15IntentAttach(p,enc,opts){
+  if(!p||typeof p!=='object')return null;
+  opts=opts||{};
+  const encId=String(p.encounterId||'');
+  /* memória histórica — só leitura; o B3 já garantiu que resolve */
+  let mem=null;
+  try{
+    const r=(typeof pr15PresResolveMemory==='function')?pr15PresResolveMemory(p.memoryId):null;
+    mem=r?r.rec:null;
+  }catch(e){mem=null;}
+  const descriptor={seed:p.seed,intent:p.intentSeed,src:p.source,res:p.resonance};
+  const ctx=pr15IntentContext(mem,descriptor);
+  /* já resolvido nesta run? (Continue/reload) → restaura sem reconceder */
+  const done=pr15IntentAlreadyResolved(encId);
+  let kind,variant,dec;
+  if(opts.restore&&pr15IntentRun&&pr15IntentRun.act&&pr15IntentRun.act.enc===encId){
+    const a=pr15IntentRun.act;
+    kind=PR15_INTENTS[a.it]?a.it:'ambiguous';
+    variant=(PR15_VARIANTS[kind]||[]).indexOf(a.vr)>=0?a.vr:(PR15_VARIANTS[kind]||['trade'])[0];
+    dec=pr15IntentDecide(ctx);
+    dec.kind=kind;dec.forced='restore';
+    pr15IntentRun.act=null;
+  }else if(done){
+    kind=PR15_INTENTS[done.k]?done.k:'ambiguous';
+    variant=(PR15_VARIANTS[kind]||[]).indexOf(done.vr)>=0?done.vr:(PR15_VARIANTS[kind]||['trade'])[0];
+    dec=pr15IntentDecide(ctx);
+    dec.kind=kind;dec.forced='resolved';
+  }else{
+    if(pr15IntentForce&&pr15IntentForce.kind&&PR15_INTENTS[pr15IntentForce.kind]){
+      dec=pr15IntentDecide(ctx);
+      dec.kind=pr15IntentForce.kind;dec.forced='dev';
+    }else{
+      dec=pr15IntentDecide(ctx);
+    }
+    kind=dec.kind;
+    variant=pr15IntentVariant(kind,ctx);
+  }
+  p.it={
+    v:PR15_INTENT_CFG.version,
+    kind:kind,
+    variant:variant,
+    st:(done||opts.restore)?'resolved':'idle',
+    t:0,                 // tempo desde que entrou em 'active'
+    cd:0,                // cooldown de pulso/pressão
+    tel:0,               // telegraph restante (rival/pressure)
+    pulses:0,            // pulsos aliados já emitidos
+    fired:0,             // pulsos de pressão já disparados
+    k0:0,                // baseline de abates (rival/trial)
+    trial:0,             // 0=não iniciado 1=andando 2=cumprido 3=falhou
+    trialT:0,
+    off:0,               // interação já anunciada?
+    lobes:null,          // geometria da escolha (ambígua/choice)
+    /* ÂNCORA TEMPORAL — ponto FIXO no mundo onde a memória se
+       materializou. Todo efeito espacial e toda interação acontecem
+       aqui, não no corpo (que orbita o operador). Determinística: vem da
+       posição de spawn do B3, derivada do descriptor.seed e persistida
+       no checkpoint. */
+    node:{x:p.x,y:p.y},
+    memAxis:ctx.memMoralAxis,
+    reasons:dec.reasons.slice(0,PR15_INTENT_CFG.reasonMax),
+    scores:dec.scores,
+    labelT:PR15_INTENT_CFG.labelHold,
+    msg:'',
+    lastEcho:-999
+  };
+  p.itVis=pr15IntentVisState(kind);
+  /* anúncio: UMA banner + UMA toast por aparição real (nunca em restore) */
+  if(!opts.restore&&!done)pr15IntentAnnounce(p);
+  return p.it;
+}
+function pr15IntentVisState(kind){
+  const k=PR15_INTENT_VIS[PR15_INTENTS[kind]?kind:'ambiguous']||PR15_INTENT_VIS.ambiguous;
+  return {sides:k.sides,spin:k.spin,breathe:k.breathe,ringMul:k.ringMul,spokes:k.spokes};
+}
+function pr15IntentAnnounce(p){
+  if(!p||!p.it)return false;
+  try{if(typeof sandboxRun!=='undefined'&&sandboxRun)return false;}catch(e){}
+  try{if(typeof sandboxMode!=='undefined'&&sandboxMode)return false;}catch(e){}
+  const L=PR15_INTENT_LABEL[p.it.kind]||PR15_INTENT_LABEL.ambiguous;
+  const ageTxt=(p.source==='n2')?'MEMÓRIA MAIS ANTIGA':'MEMÓRIA RECENTE';
+  try{
+    if(typeof banner==='function')banner(PR15_INTENT_CFG.spawnBanner,ageTxt+' RESPONDE');
+    if(typeof toast==='function')toast(L.sym+' '+L.nm+' · '+PR15_VARIANT_LABEL[p.it.variant]);
+    if(typeof AUDIO!=='undefined'&&AUDIO&&typeof AUDIO.tone==='function'){
+      const f=(p.it.kind==='allied')?660:(p.it.kind==='rival')?392:523;
+      AUDIO.tone(f,.26,'sine',.038,60);
+      AUDIO.tone(f*1.5,.30,'triangle',.026,90,.12);
+    }
+  }catch(e){}
+  pr15IntentEchoReact(p,'spawn');
+  return true;
+}
+
+/* =====================================================================
+   CONSEQUÊNCIAS — todas passam pelas APIs existentes do jogo.
+   Regras: temporário (smAdd com dur), sem stacking (stacks:'replace'),
+   sem buff permanente, sem economia infinita, tudo orçado.
+   ===================================================================== */
+function pr15IntentGuard(){
+  /* Sandbox / DEV nunca aplicam consequência em estado real */
+  try{if(typeof sandboxRun!=='undefined'&&sandboxRun)return false;}catch(e){}
+  try{if(typeof sandboxMode!=='undefined'&&sandboxMode)return false;}catch(e){}
+  try{if(typeof state!=='undefined'&&state!=='play')return false;}catch(e){}
+  try{if(typeof player!=='undefined'&&!player)return false;}catch(e){}
+  /* presença criada por DEV: playtest. Por padrão zero efeito no mundo real;
+     com o switch de playtest ligado (B4-FIX #1) os efeitos EFÊMEROS passam —
+     os persistentes seguem barrados por pr15IntentGuardPersistent. */
+  try{
+    const p=(typeof pr15Presence!=='undefined')?pr15Presence:null;
+    if(p&&p.dev)return !!(DEV_MODE&&pr15DevApplyEffects);
+  }catch(e){}
+  return true;
+}
+/* B4-FIX #1 · guarda de recursos PERSISTENTES.
+   Resíduos, moralidade e reputação de facção são progressão salva: o
+   playtest DEV nunca os toca, NEM com o switch ligado. O sandbox também não. */
+function pr15IntentGuardPersistent(){
+  try{
+    const p=(typeof pr15Presence!=='undefined')?pr15Presence:null;
+    if(p&&p.dev)return false;
+  }catch(e){}
+  return pr15IntentGuard();
+}
+function pr15IntentAddMod(id,stat,type,value,dur,label){
+  try{
+    if(typeof smAdd!=='function'||typeof player==='undefined'||!player)return false;
+    smAdd(player,{id:'pr15.'+id,stat:stat,type:type,value:value,dur:dur,
+      stacks:'replace',label:label});
+    return true;
+  }catch(e){return false;}
+}
+function pr15IntentGrantRes(n,x,y){
+  /* B4-FIX #1: resíduo é progresso salva — o playtest DEV nunca o move.
+     Com o switch ligado o valor é calculado e comunicado (para a variante
+     poder ser testada de ponta a ponta), mas addResidues não é chamado. */
+  if(!pr15IntentGuardPersistent())
+    return pr15IntentDevSimPossible()?pr15IntentSpend('res',n):0;
+  const got=pr15IntentSpend('res',n);
+  if(got<=0)return 0;
+  try{if(typeof addResidues==='function')addResidues(got,'pr15_intent',x,y);}catch(e){return 0;}
+  return got;
+}
+function pr15IntentGrantHeal(n){
+  const got=pr15IntentSpend('heal',n);
+  if(got<=0)return 0;
+  try{
+    const before=+player.hp||0;
+    player.hp=Math.min(player.maxHp,before+got);
+    return Math.round((player.hp-before)*10)/10;
+  }catch(e){return 0;}
+}
+function pr15IntentGrantShield(frac){
+  const got=pr15IntentSpend('shield',frac);
+  if(got<=0)return 0;
+  try{
+    if(!(player.shieldMax>0))return 0;
+    const amt=Math.max(1,Math.round(player.shieldMax*got));
+    const before=+player.shield||0;
+    player.shield=clamp(before+amt,0,player.shieldMax);
+    if(player.shieldDelayT!=null)player.shieldDelayT=0;
+    return Math.round(player.shield-before);
+  }catch(e){return 0;}
+}
+/* moralidade: magnitude MÍNIMA (1 ponto), explícita, orçada, e nunca
+   binária "bom=aliado". Só acontece em escolha ACEITA pelo jogador. */
+function pr15IntentGrantMoral(axis,n){
+  if(['comp','greed','viol'].indexOf(axis)<0)return 0;
+  if(!pr15IntentGuardPersistent())return 0;   // B4-FIX #1: moralidade é progresso salva
+  const got=pr15IntentSpend('moral',Math.min(1,Math.abs(+n||0)));
+  if(got<=0)return 0;
+  try{
+    moral[axis]=Math.max(0,(+moral[axis]||0)+got);
+    if(typeof applyMoral==='function')applyMoral();
+    if(typeof applyMoralTuning==='function'&&typeof player!=='undefined')applyMoralTuning(player);
+  }catch(e){return 0;}
+  return got;
+}
+/* facções: só reage quando o contexto justifica (pacto OU facção conhecida)
+   e sempre dentro do orçamento de reputação. Nunca farming. */
+function pr15IntentFactionReact(kind,variant){
+  if(!pr15IntentGuardPersistent())return 0;   // B4-FIX #1: reputação é progresso salva
+  try{
+    if(typeof fracRun==='undefined'||!fracRun)return 0;
+    if(typeof factionEmit!=='function')return 0;
+    let fac=null;
+    if(kind==='allied')fac={anchor:1,remnants:1,consortium:0,deviants:-1};
+    else if(kind==='rival')fac={anchor:-1,remnants:0,consortium:1,deviants:1};
+    else if(variant==='choice')fac={anchor:1,remnants:0,consortium:0,deviants:-1};
+    else if(variant==='trade')fac={anchor:0,remnants:0,consortium:1,deviants:0};
+    else return 0;
+    /* gate de contexto: precisa haver vínculo real com alguma facção */
+    const ids=(typeof FACTION_IDS!=='undefined')?FACTION_IDS:[];
+    let linked=false,total=0;
+    for(let i=0;i<ids.length;i++){
+      const id=ids[i],d=fac[id]|0;
+      if(!d)continue;
+      let known=false;
+      try{known=!!(typeof factionHasPact==='function'&&factionHasPact(id));}catch(e){}
+      if(!known){try{known=!!(typeof fracKnows==='function'&&fracKnows(id));}catch(e){}}
+      if(!known)continue;
+      linked=true;total+=Math.abs(d);
+    }
+    if(!linked||!total)return 0;
+    const room=pr15IntentBudLeft('rep');
+    if(room<=0)return 0;
+    const scale=Math.min(1,room/Math.max(1,total));
+    const out={};let applied=0;
+    for(const id of ids){
+      const d=Math.round((fac[id]|0)*scale);
+      if(!d)continue;
+      out[id]=d;applied+=Math.abs(d);
+    }
+    if(!applied)return 0;
+    pr15IntentSpend('rep',applied);
+    factionEmit('pr15_temporal_memory',{fac:out,obs:1});
+    return applied;
+  }catch(e){return 0;}
+}
+/* fala rara de Echo aliado — cooldown próprio, prioridade baixa, nunca
+   cria Dissonância nem transfere nada. */
+const PR15_ECHO_LINES={
+  allied:['Tem alguém do seu lado aí. Do outro lado do tempo, mas tem.',
+          'Essa ressonância é sua. Eu sinto o formato.',
+          'Uma versão sua está segurando a barra. Aproveita.'],
+  rival:['Isso aí é você. Uma versão que não deu certo.',
+         'Ela quer provar uma coisa. Não deixa barato.',
+         'Reconheço esse padrão. Você já errou assim antes.'],
+  ambiguous:['Não sei o que isso quer. E acho que nem ela sabe.',
+             'Tem uma escolha pendurada aí. Pensa antes de tocar.',
+             'Essa memória não decidiu o que é ainda.']
+};
+let _pr15EchoLast=-999;
+function pr15IntentEchoReact(p,when){
+  if(!p||!p.it)return false;
+  try{
+    if(typeof echoes==='undefined'||!echoes||!echoes.length)return false;
+    if(typeof echoSpeak!=='function'||typeof echoAllied!=='function')return false;
+    const now=(typeof runTime==='number'&&Number.isFinite(runTime))?runTime:0;
+    if(now-_pr15EchoLast<PR15_INTENT_CFG.speechCooldown)return false;
+    const pool=PR15_ECHO_LINES[p.it.kind]||PR15_ECHO_LINES.ambiguous;
+    if(!pool.length)return false;
+    /* escolha determinística com anti-repeat (mesmo padrão do projeto) */
+    let idx=Math.abs((p.intentSeed|0)+(when==='resolve'?1:0))%pool.length;
+    if(!Number.isFinite(idx)||idx<0)idx=0;
+    let target=null;
+    for(let i=0;i<echoes.length;i++){
+      const e=echoes[i];
+      if(e&&e.alive&&echoAllied(e)){target=e;break;}
+    }
+    if(!target)return false;
+    _pr15EchoLast=now;
+    echoSpeak(target,pool[idx],PR15_PRES_CYAN,'low');
+    return true;
+  }catch(e){return false;}
+}
+function pr15IntentMsg(p,txt){
+  if(!p||!p.it)return;
+  p.it.msg=String(txt||'').slice(0,64);
+  p.it.labelT=PR15_INTENT_CFG.labelHold;
+  try{if(typeof toast==='function'&&p.it.msg)toast(p.it.msg);}catch(e){}
+}
+
+/* =====================================================================
+   COMPORTAMENTO POR INTENÇÃO — máquinas de estado simples (§7).
+   Nenhuma IA adaptativa: timers, regras e contexto.
+   ===================================================================== */
+function pr15IntentPlayerDist(p){
+  try{
+    if(typeof player!=='undefined'&&player&&Number.isFinite(player.x)&&Number.isFinite(p.x))
+      return Math.sqrt(dist2(p.x,p.y,player.x,player.y));
+  }catch(e){}
+  return 1e9;
+}
+/* distância do operador até a ÂNCORA temporal (ponto fixo no mundo).
+   É esta — e não a distância ao corpo — que decide zona, pulso, pressão
+   e interação: a âncora não se move, então o jogador PODE entrar e sair. */
+function pr15IntentNodeDist(p){
+  const n=p&&p.it&&p.it.node;
+  try{
+    if(!n||!Number.isFinite(n.x)||!Number.isFinite(n.y))return 1e9;
+    if(typeof player!=='undefined'&&player&&Number.isFinite(player.x)&&Number.isFinite(player.y))
+      return Math.sqrt(dist2(n.x,n.y,player.x,player.y));
+  }catch(e){}
+  return 1e9;
+}
+function pr15IntentNodeOf(p){
+  const n=p&&p.it&&p.it.node;
+  if(n&&Number.isFinite(n.x)&&Number.isFinite(n.y))return n;
+  return {x:Number.isFinite(p&&p.x)?p.x:ARENA.w/2,
+          y:Number.isFinite(p&&p.y)?p.y:ARENA.h/2};
+}
+/* ---- ALIADA · zona de ressonância ---- */
+function pr15IntentZone(p,dt){
+  if(!pr15IntentGuard())return;
+  const C=PR15_INTENT_CFG;
+  if(pr15IntentNodeDist(p)<=C.zoneR){
+    pr15IntentAddMod('zone','dmgTaken','mult',C.zoneTaken,C.zoneDur,'ZONA DE RESSONÂNCIA');
+    if(p.it.msg!=='ZONA DE RESSONÂNCIA ATIVA')p.it.msg='ZONA DE RESSONÂNCIA ATIVA';
+  }
+}
+/* ---- ALIADA · pulso de memória ---- */
+function pr15IntentPulse(p,dt){
+  if(!pr15IntentGuard())return;
+  const C=PR15_INTENT_CFG,it=p.it;
+  it.cd-=dt;
+  if(it.cd>0)return;
+  it.cd=C.pulseEvery;
+  if(it.pulses>=C.pulseMax)return;
+  if(pr15IntentNodeDist(p)>C.pulseR)return;
+  it.pulses++;
+  let txt='';
+  const sh=(typeof player!=='undefined'&&player&&player.shieldMax>0)?1:0;
+  const got=sh?pr15IntentGrantShield(C.pulseShield):pr15IntentGrantHeal(C.pulseHeal);
+  if(got>0){
+    txt='PULSO DE MEMÓRIA +'+got+(sh?' ESCUDO':' HP');
+    const nd=pr15IntentNodeOf(p);
+    try{if(typeof spawnRing==='function')spawnRing(nd.x,nd.y,PR15_PRES_CYAN,10,150,.6);}catch(e){}
+    try{if(typeof floatText==='function')floatText(nd.x,nd.y-24,'+'+got,PR15_PRES_CYAN);}catch(e){}
+  }else{
+    txt='PULSO ESGOTADO';
+  }
+  pr15IntentMsg(p,txt);
+}
+/* ---- ALIADA · herança de build ---- */
+function pr15IntentLegacy(p){
+  if(!pr15IntentGuard())return;
+  if(p.it.st!=='idle')return;
+  const C=PR15_INTENT_CFG;
+  const arch=(p.vis&&p.vis.arch)||null;
+  const m=PR15_LEGACY_MODS[arch]||PR15_LEGACY_FALLBACK;
+  const ok=pr15IntentAddMod('legacy',m.stat,m.type,m.v,C.legacyDur,m.lab);
+  p.it.st='resolved';
+  pr15IntentMarkResolved(p.encounterId,p.it.kind,p.it.variant,ok?1:0,{});
+  const pct=Math.round(Math.abs(m.v-(m.type==='add'?0:1))*100);
+  pr15IntentMsg(p,ok?(m.lab+' +'+(m.type==='add'?pct+' PP':pct+'%')+' · '+C.legacyDur+'s')
+                    :'HERANÇA NÃO APLICADA');
+  pr15IntentFactionReact('allied','legacy');
+  pr15IntentEchoReact(p,'resolve');
+}
+/* ---- RIVAL · pressão temporal ---- */
+function pr15IntentPressure(p,dt){
+  if(!pr15IntentGuard())return;
+  const C=PR15_INTENT_CFG,it=p.it;
+  it.cd-=dt;
+  if(it.tel>0){
+    it.tel-=dt;
+    if(it.tel<=0){
+      it.fired++;
+      const inside=pr15IntentNodeDist(p)<=C.rivalRing;
+      if(inside){
+        pr15IntentAddMod('pressure','dmgTaken','mult',C.rivalTaken,C.rivalTakenDur,'PRESSÃO TEMPORAL');
+        pr15IntentMsg(p,'PRESSIONADO · +'+Math.round((C.rivalTaken-1)*100)+'% DANO RECEBIDO · '+C.rivalTakenDur+'s');
+      }else{
+        pr15IntentMsg(p,'PRESSÃO EVITADA');
+      }
+      const nd=pr15IntentNodeOf(p);
+      try{if(typeof spawnRing==='function')spawnRing(nd.x,nd.y,PR15_PRES_MAGENTA,C.rivalRing*0.3,C.rivalRing,.5);}catch(e){}
+      it.cd=C.rivalEvery;
+    }
+    return;
+  }
+  if(it.cd<=0){
+    it.tel=C.rivalTelegraph;
+    pr15IntentMsg(p,'PRESSÃO TEMPORAL EM '+C.rivalTelegraph.toFixed(1)+'s · SAIA DO RAIO');
+  }
+}
+/* ---- RIVAL · prova da run anterior ---- */
+function pr15IntentTrial(p,dt){
+  if(!pr15IntentGuard())return;
+  const C=PR15_INTENT_CFG,it=p.it;
+  let k=0;try{k=(typeof kills!=='undefined')?(kills|0):0;}catch(e){k=0;}
+  if(it.trial===0){
+    it.trial=1;it.k0=k;it.trialT=C.trialTime;
+    pr15IntentMsg(p,'PROVA DA RUN ANTERIOR · '+C.trialKills+' ABATES EM '+C.trialTime+'s');
+    return;
+  }
+  if(it.trial!==1)return;
+  it.trialT-=dt;
+  const made=k-it.k0;
+  if(made>=C.trialKills){
+    it.trial=2;it.st='resolved';
+    const got=pr15IntentGrantRes(C.trialReward,p.x,p.y);
+    pr15IntentMarkResolved(p.encounterId,'rival','trial',1,{res:got});
+    pr15IntentMsg(p,got>0?('DESAFIO CONCLUÍDO · ⧗ +'+got):'DESAFIO CONCLUÍDO');
+    pr15IntentFactionReact('rival','trial');
+    pr15IntentEchoReact(p,'resolve');
+    return;
+  }
+  if(it.trialT<=0){
+    it.trial=3;it.st='resolved';
+    pr15IntentMarkResolved(p.encounterId,'rival','trial',0,{});
+    pr15IntentMsg(p,'DESAFIO NÃO CUMPRIDO · SEM PENALIDADE');
+  }
+}
+/* ---- RIVAL · cicatriz da morte (custo ACEITO, nunca automático) ---- */
+function pr15IntentScarOffer(p){
+  const C=PR15_INTENT_CFG;
+  const cause=(p&&p.vis&&p.vis.cause)||null;
+  let maxHp=100;
+  try{if(typeof player!=='undefined'&&player&&Number.isFinite(+player.maxHp))maxHp=Math.max(1,+player.maxHp);}catch(e){}
+  const cost=clamp(Math.round(maxHp*C.scarCostFrac),C.scarCostMin,C.scarCostMax);
+  let gain;
+  if(cause==='hazard')gain={stat:'dmgTaken',type:'mult',v:0.85,lab:'CICATRIZ · POSICIONAMENTO'};
+  else if(cause==='echo')gain={stat:'pickupR',type:'mult',v:1.30,lab:'CICATRIZ · VÍNCULO'};
+  else if(cause==='event')gain={stat:'coinMul',type:'mult',v:1.20,lab:'CICATRIZ · APRENDIZADO'};
+  else gain={stat:'damage',type:'mult',v:1.22,lab:'CICATRIZ · REPETIÇÃO'};
+  return {cost:cost,gain:gain,cause:cause,dur:C.scarDur};
+}
+function pr15IntentScarAccept(p){
+  if(!pr15IntentGuard())return false;
+  const C=PR15_INTENT_CFG,it=p.it;
+  if(it.st==='resolved'||it.st==='accepted')return false;
+  if(pr15IntentBudLeft('scar')<=0){pr15IntentMsg(p,'CICATRIZ JÁ ABERTA NESTA RUN');return false;}
+  const o=pr15IntentScarOffer(p);
+  pr15IntentSpend('scar',1);
+  /* custo: só aqui, só com aceite, só uma vez por run */
+  let paid=0;
+  try{
+    if(player.shieldMax>0&&player.shield>0){
+      paid=Math.min(player.shield,o.cost);player.shield-=paid;
+    }else{
+      paid=Math.min(Math.max(1,(+player.hp||0)-1),o.cost);player.hp-=paid;
+    }
+  }catch(e){paid=0;}
+  const ok=pr15IntentAddMod('scar',o.gain.stat,o.gain.type,o.gain.v,o.dur,o.gain.lab);
+  it.st='resolved';
+  pr15IntentMarkResolved(p.encounterId,'rival','scar',ok?1:0,{cost:paid});
+  pr15IntentMsg(p,'CICATRIZ ABERTA · −'+paid+' · +'+Math.round((o.gain.type==='mult'?
+    Math.abs(o.gain.v-1)*100:o.gain.v*100))+'% · '+o.dur+'s');
+  try{if(typeof AUDIO!=='undefined'&&AUDIO&&typeof AUDIO.tone==='function')AUDIO.tone(180,.3,'sawtooth',.045,-90);}catch(e){}
+  pr15IntentFactionReact('rival','scar');
+  return true;
+}
+/* ---- AMBÍGUA · troca temporal ---- */
+/* Predicado PURO (sem efeito colateral): o que a troca custaria agora e se o
+   saldo cobre. É a mesma leitura que o rótulo do mundo e o DEV usam, então
+   "comunicado antes" e "cobrado depois" não podem divergir. */
+function pr15IntentTradeOffer(p){
+  const C=PR15_INTENT_CFG,it=(p&&p.it)?p.it:null;
+  let bal=0;try{if(typeof getResidues==='function')bal=getResidues()|0;}catch(e){bal=0;}
+  const cost=+C.tradeCost;
+  const open=!!it&&it.st!=='resolved'&&it.st!=='accepted'&&
+    it.st!=='declined'&&it.st!=='refused';
+  return {cost:cost,bal:bal,can:open&&bal>=cost,open:open,
+    gain:{stat:'damage',type:'mult',value:+C.tradeDmg,dur:+C.tradeDur}};
+}
+function pr15IntentTrade(p){
+  if(!pr15IntentGuard())return false;
+  const C=PR15_INTENT_CFG,it=p.it;
+  const off=pr15IntentTradeOffer(p);
+  if(!off.open)return false;
+  if(!off.can){pr15IntentMsg(p,'SALDO INSUFICIENTE · ⧗'+C.tradeCost);it.st='declined';return false;}
+  let spent=0;
+  if(pr15IntentGuardPersistent()){
+    /* jogo real: cobra do saldo */
+    try{if(typeof spendResidues==='function'&&spendResidues(off.cost,'pr15_intent_trade'))spent=off.cost;}catch(e){spent=0;}
+  }else if(pr15IntentDevSimPossible()){
+    /* B4-FIX #1 · playtest DEV: o custo é SIMULADO — o saldo real não é
+       tocado, mas a troca completa normalmente para poder ser testada. */
+    spent=off.cost;
+  }
+  if(spent<=0){pr15IntentMsg(p,'TROCA RECUSADA');it.st='declined';return false;}
+  const ok=pr15IntentAddMod('trade','damage','mult',C.tradeDmg,C.tradeDur,'TROCA TEMPORAL');
+  it.st='resolved';
+  pr15IntentMarkResolved(p.encounterId,'ambiguous','trade',ok?1:0,{res:-spent});
+  pr15IntentMsg(p,'TROCA ACEITA · ⧗ −'+spent+' · +'+Math.round((C.tradeDmg-1)*100)+'% DANO · '+C.tradeDur+'s');
+  pr15IntentFactionReact('ambiguous','trade');
+  pr15IntentEchoReact(p,'resolve');
+  return true;
+}
+/* ---- AMBÍGUA · memória instável (aproximar estabiliza; nunca pune) ---- */
+function pr15IntentUnstable(p){
+  if(!pr15IntentGuard())return false;
+  const C=PR15_INTENT_CFG,it=p.it;
+  if(it.st==='resolved')return false;
+  const opts=C.unstableOpt;
+  let tot=0;for(let i=0;i<opts.length;i++)tot+=opts[i].w;
+  const u=fractureRng(fractureHash32(((p.seed>>>0)^(p.intentSeed>>>0))>>>0))()*(tot||1);
+  let acc=0,pick=opts[opts.length-1];
+  for(let i=0;i<opts.length;i++){acc+=opts[i].w;if(u<acc){pick=opts[i];break;}}
+  let txt='MEMÓRIA ESTABILIZADA · NADA ACONTECEU';
+  if(pick.k==='res'){const g=pr15IntentGrantRes(pick.n,p.x,p.y);if(g>0)txt='MEMÓRIA ESTABILIZADA · ⧗ +'+g;}
+  else if(pick.k==='shield'){const g=pr15IntentGrantShield(pick.n);if(g>0)txt='MEMÓRIA ESTABILIZADA · +'+g+' ESCUDO';}
+  else if(pick.k==='heal'){const g=pr15IntentGrantHeal(pick.n);if(g>0)txt='MEMÓRIA ESTABILIZADA · +'+g+' HP';}
+  it.st='resolved';
+  pr15IntentMarkResolved(p.encounterId,'ambiguous','unstable',1,{});
+  pr15IntentMsg(p,txt);
+  return true;
+}
+/* ---- AMBÍGUA · escolha de ressonância (dois lobos) ---- */
+function pr15IntentLobes(p){
+  const C=PR15_INTENT_CFG;
+  if(!p||!Number.isFinite(+p.seed))return null;
+  const a=((p.seed>>>0)%628)/100;                       // determinístico
+  const memAxis=(p.it&&p.it.memAxis)||null;
+  const n=pr15IntentNodeOf(p);                          // ancorado no mundo
+  return {
+    a:a,
+    cyan:{x:clamp(n.x+Math.cos(a)*C.lobeDist,C.margin,ARENA.w-C.margin),
+      y:clamp(n.y+Math.sin(a)*C.lobeDist,C.margin,ARENA.h-C.margin),
+      axis:memAxis||'comp',label:'ACEITAR'},
+    magenta:{x:clamp(n.x-Math.cos(a)*C.lobeDist,C.margin,ARENA.w-C.margin),
+      y:clamp(n.y-Math.sin(a)*C.lobeDist,C.margin,ARENA.h-C.margin),
+      axis:({comp:'viol',greed:'viol',viol:'comp'})[memAxis||'comp']||'viol',
+      label:'RECUSAR'}
+  };
+}
+function pr15IntentChoice(p,side){
+  if(!pr15IntentGuard())return false;
+  const C=PR15_INTENT_CFG,it=p.it;
+  if(it.st==='resolved'||it.st==='accepted')return false;
+  const L=it.lobes;if(!L)return false;
+  const pick=(side==='magenta')?L.magenta:L.cyan;
+  const m=pr15IntentGrantMoral(pick.axis,1);
+  let txt;
+  if(side==='magenta'){
+    const g=pr15IntentGrantRes(2,p.x,p.y);
+    txt='RESSONÂNCIA RECUSADA'+(m>0?' · '+({comp:'COMPAIXÃO',greed:'GANÂNCIA',viol:'VIOLÊNCIA'})[pick.axis]+' +'+m:'')+
+        (g>0?' · ⧗ +'+g:'');
+  }else{
+    pr15IntentAddMod('choice','fireRate','mult',C.choiceDmg,C.choiceDur,'RESSONÂNCIA ACEITA');
+    txt='RESSONÂNCIA ACEITA'+(m>0?' · '+({comp:'COMPAIXÃO',greed:'GANÂNCIA',viol:'VIOLÊNCIA'})[pick.axis]+' +'+m:'')+
+        ' · +'+Math.round((C.choiceDmg-1)*100)+'% CADÊNCIA · '+C.choiceDur+'s';
+  }
+  it.st='resolved';
+  pr15IntentMarkResolved(p.encounterId,'ambiguous','choice',1,{moral:m});
+  pr15IntentMsg(p,txt);
+  pr15IntentFactionReact('ambiguous','choice');
+  pr15IntentEchoReact(p,'resolve');
+  return true;
+}
+
+/* =====================================================================
+   INTERAÇÃO — sempre por aproximação (mesmo padrão da presença de
+   facção). Nunca automática, nunca com modal, nunca bloqueia o combate.
+   O custo/benefício é comunicado ANTES no rótulo world-space.
+   ===================================================================== */
+function pr15IntentInteractLabel(p){
+  const it=p&&p.it;
+  if(!it)return null;
+  const C=PR15_INTENT_CFG,v=it.variant;
+  if(v==='scar'){
+    let o=null;try{o=pr15IntentScarOffer(p);}catch(e){o=null;}
+    const cost=o?o.cost:'?';
+    return 'APROXIME-SE PARA ABRIR A CICATRIZ · −'+cost+' → +BENEFÍCIO TEMPORÁRIO';
+  }
+  if(v==='trade'){
+    let bal=0;try{if(typeof getResidues==='function')bal=getResidues()|0;}catch(e){}
+    return 'APROXIME-SE PARA TROCAR · ⧗'+C.tradeCost+'/'+bal+' → +'+
+      Math.round((C.tradeDmg-1)*100)+'% DANO '+C.tradeDur+'s';
+  }
+  if(v==='unstable')return 'APROXIME-SE PARA ESTABILIZAR · DESFECHO DESCONHECIDO · SEM CUSTO';
+  if(v==='choice')return 'CIANO = ACEITAR · MAGENTA = RECUSAR · CADA LADO MUDA UMA COISA';
+  return '';
+}
+/* variantes que dependem de aproximação do jogador (as demais se resolvem
+   sozinhas por timer/zona e NUNCA mudam de estado por proximidade) */
+function pr15IntentOfferable(p){
+  const v=(p&&p.it)?p.it.variant:null;
+  return v==='scar'||v==='trade'||v==='unstable'||v==='choice';
+}
+function pr15IntentTryInteract(p,dt){
+  if(!p||!p.it)return false;
+  const C=PR15_INTENT_CFG,it=p.it;
+  /* estados terminais não reabrem a oferta — é isso que impede cobrar duas vezes */
+  if(it.st==='resolved'||it.st==='accepted'||it.st==='declined'||it.st==='refused')return false;
+  if(p.phase!=='active')return false;
+  if(it.t<C.offerAfter)return false;
+  if(!pr15IntentOfferable(p))return false;        // zona/pulso/pressão/prova/herança
+  const d=pr15IntentNodeDist(p);
+  if(it.variant==='choice'){
+    if(!it.lobes)it.lobes=pr15IntentLobes(p);
+    const L=it.lobes;
+    let near=null;
+    try{
+      if(typeof player!=='undefined'&&player){
+        const rr=C.interactR+((+player.r)||0);
+        if(dist2(L.cyan.x,L.cyan.y,player.x,player.y)<rr*rr)near='cyan';
+        else if(dist2(L.magenta.x,L.magenta.y,player.x,player.y)<rr*rr)near='magenta';
+      }
+    }catch(e){near=null;}
+    if(near)return pr15IntentChoice(p,near);
+    return false;
+  }
+  const rr=C.interactR+((typeof player!=='undefined'||!player)?0:((+player.r)||0));
+  if(d>=rr)return false;
+  /* o handler decide e marca o estado final — marcar 'accepted' antes
+     fazia o próprio handler recusar (ele rejeita st==='accepted'). */
+  if(it.variant==='scar')return pr15IntentScarAccept(p);
+  if(it.variant==='trade')return pr15IntentTrade(p);
+  if(it.variant==='unstable')return pr15IntentUnstable(p);
+  it.st='accepted';
+  return false;
+}
+
+/* =====================================================================
+   UPDATE — engatado em updateAllies DEPOIS do update do B3.
+   Early-return quando não há presença. Sem alocação por frame.
+   ===================================================================== */
+function pr15IntentUpdate(dt){
+  const p=(typeof pr15Presence!=='undefined')?pr15Presence:null;
+  if(!p||!p.it)return null;
+  const d=Number.isFinite(+dt)?clamp(+dt,0,0.25):0;
+  const it=p.it;
+  if(it.labelT>0)it.labelT-=d;
+  if(p.phase==='active'){
+    it.t+=d;
+    /* primeiro pulso chega cedo (feedback imediato), os demais no intervalo */
+    if(it.variant==='pulse'&&it.pulses===0&&it.cd===0)it.cd=PR15_INTENT_CFG.pulseEvery*0.45;
+    if(it.variant==='zone')pr15IntentZone(p,d);
+    else if(it.variant==='pulse')pr15IntentPulse(p,d);
+    else if(it.variant==='legacy')pr15IntentLegacy(p);
+    else if(it.variant==='pressure')pr15IntentPressure(p,d);
+    else if(it.variant==='trial')pr15IntentTrial(p,d);
+    pr15IntentTryInteract(p,d);
+  }
+  if(p.phase==='leaving'){
+    if(it.variant==='trial'&&it.trial===1){
+      it.trial=3;                                  // prova expira sem punição
+    }
+    /* registrar a resolução uma única vez — é o que garante idempotência */
+    if(it.st!=='resolved'){
+      let okc=0;
+      if(it.variant==='zone')okc=it.t>PR15_INTENT_CFG.offerAfter?1:0;
+      else if(it.variant==='pulse')okc=(it.pulses|0)>0?1:0;
+      else if(it.variant==='pressure')okc=(it.fired|0)>0?1:0;
+      else if(it.variant==='trial')okc=(it.trial===2)?1:0;
+      else okc=0;                                  // saiu sem interagir = recusada
+      it.st=(it.st==='accepted')?'resolved':'declined';
+      pr15IntentMarkResolved(p.encounterId,it.kind,it.variant,okc,{});
+    }
+  }
+  /* coerência de fase × estado: nunca deixar um 'idle' órfão */
+  if(p.phase==='done')pr15IntentClear(p);
+  return it;
+}
+function pr15IntentClear(p){
+  if(p&&p.it){p.it.lobes=null;p.it.reasons=null;p.it.scores=null;}
+  if(p){p.it=null;p.itVis=null;}
+  return true;
+}
+
+/* =====================================================================
+   RENDERER — rótulo world-space + geometria de intenção.
+   Roda DEPOIS do draw do B3 (o kit boota depois), então a identidade
+   ciano/magenta do B3 continua sendo a base; isto é CAMADA, não troca.
+   ===================================================================== */
+function pr15IntentDraw(){
+  const p=(typeof pr15Presence!=='undefined')?pr15Presence:null;
+  if(!p||!p.it||p.phase==='done')return false;
+  if(typeof ctx==='undefined'||!ctx)return false;
+  if(!Number.isFinite(p.x)||!Number.isFinite(p.y))return false;
+  try{if(typeof inView==='function'&&!inView(p.x,p.y,220))return false;}catch(e){}
+  const A=clamp(Number.isFinite(p.alpha)?p.alpha:0,0,1);
+  if(A<=0.02)return false;
+  const t=(typeof runTime==='number'&&Number.isFinite(runTime))?runTime:0;
+  const V=p.itVis||pr15IntentVisState(p.it.kind);
+  const L=PR15_INTENT_LABEL[p.it.kind]||PR15_INTENT_LABEL.ambiguous;
+  const R=PR15_PRES_CFG.radius*clamp(Number.isFinite(p.scale)?p.scale:1,0.2,2);
+  const breathe=1+Math.sin(t*((p.it.kind==='rival')?4.2:2.0))*V.breathe;
+  ctx.save();
+  /* 1 — GEOMETRIA DE INTENÇÃO: forma é o discriminador primário.
+     ALIADA = anel liso com raios regulares (estável).
+     RIVAL  = triângulo tenso girando rápido (pressão).
+     AMBÍGUA= anel pequeno oscilando em amplitude (indefinição). */
+  const rr=R*2.5*V.ringMul*breathe;
+  ctx.globalAlpha=A*0.42;
+  ctx.strokeStyle=(p.it.kind==='rival')?PR15_PRES_MAGENTA:PR15_PRES_CYAN;
+  ctx.lineWidth=1.6;
+  const rot=t*V.spin+p.orbit;
+  ctx.beginPath();
+  if(V.sides>=3){
+    for(let i=0;i<=V.sides;i++){
+      const a=rot+i*TAU/V.sides;
+      const x=p.x+Math.cos(a)*rr,y=p.y+Math.sin(a)*rr;
+      if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+    }
+  }else{
+    ctx.arc(p.x,p.y,rr,0,TAU);
+  }
+  ctx.stroke();
+  /* raios — quantidade por família (6/3/4): legível sem cor */
+  ctx.globalAlpha=A*0.26;ctx.lineWidth=1.2;
+  for(let i=0;i<V.spokes;i++){
+    const a=rot*0.6+i*TAU/V.spokes;
+    ctx.beginPath();
+    ctx.moveTo(p.x+Math.cos(a)*rr*0.62,p.y+Math.sin(a)*rr*0.62);
+    ctx.lineTo(p.x+Math.cos(a)*rr*1.18,p.y+Math.sin(a)*rr*1.18);
+    ctx.stroke();
+  }
+  const N=pr15IntentNodeOf(p);
+  /* 2 — ÂNCORA TEMPORAL: a fenda que ficou para trás no ponto onde a
+     memória se materializou. É o objeto espacial/interativo do B4. */
+  ctx.globalAlpha=A*0.34;
+  ctx.strokeStyle=(p.it.kind==='rival')?PR15_PRES_MAGENTA:PR15_PRES_CYAN;
+  ctx.lineWidth=1.4;
+  ctx.beginPath();ctx.ellipse(N.x,N.y+4,20,7,0,0,TAU);ctx.stroke();
+  ctx.globalAlpha=A*(0.30+0.16*Math.sin(t*2.6));
+  ctx.beginPath();ctx.moveTo(N.x,N.y-13);ctx.lineTo(N.x+5,N.y);
+  ctx.lineTo(N.x,N.y+13);ctx.lineTo(N.x-5,N.y);ctx.closePath();ctx.stroke();
+  /* 3 — TELEGRAPH da pressão (agência do jogador: aviso antes do efeito) */
+  if(p.it.variant==='pressure'&&p.it.tel>0){
+    const C=PR15_INTENT_CFG;
+    const k=clamp(1-p.it.tel/C.rivalTelegraph,0,1);
+    ctx.globalAlpha=A*(0.16+0.30*k);
+    ctx.strokeStyle=PR15_PRES_MAGENTA;ctx.lineWidth=2.4;
+    if(ctx.setLineDash){ctx.setLineDash([9,7]);ctx.lineDashOffset=-t*40;}
+    ctx.beginPath();ctx.arc(N.x,N.y,C.rivalRing*(0.35+0.65*k),0,TAU);ctx.stroke();
+    if(ctx.setLineDash)ctx.setLineDash([]);
+  }
+  /* 4 — ZONA de ressonância (aliada), ancorada no mundo */
+  if(p.it.variant==='zone'&&p.phase==='active'){
+    const inside=pr15IntentNodeDist(p)<=PR15_INTENT_CFG.zoneR;
+    ctx.globalAlpha=A*(inside?0.20:0.10);
+    ctx.strokeStyle=PR15_PRES_CYAN;ctx.lineWidth=inside?2.2:1.3;
+    ctx.beginPath();ctx.arc(N.x,N.y,PR15_INTENT_CFG.zoneR,0,TAU);ctx.stroke();
+  }
+  /* 4b — raio do PULSO de memória (aliada), ancorado no mundo */
+  if(p.it.variant==='pulse'&&p.phase==='active'){
+    const inside=pr15IntentNodeDist(p)<=PR15_INTENT_CFG.pulseR;
+    ctx.globalAlpha=A*(inside?0.16:0.08);
+    ctx.strokeStyle=PR15_PRES_CYAN;ctx.lineWidth=1.1;
+    ctx.beginPath();ctx.arc(N.x,N.y,PR15_INTENT_CFG.pulseR,0,TAU);ctx.stroke();
+  }
+  /* 5 — LOBOS da escolha de ressonância (dois pontos fixos no mundo) */
+  if(p.it.variant==='choice'&&p.phase==='active'){
+    if(!p.it.lobes)p.it.lobes=pr15IntentLobes(p);
+    const L2=p.it.lobes;
+    const lobes=[[L2.cyan,PR15_PRES_CYAN,'ACEITAR'],[L2.magenta,PR15_PRES_MAGENTA,'RECUSAR']];
+    for(let i=0;i<2;i++){
+      const lb=lobes[i][0],col=lobes[i][1],tx=lobes[i][2];
+      ctx.globalAlpha=A*0.40;ctx.strokeStyle=col;ctx.lineWidth=1.6;
+      ctx.beginPath();ctx.arc(lb.x,lb.y,15+Math.sin(t*2.4+i)*2.4,0,TAU);ctx.stroke();
+      ctx.globalAlpha=A*0.75;ctx.fillStyle=col;
+      ctx.font='9px Consolas,monospace';ctx.textAlign='center';
+      ctx.fillText(tx,lb.x,lb.y-22);
+    }
+  }
+  /* 6 — RAIO DE INTERAÇÃO na ÂNCORA (só quando faz sentido oferecer) */
+  const C=PR15_INTENT_CFG;
+  const offerable=(p.phase==='active'&&pr15IntentOfferable(p)&&p.it.st!=='resolved');
+  if(offerable){
+    ctx.globalAlpha=A*(0.18+0.12*Math.sin(t*3.1));
+    ctx.strokeStyle=PR15_PRES_CYAN;ctx.lineWidth=1.4;
+    if(ctx.setLineDash){ctx.setLineDash([5,9]);ctx.lineDashOffset=t*16;}
+    ctx.beginPath();ctx.arc(N.x,N.y,C.interactR,0,TAU);ctx.stroke();
+    if(ctx.setLineDash)ctx.setLineDash([]);
+  }
+  /* 7 — RÓTULO world-space: 3 linhas curtas, sem painel, sem modal */
+  const showLabel=(p.it.labelT>0)||offerable;
+  if(showLabel){
+    const la=A*clamp(offerable?0.95:(p.it.labelT/C.labelHold),0,1);
+    ctx.textAlign='center';
+    ctx.globalAlpha=la*0.92;ctx.fillStyle=(p.it.kind==='rival')?PR15_PRES_MAGENTA:PR15_PRES_CYAN;
+    ctx.font='11px Consolas,monospace';
+    ctx.fillText(L.sym+' '+L.nm,p.x,p.y-R*3.4-22);
+    ctx.globalAlpha=la*0.72;ctx.fillStyle='#dff6ff';
+    ctx.font='9.5px Consolas,monospace';
+    ctx.fillText(PR15_VARIANT_LABEL[p.it.variant]||'',p.x,p.y-R*3.4-9);
+    const hint=pr15IntentInteractLabel(p);
+    const bx=offerable?N.x:p.x, by=offerable?N.y+26:p.y+R*2.6+16;
+    if(hint&&offerable){
+      ctx.globalAlpha=la*0.66;ctx.fillStyle='#bfe9ff';
+      ctx.fillText(hint,bx,by);
+    }else if(p.it.msg){
+      ctx.globalAlpha=la*0.80;ctx.fillStyle='#ffffff';
+      ctx.fillText(p.it.msg,bx,by);
+    }
+  }
+  ctx.globalAlpha=1;
+  if(ctx.setLineDash)ctx.setLineDash([]);
+  ctx.restore();
+  return true;
+}
+/* =====================================================================
+   INDICADOR OFF-SCREEN (§19) — dívida do B3 fechada.
+   Passagem SCREEN-SPACE (depois do restore da câmera), O(1) por frame,
+   sem DOM novo. Só aparece quando a presença está realmente fora da
+   janela E ainda há interação pendente ou ela está ativa.
+   ===================================================================== */
+function pr15IntentEdge(){
+  const p=(typeof pr15Presence!=='undefined')?pr15Presence:null;
+  if(!p||!p.it||p.phase==='done'||p.phase==='leaving')return false;
+  if(typeof ctx==='undefined'||!ctx)return false;
+  try{if(typeof state!=='undefined'&&state!=='play')return false;}catch(e){}
+  let vw2=0,vh2=0;
+  try{vw2=(typeof vw!=='undefined')?vw:0;vh2=(typeof vh!=='undefined')?vh:0;}catch(e){}
+  if(!(vw2>0)||!(vh2>0))return false;
+  let cx=0,cy=0;
+  try{cx=cam.x;cy=cam.y;}catch(e){return false;}
+  /* alvo do indicador: a ÂNCORA quando há interação pendente (é o ponto
+     acionável); senão o corpo da presença. */
+  const pending=(p.phase==='active'&&pr15IntentOfferable(p)&&p.it.st!=='resolved');
+  const tg=pending?pr15IntentNodeOf(p):p;
+  const sx=tg.x-cx+vw2/2, sy=tg.y-cy+vh2/2;
+  const pad=PR15_INTENT_CFG.edgePad;
+  if(sx>pad&&sx<vw2-pad&&sy>pad&&sy<vh2-pad)return false;   // já está visível
+  const L=PR15_INTENT_LABEL[p.it.kind]||PR15_INTENT_LABEL.ambiguous;
+  const a=Math.atan2(sy-vh2/2,sx-vw2/2);
+  const rad=Math.min(vw2,vh2)/2-pad;
+  const mx=vw2/2+Math.cos(a)*rad, my=vh2/2+Math.sin(a)*rad;
+  const t=(typeof runTime==='number'&&Number.isFinite(runTime))?runTime:0;
+  const col=(p.it.kind==='rival')?PR15_PRES_MAGENTA:PR15_PRES_CYAN;
+  ctx.save();
+  ctx.translate(mx,my);ctx.rotate(a);
+  ctx.globalAlpha=clamp(PR15_INTENT_CFG.edgeMinAlpha+0.28*Math.sin(t*3.4),0.2,0.95);
+  ctx.fillStyle=col;
+  ctx.beginPath();ctx.moveTo(10,0);ctx.lineTo(-6,5.4);ctx.lineTo(-6,-5.4);
+  ctx.closePath();ctx.fill();
+  ctx.restore();
+  ctx.save();
+  ctx.globalAlpha=0.62;ctx.fillStyle=col;
+  ctx.font='9px Consolas,monospace';ctx.textAlign='center';
+  ctx.fillText(L.sym+' MEMÓRIA',mx,my-13);
+  ctx.restore();
+  ctx.globalAlpha=1;
+  return true;
+}
+
+/* =====================================================================
+   OBSERVABILIDADE — leitura pura.
+   ===================================================================== */
+function pr15IntentSnapshot(){
+  const r=pr15IntentRun;
+  const p=(typeof pr15Presence!=='undefined')?pr15Presence:null;
+  const bud=(r&&r.bud)?{res:+r.bud.res||0,heal:+r.bud.heal||0,shield:+r.bud.shield||0,
+    rep:+r.bud.rep||0,moral:+r.bud.moral||0,scar:+r.bud.scar||0}
+    :{res:0,heal:0,shield:0,rep:0,moral:0,scar:0};
+  const caps=Object.assign({},PR15_INTENT_CFG.budget);
+  let act=null;
+  if(p&&p.it){
+    act={encounterId:p.encounterId,kind:p.it.kind,variant:p.it.variant,
+      state:p.it.st,t:Math.round(p.it.t*1000)/1000,
+      pulses:p.it.pulses|0,fired:p.it.fired|0,trial:p.it.trial|0,
+      node:(p.it.node&&Number.isFinite(p.it.node.x))
+        ?{x:Math.round(p.it.node.x*10)/10,y:Math.round(p.it.node.y*10)/10}:null,
+      reasons:(p.it.reasons||[]).slice(),
+      scores:p.it.scores?Object.assign({},p.it.scores):null,
+      phase:p.phase,dev:!!p.dev};
+  }
+  return {
+    active:!!act,act:act,
+    resolved:((r&&Array.isArray(r.res))?r.res:[]).map(e=>Object.assign({},e)),
+    budget:bud,caps:caps,
+    left:{res:pr15IntentBudLeft('res'),heal:pr15IntentBudLeft('heal'),
+      shield:pr15IntentBudLeft('shield'),rep:pr15IntentBudLeft('rep'),
+      moral:pr15IntentBudLeft('moral'),scar:pr15IntentBudLeft('scar')},
+    force:pr15IntentForce?Object.assign({},pr15IntentForce):null,
+    cfg:{interactR:PR15_INTENT_CFG.interactR,offerAfter:PR15_INTENT_CFG.offerAfter,
+      resMax:PR15_INTENT_CFG.resMax}
+  };
+}
+/* "por que esta memória ficou RIVAL?" — a resposta completa. */
+function pr15IntentExplain(encId){
+  const p=(typeof pr15Presence!=='undefined')?pr15Presence:null;
+  const id=String(encId||(p&&p.encounterId)||'');
+  let mem=null;
+  try{
+    const mid=(p&&p.memoryId)||null;
+    const r=mid?(typeof pr15PresResolveMemory==='function')?pr15PresResolveMemory(mid):null:null;
+    mem=r?r.rec:null;
+  }catch(e){mem=null;}
+  let seed=0,intent=0,src='n1',res='normal';
+  if(p){seed=p.seed>>>0;intent=p.intentSeed|0;src=p.source;res=p.resonance;}
+  const ctx=pr15IntentContext(mem,{seed:seed,intent:intent,src:src,res:res});
+  const dec=pr15IntentDecide(ctx);
+  const out={
+    encounterId:id,memoryId:ctx.memoryId,
+    kind:(p&&p.it)?p.it.kind:dec.kind,
+    decided:dec.kind,
+    variant:(p&&p.it)?p.it.variant:pr15IntentVariant(dec.kind,ctx),
+    scores:dec.scores,weights:dec.weights,ranked:dec.ranked,
+    reasons:dec.reasons,
+    signals:dec.signals.map(s=>({tag:s.tag,signal:s.signal,
+      weights:PR15_INTENT_SIGNALS[s.signal]||null})),
+    context:{
+      source:ctx.source,resonance:ctx.resonance,
+      memOp:ctx.memOp,curOp:ctx.curOp,
+      memArch:ctx.memArch,curArch:ctx.curArch,
+      memCause:ctx.memCause,
+      memTheme:ctx.memTheme,curTheme:ctx.curTheme,
+      memMoralAxis:ctx.memMoralAxis,curMoralAxis:ctx.curMoralAxis,
+      moralDist:Math.round(ctx.moralDist*1000)/1000,
+      factionNet:ctx.factionNet,
+      fracture:Math.round(ctx.fracture*1000)/1000,
+      intentSeed:ctx.intentSeed,seed:ctx.seed,runSeed:ctx.runSeed
+    },
+    u:dec.u
+  };
+  return out;
+}
+
+/* =====================================================================
+   PERSISTÊNCIA — cp.pr15intent (campo PRÓPRIO; cp.pr15presence do B3 e
+   cp.pr15mem do B2 permanecem byte-a-byte como eram).
+   Persiste só escalares. Nunca partículas, afterimages, closures, DOM,
+   player, enemies ou projectiles.
+   ===================================================================== */
+function pr15IntentPack(){
+  /* run tocada por DEV nunca grava estado B4 (defesa em profundidade:
+     captureCheckpoint já recusa, isto garante mesmo em chamada direta) */
+  try{if(typeof devTainted!=='undefined'&&devTainted)return null;}catch(e){}
+  const r=pr15IntentRun;
+  const p=(typeof pr15Presence!=='undefined')?pr15Presence:null;
+  const res=(r&&Array.isArray(r.res))
+    ?r.res.slice(-PR15_INTENT_CFG.resMax).map(e=>({enc:String(e.enc||'').slice(0,32),
+        k:(PR15_INTENTS[e.k]?e.k:'ambiguous'),vr:String(e.vr||'').slice(0,12),
+        ok:(e.ok|0)?1:0,w:clamp(Math.round(+e.w)||0,0,MAX_WAVE)}))
+    :[];
+  const b=(r&&r.bud)?r.bud:{};
+  const bud={};
+  for(let i=0;i<PR15_BUDGET_KEYS.length;i++){
+    const k=PR15_BUDGET_KEYS[i],n=+b[k];
+    bud[k]=Number.isFinite(n)?Math.round(Math.max(0,n)*1000)/1000:0;
+  }
+  let act=null;
+  if(p&&p.it&&p.phase!=='done'&&!p.dev){
+    act={enc:String(p.encounterId||'').slice(0,32),
+      it:(PR15_INTENTS[p.it.kind]?p.it.kind:'ambiguous'),
+      vr:String(p.it.variant||'').slice(0,12),
+      st:(PR15_ISTATES[p.it.st]?p.it.st:'idle'),
+      t:Math.round((Number.isFinite(p.it.t)?p.it.t:0)*100)/100,
+      cd:Math.round((Number.isFinite(p.it.cd)?p.it.cd:0)*100)/100,
+      pu:clamp(p.it.pulses|0,0,PR15_INTENT_CFG.pulseMax),
+      fi:clamp(p.it.fired|0,0,64),
+      tr:clamp(p.it.trial|0,0,3),
+      k0:clamp(p.it.k0|0,0,999999),
+      /* âncora temporal — quantizada como o B3 faz com x/y */
+      nx:Math.round(pr15IntentNodeOf(p).x*10)/10,
+      ny:Math.round(pr15IntentNodeOf(p).y*10)/10};
+  }
+  const emptyRes=!res.length,emptyAct=!act;
+  const emptyBud=PR15_BUDGET_KEYS.every(k=>bud[k]===0);
+  if(emptyRes&&emptyAct&&emptyBud)return null;
+  return {v:PR15_INTENT_CFG.version,res:res,bud:bud,act:act};
+}
+function pr15IntentSanRes(e){
+  if(!e||typeof e!=='object'||Array.isArray(e))return null;
+  if(typeof e.enc!=='string'||!e.enc||e.enc.length>32)return null;
+  const k=PR15_INTENTS[e.k]?e.k:'ambiguous';
+  const list=PR15_VARIANTS[k]||[];
+  const vr=list.indexOf(e.vr)>=0?e.vr:(list[0]||'');
+  const w=Math.round(+e.w);
+  return {enc:e.enc,k:k,vr:vr,ok:(e.ok|0)?1:0,
+    w:(Number.isFinite(w)&&w>=0)?clamp(w,0,MAX_WAVE):0};
+}
+function pr15IntentSanitize(s){
+  const out=pr15IntentFresh();
+  if(!s||typeof s!=='object'||Array.isArray(s))return out;
+  out.res=Array.isArray(s.res)
+    ?s.res.slice(-PR15_INTENT_CFG.resMax).map(pr15IntentSanRes).filter(Boolean):[];
+  if(s.bud&&typeof s.bud==='object'&&!Array.isArray(s.bud)){
+    for(let i=0;i<PR15_BUDGET_KEYS.length;i++){
+      const k=PR15_BUDGET_KEYS[i],n=+s.bud[k],cap=+PR15_INTENT_CFG.budget[k];
+      out.bud[k]=Number.isFinite(n)?clamp(Math.max(0,n),0,cap):0;
+    }
+  }
+  if(s.act&&typeof s.act==='object'&&!Array.isArray(s.act)){
+    const a=s.act;
+    if(typeof a.enc==='string'&&a.enc&&a.enc.length<=32){
+      const it=PR15_INTENTS[a.it]?a.it:'ambiguous';
+      const list=PR15_VARIANTS[it]||[];
+      const vr=list.indexOf(a.vr)>=0?a.vr:(list[0]||'');
+      const t=+a.t,cd=+a.cd;
+      out.act={enc:a.enc,it:it,vr:vr,
+        st:(PR15_ISTATES[a.st]?a.st:'idle'),
+        t:Number.isFinite(t)?clamp(t,0,PR15_PRES_CFG.activeTime):0,
+        cd:Number.isFinite(cd)?clamp(cd,0,PR15_INTENT_CFG.rivalEvery*2):0,
+        pu:clamp(Math.round(+a.pu)||0,0,PR15_INTENT_CFG.pulseMax),
+        fi:clamp(Math.round(+a.fi)||0,0,64),
+        tr:clamp(Math.round(+a.tr)||0,0,3),
+        k0:clamp(Math.round(+a.k0)||0,0,999999),
+        nx:clamp(Number.isFinite(+a.nx)?+a.nx:ARENA.w/2,0,ARENA.w),
+        ny:clamp(Number.isFinite(+a.ny)?+a.ny:ARENA.h/2,0,ARENA.h)};
+    }
+  }
+  return out;
+}
+function pr15IntentUnpack(cp){
+  pr15IntentClear((typeof pr15Presence!=='undefined')?pr15Presence:null);
+  const s=(cp&&cp.pr15intent&&typeof cp.pr15intent==='object'&&!Array.isArray(cp.pr15intent))
+    ?cp.pr15intent:null;
+  pr15IntentRun=pr15IntentSanitize(s);
+  return pr15IntentRun;
+}
+/* reconstrói o estado de intenção do corpo restaurado pelo B3.
+   Roda DEPOIS de pr15PresRebuild (o kit do B4 boota depois do B3). */
+function pr15IntentRebuild(){
+  /* O payload é lido ANTES do pr15PresRebuild(): o attach disparado pelo
+     wrapper do spawn consome pr15IntentRun.act. */
+  const act=(pr15IntentRun&&pr15IntentRun.act)?pr15IntentRun.act:null;
+  const p=(typeof pr15PresRebuild==='function')?pr15PresRebuild():null;
+  if(!p)return null;
+  if(!act||act.enc!==p.encounterId)return p;
+
+  if(!p.it)pr15IntentAttach(p,null,{restore:true});
+  if(!p.it)return p;
+
+  /* preserva contadores: TTL, pulsos, prova e abates NÃO reiniciam */
+  p.it.kind    =PR15_INTENTS[act.it]?act.it:'ambiguous';
+  const list=PR15_VARIANTS[p.it.kind]||PR15_VARIANTS.ambiguous;
+  p.it.variant =list.indexOf(act.vr)>=0?act.vr:list[0];
+  p.it.st      =['idle','warn','leaving','resolved','accepted','refused','declined'].indexOf(act.st)>=0?act.st:'idle';
+  p.it.t       =clamp(+act.t||0,0,99999);
+  p.it.cd      =Math.max(0,+act.cd||0);
+  p.it.pulses  =clamp(+act.pu||0,0,+PR15_INTENT_CFG.pulseMax);
+  p.it.fired   =clamp(+act.fi||0,0,9999);
+  p.it.trial   =clamp(+act.tr||0,0,999);
+  p.it.k0      =clamp(+act.k0||0,0,1e9);
+  /* a âncora é FIXA no mundo: o Continue devolve exatamente o ponto salvo.
+     Se ela voltasse a ser o corpo, a interação "andaria" junto com a memória. */
+  if(Number.isFinite(+act.nx)&&Number.isFinite(+act.ny))p.it.node={x:+act.nx,y:+act.ny};
+  p.it.reasons =[];
+  p.it.signals =[];
+  p.it.lobes   =null;
+  p.it.labelT  =+PR15_INTENT_CFG.labelHold;
+  p.it.lastSay =-999;
+  pr15IntentRun.act=null;
+  if(p.phase==='active')pr15IntentAnnounce(p,'restaurado');
+  return p;
+}
+
+function pr15IntentReset(){
+  /* zera o registro do RUN (orçamentos, resolvidos, payload) e desanexa o
+     estado de intenção do corpo. Não toca no B3. */
+  pr15IntentRun=pr15IntentFresh();
+  pr15IntentForce=null;
+  const p=(typeof pr15Presence!=='undefined')?pr15Presence:null;
+  if(p)pr15IntentClear(p);
+  return true;
+}
+
+/* =====================================================================
+   DEV — leitura + força diagnóstica. Tudo com guarda !DEV_MODE.
+   Forçar TAINTA a run (o B1 nunca a transforma em memória legítima) e
+   nunca é persistido.
+   ===================================================================== */
+/* rótulos curtos das variantes — uso exclusivo do painel DEV. Os rótulos
+   longos de PR15_VARIANT_LABEL continuam sendo os do mundo do jogo. */
+const PR15_DEV_VARIANT_SHORT={zone:'ZONA',pulse:'PULSO',legacy:'HERANÇA',
+  pressure:'PRESSÃO',trial:'PROVA',scar:'CICATRIZ',
+  trade:'TROCA',unstable:'INSTÁVEL',choice:'ESCOLHA'};
+function pr15DevIntentState(){
+  if(!DEV_MODE)return null;
+  return pr15IntentSnapshot();
+}
+function pr15DevIntentExplain(encId){
+  if(!DEV_MODE)return null;
+  return pr15IntentExplain(encId);
+}
+function pr15DevIntentForce(kind){
+  if(!DEV_MODE)return null;
+  try{devTaint();}catch(e){}
+  if(!kind){pr15IntentForce=null;return {ok:true,reason:'força removida',force:null};}
+  if(!PR15_INTENTS[kind])return {ok:false,reason:'intenção inválida',force:pr15IntentForce};
+  const cur=pr15IntentForce||{};
+  pr15IntentForce={kind:kind,variant:cur.variant||null};
+  /* reaplica imediatamente se houver presença ativa (playtest rápido) */
+  const p=(typeof pr15Presence!=='undefined')?pr15Presence:null;
+  if(p&&p.it&&p.phase!=='done'){
+    pr15IntentClear(p);
+    pr15IntentAttach(p,null,{dev:true});
+  }
+  return {ok:true,reason:'intenção forçada',force:Object.assign({},pr15IntentForce),
+    state:pr15IntentSnapshot()};
+}
+function pr15DevIntentForceVariant(variant){
+  if(!DEV_MODE)return null;
+  try{devTaint();}catch(e){}
+  if(!variant){const c=pr15IntentForce||{};pr15IntentForce=c.kind?{kind:c.kind,variant:null}:null;
+    return {ok:true,reason:'variante removida',force:pr15IntentForce};}
+  const v=String(variant);
+  let owner=null;
+  for(const k of PR15_INTENT_LIST)if(PR15_VARIANTS[k].indexOf(v)>=0)owner=k;
+  if(!owner)return {ok:false,reason:'variante inválida',force:pr15IntentForce};
+  pr15IntentForce={kind:(pr15IntentForce&&pr15IntentForce.kind)||owner,variant:v};
+  const p=(typeof pr15Presence!=='undefined')?pr15Presence:null;
+  if(p&&p.phase!=='done'){
+    pr15IntentClear(p);
+    pr15IntentAttach(p,null,{dev:true});
+  }
+  return {ok:true,reason:'variante forçada',force:Object.assign({},pr15IntentForce),
+    state:pr15IntentSnapshot()};
+}
+/* estado combinado B3+B4 num só lugar (o brief pede DEV.pr15PresenceState,
+   que continua existindo no B3; este é o agregado do B4). */
+function pr15DevPresenceIntentState(){
+  if(!DEV_MODE)return null;
+  const b3=(typeof pr15PresSnapshot==='function')?pr15PresSnapshot():null;
+  return {presence:b3,intent:pr15IntentSnapshot()};
+}
+
+/* =====================================================================
+   B4-FIX #1 · PLAYTEST — SEÇÃO VISUAL NO PAINEL DEV
+   ---------------------------------------------------------------------
+   CAUSA DO PROBLEMA: os helpers DEV do B4 (pr15DevIntent*) já existiam,
+   mas o kit só registrava DEV.pr15Intent* no console e NUNCA engatava
+   devRender/devCommand — então nenhuma seção era desenhada no painel e
+   nenhum botão chegava ao B4. O PR14, ao lado, engata os dois (ver
+   factionPresencePhysicalKitBoot, passo 7).
+
+   Esta seção reutiliza a MESMA infraestrutura do PR14 — devBtn(), uma
+   <div> anexada em #devpanel, e um prefixo de comando próprio ('i:') —
+   sem criar uma segunda interface paralela.
+
+   Nada aqui altera mecânica, balanceamento, B1/B2/B3, PR14 ou o
+   algoritmo de intenção: é só uma camada de playtest sobre os helpers
+   que já existiam.
+   ---------------------------------------------------------------------
+   DELIMITADO POR MARCADORES: tudo entre B4-FIX1-DEV-INICIO e
+   B4-FIX1-DEV-FIM é FERRAMENTA DE DESENVOLVIMENTO, guardado por DEV_MODE.
+   Os testes de "sem DOM" e "sem UI permanente" do B4 varrem o bloco FORA
+   desses marcadores — o runtime do jogo continua sem tocar em DOM.
+   ===================================================================== */
+/* ---- B4-FIX1-DEV-INICIO ---- */
+/* Memória sintética de playtest. Existe SÓ para o DEV não ficar bloqueado
+   quando o slot não tem N-1/N-2 elegível. Vive em pr15DevMem:
+     · nunca é empurrada em echoQueue;
+     · nunca é salva (pr15IntentPack devolve null com devTainted, e
+       captureCheckpoint já recusa run tainted);
+     · nunca altera slot, moralidade, reputação ou progressão;
+     · some no limpar e na saída do DEV.
+   Carrega apenas os campos que o B3 e o B4 de fato leem:
+   id, op, arch.dom, cause, theme, moral. */
+let pr15DevMem=null;
+let pr15DevMemSrc='n1';
+let pr15DevIntentSeq=0;
+function pr15DevSyntheticMemory(){
+  return {v:3,id:'dev-synth-mem',dev:true,out:'death',cause:'enemy',op:'vector',
+    theme:'cinza',seed:0x51EED1,
+    arch:{dom:'crit',sec:null,state:'definido',domS:0.5,secS:null},
+    sigW:'pistol',sigItems:[],moral:{comp:1,greed:1,viol:1},dom:'neutro',
+    kills:0,wave:1,dur:0,mh:0,level:1,items:[],upg:[],owned:[],ps:'neutro',trail:[]};
+}
+/* há memória REAL elegível no slot? (o playtest prefere sempre o caso real) */
+function pr15DevRealMemory(){
+  try{
+    const q=Array.isArray(echoQueue)?echoQueue:[];
+    for(let i=0;i<q.length&&i<2;i++){
+      const r=q[i];
+      if(!r||typeof pr15MemIsEligible!=='function')continue;
+      if(pr15MemIsEligible(r))return {rec:r,source:(i===1)?'n2':'n1'};
+    }
+  }catch(e){}
+  return null;
+}
+/* Força intenção/variante e materializa uma presença física, respeitando o
+   ciclo de vida do B3 (a presença anterior sai por pr15PresEnd, não some).
+   o={kind,variant,source,resonance,wave}. Não muda nenhuma mecânica: só
+   chama pr15DevIntentForce / pr15DevIntentForceVariant / pr15PresSpawn. */
+function pr15DevIntentSpawn(o){
+  if(!DEV_MODE)return {ok:false,reason:'fora de DEV'};
+  try{devTaint();}catch(e){}
+  const O=(o&&typeof o==='object')?o:{};
+  /* 1. a presença anterior sai pelo fim normal do B3 (cap = 1) */
+  if(pr15Presence){try{pr15DevPresenceEnd(true);}catch(e){}}
+  /* 2. força declarada ANTES do spawn — é o que pr15IntentAttach lê.
+     A família precisa SEGUIR a variante pedida: pr15DevIntentForceVariant
+     preserva o kind anterior, e uma variante de outra família seria
+     ignorada pelo filtro de família do pr15IntentVariant. */
+  if(O.variant){
+    let owner=null;
+    for(const k of PR15_INTENT_LIST)
+      if((PR15_VARIANTS[k]||[]).indexOf(O.variant)>=0)owner=k;
+    if(owner)pr15DevIntentForce(owner);
+    pr15DevIntentForceVariant(O.variant);
+  }else if(O.kind&&PR15_INTENTS[O.kind]){
+    pr15DevIntentForce(O.kind);
+    pr15DevIntentForceVariant(null);     // família livre → variante natural
+  }
+  /* 3. memória REAL elegível tem prioridade; sintética só como fallback */
+  const real=pr15DevRealMemory();
+  let memId,src,synthetic=false;
+  if(real){
+    memId=real.rec.id;
+    src=(O.source==='n2'||O.source==='n1')?O.source:real.source;
+    pr15DevMem=null;
+  }else{
+    pr15DevMem=pr15DevSyntheticMemory();
+    pr15DevMemSrc=(O.source==='n2')?'n2':'n1';
+    memId=pr15DevMem.id;src=pr15DevMemSrc;synthetic=true;
+  }
+  const rsn=(typeof PR15_MEM_RESONANCE!=='undefined'&&PR15_MEM_RESONANCE[O.resonance])
+    ?O.resonance:'high';
+  const w=clamp(Math.round(+O.wave)||((typeof wave!=='undefined')?(wave|0):1),1,MAX_WAVE);
+  let sd=Math.round(+O.seed);
+  if(!Number.isFinite(sd)||sd<=0){
+    pr15DevIntentSeq=(pr15DevIntentSeq+1)%100000;
+    try{sd=pr15MemSeedFor('devintent'+pr15DevIntentSeq,
+      (typeof pr15MemRunSeed==='function')?pr15MemRunSeed():1,w,memId);}
+    catch(e){sd=0x51EED1;}
+  }
+  const fk=(pr15IntentForce&&pr15IntentForce.kind)||'auto';
+  const fv=(pr15IntentForce&&pr15IntentForce.variant)||'auto';
+  /* id único por spawn: permite repetir a mesma variante na mesma sessão
+     sem cair no registro de encontros já resolvidos */
+  const built=pr15PresSpawn({id:'dev-i-'+fk+'-'+fv+'-'+(sd>>>0),mem:memId,src:src,
+    res:rsn,seed:sd>>>0,intent:0,wave:w},{dev:true});
+  if(!built)return {ok:false,reason:'materialização recusada',synthetic:synthetic};
+  return {ok:true,
+    reason:synthetic?'forçado via DEV (memória sintética)':'forçado via DEV (memória real)',
+    kind:built.it?built.it.kind:null,variant:built.it?built.it.variant:null,
+    synthetic:synthetic,source:src,resonance:rsn};
+}
+/* APLICAR EFEITO — liga/desliga a aplicação de efeitos EFÊMEROS em presença
+   DEV. Desligado por padrão. Nunca libera recurso persistente nem o save. */
+function pr15DevIntentToggleApply(force){
+  if(!DEV_MODE)return {ok:false,reason:'fora de DEV',on:pr15DevApplyEffects};
+  pr15DevApplyEffects=(force===undefined)?!pr15DevApplyEffects:!!force;
+  return {ok:true,on:pr15DevApplyEffects,
+    reason:pr15DevApplyEffects
+      ?'efeitos efêmeros liberados (persistente segue bloqueado)'
+      :'efeitos bloqueados'};
+}
+/* LIMPAR PRESENÇA TEMPORAL — remove o corpo e só o runtime do DEV.
+   echoQueue, moralidade, reputação e progressão não são tocados. */
+function pr15DevIntentClearAll(){
+  if(!DEV_MODE)return {ok:false,reason:'fora de DEV'};
+  try{devTaint();}catch(e){}
+  const had=!!pr15Presence;
+  try{pr15DevPresenceEnd(true);}catch(e){}
+  pr15IntentForce=null;
+  pr15DevMem=null;
+  pr15DevMemSrc='n1';
+  try{pr15IntentReset();}catch(e){}
+  try{pr15PresReset();}catch(e){}
+  return {ok:true,reason:had?'presença removida':'não havia presença',cleared:had};
+}
+/* ---- comandos do painel: prefixo 'i:' (não colide com nenhum existente) ---- */
+function pr15DevIntentCommand(c){
+  if(!(typeof DEV_MODE!=='undefined'&&DEV_MODE))return false;
+  c=String(c||'');
+  let r=null,tag='';
+  if(c.indexOf('force:')===0){
+    const k=c.slice(6);
+    tag='FORCE '+k;
+    r=PR15_INTENTS[k]?pr15DevIntentSpawn({kind:k})
+                   :{ok:false,reason:'intenção inválida'};
+  }else if(c.indexOf('var:')===0){
+    const v=c.slice(4);
+    tag='VARIANT '+v;
+    r=pr15DevIntentSpawn({variant:v});
+  }else if(c==='apply'){
+    tag='APPLY';
+    r=pr15DevIntentToggleApply();
+  }else if(c==='clear'){
+    tag='CLEAR';
+    r=pr15DevIntentClearAll();
+  }else return false;
+  const okv=!!(r&&r.ok);
+  try{
+    if(typeof devLog==='function')devLog('PR15 '+tag+(okv?' → OK':' → RECUSADO')+
+      (r&&r.reason?' ('+r.reason+')':'')+
+      (okv&&r.kind?' '+r.kind+'/'+r.variant:''));
+  }catch(e){}
+  return okv;
+}
+/* ---- seção anexada em #devpanel (mesmo padrão do PR14) ---- */
+function pr15DevIntentSection(){
+  if(!document||typeof document.getElementById!=='function')return;
+  if(!(typeof DEV_MODE!=='undefined'&&DEV_MODE))return;
+  const el=document.getElementById('devpanel');
+  if(!el)return;
+  let sec=document.getElementById('pr15-intent-dev-section');
+  if(!sec){sec=document.createElement('div');
+    sec.id='pr15-intent-dev-section';el.appendChild(sec);}
+  let st=null;try{st=pr15DevPresenceIntentState();}catch(e){st=null;}
+  const pres=(st&&st.presence)?st.presence:null;
+  const act=(st&&st.intent)?st.intent.act:null;
+  const force=(st&&st.intent)?st.intent.force:null;
+  const esc=(typeof escDev==='function')?escDev:String;
+  const nm=k=>(PR15_INTENT_LABEL[k]&&PR15_INTENT_LABEL[k].nm)||k;
+  const vl=v=>PR15_VARIANT_LABEL[v]||v;
+  const srcTxt=s=>(s==='n2')?'N-2':(s==='n1')?'N-1':'—';
+  const lines=[];
+  if(pres&&pres.active){
+    lines.push('PRESENÇA: ATIVA · '+pres.phase+' · ttl '+(+pres.ttl).toFixed(1)+'s');
+    lines.push('INTENÇÃO: '+(act?nm(act.kind):'—'));
+    lines.push('VARIANTE: '+(act?vl(act.variant):'—'));
+    lines.push('ORIGEM: '+srcTxt(pres.source)+(pres.dev?' · DEV':'')+
+      (pr15DevMem?' (memória sintética)':' (memória real)')+
+      ' · RESSONÂNCIA: '+String(pres.resonance||'—'));
+  }else{
+    lines.push('PRESENÇA: nenhuma');
+    lines.push('FORÇA ARMADA: '+(force&&force.kind?nm(force.kind):'nenhuma')+
+      (force&&force.variant?' · '+vl(force.variant):''));
+  }
+  lines.push('APLICAR EFEITO: '+(pr15DevApplyEffects?'LIGADO (efêmero)':'DESLIGADO')+
+    ' · persistente: '+
+    (pr15DevApplyEffects?'SIMULADO (saldo real intocado)':'bloqueado'));
+  let h='<h4 style="margin-top:10px">PR15 · ECHOS ENTRE RUNS — PRESENÇA TEMPORAL</h4>';
+  h+='<div style="font-family:Consolas,monospace;font-size:10px;line-height:1.7;'+
+     'color:#9db8c8;white-space:pre-wrap">'+esc(lines.join('\n'))+'</div>';
+  if(typeof devBtn==='function'){
+    const row=(cells)=>'<div class="dvrow" style="margin-top:5px;flex-wrap:wrap">'+
+      cells.join('')+'</div>';
+    h+=row([devBtn('i:force:allied','◈ FORÇAR ALIADA'),
+            devBtn('i:force:rival','◇ FORÇAR RIVAL'),
+            devBtn('i:force:ambiguous','◬ FORÇAR AMBÍGUA')]);
+    /* as 9 variantes, agrupadas por família — todas testáveis direto */
+    for(const k of PR15_INTENT_LIST){
+      const L=PR15_INTENT_LABEL[k];
+      h+=row((PR15_VARIANTS[k]||[]).map(v=>devBtn('i:var:'+v,
+        (L?L.sym:'·')+' '+PR15_DEV_VARIANT_SHORT[v])));
+    }
+    h+=row([devBtn('i:apply',
+      (pr15DevApplyEffects?'◉':'○')+' APLICAR EFEITO: '+
+      (pr15DevApplyEffects?'LIGADO':'DESLIGADO'))]);
+    h+=row([devBtn('i:clear','✕ LIMPAR PRESENÇA TEMPORAL','warn')]);
+  }
+  sec.innerHTML=h;
+}
+/* ---- B4-FIX1-DEV-FIM ---- */
+
+/* =====================================================================
+   SANDBOX — contexto isolado. O laboratório recebe registro vazio e o
+   estado real volta intacto. Nenhuma consequência do laboratório toca
+   recurso real (pr15IntentGuard já bloqueia aplicação em sandbox).
+   ===================================================================== */
+let pr15IntentSandboxStash=null;
+function pr15IntentSandboxContextStart(){
+  pr15DevMem=null;pr15DevMemSrc='n1';      // B4-FIX #1: sintética não entra no laboratório
+  pr15DevApplyEffects=false;               // B4-FIX #1: switch nunca entra no laboratório
+  pr15IntentClear((typeof pr15Presence!=='undefined')?pr15Presence:null);
+  pr15IntentSandboxStash=pr15IntentRun;
+  pr15IntentRun=pr15IntentFresh();
+  pr15IntentForce=null;
+  return true;
+}
+function pr15IntentSandboxTearDown(){
+  pr15IntentClear((typeof pr15Presence!=='undefined')?pr15Presence:null);
+  pr15IntentRun=(pr15IntentSandboxStash&&typeof pr15IntentSandboxStash==='object')
+    ?pr15IntentSandboxStash:pr15IntentFresh();
+  pr15IntentSandboxStash=null;
+  pr15IntentForce=null;
+  return true;
+}
+
+/* =====================================================================
+   KIT — integração por monkey-patch aditivo (PR12/13/14/B1/B2/B3).
+   Este kit BOOTA POR ÚLTIMO, então cada wrapper roda DEPOIS do
+   correspondente do B3 — exatamente a janela em que o corpo já existe.
+   ===================================================================== */
+function pr15IntentKitBoot(){
+  if(pr15IntentKitBoot.done)return;pr15IntentKitBoot.done=true;
+  /* 1. materialização: anexa intenção + variante + anúncio.
+     Cobre os três caminhos (Director, Continue e DEV) porque os três
+     chamam pr15PresSpawn pelo nome. */
+  try{
+    const _sp=pr15PresSpawn;pr15PresSpawn=function(enc,opts){
+      const p=_sp.apply(this,arguments);
+      try{if(p)pr15IntentAttach(p,enc,opts||{});}catch(e){}
+      return p;
+    };
+  }catch(e){}
+  /* 2. cleanup: o estado de intenção morre com o corpo */
+  try{
+    const _en=pr15PresEnd;pr15PresEnd=function(reason){
+      try{pr15IntentClear((typeof pr15Presence!=='undefined')?pr15Presence:null);}catch(e){}
+      return _en.apply(this,arguments);
+    };
+  }catch(e){}
+  /* 3. update: DEPOIS do pr15PresUpdate do B3 */
+  try{
+    const _ua=updateAllies;updateAllies=function(dt){
+      const r=_ua.apply(this,arguments);
+      try{pr15IntentUpdate(dt);}catch(e){}
+      return r;
+    };
+  }catch(e){}
+  /* 4. renderer: DEPOIS do pr15PresDraw do B3 */
+  try{
+    const _dw=drawWorldExtras;drawWorldExtras=function(){
+      const r=_dw.apply(this,arguments);
+      try{pr15IntentDraw();}catch(e){}
+      return r;
+    };
+  }catch(e){}
+  /* 5. indicador off-screen (passagem screen-space, depois do restore) */
+  try{
+    const _rd=render;render=function(){
+      const r=_rd.apply(this,arguments);
+      try{pr15IntentEdge();}catch(e){}
+      return r;
+    };
+  }catch(e){}
+  /* 6. checkpoint: cp.pr15intent (campo próprio; B2/B3 intocados) */
+  try{
+    const _bc=smBuildCheckpoint;smBuildCheckpoint=function(reason,waveOverride){
+      const cp=_bc.apply(this,arguments);
+      try{if(cp&&typeof cp==='object')cp.pr15intent=pr15IntentPack();}catch(e){}
+      return cp;
+    };
+  }catch(e){}
+  /* 7. Continue: o REGISTRO é restaurado ANTES de chamar o wrapper do B3
+     — porque é o B3 quem reconstrói o corpo (pr15PresRebuild →
+     pr15PresSpawn → pr15IntentAttach). Se o registro viesse depois, a
+     anexação não encontraria `act` e RE-ROLARIA a intenção. O reancoramento
+     dos contadores acontece depois, quando o corpo já existe. */
+  try{
+    const _rs=resumeRun;resumeRun=function(){
+      try{pr15IntentUnpack((typeof hasActiveRun==='function'&&hasActiveRun())?activeRun:null);}catch(e){}
+      const r=_rs.apply(this,arguments);
+      try{pr15IntentRebuild();}catch(e){}
+      return r;
+    };
+  }catch(e){}
+  /* 8. ciclo de vida da run */
+  try{
+    const _st=startRun;startRun=function(opts){
+      try{pr15IntentReset();}catch(e){}
+      return _st.apply(this,arguments);
+    };
+    const _pd=onPlayerDeath;onPlayerDeath=function(){
+      const r=_pd.apply(this,arguments);try{pr15IntentReset();}catch(e){}return r;
+    };
+    const _ov=onVictory;onVictory=function(){
+      const r=_ov.apply(this,arguments);try{pr15IntentReset();}catch(e){}return r;
+    };
+    const _sv=showVictory;showVictory=function(){
+      const r=_sv.apply(this,arguments);try{pr15IntentReset();}catch(e){}return r;
+    };
+    const _ab=abortRun;abortRun=function(){
+      const r=_ab.apply(this,arguments);try{pr15IntentReset();}catch(e){}return r;
+    };
+  }catch(e){}
+  /* 9. slots */
+  try{
+    const _as=activateSlot;activateSlot=function(i){
+      const r=_as.apply(this,arguments);try{pr15IntentReset();}catch(e){}return r;
+    };
+    const _cs=smClearSlotSave;smClearSlotSave=function(){
+      const r=_cs.apply(this,arguments);try{pr15IntentReset();}catch(e){}return r;
+    };
+  }catch(e){}
+  /* 10. Sandbox */
+  try{
+    const _ss=sandboxStart;sandboxStart=function(){
+      const r=_ss.apply(this,arguments);
+      if(r){try{pr15IntentSandboxContextStart();}catch(e){}}
+      return r;
+    };
+    const _sr=sandboxRestart;sandboxRestart=function(){
+      const r=_sr.apply(this,arguments);
+      try{pr15IntentSandboxContextStart();}catch(e){}
+      return r;
+    };
+    const _se=sandboxEndToSetup;sandboxEndToSetup=function(){
+      const r=_se.apply(this,arguments);
+      try{pr15IntentSandboxTearDown();}catch(e){}
+      return r;
+    };
+    const _sx=sandboxExit;sandboxExit=function(m){
+      const r=_sx.apply(this,arguments);
+      try{pr15IntentSandboxTearDown();}catch(e){}
+      return r;
+    };
+    const _sc=sandboxCloseSetup;sandboxCloseSetup=function(){
+      const r=_sc.apply(this,arguments);
+      try{pr15IntentSandboxTearDown();}catch(e){}
+      return r;
+    };
+  }catch(e){}
+  /* 11. DEV.pr15Intent* — guardados, inertes em release */
+  try{
+    if(typeof DEV!=='undefined'&&DEV&&typeof DEV==='object'){
+      DEV.pr15IntentState=pr15DevIntentState;
+      DEV.pr15IntentExplain=pr15DevIntentExplain;
+      DEV.pr15ForceIntent=pr15DevIntentForce;
+      DEV.pr15ForceVariant=pr15DevIntentForceVariant;
+      DEV.pr15PresenceIntentState=pr15DevPresenceIntentState;
+      /* B4-FIX #1 — playtest: os mesmos poderes, alcançáveis pelo painel */
+      DEV.pr15IntentSpawn=pr15DevIntentSpawn;
+      DEV.pr15IntentClear=pr15DevIntentClearAll;
+      DEV.pr15IntentApplyEffects=pr15DevIntentToggleApply;
+      DEV.pr15IntentDevSection=pr15DevIntentSection;
+    }
+  }catch(e){}
+  /* 12. B4-FIX #1 — memória sintética: o resolve do B3 passa a reconhECER o
+     registro sintético, mas SOMENTE em DEV e SOMENTE para aquele id.
+     Qualquer outro id segue o caminho real do B3 sem alteração (o bloco B3
+     não é editado; isto é um wrapper aditivo, como os demais deste kit). */
+  try{
+    const _prm=pr15PresResolveMemory;
+    pr15PresResolveMemory=function(memId){
+      if(DEV_MODE&&pr15DevMem&&String(memId)===String(pr15DevMem.id))
+        return {rec:pr15DevMem,idx:0,source:pr15DevMemSrc};
+      return _prm.apply(this,arguments);
+    };
+  }catch(e){}
+  /* 13. B4-FIX #1 — seção no painel DEV + comandos 'i:*'.
+     Mesmo padrão do PR14 (factionPresencePhysicalKitBoot, passo 7). */
+  try{
+    if(typeof devCommand==='function'){
+      const _dc=devCommand;devCommand=function(c){
+        if(typeof c==='string'&&c.indexOf('i:')===0)
+          return pr15DevIntentCommand(c.slice(2));
+        return _dc.apply(this,arguments);
+      };
+    }
+  }catch(e){}
+  try{
+    if(typeof devRender==='function'){
+      const _dr=devRender;devRender=function(){
+        const r=_dr.apply(this,arguments);
+        try{pr15DevIntentSection();}catch(e){}
+        return r;
+      };
+    }
+  }catch(e){}
+  /* 14. B4-FIX #1 — a memória sintética nunca sobrevive ao sandbox */
+  try{
+    const _s0=sandboxStart;sandboxStart=function(){
+      const r=_s0.apply(this,arguments);pr15DevMem=null;return r;
+    };
+    const _s1=sandboxExit;sandboxExit=function(m){
+      const r=_s1.apply(this,arguments);pr15DevMem=null;return r;
+    };
+  }catch(e){}
+}
+/* ==================== PR15·fim b4 ==================== */
+
+
+/* =====================================================================
    BOOT
    ===================================================================== */
 fracKitBoot();
@@ -33796,6 +35845,7 @@ factionPresencePhysicalKitBoot();   // PR 14: Presença física na arena (B3)
 pr15TemporalKitBoot();            // PR15·b1: Memória Temporal — assinatura de run (fundação de dados)
 pr15MemoryKitBoot();              // PR15·b2: Director de Memórias Temporais (decisão + agendamento)
 pr15PresenceKitBoot();            // PR15·b3: Presença Temporal Física (entidade + ciclo de vida)
+pr15IntentKitBoot();              // PR15·b4: Intenção + interação + significado (bloco final do PR15)
 
 /* ---- expõe o namespace no console apenas em build de desenvolvimento ---- */
 if(IS_DEV_BUILD){
