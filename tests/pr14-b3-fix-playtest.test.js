@@ -537,8 +537,8 @@ ok('47/48. SM_VERSION=3 e FRACTURE_STATE_VERSION=1',()=>{
   assert.strictEqual(t.SM_VERSION,3);
   assert.strictEqual(t.FRACTURE_STATE_VERSION,1);
 });
-ok('S. versão runtime = 0.8.0-alpha',()=>{
-  assert.strictEqual(t.ECHO_VERSION,'0.8.0-alpha');
+ok('S. versão runtime = 0.9.0-alpha',()=>{
+  assert.strictEqual(t.ECHO_VERSION,'0.9.0-alpha');
 });
 ok('49/50. 12 FACTION_RUN_EVENTS + 4 FRAC_CONTACT_EVENTS intactos',()=>{
   assert.strictEqual(t.FACTION_RUN_EVENTS.length,12);

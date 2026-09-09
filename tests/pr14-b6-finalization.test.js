@@ -26,7 +26,7 @@
    Princípios validados:
      · FACÇÃO ≠ TEMA; afinidade só LEITURA nas presenças.
      · FACTION_PRESENCE_ACTIVE_CAP = 1 mantido.
-     · SM_VERSION=3 · FRACTURE_STATE_VERSION=1 · 0.8.0-alpha.
+     · SM_VERSION=3 · FRACTURE_STATE_VERSION=1 · 0.9.0-alpha.
    Rodar: npm test  |  node tests/pr14-b6-finalization.test.js
    ===================================================================== */
 const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert');
@@ -216,10 +216,10 @@ console.log('\n=== PR14 · B6 — FECHAMENTO / AUDITORIA FINAL (FALA DO ECHO · 
 /* ============================================================
    ARQUITETURA / MAPA TÉCNICO (1–8)
    ============================================================ */
-ok('1. versões congeladas: SM_VERSION=3 · FRACTURE_STATE_VERSION=1 · 0.8.0-alpha',()=>{
+ok('1. versões congeladas: SM_VERSION=3 · FRACTURE_STATE_VERSION=1 · 0.9.0-alpha',()=>{
   assert.strictEqual(t.SM_VERSION,3);
   assert.strictEqual(t.FRACTURE_STATE_VERSION,1);
-  assert.strictEqual(t.ECHO_VERSION,'0.8.0-alpha');
+  assert.strictEqual(t.ECHO_VERSION,'0.9.0-alpha');
 });
 ok('2. cap de presença ativa segue 1 (não aumentou)',()=>{
   assert.strictEqual(t.FACTION_PRESENCE_ACTIVE_CAP,1);

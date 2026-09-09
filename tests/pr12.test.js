@@ -20,6 +20,7 @@
    Rodar: npm test  |  node tests/pr12.test.js
    ===================================================================== */
 const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert');
+const REG=require('./suite-registry');
 
 const ROOT=path.join(__dirname,'..');
 const html=fs.readFileSync(path.join(ROOT,'index.html'),'utf8');
@@ -2430,13 +2431,15 @@ ok('B5/R5: sessão PR12 no laboratório (9999⧗/aliadas/H-N-A/descobrir tudo/eq
 /* ============ [20] B6 — INTEGRAÇÃO, GUARDS E PERSISTÊNCIA FINAL ============ */
 console.log('\n[20] B6 — PR12 na suíte oficial, catálogo 43, temporários mecânicos e estoque anti-exploit');
 ok('B6: package.json integra a PR12 no script oficial — npm test executa tests/pr12.test.js',()=>{
-  const pkg=JSON.parse(fs.readFileSync(path.join(ROOT,'package.json'),'utf8'));
-  const script=pkg.scripts.test||'';
-  assert.ok(script.indexOf('node tests/pr12.test.js')>=0,
+  /* A cadeia `&&` literal foi substituída pelo runner tests/run-all.js
+     (descoberta automática + isolamento por processo). A ordem de execução
+     deixou de ser significativa — cada suíte roda isolada — e a garantia
+     de integração passou a ser a descoberta: ver tests/suite-registry.js. */
+  assert.ok(REG.runnerInstalled(),'npm test precisa invocar tests/run-all.js');
+  assert.ok(REG.suiteIsDiscovered('pr12'),
     'npm test precisa rodar a PR12 sem comando separado');
-  assert.ok(script.indexOf('node tests/endings.test.js')<script.indexOf('node tests/pr12.test.js'),
-    'PR12 roda por último, após as suítes legadas');
-  assert.ok(script.split('&&').filter(Boolean).length>=17,'17 suítes encadeadas');
+  assert.ok(REG.discoveredSuites().length>=17,
+    'a regressão precisa cobrir ao menos as 17 suítes legadas');
 });
 ok('B6: catálogo — 43 IDs únicos com distribuição Âncora 9 · Remanescentes 9 · Consórcio 10 · Desviados 9 · Neutros 6 e 14/14/15 por categoria',()=>{
   const items=t.ECHO_EQUIP;

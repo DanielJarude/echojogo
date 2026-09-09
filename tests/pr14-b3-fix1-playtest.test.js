@@ -24,7 +24,7 @@
       · cobre os 8 operadores; distinção operador × Echo (B4 não antecipado).
 
    D. REGRESSÕES (itens 36-52)
-      · versões (0.8.0-alpha / SM_VERSION 3 / FRACTURE_STATE_VERSION 1);
+      · versões (0.9.0-alpha / SM_VERSION 3 / FRACTURE_STATE_VERSION 1);
       · B2/B3/B3-FIX intactos; eventos de facção; presença física;
       · pack/unpack idempotente com sedW; addResidues/clamp preservados.
 
@@ -442,7 +442,7 @@ ok('35. é fala de OPERADOR (não de Echo): não referencia trust/Echo (B4 não 
 /* D. REGRESSÕES (36-52)                                               */
 /* ================================================================== */
 
-ok('36. ECHO_VERSION = 0.8.0-alpha',()=>{assert.strictEqual(t.ECHO_VERSION,'0.8.0-alpha');});
+ok('36. ECHO_VERSION = 0.9.0-alpha',()=>{assert.strictEqual(t.ECHO_VERSION,'0.9.0-alpha');});
 ok('37. SM_VERSION = 3 (sem migration)',()=>{assert.strictEqual(t.SM_VERSION,3);});
 ok('38. FRACTURE_STATE_VERSION = 1',()=>{assert.strictEqual(t.FRACTURE_STATE_VERSION,1);});
 ok('39. 12 FACTION_RUN_EVENTS',()=>{assert.strictEqual(t.FACTION_RUN_EVENTS.length,12);});
