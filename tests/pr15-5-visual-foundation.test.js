@@ -79,7 +79,7 @@ ok('E01 damageEnemy registra hurt',()=>{T.startRun();const e=T.spawnEnemy('chase
 ok('E02 hurt preserva flash legado',()=>{T.startRun();const e=T.spawnEnemy('chaser',300,300,1);e.spawnT=0;T.damageEnemy(e,1,200,300,false,false);assert.ok(e.flashT>0);});
 ok('E03 dano permanece exato',()=>{T.startRun();const e=T.spawnEnemy('chaser',300,300,1);e.spawnT=0;const hp=e.hp;T.damageEnemy(e,1,200,300,false,false);assert.ok(near(e.hp,hp-1));});
 ok('E04 reação expira',()=>{const e=entity();T.visualNotify(e,'hurt',{duration:.1});T.visualTimelineTick(e,.2);assert.strictEqual(e.visual.event,'');});
-ok('E05 hits repetidos continuam O(1)',()=>{const e=entity();for(let i=0;i<10000;i++)T.visualNotify(e,'hurt',{x:i,y:i});assert.ok(Object.keys(e.visual).length<=12&&!Object.values(e.visual).some(Array.isArray));});
+ok('E05 hits repetidos continuam O(1)',()=>{const e=entity();for(let i=0;i<10000;i++)T.visualNotify(e,'hurt',{x:i,y:i});assert.ok(Object.keys(e.visual).length<=20&&!Object.values(e.visual).some(Array.isArray));});
 ok('F01 fire gera recoil visual',()=>{T.startRun();const p=T.getPlayer(),w=T.WEAPONS[0];T.fireWeaponFrom(p,w,'ally',1);assert.strictEqual(T.visualWeaponRecoil(p),1);});
 ok('F02 recoil visual recupera',()=>{const e=entity();T.visualNotify(e,'weaponFire',{});T.visualTimelineTick(e,1);assert.strictEqual(T.visualWeaponRecoil(e),0);});
 ok('F03 projectile spawn preservado',()=>{T.startRun();const p=T.getPlayer(),w=T.WEAPONS.find(x=>x.id==='shotgun');T.setProjectiles([]);T.fireWeaponFrom(p,w,'ally',1);assert.strictEqual(T.getProjectiles().length,7);});

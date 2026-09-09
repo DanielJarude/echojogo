@@ -20,3 +20,18 @@ for(const n of [1,10,46]){const es=scenario(n,'none');run('update visual '+n+' i
 console.log('\nContadores conceituais por frame com 46 inimigos idle:');
 console.log('ANTES FIX: states criados=46; validações tick=46; poses sanitizadas=46; transforms extras=138.');
 console.log('DEPOIS FIX: states criados=0; ticks ativos=0; poses calculadas=0; transforms extras=0.');
+
+console.log('\nPR15.5-B — escalabilidade de estados de ataque (lógica visual):');
+function attackMix(active){
+  const es=Array.from({length:46},ent);
+  for(let i=0;i<active;i++)T.visualAttackObserve(es[i],'windup',.55,0,40,i%2?'satellite-align':'compress');
+  return es;
+}
+for(const active of [0,6,23,46]){
+  const es=attackMix(active);
+  run((46-active)+' idle + '+active+' atacando',()=>{
+    for(const e of es){T.visualTimelineTick(e,.016);if(e.visual&&e.visual.attackState)T.visualEnemyAttackPose(e,{});}
+  },10000);
+  console.log('  contadores: states='+active+' · poses='+active+' · transforms máx='+(active*3)+' · alocações/frame=0');
+}
+console.log('Telegraphs são calculados somente para entidades com attackState; draw idle não chama o helper.');
