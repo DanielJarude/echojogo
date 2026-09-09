@@ -13,7 +13,7 @@
    · afinidade é SÓ lida (nenhum +aff/-aff automático);
    · lifecycle/cleanup em death/victory/reset/new run;
    · Save/Continue (cp.presence) aditivo, save antigo carrega, sem duplicar;
-   · Sandbox isolado; SM_VERSION=3; FRACTURE_STATE_VERSION=1; versão 0.8.0-alpha;
+   · Sandbox isolado; SM_VERSION=3; FRACTURE_STATE_VERSION=1; versão 0.9.0-alpha;
    · eventos antigos (12 FACTION_RUN_EVENTS + 4 FRAC_CONTACT_EVENTS) intactos;
    · stress determinístico (centenas de seeds × ondas 1–20).
    Rodar: npm test  |  node tests/pr14-b2-faction-presence.test.js
@@ -434,11 +434,11 @@ ok('37/38/39. eventos de facção antigos intactos (12 + 4)',()=>{
     assert.ok(t.ALL_RUN_EVENTS.indexOf(e)>=0,'evento sumiu do pool: '+e.id);
 });
 
-/* 40. versão permanece 0.8.0-alpha (runtime + package) */
-ok('40. versão runtime/package = 0.8.0-alpha',()=>{
-  assert.strictEqual(t.ECHO_VERSION,'0.8.0-alpha');
+/* 40. versão permanece 0.9.0-alpha (runtime + package) */
+ok('40. versão runtime/package = 0.9.0-alpha',()=>{
+  assert.strictEqual(t.ECHO_VERSION,'0.9.0-alpha');
   const pkg=JSON.parse(fs.readFileSync(path.join(ROOT,'package.json'),'utf8'));
-  assert.strictEqual(pkg.version,'0.8.0-alpha');
+  assert.strictEqual(pkg.version,'0.9.0-alpha');
 });
 
 /* ---------------- B2-V — STRESS / DETERMINISMO ---------------- */

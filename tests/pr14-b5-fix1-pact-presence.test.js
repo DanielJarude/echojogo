@@ -572,10 +572,10 @@ ok('52. presença agendada com pactOffer sobrevive round-trip do pack',()=>{
   t.factionPresenceUnpack(cp);
   assert.strictEqual(t.getFP().scheduled.pactOffer,1);
 });
-ok('53. versões inalteradas (SM=3, FRACTURE=1, 0.8.0-alpha)',()=>{
+ok('53. versões inalteradas (SM=3, FRACTURE=1, 0.9.0-alpha)',()=>{
   assert.strictEqual(t.SM_VERSION,3);
   assert.strictEqual(t.FRACTURE_STATE_VERSION,1);
-  assert.strictEqual(t.ECHO_VERSION,'0.8.0-alpha');
+  assert.strictEqual(t.ECHO_VERSION,'0.9.0-alpha');
 });
 ok('54. Continue não duplica consequência rival (idempotente)',()=>{
   beginRun(1);setAff('anchor',60);setAff('deviants',50);

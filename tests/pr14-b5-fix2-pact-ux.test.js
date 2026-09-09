@@ -316,10 +316,10 @@ ok('19. Save/Continue intacto (pack/unpack round-trip do pactOffer)',()=>{
   assert.strictEqual(t.getFP().pactDecl.anchor,4);
   assert.strictEqual(t.getFP().pactEligWave.anchor,2);
 });
-ok('20. versões inalteradas (SM=3, FRACTURE=1, 0.8.0-alpha)',()=>{
+ok('20. versões inalteradas (SM=3, FRACTURE=1, 0.9.0-alpha)',()=>{
   assert.strictEqual(t.SM_VERSION,3);
   assert.strictEqual(t.FRACTURE_STATE_VERSION,1);
-  assert.strictEqual(t.ECHO_VERSION,'0.8.0-alpha');
+  assert.strictEqual(t.ECHO_VERSION,'0.9.0-alpha');
 });
 
 /* ============================================================

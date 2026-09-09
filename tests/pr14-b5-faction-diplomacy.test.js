@@ -27,7 +27,7 @@
      · Máximo 1 pacto por eixo (anchor XOR deviants; remnants XOR consortium).
      · Idempotência: consolidar/romper acontece UMA vez; Continue não duplica.
      · FACÇÃO ≠ TEMA · Moralidade ≠ Diplomacia.
-     · SM_VERSION=3 · FRACTURE_STATE_VERSION=1 · 0.8.0-alpha.
+     · SM_VERSION=3 · FRACTURE_STATE_VERSION=1 · 0.9.0-alpha.
    Rodar: npm test  |  node tests/pr14-b5-faction-diplomacy.test.js
    ===================================================================== */
 const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert');
@@ -660,10 +660,10 @@ ok('67. pack só grava 0/1 em pact/pactBroke (flag pequena, run-scoped)',()=>{
     assert.ok(p.pactBroke[id]===0||p.pactBroke[id]===1);
   }
 });
-ok('68. versões intactas: SM_VERSION=3, FRACTURE_STATE_VERSION=1, 0.8.0-alpha',()=>{
+ok('68. versões intactas: SM_VERSION=3, FRACTURE_STATE_VERSION=1, 0.9.0-alpha',()=>{
   assert.strictEqual(t.SM_VERSION,3);
   assert.strictEqual(t.FRACTURE_STATE_VERSION,1);
-  assert.strictEqual(t.ECHO_VERSION,'0.8.0-alpha');
+  assert.strictEqual(t.ECHO_VERSION,'0.9.0-alpha');
 });
 
 /* ============================================================

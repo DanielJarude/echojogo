@@ -256,7 +256,7 @@ ok('19. Renderer: função de ponte é tolerante (sem echoDesktop = no-op)', () 
   assert(/typeof D\.setDevMode==='function'/.test(rawSrc), 'checa a API antes de chamar');
 });
 ok('20. Versões e save intactos (nenhuma alteração de versão/save)', () => {
-  assert(/const ECHO_VERSION='0\.8\.0-alpha'/.test(rawSrc), 'ECHO_VERSION 0.8.0-alpha');
+  assert(/const ECHO_VERSION='0\.9\.0-alpha'/.test(rawSrc), 'ECHO_VERSION 0.9.0-alpha');
   assert(/SM_VERSION\s*=\s*3/.test(rawSrc), 'SM_VERSION=3');
   assert(/FRACTURE_STATE_VERSION\s*=\s*1/.test(rawSrc), 'FRACTURE_STATE_VERSION=1');
   /* devTainted continua começando desligado e NÃO é lavado ao sair do DEV */

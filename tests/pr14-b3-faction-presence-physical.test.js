@@ -11,7 +11,7 @@
    · Continue reconstrói sem duplicar recompensa;
    · Sandbox isolado; FACÇÃO ≠ TEMA (Theme/intensidade/composição imutáveis);
    · nenhuma unidade hostil (enemies intocado); afinidade só lida;
-   · 16 eventos antigos intactos; SM=3; FRACTURE_STATE_VERSION=1; 0.8.0-alpha;
+   · 16 eventos antigos intactos; SM=3; FRACTURE_STATE_VERSION=1; 0.9.0-alpha;
    · stress determinístico (centenas de seeds × ondas 1–20).
    Rodar: npm test  |  node tests/pr14-b3-faction-presence-physical.test.js
    ===================================================================== */
@@ -440,9 +440,9 @@ ok('29. SM_VERSION=3 e FRACTURE_STATE_VERSION=1',()=>{
   assert.strictEqual(t.FRACTURE_STATE_VERSION,1);
 });
 
-/* 30. versão 0.8.0-alpha */
-ok('30. versão runtime = 0.8.0-alpha',()=>{
-  assert.strictEqual(t.ECHO_VERSION,'0.8.0-alpha');
+/* 30. versão 0.9.0-alpha */
+ok('30. versão runtime = 0.9.0-alpha',()=>{
+  assert.strictEqual(t.ECHO_VERSION,'0.9.0-alpha');
 });
 
 /* 31. ÂNCORA restaura escudo (só escudo, nunca HP) */

@@ -23,7 +23,7 @@
      · Reação NARRATIVA: fala NÃO altera trust/afinidade/buff.
      · Dissonância coerente: Echo hostil/em ruptura não fala amistoso.
      · Sem Math.random no bloco de reação (determinismo cosmético).
-     · SM_VERSION=3 · FRACTURE_STATE_VERSION=1 · 0.8.0-alpha.
+     · SM_VERSION=3 · FRACTURE_STATE_VERSION=1 · 0.9.0-alpha.
    Rodar: npm test  |  node tests/pr14-b4-four-factions.test.js
    ===================================================================== */
 const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert');

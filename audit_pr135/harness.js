@@ -73,6 +73,27 @@ src+='\n;globalThis.__t={'+
   'getPr15Abort:()=>!!(pr15Ctx&&pr15Ctx.abort),setPr15Abort:v=>{pr15Ctx.abort=!!v;},'+
   'getSlotSeq:()=>{try{return (smRoot&&smRoot.slots&&curSlot>=1&&smRoot.slots[curSlot])?(smRoot.slots[curSlot].seq|0):0;}catch(e){return 0;}},'+
   'saveEchoes,loadEchoes,abortRun,onPlayerDeath,saveProg,saveMeta'+
+  /* PR15·b2: Director de Memórias Temporais */
+  ','+
+  'PR15_MEM_CFG,PR15_MEM_STATUS,PR15_MEM_SOURCES,PR15_MEM_RESONANCE,'+
+  'pr15MemSeedFor,pr15MemRng,pr15MemRunSeed,pr15MemSlot,pr15MemRunKey,'+
+  'pr15MemIsEligible,pr15MemCandidates,pr15MemResonance,pr15MemMakeEncounter,'+
+  'pr15MemPickSource,pr15MemFresh,pr15MemBuildPlan,pr15MemBeginRun,pr15MemEndRun,'+
+  'pr15MemForgetRun,pr15MemWaveBusy,pr15MemCooldownBusy,pr15MemOnWave,'+
+  'pr15MemSanEnc,pr15MemSanitize,pr15MemPack,pr15MemUnpack,pr15MemSnapshot,'+
+  'pr15DevMemoryState,pr15DevMemoryCandidates,pr15DevMemorySchedule,pr15DevMemoryForce,'+
+  'pr15MemSandboxContextStart,pr15MemSandboxTearDown,pr15MemoryKitBoot,'+
+  'getPr15MemRun:()=>pr15MemRun,setPr15MemRun:v=>{pr15MemRun=v;},'+
+  'fractureGetSeed,fractureGetThemeId,fractureSetSeed,fractureEnsureTheme,'+
+  'fractureBeginRun,fractureEndRun,fractureRunPack,fractureRunUnpack,'+
+  'getFractureRun:()=>fractureRun,setFractureRun:v=>{fractureRun=v;},'+
+  'getEvMem:()=>evMem,setEvMem:v=>{evMem=v;},'+
+  'getBeacon:()=>beacon,setBeacon:v=>{beacon=v;},'+
+  'getFactionPresenceRun:()=>factionPresenceRun,setFactionPresenceRun:v=>{factionPresenceRun=v;},'+
+  'getSmRestoring:()=>smRestoring,setSmRestoring:v=>{smRestoring=v;},'+
+  'spawnWave,captureCheckpoint,smClearSlotSave,smCommit,getSmRoot:()=>smRoot,'+
+  'getMaxWave:()=>MAX_WAVE,devTaint,getDevMode:()=>DEV_MODE,setDevMode:v=>{DEV_MODE=v;},'+
+  'getDEV:()=>DEV,fractureHash32,fractureRng'+
   '};';
 function makeStyle(){const store={setProperty(k,v){store[k]=String(v);return v;}};return new Proxy(store,{get(t,k){return k in t?t[k]:'';},set(t,k,v){t[k]=String(v);return true;}});}
 function ctx2d(){const grad={addColorStop(){}};const numProps=new Set(['globalAlpha','lineWidth','shadowBlur','font','fillStyle','strokeStyle','lineCap','textAlign','imageSmoothingEnabled']);return new Proxy({},{get(t,k){if(k==='canvas')return{width:0,height:0};if(k==='measureText')return()=>({width:0});if(k==='getImageData')return()=>({data:new Uint8ClampedArray(4)});if(k==='createLinearGradient'||k==='createRadialGradient'||k==='createPattern')return()=>grad;if(numProps.has(k))return 1;return(...args)=>{const L=globalThis.__ctxLog;if(L)L.push([k,args]);};},set(t,k,v){const L=globalThis.__ctxLog;if(L)L.push(['set:'+k,[v]]);return true;}});}

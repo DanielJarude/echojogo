@@ -18,6 +18,7 @@
    Rodar: npm test  |  node tests/fracture-director.test.js
    ===================================================================== */
 const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert');
+const REG=require('./suite-registry');
 
 const ROOT=path.join(__dirname,'..');
 const html=fs.readFileSync(path.join(ROOT,'index.html'),'utf8');
@@ -358,9 +359,11 @@ ok('fonte: não há duplicação de definições críticas do Diretor',()=>{
     assert.strictEqual(n,1,'definição duplicada/faltando: '+fn+' ('+n+')');
   }
 });
-ok('package.json: a suíte PR13 está no script oficial de testes',()=>{
-  const pkg=JSON.parse(fs.readFileSync(path.join(ROOT,'package.json'),'utf8'));
-  assert.ok(pkg.scripts.test.indexOf('tests/fracture-director.test.js')>=0,
+ok('package.json: a suíte PR13 roda no script oficial de testes',()=>{
+  /* o npm test delega ao runner (descoberta automática), não é mais uma
+     cadeia literal — ver tests/suite-registry.js */
+  assert.ok(REG.runnerInstalled(),'npm test precisa invocar tests/run-all.js');
+  assert.ok(REG.suiteIsDiscovered('fracture-director'),
     'npm test precisa executar tests/fracture-director.test.js');
 });
 
@@ -1300,17 +1303,15 @@ ok('sistemas existentes preservados: facções, eventos, ondas e minibosses inta
   for(const id of ['swarm','orbiter','bulwark','splitter','phantom','singular'])
     assert.ok(t.EDEFS[id],id+' preservado');
 });
-ok('18. nenhum teste legado quebra: as 17 suítes oficiais continuam listadas',()=>{
-  const pkg=JSON.parse(fs.readFileSync(path.join(ROOT,'package.json'),'utf8'));
-  const partes=pkg.scripts.test.split('&&').map(s=>s.trim());
+ok('18. nenhum teste legado quebra: as 17 suítes oficiais continuam na regressão',()=>{
   const esperadas=['shield','operators','legacy-restore','devmode','statmods',
     'items-build-rework','formatters','saveslots','arsenal','sandbox','tab',
-    'personality','morality','relationship','events','endings','pr12'];
-  for(const e of esperadas)
-    assert.ok(partes.some(p=>p.indexOf('tests/'+e+'.test.js')>=0),
-      'suíte legado ausente do npm test: '+e);
-  assert.ok(partes.some(p=>p.indexOf('tests/fracture-director.test.js')>=0),
-    'suíte PR13 ausente');
+    'personality','morality','relationship','events','endings','pr12',
+    'fracture-director'];
+  assert.ok(REG.runnerInstalled(),'npm test precisa invocar tests/run-all.js');
+  const ausentes=REG.missingSuites(esperadas);
+  assert.deepStrictEqual(ausentes,[],
+    'suítes ausentes da regressão: '+ausentes.join(', '));
 });
 ok('documentação da PR13 presente (FRACTURE_DIRECTOR.md)',()=>{
   const doc=path.join(ROOT,'FRACTURE_DIRECTOR.md');
@@ -2537,39 +2538,35 @@ ok('fonte: nenhuma mutação de waveProfile fora do bloco PR13',()=>{
   }
   assert.ok(n>0,'a verificação encontrou escritas para validar');
 });
-ok('npm test continua listando as suítes (18 legadas + PR13 + PR13.5 B2 + PR13.5 B3 + B3-FIX + B4 + B5-A + B5-B + B5-B-FIX + B5.5 + B6 + PR14 B2 + PR14 B3 + PR14 B3-FIX + PR14 B3-FIX.1 + PR14 B4 + PR14 B5 + PR14 B5-FIX.1 + PR14 B5-FIX.2 + PR14 B6 + PR14 B6-FIX.1 + DEV-FIX DevTools + PR14.5 B2 + PR14.5 B3 + PR15·B1)',()=>{
-  const pkg=JSON.parse(fs.readFileSync(path.join(ROOT,'package.json'),'utf8'));
-  const partes=pkg.scripts.test.split('&&').map(s=>s.trim());
-  assert.strictEqual(partes.length,41,'41 suítes no npm test');   // PR15·B1 somou a sua
-  assert.ok(pkg.scripts.test.indexOf('pr15-b1.test.js')>=0,'suíte PR15·B1 integrada');
-  assert.ok(pkg.scripts.test.indexOf('pr145-b2.test.js')>=0,'suíte PR14.5 B2 integrada');
-  assert.ok(pkg.scripts.test.indexOf('pr145-b3.test.js')>=0,'suíte PR14.5 B3 integrada');
-  assert.ok(pkg.scripts.test.indexOf('pr13-5-b55-shop-meta.test.js')>=0,
-    'suíte B5.5 integrada');
-  assert.ok(pkg.scripts.test.indexOf('pr13-5-b6-balance.test.js')>=0,
-    'suíte B6 integrada');
-  assert.ok(pkg.scripts.test.indexOf('pr14-b2-faction-presence.test.js')>=0,
-    'suíte PR14 B2 integrada');
-  assert.ok(pkg.scripts.test.indexOf('pr14-b3-faction-presence-physical.test.js')>=0,
-    'suíte PR14 B3 integrada');
-  assert.ok(pkg.scripts.test.indexOf('pr14-b3-fix-playtest.test.js')>=0,
-    'suíte PR14 B3-FIX integrada');
-  assert.ok(pkg.scripts.test.indexOf('pr14-b3-fix1-playtest.test.js')>=0,
-    'suíte PR14 B3-FIX.1 integrada');
-  assert.ok(pkg.scripts.test.indexOf('pr14-b4-four-factions.test.js')>=0,
-    'suíte PR14 B4 integrada');
-  assert.ok(pkg.scripts.test.indexOf('pr14-b5-faction-diplomacy.test.js')>=0,
-    'suíte PR14 B5 integrada');
-  assert.ok(pkg.scripts.test.indexOf('pr14-b5-fix1-pact-presence.test.js')>=0,
-    'suíte PR14 B5-FIX.1 integrada');
-  assert.ok(pkg.scripts.test.indexOf('pr14-b5-fix2-pact-ux.test.js')>=0,
-    'suíte PR14 B5-FIX.2 integrada');
-  assert.ok(pkg.scripts.test.indexOf('pr14-b6-finalization.test.js')>=0,
-    'suíte PR14 B6 integrada');
-  assert.ok(pkg.scripts.test.indexOf('pr14-b6-fix1-speech-bubble.test.js')>=0,
-    'suíte PR14 B6-FIX.1 integrada');
-  assert.ok(pkg.scripts.test.indexOf('devtools-shortcut.test.js')>=0,
-    'suíte DEV-FIX (DevTools) integrada');
+ok('npm test continua cobrindo todas as suítes (descoberta automática do runner)',()=>{
+  /* A cadeia `&&` literal do package.json foi substituída por
+     tests/run-all.js, que DESCOBRE tests/*.test.js. A garantia deixou de
+     ser "o nome está escrito no script" e passou a ser "o runner
+     descobre e executa a suíte" — ver tests/suite-registry.js. */
+  const esperadas=[
+    'pr15-b1','pr145-b2','pr145-b3','pr13-5-b55-shop-meta','pr13-5-b6-balance',
+    'pr14-b2-faction-presence','pr14-b3-faction-presence-physical',
+    'pr14-b3-fix-playtest','pr14-b3-fix1-playtest','pr14-b4-four-factions',
+    'pr14-b5-faction-diplomacy','pr14-b5-fix1-pact-presence',
+    'pr14-b5-fix2-pact-ux','pr14-b6-finalization','pr14-b6-fix1-speech-bubble',
+    'devtools-shortcut','pr13-5-b2','pr13-5-b3','pr13-5-b3-fix','pr13-5-b4',
+    'pr13-5-b5a','pr13-5-b5b','pr13-5-b5b-hud-fix','fracture-director','pr12'
+  ];
+  assert.ok(REG.runnerInstalled(),'npm test precisa invocar tests/run-all.js');
+  const ausentes=REG.missingSuites(esperadas);
+  assert.deepStrictEqual(ausentes,[],'suítes não descobertas: '+ausentes.join(', '));
+  const todas=REG.discoveredSuites();
+  /* 42 = 41 da cadeia antiga + pr13-5-b5c-paradox (existia no disco mas
+     nunca entrou na lista manual — a descoberta automática corrige isso).
+     >= para não quebrar a cada suíte nova. */
+  assert.ok(todas.length>=42,'esperadas >=42 suítes descobertas, vieram '+todas.length);
+  assert.ok(todas.indexOf('pr13-5-b5c-paradox.test.js')>=0,
+    'pr13-5-b5c-paradox.test.js voltou a integrar a regressão');
+  /* nenhuma suíte no disco fica de fora da descoberta */
+  const emDisco=fs.readdirSync(path.join(ROOT,'tests'))
+    .filter(f=>/\.test\.js$/.test(f)).sort();
+  assert.deepStrictEqual(todas.slice().sort(),emDisco,
+    'toda suíte em tests/ precisa ser descoberta pelo runner');
 });
 
 /* =====================================================================
@@ -4475,7 +4472,7 @@ ok('B5-11: versão do jogo, SM_VERSION e versão do estado do Diretor intactas',
   assert.strictEqual(t.FRACTURE_STATE_VERSION,1,
     'versão do estado do Diretor mudou sem necessidade');
   const pkg=JSON.parse(fs.readFileSync(path.join(ROOT,'package.json'),'utf8'));
-  assert.strictEqual(pkg.version,'0.8.0-alpha','versão do pacote mudou');
+  assert.strictEqual(pkg.version,'0.9.0-alpha','versão do pacote mudou');
 });
 
 ok('B5-12: as 12 assinaturas são alcançáveis e nenhuma domina o conjunto',()=>{
