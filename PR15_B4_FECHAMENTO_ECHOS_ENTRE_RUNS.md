@@ -9,12 +9,28 @@ e *por quê*.
 
 - Branch: `arena/01a0844f-echojogo`
 - Base: `0a79bc7` (merge do PR #26, `main`)
-- Bloco no `index.html`: linhas **33790 – 35521** (1 732 linhas), entre
+- Bloco no `index.html`: linhas **33790 – 35835** (2 046 linhas), entre
   `/* ===== PR15·b4 — INTENÇÃO …` e `/* ===== PR15·fim b4 =====*/`
 - Boot: `pr15IntentKitBoot();` depois de `pr15PresenceKitBoot();` (o kit do B4
   boota **por último**, então cada wrapper roda depois do correspondente do B3)
-- Suíte: `tests/pr15-b4.test.js` — **134 checks + SIM-A…SIM-F**
-- `npm test`: **45 suítes · 2 486 checks · 0 falhas · 124.0 s**
+- Suíte: `tests/pr15-b4.test.js` — **159 checks + SIM-A…SIM-F**
+- `npm test`: **45 suítes · 2 511 checks · 0 falhas**
+- **Playtest humano concluído — 9/9 variantes aprovadas** (§AG)
+- **Veredito atual: GO PARA PR/MERGE** (§AE)
+
+### Commits deste PR
+
+| Commit | Conteúdo |
+|---|---|
+| `0c268dd` | B4 — intenção, interação e significado (`index.html`) |
+| `004b5cf` | B4 — harness de auditoria: exports do bloco |
+| `e14fa21` | B4 — suíte `tests/pr15-b4.test.js` + SIM-A…SIM-F |
+| `1c67255` | B4 — este documento |
+| `d0fde5b` | **B4-FIX #1** — controles de playtest DEV da Presença Temporal |
+
+O diff de **código** do B4 contra a base é **4 729 inserções e 0 deleções**
+(`index.html` 2 050 · `audit_pr135/harness.js` 42 · `tests/pr15-b4.test.js`
+2 637): nenhuma linha pré-existente do jogo foi modificada ou removida.
 
 ---
 
@@ -379,6 +395,11 @@ inertes em release (B4-89). Forçar intenção ou variante chama `devTaint()`, e
 a run **nunca** vira memória legítima e nunca persiste estado do B4
 (B4-90…B4-95). Forçar intenção não cria descriptor falso no B2 (B4-95).
 
+**B4-FIX #1** acrescentou `DEV.pr15IntentSpawn`, `DEV.pr15IntentClear`,
+`DEV.pr15IntentApplyEffects` e `DEV.pr15IntentDevSection`, que são os mesmos
+poderes já existentes, agora alcançáveis pelo painel (§AF). A guarda `!DEV_MODE`
+e o `devTaint()` continuam valendo para todos.
+
 ## V — Isolamento de slot
 
 `activateSlot` e `smClearSlotSave` foram embrulhados para chamar
@@ -403,7 +424,7 @@ a run **nunca** vira memória legítima e nunca persiste estado do B4
   no bloco (B4-111)
 - caps: `afterimageMax 4`, `particleMax 10`, `doneMax 8`, `resMax 8`,
   `reasonMax 12` — nenhum array cresce sem limite (B4-110, SIM-E)
-- 1 200 aparições completas em 3.9 s: 0 órfãs, 0 NaN, sem crescimento (SIM-E)
+- 1 200 aparições completas em 3.8 s: 0 órfãs, 0 NaN, sem crescimento (SIM-E)
 
 ## Y — Regressões
 
@@ -461,56 +482,85 @@ internamente (B4-109); o B4 só acrescenta wrappers aditivos que bootam depois.
 
 ## AB — Dívidas técnicas conhecidas
 
+**Estado após o playtest humano: as seis permanecem ABERTAS e NÃO BLOQUEANTES.**
+Nenhuma virou blocker; nenhuma foi implementada neste fechamento. São
+observações de **sensação de jogo** registradas conscientemente para PRs
+futuros, e o playtest as observou sem reprová-las (§AG).
+
 1. **`allied/legacy` é a variante mais frequente** (50.3%). A ponderação por
    `cause` favorece `legacy` quando há arquétipo histórico — que é quase sempre.
-   Não é bug, mas o playtest deve dizer se enjoa.
+   Não é bug. *Playtest: HERANÇA aprovada; a frequência continua a observar em
+   playtests futuros, com mais runs acumuladas.*
 2. **A âncora é o ponto de spawn**, não um ponto semanticamente significativo.
    Uma memória de boss poderia ancorar na arena do boss. Ficou de fora: exigiria
-   que o B1 gravasse posição.
+   que o B1 gravasse posição. *Playtest: a âncora foi encontrável e a interação
+   funcionou; o significado espacial fica adiado.*
 3. **`unstable` sorteia por `fractureRng(seed^intentSeed)`**, então o resultado é
    fixo por encontro. O jogador que recarrega e repete a aproximação vê o mesmo
    resultado — é o comportamento correto (determinismo), mas não está sinalizado.
+   *Playtest: INSTÁVEL aprovada; a comunicação do determinismo fica adiada.*
 4. **`budget.rep = 6` nunca foi atingido** em nenhuma das 900 runs do SIM-F
    (pior caso medido: 0). O teto existe como defesa, mas a reação de facção é
-   rara o suficiente para nunca chegar perto.
+   rara o suficiente para nunca chegar perto. *Não bloqueante: é folga de
+   segurança, não funcionalidade faltando.*
 5. **`pr15IntentExplain` é caro** (reconstrói o contexto). Só é chamado pelo DEV
    e pelos testes — nunca por frame. Está documentado aqui para ninguém
-   engatá-lo no loop.
+   engatá-lo no loop. *Não bloqueante: custo de ferramenta, não de jogo.*
 6. **O rótulo usa `labelHold = 6.0 s` fixo.** Para `trade` e `scar` o texto é
-   longo e pode sair da tela antes de ser lido. O playtest deve decidir.
+   longo e pode sair da tela antes de ser lido. *Playtest: nenhuma queixa de
+   leitura registrada; a duração fica adiada.*
+
+### Observação adicional de auditoria (não bloqueante)
+
+- **`pr15IntentPlayerDist` é código morto.** Foi superseded por
+  `pr15IntentNodeDist` quando a decisão estrutural da ÂNCORA (§D) fez toda
+  mecânica espacial passar pelo ponto fixo. A função continua declarada e
+  exportada pelo harness, mas **não tem nenhuma chamada** no jogo: zero efeito
+  em runtime, inalcançável, incapaz de produzir NaN. Não foi removida neste
+  fechamento de propósito — remover código aprovado em playtest por limpeza não
+  traz ganho de comportamento e adiciona risco. Fica registrada para uma limpeza
+  futura junto com o harness.
 
 ## AC — Checklist de playtest humano (10 itens)
 
-Marque cada item jogando de verdade, com `DEV_MODE` **desligado**.
+**RESULTADO: playtest concluído e aprovado.** Os itens abaixo foram respondidos
+jogando de verdade. Detalhe em §AG.
 
-- [ ] **1 — Percepção de origem.** Ao ver a presença, você consegue dizer
-      *"isso veio de uma run minha"* sem olhar nenhum menu?
-- [ ] **2 — Percepção de causa.** Você consegue apontar **qual** run de origem
+- [x] **1 — Percepção de origem.** Ao ver a presença, você consegue dizer
+      *"isso veio de uma run minha"* sem olhar nenhum menu? — **SIM**; a
+      manifestação ocorreu naturalmente e a memória anterior foi reconhecida.
+- [x] **2 — Percepção de causa.** Você consegue apontar **qual** run de origem
       ela é (a última? uma mais antiga?) e **por que** ela se comporta assim?
-- [ ] **3 — ALIADA ajuda de verdade.** A zona/pulso/herança muda como você joga
-      aquela arena, ou você a ignora?
-- [ ] **4 — RIVAL é desafio, não castigo.** Depois de uma PRESSÃO TEMPORAL ou
+      — **SIM**, comportamento considerado correto.
+- [x] **3 — ALIADA ajuda de verdade.** A zona/pulso/herança muda como você joga
+      aquela arena, ou você a ignora? — **AJUDA**; ZONA, PULSO e HERANÇA
+      aprovadas individualmente.
+- [x] **4 — RIVAL é desafio, não castigo.** Depois de uma PRESSÃO TEMPORAL ou
       CICATRIZ, você se sente desafiado ou punido? O aviso de 1.4 s é suficiente
-      para reagir?
-- [ ] **5 — Custo lido antes.** Em todas as interações, você soube o que ia
+      para reagir? — **DESAFIO**; PRESSÃO, PROVA e CICATRIZ aprovadas.
+- [x] **5 — Custo lido antes.** Em todas as interações, você soube o que ia
       pagar **antes** de pagar? Algum rótulo saiu da tela rápido demais?
-- [ ] **6 — Âncora encontrável.** Você achou o ponto de interação sem se perder?
-      O indicador off-screen bastou?
-- [ ] **7 — AMBÍGUA é escolha real.** Recusar a ESCOLHA DE RESSONÂNCIA parece uma
-      opção válida, ou você sente que "perdeu"?
-- [ ] **8 — Continue transparente.** Morrer no meio de um encontro e continuar
+      — **SIM**, sem queixa de leitura (a dívida 6 de §AB fica adiada).
+- [x] **6 — Âncora encontrável.** Você achou o ponto de interação sem se perder?
+      O indicador off-screen bastou? — **SIM**.
+- [x] **7 — AMBÍGUA é escolha real.** Recusar a ESCOLHA DE RESSONÂNCIA parece uma
+      opção válida, ou você sente que "perdeu"? — **OPÇÃO VÁLIDA**; TROCA,
+      INSTÁVEL e ESCOLHA aprovadas.
+- [x] **8 — Continue transparente.** Morrer no meio de um encontro e continuar
       retoma exatamente onde estava, sem sensação de reroll ou de ter pago duas
-      vezes?
-- [ ] **9 — Sem snowball.** Depois de 3 aparições numa run, o ganho acumulado
-      parece justo ou você ficou forte demais?
-- [ ] **10 — Sem ruído.** A presença nunca virou inimigo, nunca apareceu na lista
-      de Echos, nunca quebrou o HUD e nunca travou o combate?
+      vezes? — **SIM**; saída e retorno via Continuar restauraram a run
+      corretamente, sem duplicação nem reroll.
+- [x] **9 — Sem snowball.** Depois de 3 aparições numa run, o ganho acumulado
+      parece justo ou você ficou forte demais? — **JUSTO**; condiz com o teto de
+      orçamento medido no SIM-F.
+- [x] **10 — Sem ruído.** A presença nunca virou inimigo, nunca apareceu na lista
+      de Echos, nunca quebrou o HUD e nunca travou o combate? — **CONFIRMADO**.
 
 ## AD — Verificação automatizada
 
 ```
-node tests/pr15-b4.test.js      →  134 PASSARAM · 0 FALHAS
-npm test                        →  45 suítes · 2 486 checks · 0 falhas · 124.0 s
+node tests/pr15-b4.test.js      →  159 PASSARAM · 0 FALHAS
+npm test                        →  45 suítes · 2 511 checks · 0 falhas · 124.3 s
 ```
 
 | SIM | O que mede | Resultado |
@@ -519,18 +569,132 @@ npm test                        →  45 suítes · 2 486 checks · 0 falhas · 1
 | B | determinismo sob 200 000 `Math.random` intercalados | 0 divergências |
 | C | 600 ciclos de save/Continue em todas as fases | 0 reroll, 0 duplicação, TTL preservado |
 | D | reload, Continue repetido, abort, morte, vitória, slot, Sandbox, DEV | 0 violações |
-| E | 1 200 aparições completas em 3.9 s | caps respeitados, 0 órfãs, 0 NaN |
+| E | 1 200 aparições completas em 3.8 s | caps respeitados, 0 órfãs, 0 NaN |
 | F | 900 runs × 3 encontros | tetos respeitados; teto de escudo morde em 392/900 |
+
+Os números do SIM-A ao SIM-F são **idênticos** aos medidos antes do B4-FIX #1 —
+o B4-FIX #1 adicionou ferramenta DEV e não tocou em nenhuma mecânica. A única
+variação é o tempo de parede do SIM-E (3.9 s → 3.8 s), que é ruído de máquina.
 
 ## AE — Veredito
 
-# GO PARA PLAYTEST
+# GO PARA PR/MERGE
 
-O bloco está completo, integrado, testado e documentado. As 30 invariantes são
-verificadas por checks executáveis. As seis dívidas de §AB são de **sensação de
-jogo**, não de correção — e é exatamente isso que o checklist de §AC existe para
-responder.
+O PR15-B4 está completo, integrado, testado, documentado e **aprovado em
+playtest humano**: 9/9 variantes, fluxo natural entre runs, Save/Continue e
+isolamento Sandbox/DEV. A auditoria final de fechamento (§AH) não encontrou
+nenhum bug. As 30 invariantes (§AA) continuam verificadas por checks
+executáveis, e o diff contra a base é puramente aditivo.
 
-**Não é GO final para merge.** O veredito final depende do playtest humano.
+As dívidas de §AB são de **sensação de jogo**, permanecem conscientemente
+adiadas e não são blockers.
 
-*Nenhum PR foi aberto, nenhum merge foi feito, nada foi enviado por push.*
+**PR16 não faz parte deste PR** (§AF).
+
+## AF — B4-FIX #1: controles de playtest DEV
+
+Commit `d0fde5b`. O playtest começou reportando que o painel DEV não tinha
+controles do B4 — a causa era que `pr15IntentKitBoot` registrava `DEV.pr15Intent*`
+mas nunca engatava `devRender`/`devCommand`: não existia função de seção.
+
+O B4-FIX #1 adicionou a seção, reutilizando a infraestrutura existente do painel
+(`devBtn`/`devRender`/`devCommand`/`devLog`) — **sem** segunda interface paralela
+e **sem** tocar em mecânica, balanceamento, algoritmo de intenção, B1/B2/B3 ou
+PR14.
+
+- **14 botões**: forçar ALIADA / RIVAL / AMBÍGUA, as **9 variantes** uma a uma,
+  `APLICAR EFEITO` e `LIMPAR`.
+- **Funciona sem memória elegível**: `pr15DevSyntheticMemory()` cria uma memória
+  sintética que vive em `pr15DevMem` e **nunca** entra em `echoQueue` nem no save.
+- **`APLICAR EFEITO`** começa **desligado**. Desligado, o comportamento é o
+  original (B4-92 continua passando). Ligado, os efeitos **efêmeros** passam e os
+  recursos **persistentes** (resíduo, moralidade, reputação) são apenas
+  **simulados** — o saldo real nunca é tocado.
+- Todo o código vive entre os marcadores `---- B4-FIX1-DEV-INICIO ----` e
+  `---- B4-FIX1-DEV-FIM ----`, dentro do bloco B4, guardado por `DEV_MODE`.
+- 25 checks novos (`B4F1-01…25`).
+
+## AG — Resultado do playtest humano
+
+Playtest manual concluído. Registro integral:
+
+**Teste individual das 9 variantes — 9/9 APROVADAS**
+
+| Família | Variante | Resultado |
+|---|---|---|
+| ALIADA | ZONA | APROVADA |
+| ALIADA | PULSO | APROVADA |
+| ALIADA | HERANÇA | APROVADA |
+| RIVAL | PRESSÃO | APROVADA |
+| RIVAL | PROVA | APROVADA |
+| RIVAL | CICATRIZ | APROVADA |
+| AMBÍGUA | TROCA | APROVADA |
+| AMBÍGUA | INSTÁVEL | APROVADA |
+| AMBÍGUA | ESCOLHA | APROVADA |
+
+**1 — Fluxo natural entre runs: APROVADO.** Morte válida registrada, nova run no
+mesmo slot, memória anterior reconhecida, manifestação temporal ocorreu
+naturalmente **sem necessidade de forçar pelo DEV**. Comportamento considerado
+correto.
+
+**2 — Save / Continue: APROVADO.** Presença temporal ativa durante a run, saída e
+retorno via Continuar, run restaurada corretamente, nenhuma duplicação percebida,
+nenhuma mudança/reroll indevido da manifestação, nenhuma reinicialização anormal.
+
+**3 — Isolamento Sandbox / DEV: APROVADO.** Presença forçada em DEV, `APLICAR
+EFEITO` utilizado, interação realizada, saída do Sandbox/DEV, nova run normal no
+mesmo slot: nenhuma contaminação na run real, sem presença DEV persistindo, sem
+efeitos de teste carregados, sem alteração persistente indevida.
+
+**4 — B4-FIX #1: FUNCIONOU.** Os controles de playtest DEV do commit `d0fde5b`
+funcionaram corretamente e permitiram validar individualmente as nove variantes.
+
+## AH — Auditoria final de fechamento
+
+Revisão do diff completo do B4 contra a base `0a79bc7`. **Nenhum bug
+encontrado**; nenhuma correção foi necessária, portanto **não existe B4-FIX #2**.
+
+| Item procurado | Resultado |
+|---|---|
+| Regressões | **0** — o diff tem 5 265 inserções e **0 deleções** |
+| TODO / FIXME / XXX / HACK | **0** |
+| Logs de debug acidentais | **0** `console.*`, **0** `debugger`/`alert` |
+| Código temporário de playtest indevido | **0** — a seção DEV é intencional, marcada e guardada por `DEV_MODE` |
+| `Math.random` no pipeline determinístico | **0 chamadas** no bloco (a única ocorrência é o texto de um comentário); `Date.now`/`performance.now`/`crypto.` também **0** |
+| Mutação indevida de `echoQueue` | **0 escritas** — 3 ocorrências, todas de leitura (2 em comentário) |
+| Persistência indevida de estado DEV | **protegida 3×**: nunca entra em `echoQueue`; `devTaint()` em 4 pontos faz `captureCheckpoint` recusar; `pr15IntentPack()` devolve `null` com run tainted |
+| Duplicação de recompensas | **impossível** — `pr15IntentMarkResolved` tem idempotência dura (`if(prev)return prev`) |
+| Repetir interação após Continue | **bloqueado** — `st='resolved'` restaurado + `pr15IntentAlreadyResolved` |
+| Reroll após Continue | **impossível** — os caminhos `restore`/`done` nunca chamam `pr15IntentVariant` |
+| Reset indevido de TTL | **não ocorre** — `pr15IntentRebuild` preserva `t`, `pulses`, `fired`, `trial`, `k0` e a âncora |
+| Buffs/debuffs permanentes | **0** — todos via `pr15IntentAddMod`, com `dur` finito e `stacks:'replace'` |
+| Multiplicadores acima do cap | **0** — máximo 1.30 (`pickupR`); dano máximo 1.22; todos com duração |
+| Recursos persistentes concedidos pelo DEV | **0** — `pr15IntentGuardPersistent()` devolve `false` incondicionalmente para presença DEV |
+| Moralidade / reputação / progressão contaminadas pelo DEV | **0** — os 5 pontos de escrita persistente estão guardados |
+| Referências quebradas | **0** — e o carregamento no `vm` pelos 159 checks é a prova dinâmica |
+| Funções órfãs | **1** — `pr15IntentPlayerDist`, código morto inofensivo (§AB) |
+| NaN / undefined em caminhos relevantes | **0** — B4-99/121/122 + SIM-E |
+| Alterações acidentais fora do escopo | **0** — nenhuma linha pré-existente foi tocada |
+
+**Persistência — responsabilidades separadas e medidas:**
+
+| Campo | Escrito por | Pior caso medido |
+|---|---|---|
+| `echoQueue` | B1 (o B4 nunca escreve) | — |
+| `cp.pr15mem` | só o B2, em `pr15MemPack()` | inalterado byte a byte |
+| `cp.pr15presence` | só o B3, em `pr15PresPack()` | **164 bytes** |
+| `cp.pr15intent` | só o B4, em `pr15IntentPack()` | **540 bytes** com `res[]` no teto |
+
+`res[]` é limitado a 8 entradas (`resMax`): 200 inserções deixaram 8. Nenhum
+snapshot gigante, nenhum estado DEV persistido, estados terminais idempotentes
+(`pr15IntentReset()` é atribuível repetidamente), nenhuma recompensa repetível
+via Continue, nenhuma memória sintética DEV no save, e saves antigos sem
+`cp.pr15intent` continuam carregando sem conceder nada (B4-101/102/103).
+
+## AI — Escopo: PR16 não faz parte deste PR
+
+Confirmado explicitamente. Este PR contém **somente** o PR15-B4 e o B4-FIX #1.
+Não foram iniciados, esboçados ou parcialmente implementados: PR16, PR17, PR18,
+IA adaptativa, ML/LLM, difficulty director, Codex, conquistas, nova progressão
+meta, retrabalho de HUD ou sprites novos. Nenhuma mecânica nova foi adicionada e
+nenhum sistema aprovado em playtest foi rebalanceado.
