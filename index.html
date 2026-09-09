@@ -32859,6 +32859,934 @@ function pr15MemoryKitBoot(){
 /* ==================== PR15·fim b2 ==================== */
 
 /* =====================================================================
+   PR15·b3 — PRESENÇA TEMPORAL FÍSICA (ENTIDADE + CICLO DE VIDA)
+   ---------------------------------------------------------------------
+   Responsabilidade ÚNICA: quando o Director do B2 CONSOME um descriptor
+   temporal, materializar na arena UMA entidade física reconhecível como
+   "uma versão temporal de uma run anterior" — entrar, permanecer por
+   tempo limitado, sair e ser completamente limpa.
+
+   O B3 NÃO decide nada. Quem decide é o B2. Aqui não há re-sorteio de
+   memória, de N-1/N-2, de ressonância nem de seed: tudo vem do
+   descriptor. O B3 também NÃO implementa intenção (ALIADA/RIVAL/
+   AMBÍGUA), moralidade, facções, diálogo, recompensa, IA avançada nem
+   QUALQUER forma de combate — isso é B4/B5/B6.
+
+   TERMINOLOGIA (§15) — a entidade chama-se PRESENÇA TEMPORAL
+   (Temporal Presence). Nunca "Echo" sozinho, para nunca se confundir com
+   os Echos ALIADOS (echoes[]), que continuam intocados.
+
+   ARQUITETURA (monkey-patch aditivo, mesmo padrão de PR12/13/14/B1/B2):
+
+     descriptor B2 st='consumed' (pr15MemOnWave)
+            ↓
+     pr15PresOnWave()        ← reage; nunca reprograma
+            ↓
+     pr15PresSpawn()         ← resolve memoryId, posição determinística
+            ↓
+     pr15Presence            ← 1 entidade física, fora de echoes[]
+            ↓
+     pr15PresUpdate/Draw     ← ciclo de vida e renderer dedicados
+            ↓
+     cp.pr15presence         ← Save/Continue (estado mínimo)
+            ↓
+     [PR15·B4]               ← intenção/significado (fora deste bloco)
+
+   SEPARAÇÃO DOS ECHOS ALIADOS (§4) — a presença vive numa variável
+   própria e NUNCA entra em echoes[]. Consequências verificadas:
+     · pickTarget() varre player + echoes[] → inimigos não a miram;
+     · a aura de elite varre echoes[] → não a afeta;
+     · relTick/disNewState/echoEqInit/regenEchoShield/damageEcho operam
+       sobre Echos aliados → nunca a tocam;
+     · cp.echoes = echoes.map(...) → o save legado não a enxerga;
+     · o HUD de Echo aliado lista echoes[] → não a lista.
+
+   DETERMINISMO — o bloco inteiro não chama Math.random (nem via rand()).
+   Posição vem de fractureRng(descriptor.seed); toda oscilação visual vem
+   de Math.sin(runTime). Abrir menu, salvar ou mudar FPS não altera nada.
+
+   ZERO COMBATE (§13/§25) — a presença não tem hp, escudo, arma
+   funcional, hitbox de colisão, alvo, projétil ou dano. Ela lê `enemies`
+   apenas para ESCOLHER ONDE NASCER (segurança de spawn), nunca para
+   mirar, perseguir ou reagir.
+   ===================================================================== */
+
+/* ---------------- configuração centralizada (§5) ----------------
+   Única fonte dos números do ciclo de vida, posição e caps visuais. */
+const PR15_PRES_CFG={
+  version:1,
+  entryTime:1.0,        // s — materialização (dentro de 0.8–1.2)
+  activeTime:24.0,      // s — permanência (dentro de 20–30)
+  exitTime:1.2,         // s — desmaterialização (dentro de 0.8–1.5)
+  radius:14,            // raio visual (silhueta de operador)
+  margin:120,           // margem mínima dentro da arena
+  minPlayerDist:280,    // nunca nasce a menos disto do operador
+  maxPlayerDist:560,    // nem tão longe que fique invisível
+  minHoldDist:190,      // distância mínima mantida em movimento
+  holdEps:0.25,         // folga do empurrão (evita drift de arredondamento)
+  idealDist:320,        // distância de repouso preferida
+  orbitSpeed:0.20,      // rad/s — reposicionamento lento, não agressivo
+  follow:1.6,           // suavização do deslocamento (1/s)
+  posTries:10,          // tentativas de posição antes do fallback
+  avoidEnemy:70,        // folga extra em torno de inimigo comum
+  avoidBoss:230,        // folga em torno do chefe
+  avoidMini:200,        // folga em torno do mini-chefe
+  avoidBeacon:170,      // folga em torno do beacon de evento
+  avoidPresence:170,    // folga em torno da presença de facção
+  avoidHazard:40,       // folga extra em torno de hazard evidente
+  afterimageBase:3,     // afterimages base (ajustado por res/source)
+  afterimageMax:4,      // CAP DURO de afterimages (§28)
+  particleMax:10,       // CAP DURO de partículas por aparição (§28)
+  ghostInterval:0.10,   // s entre amostras de afterimage
+  doneMax:8             // CAP do registro de encounters materializados
+};
+/* duração total do ciclo — derivada, nunca digitada solta */
+const PR15_PRES_TOTAL=PR15_PRES_CFG.entryTime+PR15_PRES_CFG.activeTime+PR15_PRES_CFG.exitTime;
+/* fases do ciclo de vida (§5) */
+const PR15_PRES_PHASES={spawning:1,active:1,leaving:1,done:1};
+/* identidade cromática do ECHO: ciano = alinhado ao presente;
+   magenta = fratura/deslocamento temporal. */
+const PR15_PRES_CYAN='#46e0ff';
+const PR15_PRES_MAGENTA='#ff4df0';
+
+/* ---------------- gramática visual da RESSONÂNCIA (§10) ----------------
+   Ressonância afeta APENAS apresentação. `high` é o caso MAIS COMUM
+   (~75% no B2), portanto é o estado COERENTE — forma mais definida —
+   e não um evento lendário: nada de brilho extra, ouro ou fanfarra. */
+const PR15_PRES_RES_VIS={
+  high    :{jit:0.60,ghostA:0.10,wob:0.020,ring:0.55,split:1.2,dash:[10,6]},
+  normal  :{jit:1.60,ghostA:0.16,wob:0.045,ring:0.42,split:2.6,dash:[7,7]},
+  unstable:{jit:3.20,ghostA:0.24,wob:0.085,ring:0.30,split:5.0,dash:[4,9]}
+};
+/* ---------------- gramática visual da ORIGEM N-1/N-2 (§11) ----------------
+   Diferença estrutural, não apenas de cor: N-2 é memória mais distante,
+   logo silhueta menos precisa, mais afterimages e maior atraso visual. */
+const PR15_PRES_SRC_VIS={
+  n1:{crisp:1.00,lag:0.06,frag:0.00},
+  n2:{crisp:0.82,lag:0.14,frag:1.00}
+};
+
+/* =====================================================================
+   ESTADO — 1 entidade física por vez (§6) + registro run-scoped.
+   `pr15PresRun.done` guarda os encounterIds que JÁ materializaram nesta
+   run (marcados no spawn). É isso que distingue os três estados exigidos
+   pelo §19: pendente · ativa · concluída.
+   ===================================================================== */
+let pr15Presence=null;
+function pr15PresFresh(){return {v:PR15_PRES_CFG.version,done:[],act:null};}
+let pr15PresRun=pr15PresFresh();
+
+function pr15PresAlreadyDone(encId){
+  const r=pr15PresRun;
+  if(!r||!Array.isArray(r.done))return false;
+  return r.done.indexOf(String(encId||''))>=0;
+}
+function pr15PresMarkDone(encId){
+  const r=pr15PresRun;const id=String(encId||'');
+  if(!r||!id)return false;
+  if(!Array.isArray(r.done))r.done=[];
+  if(r.done.indexOf(id)<0)r.done.push(id);
+  while(r.done.length>PR15_PRES_CFG.doneMax)r.done.shift();
+  return true;
+}
+/* pendente | active | done — leitura pura (§19) */
+function pr15PresStatusOf(encId){
+  const id=String(encId||'');
+  if(!id)return 'pending';
+  const p=pr15Presence;
+  if(p&&p.encounterId===id&&p.phase!=='done')return 'active';
+  return pr15PresAlreadyDone(id)?'done':'pending';
+}
+
+/* =====================================================================
+   VÍNCULO COM A MEMÓRIA HISTÓRICA (§3) — resolve descriptor.mem para o
+   registro real do echoQueue. NUNCA copia trail/entidades: guarda só o
+   memoryId e escalares de apresentação. Falha SEGURA: se o memoryId não
+   resolve (save antigo, memória caiu da fila, registro v2 legado sem id,
+   registro inelegível), retorna null e NADA é spawnado — sem quebrar a
+   run, sem destruir histórico, sem tocar echoQueue.
+   ===================================================================== */
+function pr15PresResolveMemory(memId){
+  if(typeof memId!=='string'||!memId)return null;
+  let q=[];
+  try{q=Array.isArray(echoQueue)?echoQueue:[];}catch(e){q=[];}
+  for(let i=0;i<q.length&&i<2;i++){
+    const r=q[i];
+    if(!r||typeof r!=='object'||Array.isArray(r))continue;
+    if(r.id!==memId)continue;
+    let elig=false;
+    try{elig=(typeof pr15MemIsEligible==='function')?!!pr15MemIsEligible(r):true;}catch(e){elig=false;}
+    if(!elig)return null;
+    return {rec:r,idx:i,source:(i===0)?'n1':'n2'};
+  }
+  return null;
+}
+/* hooks de apresentação (§14) — SÓ escalares, SÓ leitura, SÓ visual.
+   Nenhum deles vira gameplay no B3; existem para o B4 ter de onde partir. */
+function pr15PresReadVisual(rec){
+  const s=v=>(typeof v==='string'&&v&&v.length<=24)?v:null;
+  return {
+    op   :s(rec&&rec.op),                                    // operador → silhueta
+    arch :s(rec&&rec.arch&&rec.arch.dom),                    // Build Profile → marca
+    sigW :s(rec&&rec.sigW),                                  // arma assinatura → detalhe
+    cause:s(rec&&rec.cause),                                 // causa da morte → microefeito
+    theme:s(rec&&rec.theme)                                  // Tema da memória
+  };
+}
+
+/* =====================================================================
+   POSIÇÃO DE SPAWN SEGURA E DETERMINÍSTICA (§7)
+   ---------------------------------------------------------------------
+   Deriva de fractureRng(descriptor.seed) — jamais de Math.random. Nasce
+   num anel [minPlayerDist, maxPlayerDist] em torno do operador, dentro
+   da arena e longe de inimigo, chefe, mini-chefe, hazard, beacon e
+   presença de facção. Sem ponto livre, cai num FALLBACK determinístico
+   que varre 16 ângulos fixos e escolhe o melhor — nunca falha, nunca
+   devolve NaN, nunca sai dos limites.
+   ===================================================================== */
+function pr15PresSpotBlocked(x,y){
+  const C=PR15_PRES_CFG;
+  try{
+    const list=(typeof enemies!=='undefined'&&Array.isArray(enemies))?enemies:null;
+    if(list)for(let i=0;i<list.length;i++){
+      const en=list[i];
+      if(!en||en.dead||!Number.isFinite(en.x)||!Number.isFinite(en.y))continue;
+      const rr=(Number.isFinite(en.r)?en.r:18)+C.avoidEnemy;
+      if(dist2(x,y,en.x,en.y)<rr*rr)return true;
+    }
+  }catch(e){}
+  try{const b=(typeof boss!=='undefined')?boss:null;
+    if(b&&!b.dead&&Number.isFinite(b.x)&&dist2(x,y,b.x,b.y)<C.avoidBoss*C.avoidBoss)return true;}catch(e){}
+  try{const m=(typeof miniBoss!=='undefined')?miniBoss:null;
+    if(m&&!m.dead&&Number.isFinite(m.x)&&dist2(x,y,m.x,m.y)<C.avoidMini*C.avoidMini)return true;}catch(e){}
+  try{const bc=(typeof beacon!=='undefined')?beacon:null;
+    if(bc&&Number.isFinite(bc.x)&&dist2(x,y,bc.x,bc.y)<C.avoidBeacon*C.avoidBeacon)return true;}catch(e){}
+  try{const fe=(typeof factionPresenceEntity!=='undefined')?factionPresenceEntity:null;
+    if(fe&&Number.isFinite(fe.x)&&dist2(x,y,fe.x,fe.y)<C.avoidPresence*C.avoidPresence)return true;}catch(e){}
+  try{
+    const m=(typeof miniBoss!=='undefined')?miniBoss:null;
+    if(m&&Array.isArray(m.hazards))for(let i=0;i<m.hazards.length;i++){
+      const h=m.hazards[i];
+      if(!h||!Number.isFinite(h.x)||!Number.isFinite(h.y))continue;
+      const rr=(Number.isFinite(h.r)?h.r:60)+C.avoidHazard;
+      if(dist2(x,y,h.x,h.y)<rr*rr)return true;
+    }
+  }catch(e){}
+  return false;
+}
+function pr15PresPos(seed,px,py){
+  const C=PR15_PRES_CFG,M=C.margin;
+  const rng=fractureRng(fractureHash32((seed>>>0)||1));
+  const hasP=Number.isFinite(px)&&Number.isFinite(py);
+  const cx=hasP?px:ARENA.w/2, cy=hasP?py:ARENA.h/2;
+  const span=Math.max(1,C.maxPlayerDist-C.minPlayerDist);
+  for(let i=0;i<C.posTries;i++){
+    const a=rng()*TAU, d=C.minPlayerDist+rng()*span;
+    const x=cx+Math.cos(a)*d, y=cy+Math.sin(a)*d;
+    if(x<M||x>ARENA.w-M||y<M||y>ARENA.h-M)continue;
+    if(pr15PresSpotBlocked(x,y))continue;
+    return {x:x,y:y,fb:0};
+  }
+  /* FALLBACK determinístico: 16 ângulos fixos, escolhe o melhor ponto
+     válido (maior distância do operador, penalizando ocupado). */
+  let bx=clamp(cx+C.minPlayerDist,M,ARENA.w-M),by=clamp(cy,M,ARENA.h-M),bs=-1e9;
+  for(let k=0;k<16;k++){
+    const a=k*TAU/16;
+    const x=clamp(cx+Math.cos(a)*C.minPlayerDist,M,ARENA.w-M);
+    const y=clamp(cy+Math.sin(a)*C.minPlayerDist,M,ARENA.h-M);
+    const dp=hasP?Math.sqrt(dist2(x,y,cx,cy)):C.minPlayerDist;
+    const sc=dp-(pr15PresSpotBlocked(x,y)?1e5:0);
+    if(sc>bs){bs=sc;bx=x;by=y;}
+  }
+  return {x:bx,y:by,fb:1};
+}
+
+/* =====================================================================
+   CRIAÇÃO DA ENTIDADE (§4) — estrutura própria, compacta, sem nenhum
+   campo de combate. Cap rígido: 1 ativa por vez.
+   ===================================================================== */
+function pr15PresSpawn(enc,opts){
+  opts=opts||{};
+  if(!enc||typeof enc!=='object'||Array.isArray(enc))return null;
+  if(pr15Presence)return null;                                  // cap = 1 (§6)
+  const encId=String(enc.id||'').slice(0,32);
+  if(!encId)return null;
+  if(!opts.restore&&!opts.dev&&pr15PresAlreadyDone(encId))return null;  // idempotência (§19)
+  const res=pr15PresResolveMemory(enc.mem);
+  if(!res)return null;                                          // falha segura (§3)
+  const seed=((+enc.seed>>>0)||1)>>>0;
+  let px=NaN,py=NaN;
+  try{if(typeof player!=='undefined'&&player&&Number.isFinite(player.x)&&Number.isFinite(player.y)){px=player.x;py=player.y;}}catch(e){}
+  const pos=(opts.restore&&Number.isFinite(+opts.x)&&Number.isFinite(+opts.y))
+    ?{x:clamp(+opts.x,PR15_PRES_CFG.margin,ARENA.w-PR15_PRES_CFG.margin),
+      y:clamp(+opts.y,PR15_PRES_CFG.margin,ARENA.h-PR15_PRES_CFG.margin),
+      fb:(Math.round(+opts.fb)||0)}
+    :pr15PresPos(seed,px,py);
+  const src=(typeof PR15_MEM_SOURCES!=='undefined'&&PR15_MEM_SOURCES[enc.src])?enc.src:'n1';
+  const rsn=(typeof PR15_MEM_RESONANCE!=='undefined'&&PR15_MEM_RESONANCE[enc.res])?enc.res:'normal';
+  const it=Math.round(+enc.intent);
+  const age=(opts.restore&&Number.isFinite(+opts.age))?clamp(+opts.age,0,PR15_PRES_TOTAL):0;
+  pr15Presence={
+    v:PR15_PRES_CFG.version,
+    encounterId:encId,                 // vínculo exato com o descriptor B2 (§19)
+    memoryId:String(res.rec.id).slice(0,32),
+    source:src,                        // do descriptor — NUNCA re-derivado
+    resonance:rsn,                     // do descriptor — NUNCA recalculada
+    seed:seed,                         // do descriptor — NUNCA re-rolada
+    intentSeed:(Number.isFinite(it)&&it>=0)?(it%100000):0,   // preservado p/ B4 (§26)
+    wave:clamp(Math.round(+enc.wave)||0,0,MAX_WAVE),
+    x:pos.x,y:pos.y,vx:0,vy:0,
+    hx:pos.x,hy:pos.y,                 // ponto de repouso do movimento base
+    r:PR15_PRES_CFG.radius,
+    phase:'spawning',
+    age:age,
+    ttl:Math.max(0,PR15_PRES_TOTAL-age),
+    alpha:0,scale:0.55,
+    entered:false,leaving:false,
+    aim:0,
+    orbit:((seed%3600)/3600)*TAU,
+    dir:(seed&1)?1:-1,
+    ghosts:[],ghostT:0,pUsed:0,
+    vis:pr15PresReadVisual(res.rec),
+    fb:pos.fb|0,
+    dev:!!opts.dev,
+    why:''
+  };
+  if(!pr15Presence.dev)pr15PresMarkDone(encId);
+  if(!opts.restore)pr15PresBurst(pr15Presence,4,PR15_PRES_CYAN);
+  /* sincroniza fase/apresentação com a idade restaurada, sem avançar tempo */
+  pr15PresUpdate(0);
+  return pr15Presence;
+}
+
+/* orçamento de partículas por aparição — CAP DURO (§28) */
+function pr15PresBurst(p,n,col){
+  if(!p)return 0;
+  const left=PR15_PRES_CFG.particleMax-(p.pUsed|0);
+  const k=clamp(Math.round(+n)||0,0,Math.max(0,left));
+  if(k<=0)return 0;
+  p.pUsed=(p.pUsed|0)+k;
+  try{if(typeof spawnParticles==='function')spawnParticles(p.x,p.y,col||PR15_PRES_CYAN,k,170,.45,2.2);}catch(e){}
+  return k;
+}
+
+/* =====================================================================
+   UPDATE DEDICADO (§17) — fase, ttl, entrada, movimento, saída, cleanup.
+   Não é chamado por updateEcho() nem por updateEnemy(): a semântica é
+   outra e os Echos legados não devem sofrer nenhum desvio.
+   ===================================================================== */
+function pr15PresUpdate(dt){
+  const p=pr15Presence;
+  if(!p)return null;
+  const C=PR15_PRES_CFG;
+  const d=Number.isFinite(+dt)?clamp(+dt,0,0.25):0;
+  p.age=clamp((Number.isFinite(p.age)?p.age:0)+d,0,PR15_PRES_TOTAL);
+  p.ttl=Math.max(0,PR15_PRES_TOTAL-p.age);
+  /* fase derivada da idade — uma única fonte de verdade */
+  if(p.age<C.entryTime){p.phase='spawning';}
+  else if(p.age<C.entryTime+C.activeTime){p.phase='active';p.entered=true;}
+  else if(p.age<PR15_PRES_TOTAL){p.phase='leaving';p.entered=true;p.leaving=true;}
+  else {p.phase='done';p.entered=true;p.leaving=true;}
+  /* apresentação: alpha/escala por fase */
+  if(p.phase==='spawning'){
+    const k=clamp(p.age/Math.max(0.0001,C.entryTime),0,1);
+    p.alpha=k*k;p.scale=0.55+0.45*k;
+  }else if(p.phase==='active'){
+    p.alpha=1;p.scale=1;
+  }else if(p.phase==='leaving'){
+    const k=clamp((PR15_PRES_TOTAL-p.age)/Math.max(0.0001,C.exitTime),0,1);
+    p.alpha=k;p.scale=1+(1-k)*0.35;
+  }else{p.alpha=0;p.scale=1;}
+  pr15PresMove(p,d);
+  pr15PresGhostTick(p,d);
+  if(p.phase==='leaving'&&!p.exitFx){p.exitFx=1;pr15PresBurst(p,3,PR15_PRES_MAGENTA);}
+  if(p.phase==='done'){pr15PresEnd('ttl');return null;}
+  return p;
+}
+
+/* ---------------- MOVIMENTO BASE (§12) ----------------
+   Presença convincente, NÃO inteligência: reposicionamento orbital lento
+   em torno do operador, suave, dentro da arena, mantendo distância. NÃO
+   escolhe alvo, NÃO persegue, NÃO foge, NÃO reage a facção/moralidade. */
+function pr15PresMove(p,dt){
+  const C=PR15_PRES_CFG,M=C.margin;
+  let px=ARENA.w/2,py=ARENA.h/2,hasP=false;
+  try{
+    if(typeof player!=='undefined'&&player&&Number.isFinite(player.x)&&Number.isFinite(player.y)){
+      px=player.x;py=player.y;hasP=true;
+    }
+  }catch(e){}
+  p.orbit=(Number.isFinite(p.orbit)?p.orbit:0)+dt*C.orbitSpeed*(p.dir||1);
+  if(p.orbit>1e6||p.orbit<-1e6)p.orbit=0;
+  let hx,hy;
+  if(hasP){hx=px+Math.cos(p.orbit)*C.idealDist;hy=py+Math.sin(p.orbit)*C.idealDist;}
+  else{hx=Number.isFinite(p.hx)?p.hx:ARENA.w/2;hy=Number.isFinite(p.hy)?p.hy:ARENA.h/2;}
+  hx=clamp(hx,M,ARENA.w-M);hy=clamp(hy,M,ARENA.h-M);
+  p.hx=hx;p.hy=hy;
+  const k=Math.min(1,C.follow*dt);
+  const ox=Number.isFinite(p.x)?p.x:hx, oy=Number.isFinite(p.y)?p.y:hy;
+  let nx=ox+(hx-ox)*k, ny=oy+(hy-oy)*k;
+  if(!Number.isFinite(nx))nx=hx;
+  if(!Number.isFinite(ny))ny=hy;
+  /* nunca colide visualmente com o operador (§12) — empurra para fora
+     do raio mínimo. Isto NÃO é colisão física: não bloqueia, não empurra
+     o jogador, não altera pathing de ninguém. */
+  if(hasP){
+    const ddx=nx-px,ddy=ny-py,dd=Math.hypot(ddx,ddy);
+    /* holdEps: o empurrão só age quando a invasão é REAL. Sem essa folga, a
+       posição restaurada do checkpoint (arredondada) reentrava no raio por
+       centésimos de pixel e o clamp a deslocava — fazendo o Continue devolver
+       um x/y ligeiramente diferente do salvo. */
+    if(dd>0.001&&dd<C.minHoldDist-C.holdEps){nx=px+ddx/dd*C.minHoldDist;ny=py+ddy/dd*C.minHoldDist;}
+    else if(dd<=0.001){nx=px+C.minHoldDist;ny=py;}
+  }
+  nx=clamp(nx,M,ARENA.w-M);ny=clamp(ny,M,ARENA.h-M);
+  p.vx=(dt>0)?((nx-ox)/dt):0;
+  p.vy=(dt>0)?((ny-oy)/dt):0;
+  if(!Number.isFinite(p.vx))p.vx=0;
+  if(!Number.isFinite(p.vy))p.vy=0;
+  p.x=nx;p.y=ny;
+  const fa=Math.atan2(py-ny,px-nx);
+  p.aim=Number.isFinite(fa)?fa:0;
+}
+
+/* ---------------- AFTERIMAGES com CAP DURO (§28) ---------------- */
+function pr15PresGhostCapFor(resonance,source){
+  let n=PR15_PRES_CFG.afterimageBase;
+  if(resonance==='unstable')n+=1;
+  else if(resonance==='high')n-=1;
+  if(source==='n2')n+=1;
+  return clamp(n,1,PR15_PRES_CFG.afterimageMax);
+}
+function pr15PresGhostTick(p,dt){
+  if(!Array.isArray(p.ghosts))p.ghosts=[];
+  const cap=pr15PresGhostCapFor(p.resonance,p.source);
+  p.ghostT=(Number.isFinite(p.ghostT)?p.ghostT:0)+dt;
+  if(p.ghostT>=PR15_PRES_CFG.ghostInterval){
+    p.ghostT=0;
+    p.ghosts.push({x:p.x,y:p.y,a:p.aim});
+  }
+  while(p.ghosts.length>cap)p.ghosts.shift();
+}
+
+/* ---------------- SAÍDA ANTECIPADA E CLEANUP (§29) ----------------
+   Encerrar cedo NÃO teleporta a entidade para 'done': ela entra em
+   'leaving' com a duração de saída íntegra. */
+function pr15PresLeave(reason){
+  const p=pr15Presence;
+  if(!p)return false;
+  if(p.phase==='leaving'||p.phase==='done')return false;
+  p.age=Math.max(p.age,PR15_PRES_CFG.entryTime+PR15_PRES_CFG.activeTime);
+  p.ttl=Math.max(0,PR15_PRES_TOTAL-p.age);
+  p.phase='leaving';p.entered=true;p.leaving=true;
+  p.why=String(reason||'').slice(0,24);
+  return true;
+}
+/* cleanup completo: remove a entidade, zera afterimages e referências.
+   Não há timers nem callbacks para cancelar (o bloco não cria nenhum) e
+   echoQueue jamais é tocada. Idempotente. */
+function pr15PresEnd(reason){
+  const p=pr15Presence;
+  if(!p)return false;
+  if(Array.isArray(p.ghosts))p.ghosts.length=0;
+  p.ghosts=null;p.vis=null;
+  p.phase='done';p.alpha=0;
+  pr15Presence=null;
+  if(pr15PresRun&&pr15PresRun.act)pr15PresRun.act=null;
+  return true;
+}
+/* limpa só o corpo físico (troca de contexto) */
+function pr15PresClear(){return pr15Presence?pr15PresEnd('clear'):(function(){pr15Presence=null;return true;})();}
+/* run nova / morte / vitória / abort / slot: corpo E registro somem */
+function pr15PresReset(){pr15PresClear();pr15PresRun=pr15PresFresh();return true;}
+
+/* =====================================================================
+   MATERIALIZAÇÃO A PARTIR DO B2 (§18)
+   ---------------------------------------------------------------------
+   O B3 NÃO agenda, NÃO re-sorteia e NÃO altera o descriptor. Ele apenas
+   observa, na fronteira de onda (depois do pr15MemOnWave do B2), se
+   existe um descriptor que passou a 'consumed' NESTA onda e ainda não
+   materializou.
+
+   SEMÂNTICA DO CAP (§6) — se já existe presença ativa, a nova
+   materialização é SIMPLESMENTE PULADA (skip). Não há fila, não há
+   adiamento e o descriptor do B2 continua 'consumed' e intocado. É a
+   regra mais simples possível e não exige nenhuma mudança no Director.
+
+   `e.at===w` garante ainda que um descriptor consumido em onda anterior
+   nunca materialize retroativamente — o que também resolve o §21 (run
+   antiga iniciada antes do B3 não ganha aparição surpresa).
+   ===================================================================== */
+function pr15PresOnWave(n){
+  try{if(typeof sandboxRun!=='undefined'&&sandboxRun)return null;}catch(e){}
+  try{if(typeof smRestoring!=='undefined'&&smRestoring)return null;}catch(e){}
+  let st=null;
+  try{st=(typeof pr15MemRun!=='undefined')?pr15MemRun:null;}catch(e){st=null;}
+  if(!st||!Array.isArray(st.enc))return null;
+  if(pr15Presence)return null;                        // cap = 1 → skip
+  const w=clamp(Math.round(Number(n))||0,0,MAX_WAVE);
+  if(w<=0)return null;
+  let pick=null;
+  for(let i=0;i<st.enc.length;i++){
+    const e=st.enc[i];
+    if(!e||e.st!=='consumed')continue;
+    if((e.at|0)!==w)continue;
+    if(pr15PresAlreadyDone(e.id))continue;
+    if(!pick||String(e.id)<String(pick.id))pick=e;    // desempate determinístico
+  }
+  if(!pick)return null;
+  return pr15PresSpawn(pick,null);
+}
+
+/* =====================================================================
+   SAVE / CONTINUE (§20/§21) — cp.pr15presence
+   ---------------------------------------------------------------------
+   Persiste o MÍNIMO: quais encounters já materializaram + o estado
+   compacto da presença ativa. NÃO persiste partículas, afterimages,
+   frame visual, buffers nem trilha visual — tudo isso é reconstruído.
+   Presença forçada por DEV nunca é persistida.
+   Ausência do campo (save antigo, save do B1/B2) ⇒ estado vazio seguro.
+   ===================================================================== */
+function pr15PresPack(){
+  const r=pr15PresRun,p=pr15Presence;
+  const done=(r&&Array.isArray(r.done))?r.done.slice(0,PR15_PRES_CFG.doneMax):[];
+  let act=null;
+  if(p&&p.phase!=='done'&&!p.dev){
+    act={v:PR15_PRES_CFG.version,enc:p.encounterId,mem:p.memoryId,src:p.source,
+      res:p.resonance,seed:p.seed>>>0,intent:p.intentSeed|0,wave:p.wave|0,
+      /* posição QUANTIZADA em 0,1 px e idade em 0,01 s — o checkpoint é
+         compacto de propósito. O Continue devolve exatamente o valor
+         gravado; a diferença máxima possível para o instante do save é a
+         própria quantização, imperceptível e sem efeito de gameplay. */
+      x:Math.round(p.x*10)/10,y:Math.round(p.y*10)/10,
+      ph:p.phase,age:Math.round(p.age*100)/100,fb:p.fb|0};
+  }
+  if(!done.length&&!act)return null;
+  return {v:PR15_PRES_CFG.version,done:done,act:act};
+}
+function pr15PresSanAct(a){
+  if(!a||typeof a!=='object'||Array.isArray(a))return null;
+  if(typeof a.enc!=='string'||!a.enc||a.enc.length>32)return null;
+  if(typeof a.mem!=='string'||!a.mem||a.mem.length>32)return null;
+  const o={enc:a.enc,mem:a.mem};
+  o.src=(typeof PR15_MEM_SOURCES!=='undefined'&&PR15_MEM_SOURCES[a.src])?a.src:'n1';
+  o.res=(typeof PR15_MEM_RESONANCE!=='undefined'&&PR15_MEM_RESONANCE[a.res])?a.res:'normal';
+  const sd=Math.round(+a.seed);o.seed=(Number.isFinite(sd)&&sd>0)?(sd>>>0):1;
+  const it=Math.round(+a.intent);o.intent=(Number.isFinite(it)&&it>=0)?(it%100000):0;
+  const wv=Math.round(+a.wave);o.wave=(Number.isFinite(wv)&&wv>0)?clamp(wv,1,MAX_WAVE):0;
+  const x=+a.x,y=+a.y;
+  o.x=Number.isFinite(x)?clamp(x,0,ARENA.w):ARENA.w/2;
+  o.y=Number.isFinite(y)?clamp(y,0,ARENA.h):ARENA.h/2;
+  o.ph=(PR15_PRES_PHASES[a.ph]&&a.ph!=='done')?a.ph:'active';
+  const ag=+a.age;
+  o.age=Number.isFinite(ag)?clamp(ag,0,PR15_PRES_TOTAL):0;
+  /* coerência fase × idade: a fase declarada manda, a idade é reancorada
+     no início da fase quando o par vem incoerente (save adulterado). */
+  const C=PR15_PRES_CFG;
+  if(o.ph==='spawning'&&o.age>=C.entryTime)o.age=0;
+  if(o.ph==='active'&&(o.age<C.entryTime||o.age>=C.entryTime+C.activeTime))o.age=C.entryTime;
+  if(o.ph==='leaving'&&(o.age<C.entryTime+C.activeTime||o.age>=PR15_PRES_TOTAL))o.age=C.entryTime+C.activeTime;
+  const fb=Math.round(+a.fb);o.fb=(Number.isFinite(fb)&&fb>=0)?clamp(fb,0,2):0;
+  return o;
+}
+function pr15PresSanitize(s){
+  const out=pr15PresFresh();
+  if(!s||typeof s!=='object'||Array.isArray(s))return out;
+  out.done=Array.isArray(s.done)
+    ?s.done.filter(x=>typeof x==='string'&&x&&x.length<=32).slice(0,PR15_PRES_CFG.doneMax)
+    :[];
+  out.act=pr15PresSanAct(s.act);
+  if(out.act&&out.done.indexOf(out.act.enc)<0)out.done.push(out.act.enc);
+  return out;
+}
+function pr15PresUnpack(cp){
+  pr15PresClear();
+  const s=(cp&&cp.pr15presence&&typeof cp.pr15presence==='object'&&!Array.isArray(cp.pr15presence))
+    ?cp.pr15presence:null;
+  pr15PresRun=pr15PresSanitize(s);
+  return pr15PresRun;
+}
+/* Continue: reconstrói o CORPO da presença ativa no mesmo ponto, na mesma
+   fase e com o MESMO tempo já decorrido (TTL não reinicia). Nunca duplica:
+   o corpo é limpo antes e `act` é consumido depois. */
+function pr15PresRebuild(){
+  const r=pr15PresRun;
+  if(!r||!r.act)return null;
+  if(pr15Presence)return null;
+  const a=r.act;
+  const built=pr15PresSpawn(
+    {id:a.enc,mem:a.mem,src:a.src,res:a.res,seed:a.seed,intent:a.intent,wave:a.wave},
+    {restore:true,x:a.x,y:a.y,age:a.age,fb:a.fb});
+  r.act=null;
+  return built;
+}
+
+/* =====================================================================
+   RENDERER DEDICADO (§16) — drawTemporalPresence
+   ---------------------------------------------------------------------
+   Nenhuma ramificação foi adicionada a drawEchoEntity(): os Echos
+   aliados desenham exatamente como antes. Aqui a gramática é OUTRA —
+   distorção temporal, não glitch genérico, não "TV static":
+
+     · FENDA no solo: elipse fina + arco de ruptura (ancora a presença);
+     · AFTERIMAGES atrasados (quantidade por ressonância × origem);
+     · CORPO semi-transparente com a silhueta do OPERADOR da memória;
+     · DUPLICATA magenta deslocada (o "atraso temporal" visível);
+     · CONTORNO ciano + anel de distorção que fecha na entrada e abre
+       na saída;
+     · marca discreta do Build Profile e um traço da arma assinatura —
+       ambos puramente decorativos.
+
+   Legibilidade (§8): nada de flash em tela cheia, nada de partícula por
+   frame, alpha sempre ≤ 0.9 no corpo, sem sobrepor projéteis.
+   ===================================================================== */
+function pr15PresVisualState(resonance,source){
+  const rk=PR15_PRES_RES_VIS[resonance]?resonance:'normal';
+  const sk=PR15_PRES_SRC_VIS[source]?source:'n1';
+  const R=PR15_PRES_RES_VIS[rk],S=PR15_PRES_SRC_VIS[sk];
+  const deg=2-S.crisp;                                  // n1 = 1.00 · n2 = 1.18
+  const r3=v=>Math.round(v*1000)/1000;
+  return {
+    resonance:rk,source:sk,
+    jitter:r3(R.jit*deg),
+    ghostAlpha:r3(R.ghostA*deg),
+    ghosts:pr15PresGhostCapFor(rk,sk),
+    wobble:r3(R.wob*deg),
+    ringAlpha:r3(R.ring),
+    split:r3(R.split*deg),
+    crisp:S.crisp,lag:S.lag,frag:S.frag,
+    dash:R.dash.slice()
+  };
+}
+/* paleta temporal derivada do operador da memória (§9). Se o operador não
+   resolver, cai numa paleta neutra — nunca falha, nunca copia o Echo. */
+function pr15PresPalette(p){
+  let base=null;
+  try{
+    const id=p&&p.vis&&p.vis.op;
+    if(typeof id==='string'&&id&&typeof CHARS!=='undefined'&&Array.isArray(CHARS)){
+      for(let i=0;i<CHARS.length;i++)if(CHARS[i]&&CHARS[i].id===id){base=CHARS[i].pal;break;}
+    }
+  }catch(e){}
+  return {
+    body:'rgba(28,74,102,.62)',
+    dark:'rgba(8,26,44,.68)',
+    edge:PR15_PRES_CYAN,
+    glow:PR15_PRES_CYAN,
+    visor:(base&&base.visor)||'#eaffff',
+    head:'rgba(34,88,118,.66)',
+    wep:PR15_PRES_MAGENTA
+  };
+}
+/* índice de arma APENAS para o detalhe de silhueta do drawUnit. Não há
+   arma funcional, munição, cadência, alcance nem disparo (§13/§25). */
+function pr15PresSilhouetteWi(p){
+  try{
+    const id=p&&p.vis&&p.vis.sigW;
+    if(typeof id==='string'&&id&&typeof WEAPONS!=='undefined'&&Array.isArray(WEAPONS)){
+      for(let i=0;i<WEAPONS.length;i++)if(WEAPONS[i]&&WEAPONS[i].id===id)return i;
+    }
+  }catch(e){}
+  return 0;
+}
+function pr15PresDraw(){
+  const p=pr15Presence;
+  if(!p||p.phase==='done')return false;
+  if(typeof ctx==='undefined'||!ctx)return false;
+  if(!Number.isFinite(p.x)||!Number.isFinite(p.y))return false;
+  try{if(typeof inView==='function'&&!inView(p.x,p.y,150))return false;}catch(e){}
+  const A=clamp(Number.isFinite(p.alpha)?p.alpha:0,0,1);
+  if(A<=0.012)return false;
+  const V=pr15PresVisualState(p.resonance,p.source);
+  const t=(typeof runTime==='number'&&Number.isFinite(runTime))?runTime:0;
+  const R=PR15_PRES_CFG.radius*clamp(Number.isFinite(p.scale)?p.scale:1,0.2,2);
+  /* oscilação determinística (sem Math.random em nenhum ponto) */
+  const osc=Math.sin(t*2.3+p.orbit);
+  const osc2=Math.sin(t*5.7+p.orbit*1.7);
+  const jx=osc*V.jitter, jy=osc2*V.jitter*0.6;
+  const wob=Math.sin(t*1.3+p.orbit)*V.wobble;
+
+  ctx.save();
+  /* 1 — FENDA NO SOLO: marca de ruptura espacial, não é o disco do beacon */
+  ctx.globalAlpha=A*0.16;
+  ctx.strokeStyle=PR15_PRES_CYAN;ctx.lineWidth=1.6;
+  ctx.beginPath();ctx.ellipse(p.x,p.y+R*0.5,R*1.5,R*0.42,0,0,TAU);ctx.stroke();
+  ctx.globalAlpha=A*0.12;ctx.strokeStyle=PR15_PRES_MAGENTA;
+  ctx.beginPath();ctx.ellipse(p.x,p.y+R*0.5,R*1.5*(1+V.frag*0.18),R*0.42,wob,0.6,3.1);ctx.stroke();
+
+  /* 2 — AFTERIMAGES atrasados (cap duro já garantido no update) */
+  const g=Array.isArray(p.ghosts)?p.ghosts:[];
+  const pal=pr15PresPalette(p);
+  const wi=pr15PresSilhouetteWi(p);
+  for(let i=0;i<g.length;i++){
+    const gh=g[i];
+    if(!gh||!Number.isFinite(gh.x))continue;
+    const k=(i+1)/(g.length+1);
+    ctx.globalAlpha=A*V.ghostAlpha*k;
+    ctx.fillStyle=(i%2===0)?PR15_PRES_CYAN:PR15_PRES_MAGENTA;
+    ctx.beginPath();ctx.arc(gh.x+jx*(1-k)*V.lag*8,gh.y,R*(0.62+0.2*k),0,TAU);ctx.fill();
+  }
+  ctx.globalAlpha=1;
+
+  /* 3 — DUPLICATA ATRASADA (magenta): o deslocamento temporal visível */
+  try{
+    if(typeof drawUnit==='function'){
+      ctx.save();ctx.globalCompositeOperation='lighter';
+      drawUnit(p.x-V.split-jx*0.5,p.y+jy*0.4,p.aim+wob,R,{
+        body:'rgba(96,20,92,.55)',dark:'rgba(38,6,42,.6)',edge:PR15_PRES_MAGENTA,
+        glow:PR15_PRES_MAGENTA,visor:'#ffd9fb',head:'rgba(88,18,86,.55)',wep:PR15_PRES_MAGENTA
+      },{alpha:A*0.34*(0.6+V.frag*0.4),glitch:false,wi:wi,walk:0.34,recoil:0,phase:p.orbit});
+      ctx.restore();
+      /* 4 — CORPO PRINCIPAL: silhueta do operador da memória, translúcida */
+      drawUnit(p.x+jx*0.35,p.y+jy*0.35,p.aim,R,pal,
+        {alpha:A*(0.52+0.24*V.crisp),glitch:false,wi:wi,walk:0.42,recoil:0,phase:p.orbit+1.7});
+    }
+  }catch(e){}
+
+  /* 5 — CONTORNO CIANO + ANEL DE DISTORÇÃO
+     entrada: o anel FECHA sobre a silhueta · saída: o anel ABRE e some. */
+  const entering=(p.phase==='spawning');
+  const leaving=(p.phase==='leaving');
+  let prog=1;
+  if(entering)prog=clamp(p.age/Math.max(0.0001,PR15_PRES_CFG.entryTime),0,1);
+  else if(leaving)prog=clamp((PR15_PRES_TOTAL-p.age)/Math.max(0.0001,PR15_PRES_CFG.exitTime),0,1);
+  const ringR=entering?(R+10+(1-prog)*46):(leaving?(R+10+(1-prog)*54):(R+11+Math.sin(t*2.1)*2.2));
+  ctx.strokeStyle=PR15_PRES_CYAN;ctx.lineWidth=2;
+  ctx.globalAlpha=A*V.ringAlpha;
+  if(ctx.setLineDash){ctx.setLineDash(V.dash);ctx.lineDashOffset=-t*22;}
+  ctx.beginPath();ctx.arc(p.x,p.y,ringR,0,TAU);ctx.stroke();
+  if(ctx.setLineDash)ctx.setLineDash([]);
+  /* ruptura magenta: arco parcial, quanto mais instável/N-2 maior */
+  ctx.globalAlpha=A*(0.20+V.frag*0.18);
+  ctx.strokeStyle=PR15_PRES_MAGENTA;ctx.lineWidth=2.4;
+  const a0=p.orbit*0.7+t*0.5, a1=a0+0.7+V.split*0.12;
+  ctx.beginPath();ctx.arc(p.x,p.y,R+6,a0,a1);ctx.stroke();
+
+  /* 6 — MARCA DISCRETA DO BUILD PROFILE (decorativa, §14) */
+  if(p.vis&&p.vis.arch){
+    ctx.globalAlpha=A*0.28;ctx.fillStyle=PR15_PRES_CYAN;
+    const bs=R*0.16;
+    ctx.beginPath();
+    ctx.moveTo(p.x,p.y-R-9-bs);ctx.lineTo(p.x+bs,p.y-R-9);
+    ctx.lineTo(p.x,p.y-R-9+bs);ctx.lineTo(p.x-bs,p.y-R-9);
+    ctx.closePath();ctx.fill();
+  }
+  ctx.globalAlpha=1;
+  if(ctx.setLineDash)ctx.setLineDash([]);
+  ctx.restore();
+  return true;
+}
+
+/* =====================================================================
+   OBSERVABILIDADE (§12 do brief de DEV) — leitura pura, nunca muta.
+   ===================================================================== */
+function pr15PresSnapshot(){
+  const p=pr15Presence,r=pr15PresRun;
+  const done=(r&&Array.isArray(r.done))?r.done.slice():[];
+  if(!p)return {active:false,phase:null,done:done,cfg:{entryTime:PR15_PRES_CFG.entryTime,
+    activeTime:PR15_PRES_CFG.activeTime,exitTime:PR15_PRES_CFG.exitTime,total:PR15_PRES_TOTAL}};
+  return {
+    active:true,
+    encounterId:p.encounterId,memoryId:p.memoryId,
+    source:p.source,resonance:p.resonance,
+    seed:p.seed>>>0,intentSeed:p.intentSeed|0,wave:p.wave|0,
+    phase:p.phase,age:Math.round(p.age*1000)/1000,ttl:Math.round(p.ttl*1000)/1000,
+    x:Math.round(p.x*10)/10,y:Math.round(p.y*10)/10,
+    alpha:Math.round(p.alpha*1000)/1000,scale:Math.round(p.scale*1000)/1000,
+    entered:!!p.entered,leaving:!!p.leaving,fallback:p.fb|0,dev:!!p.dev,
+    ghosts:Array.isArray(p.ghosts)?p.ghosts.length:0,
+    particles:p.pUsed|0,
+    visual:pr15PresVisualState(p.resonance,p.source),
+    memory:p.vis?{op:p.vis.op,arch:p.vis.arch,sigW:p.vis.sigW,cause:p.vis.cause,theme:p.vis.theme}:null,
+    done:done,
+    cfg:{entryTime:PR15_PRES_CFG.entryTime,activeTime:PR15_PRES_CFG.activeTime,
+      exitTime:PR15_PRES_CFG.exitTime,total:PR15_PRES_TOTAL}
+  };
+}
+
+/* =====================================================================
+   DEV (§23/§24) — playtest visual. Tudo guardado por DEV_MODE (inerte em
+   release). O spawn forçado TAINTA a run, NÃO cria descriptor no save
+   real, NÃO marca o registro de materializados e NÃO é persistido.
+   ===================================================================== */
+function pr15DevPresenceState(){
+  if(!DEV_MODE)return null;
+  return pr15PresSnapshot();
+}
+function pr15DevPresenceVisual(resonance,source){
+  if(!DEV_MODE)return null;
+  return pr15PresVisualState(resonance,source);
+}
+function pr15DevPresenceEnd(hard){
+  if(!DEV_MODE)return null;
+  return hard?pr15PresEnd('dev'):pr15PresLeave('dev');
+}
+/* força uma presença física a partir de uma memória REAL do echoQueue,
+   sem tocar no plano do B2. o={source,resonance,memoryIndex,wave}. */
+function pr15DevPresenceSpawn(o){
+  if(!DEV_MODE)return null;
+  const O=(o&&typeof o==='object')?o:{};
+  try{devTaint();}catch(e){}
+  if(pr15Presence)return {ok:false,reason:'presença já ativa',state:pr15PresSnapshot()};
+  let q=[];
+  try{q=Array.isArray(echoQueue)?echoQueue:[];}catch(e){q=[];}
+  let idx=Math.round(+O.memoryIndex);
+  if(!Number.isFinite(idx)||idx<0||idx>1)idx=(O.source==='n2')?1:0;
+  let rec=q[idx]||null;
+  let elig=false;
+  try{elig=!!(rec&&typeof pr15MemIsEligible==='function'&&pr15MemIsEligible(rec));}catch(e){elig=false;}
+  if(!elig){
+    idx=(idx===0)?1:0;rec=q[idx]||null;
+    try{elig=!!(rec&&typeof pr15MemIsEligible==='function'&&pr15MemIsEligible(rec));}catch(e){elig=false;}
+  }
+  if(!elig)return {ok:false,reason:'sem memória elegível',state:pr15PresSnapshot()};
+  const src=(O.source==='n2'||O.source==='n1')?O.source:((idx===1)?'n2':'n1');
+  const res=(typeof PR15_MEM_RESONANCE!=='undefined'&&PR15_MEM_RESONANCE[O.resonance])?O.resonance:'high';
+  const w=clamp(Math.round(+O.wave)||((typeof wave!=='undefined')?(wave|0):1),1,MAX_WAVE);
+  let sd=Math.round(+O.seed);
+  if(!Number.isFinite(sd)||sd<=0){
+    try{sd=pr15MemSeedFor('devpres',(typeof pr15MemRunSeed==='function')?pr15MemRunSeed():1,w,rec.id);}
+    catch(e){sd=0x51EED1;}
+  }
+  const built=pr15PresSpawn({id:'dev-'+src+'-'+res+'-w'+w,mem:rec.id,src:src,res:res,
+    seed:sd>>>0,intent:0,wave:w},{dev:true});
+  if(!built)return {ok:false,reason:'materialização recusada',state:pr15PresSnapshot()};
+  return {ok:true,reason:'forçado via DEV',state:pr15PresSnapshot()};
+}
+
+/* =====================================================================
+   SANDBOX (§22) — contexto isolado. O laboratório recebe um registro
+   próprio e vazio; o estado real é guardado de lado e devolvido na saída.
+   Nenhuma presença do Sandbox marca encounter real, altera echoQueue,
+   escreve no slot ou vaza para o Continue.
+   ===================================================================== */
+let pr15PresSandboxStash=null;
+function pr15PresSandboxContextStart(){
+  pr15PresClear();
+  pr15PresSandboxStash=pr15PresRun;
+  pr15PresRun=pr15PresFresh();
+  return true;
+}
+function pr15PresSandboxTearDown(){
+  pr15PresClear();
+  pr15PresRun=(pr15PresSandboxStash&&typeof pr15PresSandboxStash==='object')
+    ?pr15PresSandboxStash:pr15PresFresh();
+  pr15PresSandboxStash=null;
+  return true;
+}
+
+/* =====================================================================
+   KIT — integração por monkey-patch (mesmo padrão de PR12/13/14/B1/B2).
+   Nenhuma função existente é reescrita; todas continuam sendo chamadas.
+   Este kit BOOTA DEPOIS do kit do B2, então o wrapper de spawnWave aqui
+   roda depois de pr15MemOnWave — que é exatamente a janela em que um
+   descriptor acabou de virar 'consumed'.
+   ===================================================================== */
+function pr15PresenceKitBoot(){
+  if(pr15PresenceKitBoot.done)return;pr15PresenceKitBoot.done=true;
+  /* 1. ondas: reage ao descriptor consumido pelo B2 nesta onda */
+  try{
+    const _sw=spawnWave;spawnWave=function(n){
+      const r=_sw.apply(this,arguments);
+      try{pr15PresOnWave(n);}catch(e){}
+      return r;
+    };
+  }catch(e){}
+  /* 2. update dedicado — engatado em updateAllies (só roda em state==='play') */
+  try{
+    const _ua=updateAllies;updateAllies=function(dt){
+      const r=_ua.apply(this,arguments);
+      try{pr15PresUpdate(dt);}catch(e){}
+      return r;
+    };
+  }catch(e){}
+  /* 3. renderer dedicado — engatado em drawWorldExtras (world-space) */
+  try{
+    const _dw=drawWorldExtras;drawWorldExtras=function(){
+      const r=_dw.apply(this,arguments);
+      try{pr15PresDraw();}catch(e){}
+      return r;
+    };
+  }catch(e){}
+  /* 4. checkpoint: cp.pr15presence */
+  try{
+    const _bc=smBuildCheckpoint;smBuildCheckpoint=function(reason,waveOverride){
+      const cp=_bc.apply(this,arguments);
+      try{if(cp&&typeof cp==='object')cp.pr15presence=pr15PresPack();}catch(e){}
+      return cp;
+    };
+  }catch(e){}
+  /* 5. Continue: restaura registro e reconstrói o corpo (sem reiniciar TTL).
+     Roda DEPOIS do unpack do B2 porque este kit boota depois dele. */
+  try{
+    const _rs=resumeRun;resumeRun=function(){
+      const r=_rs.apply(this,arguments);
+      try{pr15PresUnpack((typeof hasActiveRun==='function'&&hasActiveRun())?activeRun:null);
+          pr15PresRebuild();}catch(e){}
+      return r;
+    };
+  }catch(e){}
+  /* 6. ciclo de vida da run: nova run, morte, vitória e abort limpam tudo */
+  try{
+    const _st=startRun;startRun=function(opts){
+      try{pr15PresReset();}catch(e){}
+      return _st.apply(this,arguments);
+    };
+    const _pd=onPlayerDeath;onPlayerDeath=function(){
+      const r=_pd.apply(this,arguments);try{pr15PresReset();}catch(e){}return r;
+    };
+    const _ov=onVictory;onVictory=function(){
+      const r=_ov.apply(this,arguments);try{pr15PresReset();}catch(e){}return r;
+    };
+    const _sv=showVictory;showVictory=function(){
+      const r=_sv.apply(this,arguments);try{pr15PresReset();}catch(e){}return r;
+    };
+    const _ab=abortRun;abortRun=function(){
+      const r=_ab.apply(this,arguments);try{pr15PresReset();}catch(e){}return r;
+    };
+  }catch(e){}
+  /* 7. slots: nada vaza entre Save 1/2/3 */
+  try{
+    const _as=activateSlot;activateSlot=function(i){
+      const r=_as.apply(this,arguments);try{pr15PresReset();}catch(e){}return r;
+    };
+    const _cs=smClearSlotSave;smClearSlotSave=function(){
+      const r=_cs.apply(this,arguments);try{pr15PresReset();}catch(e){}return r;
+    };
+  }catch(e){}
+  /* 8. Sandbox: contexto próprio, nada persiste */
+  try{
+    const _ss=sandboxStart;sandboxStart=function(){
+      const r=_ss.apply(this,arguments);
+      if(r){try{pr15PresSandboxContextStart();}catch(e){}}
+      return r;
+    };
+    const _sr=sandboxRestart;sandboxRestart=function(){
+      const r=_sr.apply(this,arguments);try{pr15PresSandboxContextStart();}catch(e){}return r;
+    };
+    const _se=sandboxEndToSetup;sandboxEndToSetup=function(){
+      const r=_se.apply(this,arguments);try{pr15PresSandboxTearDown();}catch(e){}return r;
+    };
+    const _sx=sandboxExit;sandboxExit=function(m){
+      const r=_sx.apply(this,arguments);try{pr15PresSandboxTearDown();}catch(e){}return r;
+    };
+    const _sc=sandboxCloseSetup;sandboxCloseSetup=function(){
+      const r=_sc.apply(this,arguments);try{pr15PresSandboxTearDown();}catch(e){}return r;
+    };
+  }catch(e){}
+  /* 9. DEV.pr15Presence* — guardados, inertes em release */
+  try{
+    if(typeof DEV!=='undefined'&&DEV&&typeof DEV==='object'){
+      DEV.pr15PresenceState=pr15DevPresenceState;
+      DEV.pr15PresenceSpawn=pr15DevPresenceSpawn;
+      DEV.pr15PresenceEnd=pr15DevPresenceEnd;
+      DEV.pr15PresenceVisual=pr15DevPresenceVisual;
+    }
+  }catch(e){}
+}
+/* ==================== PR15·fim b3 ==================== */
+
+/* =====================================================================
    BOOT
    ===================================================================== */
 fracKitBoot();
@@ -32867,6 +33795,7 @@ factionPresenceKitBoot();   // PR 14: Presença de Facção (fundação B2)
 factionPresencePhysicalKitBoot();   // PR 14: Presença física na arena (B3)
 pr15TemporalKitBoot();            // PR15·b1: Memória Temporal — assinatura de run (fundação de dados)
 pr15MemoryKitBoot();              // PR15·b2: Director de Memórias Temporais (decisão + agendamento)
+pr15PresenceKitBoot();            // PR15·b3: Presença Temporal Física (entidade + ciclo de vida)
 
 /* ---- expõe o namespace no console apenas em build de desenvolvimento ---- */
 if(IS_DEV_BUILD){
