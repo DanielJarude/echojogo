@@ -56,7 +56,7 @@ ok('E05 projétil Orbiter mantém 380px/s',()=>{fresh();const e=enemy('orbiter',
 ok('E06 órbita mantém raio desejado 210 na fonte',()=>assert.ok(/const want=210/.test(SRC.slice(SRC.indexOf("if(e.type==='orbiter')"),SRC.indexOf("if(e.type==='bulwark')")))));
 
 // F/G: contato e Swarm
-ok('F01 proximidade cria antecipação sem dano',()=>{const p=fresh(),e=enemy('chaser',p.x-p.r-13-30);const hp=p.hp;T.updateEnemy(e,0);assert.strictEqual(e.visual.attackState,'windup');assert.strictEqual(p.hp,hp);});
+ok('F01 proximidade não cria estado contínuo nem dano',()=>{const p=fresh(),e=enemy('chaser',p.x-p.r-13-30);const hp=p.hp;T.updateEnemy(e,0);assert.ok(!e.visual||!e.visual.attackState);assert.strictEqual(p.hp,hp);});
 ok('F02 proximidade não altera hitbox',()=>{const p=fresh(),e=enemy('tank',p.x-p.r-27-20),r=e.r;T.updateEnemy(e,0);assert.strictEqual(e.r,r);});
 ok('F03 pose de contato não altera velocidade',()=>{const e=enemy('splitter');T.visualAttackObserve(e,'windup',.5,0,30,'contact');const b=[e.vx,e.vy];T.visualEnemyAttackPose(e,{});assert.deepStrictEqual([e.vx,e.vy],b);});
 ok('F04 contato real gera active sem ampliar range',()=>{const p=fresh();p.invT=0;const e=enemy('chaser',p.x);T.updateEnemy(e,0);assert.strictEqual(e.visual.attackState,'active');assert.strictEqual(e.visual.attackRange,e.r+p.r);});
@@ -77,9 +77,9 @@ ok('I01 Phantom anuncia rematerialização na posição real',()=>{fresh();const
 ok('I02 pose Phantom é finita',()=>{const e=enemy('phantom');T.visualAttackObserve(e,'windup',.5,0,13,'materialize');assert.ok(finite(T.visualEnemyAttackPose(e,{})));});
 ok('I03 draw Phantom não teleporta logicamente',()=>{fresh();const e=enemy('phantom');e.ghostT=.2;T.visualAttackObserve(e,'windup',.5,0,13,'materialize');const xy=[e.x,e.y];T.drawEnemy(e);assert.deepStrictEqual([e.x,e.y],xy);});
 ok('I04 intangibilidade mecânica continua ghostT>0',()=>assert.ok(/e\.type==='phantom'&&e\.ghostT>0/.test(SRC)));
-ok('J01 Singular observa pull somente dentro de 420',()=>{fresh();const e=enemy('singular',200);T.updateEnemy(e,0);assert.strictEqual(e.visual.attackRange,420);assert.strictEqual(e.visual.attackStyle,'pull');});
+ok('J01 Singular sinaliza pull por escalar sem visual state',()=>{fresh();const e=enemy('singular',200);T.updateEnemy(e,0);assert.ok(e.pullVisual>0);assert.ok(!e.visual||!e.visual.attackState);});
 ok('J02 Singular fora de 420 não ativa influência mecânica',()=>{fresh();const e=enemy('singular',1000);T.updateEnemy(e,0);assert.ok(!e.visual||!e.visual.attackState);});
-ok('J03 renderer usa raio mecânico literal 420',()=>{const b=SRC.slice(SRC.indexOf('function drawSingularInfluence'),SRC.indexOf('function drawEnemy'));assert.ok(/arc\(e\.x,e\.y,420/.test(b));});
+ok('J03 renderer usa um único arco local no raio mecânico 420',()=>{const b=SRC.slice(SRC.indexOf("}else if(e.type==='singular')"),SRC.indexOf("}else if(e.type==='shadow')"));assert.ok(/arc\(0,0,420/.test(b));assert.strictEqual((b.match(/arc\(0,0,420/g)||[]).length,1);});
 ok('J04 pull e reflection têm estilos distintos',()=>{const e=enemy('singular');T.visualAttackObserve(e,'active',.5,0,420,'pull');assert.strictEqual(e.visual.attackStyle,'pull');T.visualAttackTrigger(e,0,420,'reflection',.18);assert.strictEqual(e.visual.attackStyle,'reflection');});
 ok('J05 reflexão continua instantânea/probabilística, sem janela falsa',()=>assert.ok(/e\.type==='singular'.*Math\.random\(\)<\.35/.test(SRC)));
 ok('J06 intensidade do pull permanece 260',()=>{const i=SRC.indexOf('/* ---- SINGULAR:');assert.ok(/\*260\*dt/.test(SRC.slice(i,i+900)));});

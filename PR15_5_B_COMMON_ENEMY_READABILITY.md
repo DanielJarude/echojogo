@@ -203,3 +203,13 @@ entidades ativas. FPS real deve ser validado em playtest Electron.
   equivalência mecânica;
 - reflexão da Singular continua sem antecipação porque é um proc instantâneo,
   não uma janela mecânica.
+
+---
+
+## Correção B-FIX #1 após playtest
+
+O desenho original acima está preservado como histórico, mas **não descreve mais o hot path vigente**. O playtest humano rejeitou a faixa contínua de contato de 54 px, poses de microescala, cue individual de Swarm e influência pesada da Singular.
+
+B-FIX #1 removeu `drawCommonAttackCue` e `drawSingularInfluence`, eliminou observação contínua de contato/pull/Spawner e deixou estados somente para janelas curtas e importantes. Shooter, Orbiter e Phantom agora deformam primitivas já existentes; Bulwark usa placa base maior orientada por `shieldAng`; Chaser, Tank e Splitter só deformam no contato real; Swarm não paga cue individual; Singular usa um único arco somente dentro de 420 px.
+
+A causa raiz, auditoria por operação, cinco cenários comparativos e critérios de validação estão em `PR15_5_B_FIX1_PERFORMANCE_VISIBILITY.md`.
