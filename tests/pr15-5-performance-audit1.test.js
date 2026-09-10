@@ -95,7 +95,15 @@ const mechanical={
   "updatePickups": "b10dcb596964b2971dcb39c6ecc18f8cbd8c0b6fd79ee88932d60a7824a04d0a",
   "updateResonance": "329f387367ca2b706c5dc17e1e43ec0beb3a64115497a4b57ab647b685a25b14",
   "pickTarget": "d82795f49e277ec2990a908d3bf27560600156c2a58fcafc6676759301614e96",
-  "drawEnemy": "8a19b3f713209edd854d5cb28247a3eaac68ad7f627f1901902caabbe965bc33",
+  /* PR15.5-C: drawEnemy re-baselineado — ganhou (1) o dip de alpha do
+     pose de hurt espectral/energético (1 estado globalAlpha quando
+     vp.alpha<1) e (2) ajustes de PRIMITIVAS EXISTENTES por família de
+     material (parâmetros de raio/centro/offset — mesma contagem de
+     ops em idle; sem novo save/restore/translate/rotate/scale/blur).
+     A pose de hurt agora é por família (ENEMY_IMPACT_PROFILES).
+     Os goldens A–I (desenho idle sintético) continuam idênticos à
+     base, comprovando que o fast path não mudou. */
+  "drawEnemy": "669f39f70bfb7f147c7a13ebda101dc90099379751c59ed912fec428c78b1dfe",
   "drawProjectile": "565cdac8706fc659607acab66596631b930430e41d064f20d2fc827631f32399",
   /* PR15.5-D: drawSwings re-baselineado — ganhou o despacho para o trail
      por família (meleeDrawTrail, pinado abaixo). O fallback legado e o

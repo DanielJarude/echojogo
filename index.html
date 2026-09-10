@@ -3121,6 +3121,7 @@ function sandboxRestart(){
 function sandboxClearRunState(){
   enemies=[];projectiles=[];xporbs=[];parts=[];ftexts=[];pickups=[];allies=[];
   swings=[];arcs=[];beacon=null;boss=null;miniBoss=null;
+  deathVisualClear();   // PR15.5-C: corpse visual nunca atravessa runs/slots
   speechClear();
   /* B3-FIX: histórico de variedade do laboratório não fica stale na memória
      (o Continue real já reconstruía do slot; aqui só evita estado morto). */
@@ -4976,18 +4977,21 @@ function visualAttackCancel(entity){
 /* Notificação direta e limitada: o evento mais recente substitui o anterior. */
 function visualNotify(entity,event,data){
   const v=visualState(entity);if(!v)return null;data=data||{};
-  const duration=Math.max(0,visualFinite(data.duration,event==='hurt'?.11:event==='weaponFire'?.16:0));
+  const duration=Math.max(0,visualFinite(data.duration,event==='hurt'?enemyImpactVisualProfile(entity).hurt.duration:event==='weaponFire'?.16:0));
   v.event=typeof event==='string'?event:'';v.eventT=duration;v.eventDuration=duration;
-  v.hitX=visualFinite(data.x,entity.x||0);v.hitY=visualFinite(data.y,entity.y||0);
+  const hx=visualFinite(data.x,entity.x||0),hy=visualFinite(data.y,entity.y||0);
+  if(event==='hurt')visualHurtStore(v,entity,hx,hy);   // PR15.5-C: direção pré-computada
+  else{v.hitX=hx;v.hitY=hy;}
   if(event==='hurt')visualTimelineStart(entity,'hurt',duration,0);
   else if(event==='weaponFire'){v.recoil=1;visualTimelineStart(entity,'recoil',duration,0);}
   return v;
 }
 function visualNotifyHurt(entity,x,y){
   const v=visualState(entity);if(!v)return null;
-  v.event='hurt';v.eventT=v.eventDuration=.11;
-  v.hitX=visualFinite(x,entity.x||0);v.hitY=visualFinite(y,entity.y||0);
-  v.state='hurt';v.t=0;v.duration=.11;v.phase=0;v.active=true;v.completed=false;return v;
+  const dur=enemyImpactVisualProfile(entity).hurt.duration;  // PR15.5-C: duração por família
+  v.event='hurt';v.eventT=v.eventDuration=dur;
+  visualHurtStore(v,entity,visualFinite(x,entity.x||0),visualFinite(y,entity.y||0));
+  v.state='hurt';v.t=0;v.duration=dur;v.active=true;v.completed=false;return v;
 }
 function visualNotifyWeaponFire(entity){
   const v=visualState(entity);if(!v)return null;
@@ -5026,6 +5030,346 @@ const ENEMY_VISUAL_PROFILES={
   singular:{mass:'heavy',material:'void',locomotion:'float',hurt:'pulse',death:'implode',attack:'field',attackFamily:'control',anticipationStyle:'influence',activeStyle:'pull',recoveryStyle:'collapse'}
 };
 function enemyVisualProfile(entity){return ENEMY_VISUAL_PROFILES[entity&&entity.type]||{mass:'medium',material:'unknown',locomotion:'move',hurt:'flash',death:'shatter',attack:'contact'};}
+/* =====================================================================
+   PR15.5-C · HURT / DEATH — REAÇÃO AO DANO, IDENTIDADE MATERIAL E MORTE
+   ---------------------------------------------------------------------
+   O PR15.5-B deu silhuetas distintas; o PR15.5-C dá REAÇÕES distintas:
+   cada família de massa/material absorve impacto de um jeito próprio e
+   cada morte tem uma leitura visual própria — FORMA + DEFORMAÇÃO +
+   MOVIMENTO + TIMING + MATERIAL + DIREÇÃO DO IMPACTO.
+
+   Regras absolutas (herdadas do PR15.5):
+   · CAMADA ESTRITAMENTE VISUAL: nada aqui toca HP, dano, knockback,
+     hitbox, spawn, IA, reward, drop, XP, RNG mecânico, targeting ou
+     qualquer campo mecânico do inimigo. O cadáver visual (deathVisuals)
+     é um registro independente que JAMAIS participa de colisão,
+     targeting, dano, recompensa ou save.
+   · HURT sem fila e sem alocação: o hit mais recente SUBSTITUI o
+     anterior (coalescência no evento); a direção do impacto vem da
+     ORIGEM REAL do dano (srcx/srcy do damageEnemy) e é pré-computada
+     NO EVENTO (1 hip + 4 trig por acerto, zero trig no renderer).
+   · MORTE bounded: coleção global com cap fixo DEATH_VISUAL_CAP,
+     lifetime curta por família (0.12–0.34 s), pool de objetos
+     (zero alocação em regime), descarte O(1) determinístico (quando
+     o cap atinge, o mais novo é ignorado — os mais velhos continuam
+     drenando).
+   · DETERMINISMO: zero aleatoriedade, relógio de parede, listener,
+     timer ou RAF neste bloco. Variação de fragmentos vem de
+     e.visualSeed (determinístico por spawn) + direção do último
+     impacto + progresso de tempo. O RNG mecânico NUNCA é consumido
+     aqui (os FX originais do killEnemy permanecem idênticos, com a
+     MESMA contagem de chamadas de rand).
+   · FAST PATH: inimigo vivo sem hurt ativo paga EXATAMENTE o custo
+     anterior (visualHurtPose retorna null; drawDeathVisuals vazio é
+     um no-op; deathVisualTick vazio é um no-op).
+   ===================================================================== */
+/* Perfis de IMPACTO pré-computados e congelados — um por inimigo comum
+   real do EDEFS. Todos os campos são VISUAIS (pose, tempo, forma,
+   intensidade): nenhum atributo mecânico (hp/spd/r/dmg/xp) é lido nem
+   duplicado. offset/rotation/squash/stretch são frações do raio visual
+   (ou radianos); durations em segundos. ease vem da fundação. */
+const ENEMY_IMPACT_PROFILES=(()=>{
+  const E=VISUAL_EASING;
+  function H(o){return Object.freeze(Object.assign({
+    duration:.11,offset:.30,rotation:.05,squash:.18,stretch:.10,
+    alphaDip:0,intensity:1,ease:E.easeOut
+  },o));}
+  function D(style,duration){return Object.freeze({style,duration});}
+  return Object.freeze({
+    /* LEVE/ORGÂNICO — carapaça flexível: recuo curto, rotação visível,
+       squash rápido, retorno elástico. */
+    chaser:Object.freeze({type:'chaser',massClass:'light',materialClass:'carapace',
+      hurt:H({duration:.11,offset:.30,rotation:.05,squash:.18,stretch:.10}),
+      death:D('snap',.16)}),
+    /* ENXAME — barato de tudo: mínima deformação, duração mínima. */
+    swarm:Object.freeze({type:'swarm',massClass:'tiny',materialClass:'organic',
+      hurt:H({duration:.09,offset:.20,rotation:.04,squash:.12,stretch:.06,intensity:.7}),
+      death:D('flicker',.12)}),
+    /* PESADO/BLINDEADO — massa absorve: quase sem rotação, compressão
+       curta, deslocamento mínimo. */
+    tank:Object.freeze({type:'tank',massClass:'heavy',materialClass:'armor',
+      hurt:H({duration:.13,offset:.06,rotation:.015,squash:.14,stretch:.04,intensity:.9,ease:E.easeInOut}),
+      death:D('collapse',.34)}),
+    bulwark:Object.freeze({type:'bulwark',massClass:'heavy',materialClass:'shield',
+      hurt:H({duration:.12,offset:.05,rotation:.012,squash:.10,stretch:.03,intensity:.8,ease:E.easeInOut}),
+      death:D('plate-fall',.30)}),
+    /* BIO-MECÂNICO — casco rígido ancorado: a fenda reage, não o corpo. */
+    spawner:Object.freeze({type:'spawner',massClass:'heavy',materialClass:'bio-mechanical',
+      hurt:H({duration:.12,offset:.05,rotation:.015,squash:.12,stretch:.04,intensity:.8,ease:E.easeInOut}),
+      death:D('core-collapse',.30)}),
+    /* ENERGÉTICO — reação menos física: sem deslocamento/rotação,
+       distorção interna (core fora de fase, anel dessincronizado). */
+    shooter:Object.freeze({type:'shooter',massClass:'light',materialClass:'machine',
+      hurt:H({duration:.11,offset:0,rotation:0,squash:.04,stretch:0,alphaDip:.15}),
+      death:D('dissolve',.20)}),
+    orbiter:Object.freeze({type:'orbiter',massClass:'light',materialClass:'machine',
+      hurt:H({duration:.11,offset:0,rotation:0,squash:.04,stretch:0,alphaDip:.15}),
+      death:D('dissolve',.20)}),
+    /* ANÔMALO — resposta assimétrica: jitter cromático ampliado
+       (mesma contagem de amostras), implosão curta na morte. */
+    anomaly:Object.freeze({type:'anomaly',massClass:'anomalous',materialClass:'temporal',
+      hurt:H({duration:.10,offset:.10,rotation:.05,squash:.10,stretch:.10}),
+      death:D('implode',.20)}),
+    /* CRISTALINO — microfissura: a rachadura abre no hit; quebra em
+       poucos fragmentos angulares grandes na morte. */
+    splitter:Object.freeze({type:'splitter',massClass:'medium',materialClass:'fracture',
+      hurt:H({duration:.12,offset:.12,rotation:.04,squash:.14,stretch:.08,intensity:.9}),
+      death:D('divide',.22)}),
+    /* ESPECTRAL — phase-shift: sem física, dip de alpha, eco de fase;
+       dissolução sem corpo físico. */
+    phantom:Object.freeze({type:'phantom',massClass:'spectral',materialClass:'spectral',
+      hurt:H({duration:.12,offset:.15,rotation:.02,squash:.06,stretch:.10,alphaDip:.30,intensity:.8}),
+      death:D('phase-out',.26)}),
+    /* ANÔMALO GRAVITACIONAL — compressão radial, pulso invertido;
+       implosão (NUNCA explosão) na morte, zero campo residual. */
+    singular:Object.freeze({type:'singular',massClass:'anomalous',materialClass:'void',
+      hurt:H({duration:.13,offset:.04,rotation:.01,squash:.12,stretch:.05,intensity:.9,ease:E.easeInOut}),
+      death:D('implosion',.30)})
+  });
+})();
+/* Fallback seguro (tipos fora do EDEFS: boss, miniboss, shadow, elites
+   de tipos futuros): valores ≈ legado genérico, SEM corpse (death:null)
+   — bosses/minibosses têm fechamento próprio (PR15.5-F). */
+const ENEMY_IMPACT_PROFILE_FALLBACK=Object.freeze({type:'',massClass:'medium',materialClass:'unknown',
+  hurt:Object.freeze({duration:.11,offset:.05,rotation:.018,squash:.025,stretch:0,alphaDip:0,intensity:1,ease:VISUAL_EASING.easeOut}),
+  death:null});
+/* O(1): lookup em tabela congelada. Aceita tipo (string) ou entidade. */
+function enemyImpactVisualProfile(entityOrType){
+  const t=typeof entityOrType==='string'?entityOrType:(entityOrType&&entityOrType.type);
+  return (typeof t==='string'&&ENEMY_IMPACT_PROFILES[t])||ENEMY_IMPACT_PROFILE_FALLBACK;
+}
+/* Pré-computa a direção do impacto NO EVENTO do acerto (não no render):
+   · hitX/hitY passam a guardar o VETOR UNITÁRIO de deslocamento
+     render-only (da origem real do dano em direção ao centro);
+   · phase empacota 2 bits: (eixo X-alvo=2|0) + (lado perp<0 → 1).
+   1 hip + 4 trig por acerto; ZERO trig por frame no draw. Sem alocação. */
+function visualHurtStore(v,entity,x,y){
+  const dx=(entity.x||0)-x,dy=(entity.y||0)-y;
+  const L=Math.hypot(dx,dy);
+  const aim=visualFinite(entity.aim,0);
+  let ux,uy;
+  if(L>1e-6){ux=dx/L;uy=dy/L;}
+  else{ux=Math.cos(aim);uy=Math.sin(aim);}   // origem colapsada: fallback determinístico
+  v.hitX=ux;v.hitY=uy;
+  const ca=Math.cos(aim),sa=Math.sin(aim);
+  const along=ux*ca+uy*sa,perp=-ux*sa+uy*ca;
+  v.phase=(Math.abs(along)>=Math.abs(perp)?2:0)+(perp<0?1:0);
+}
+/* ---- CORPSE VISUAL (deathVisuals) — registro independente de morte ----
+   Limites fixos e documentados:
+   · DEATH_VISUAL_CAP=24 cadáveres simultâneos (cap global baixo);
+   · lifetime por família 0.12–0.34 s (tabela ENEMY_IMPACT_PROFILES);
+   · pool interno (DEATH_VISUAL_CAP*2) — zero alocação em regime;
+   · descarte determinístico O(1): cap cheio → o mais novo é ignorado;
+   · cada registro copia SÓ o mínimo visual (x,y,r,type,color,aim,dir,
+     t,dur,seed) — nunca o objeto enemy, nunca attacker, nunca closure;
+   · NENHUM campo de gameplay: não há hp, vx/vy, r de colisão,
+     targeting, reward, IA, projétil ou evento. A única função que o
+     consome (drawDeathVisual) é pura: lê estado, desenha, termina. */
+const DEATH_VISUAL_CAP=24;
+const deathVisuals=[],deathVisualPool=[];
+function deathVisualPush(e){
+  const prof=enemyImpactVisualProfile(e);
+  if(!prof||!prof.death)return null;            // fora do escopo (boss/mini/shadow) → sem corpse
+  if(deathVisuals.length>=DEATH_VISUAL_CAP)return null;  // O(1): ignora o mais novo
+  const v=e.visual;
+  let dir=0;
+  if(v&&v.event==='hurt'&&isFinite(v.hitX)&&isFinite(v.hitY)&&(Math.abs(v.hitX)+Math.abs(v.hitY)>1e-6))
+    dir=Math.atan2(v.hitY,v.hitX);              // direção REAL do último dano (1 atan2 no evento)
+  else if(e.aim!=null&&isFinite(e.aim))dir=e.aim;
+  const d=deathVisualPool.length?deathVisualPool.pop():{};
+  d.x=e.x;d.y=e.y;d.r=e.r;d.type=e.type;d.color=e.color;
+  d.aim=(e.type==='bulwark'&&e.shieldAng!==undefined&&isFinite(e.shieldAng))?e.shieldAng
+    :((e.aim!=null&&isFinite(e.aim))?e.aim:0);
+  d.dir=isFinite(dir)?dir:0;
+  d.t=0;d.dur=prof.death.duration;d.seed=isFinite(e.visualSeed)?e.visualSeed:.5;
+  deathVisuals.push(d);return d;
+}
+function deathVisualTick(dt){
+  if(!deathVisuals.length)return;               // fast path: no-op
+  dt=Math.max(0,visualFinite(dt,0));
+  let w=0;
+  for(let i=0;i<deathVisuals.length;i++){
+    const d=deathVisuals[i];d.t+=dt;
+    if(d.t<d.dur)deathVisuals[w++]=d;
+    else{d.type='';deathVisualPool.length<DEATH_VISUAL_CAP*2&&deathVisualPool.push(d);}
+  }
+  deathVisuals.length=w;
+}
+function deathVisualClear(){
+  while(deathVisuals.length){const d=deathVisuals.pop();d.type='';if(deathVisualPool.length<DEATH_VISUAL_CAP*2)deathVisualPool.push(d);}
+}
+/* DRAW puro por família: só lê (d.t/d.dur, d.seed, d.dir, d.aim).
+   Zero aleatoriedade/blur/gradiente/alocação; ≤14 primitives por corpse.
+   A geometria reutiliza as silhuetas reais em forma simplificada. */
+function drawDeathVisual(d){
+  const p=(d.dur>0&&isFinite(d.t))?Math.min(1,d.t/d.dur):1,k=1-p;
+  const R=isFinite(d.r)?d.r:12,se=isFinite(d.seed)?d.seed:.5;
+  const dir=isFinite(d.dir)?d.dir:0,aim=isFinite(d.aim)?d.aim:0;
+  ctx.save();
+  ctx.translate(isFinite(d.x)?d.x:0,isFinite(d.y)?d.y:0);
+  if(d.type==='swarm'){
+    /* ENXAME — flicker: o corpo recolhe e some, mínimo esforço. */
+    ctx.rotate(dir+(se-.5)*.8);
+    const sc=1-.45*Math.pow(p,1.6);ctx.scale(sc,sc);
+    ctx.globalAlpha=k;ctx.fillStyle=d.color;
+    ctx.beginPath();ctx.moveTo(R*1.05,0);ctx.lineTo(-R*.5,R*.45);
+    ctx.lineTo(-R*.25,0);ctx.lineTo(-R*.5,-R*.45);ctx.closePath();ctx.fill();
+  }else if(d.type==='chaser'){
+    /* LEVE — snap na direção do último impacto + contração + 3 fagulhas. */
+    const e1=Math.pow(p,1.7),sc=1-.55*e1;
+    ctx.rotate(dir);
+    ctx.translate(e1*R*.35,0);ctx.scale(sc,sc);
+    ctx.globalAlpha=k;ctx.fillStyle=d.color;
+    ctx.beginPath();ctx.moveTo(R*.9,0);ctx.quadraticCurveTo(R*.3,-R*.8,-R*.6,-R*.45);
+    ctx.quadraticCurveTo(-R*.85,0,-R*.6,R*.45);ctx.quadraticCurveTo(R*.3,R*.8,R*.9,0);
+    ctx.closePath();ctx.fill();
+    ctx.strokeStyle=d.color;ctx.lineWidth=1.5;
+    for(let i=0;i<3;i++){
+      const ang=(i-1)*.85+(se-.5)*.6,rr=R*.6+e1*R*.9;
+      ctx.beginPath();ctx.moveTo(Math.cos(ang)*rr,Math.sin(ang)*rr);
+      ctx.lineTo(Math.cos(ang)*(rr+R*.45*k),Math.sin(ang)*(rr+R*.45*k));ctx.stroke();
+    }
+  }else if(d.type==='tank'){
+    /* PESADO — perda de sustentação: tomba para o lado do impacto,
+       comprime verticalmente, placas pesadas separam pouco. */
+    const side=(se<.5?-1:1),e1=Math.pow(p,1.6);
+    ctx.rotate(aim);
+    ctx.rotate(side*e1*.30);
+    ctx.translate(e1*R*.10,0);
+    ctx.scale(1,1-.42*e1);
+    ctx.globalAlpha=k;ctx.fillStyle=d.color;
+    ctx.beginPath();
+    for(let i=0;i<6;i++){const an=i/6*TAU;ctx[i?'lineTo':'moveTo'](Math.cos(an)*R,Math.sin(an)*R);}
+    ctx.closePath();ctx.fill();
+    ctx.fillStyle='#14060c';
+    ctx.beginPath();ctx.arc(0,0,R*.3,0,TAU);ctx.fill();
+    ctx.fillStyle=d.color;
+    ctx.beginPath();ctx.moveTo(R*.05,-R*.55);ctx.lineTo(R*.62+e1*R*.35,-R*.92);
+    ctx.lineTo(R*.05,-R*1.06);ctx.closePath();ctx.fill();
+    ctx.beginPath();ctx.moveTo(R*.05,R*.55);ctx.lineTo(R*.62+e1*R*.35,R*.92);
+    ctx.lineTo(R*.05,R*1.06);ctx.closePath();ctx.fill();
+  }else if(d.type==='bulwark'){
+    /* BLINDADO — a placa mantém a frente (shieldAng) e DESLIZA para
+       fora enquanto o corpo perde sustentação. */
+    const e1=Math.pow(p,1.5);
+    ctx.rotate(aim);
+    ctx.scale(1,1-.35*e1);
+    ctx.globalAlpha=k*.9;ctx.fillStyle=d.color;
+    ctx.beginPath();
+    for(let i=0;i<5;i++){const an=i/5*TAU+.6;ctx[i?'lineTo':'moveTo'](Math.cos(an)*R*.78,Math.sin(an)*R*.78);}
+    ctx.closePath();ctx.fill();
+    ctx.strokeStyle=d.color;ctx.lineWidth=R*.30;
+    ctx.beginPath();ctx.arc(R*.08+e1*R*.55,0,R*1.22,-1.08,1.08);ctx.stroke();
+    ctx.globalAlpha=k*.3;ctx.lineWidth=R*.6;
+    ctx.beginPath();ctx.arc(R*.08+e1*R*.55,0,R*1.22,-1.08,1.08);ctx.stroke();
+  }else if(d.type==='shooter'){
+    /* ENERGÉTICO — dissolve de dentro para fora: core apaga primeiro,
+       shell perde coesão (2 arcos se afastando). Sem fragmentos. */
+    const e1=Math.pow(p,2);
+    ctx.globalAlpha=1-e1;ctx.fillStyle=d.color;
+    ctx.beginPath();ctx.arc(0,0,R*.5*(1-.4*e1),0,TAU);ctx.fill();
+    ctx.globalAlpha=k;ctx.strokeStyle=d.color;ctx.lineWidth=R*.10;
+    ctx.beginPath();ctx.arc(0,0,R*(.92+.35*p),-.6,.6);ctx.stroke();
+    ctx.beginPath();ctx.arc(0,0,R*(.92+.35*p),Math.PI-.6,Math.PI+.6);ctx.stroke();
+  }else if(d.type==='orbiter'){
+    /* ENERGÉTICO — núcleo colapsa; o anel se parte em dois arcos. */
+    const e1=Math.pow(p,1.8);
+    ctx.globalAlpha=1-e1;ctx.fillStyle=d.color;
+    ctx.beginPath();ctx.arc(0,0,R*.5*(1-.5*e1),0,TAU);ctx.fill();
+    ctx.globalAlpha=k;ctx.strokeStyle=d.color;ctx.lineWidth=R*.14;
+    ctx.beginPath();ctx.arc(0,0,R*(.92+.3*p),0,Math.PI);ctx.stroke();
+    ctx.beginPath();ctx.arc(0,0,R*(.92+.3*p),Math.PI,TAU);ctx.stroke();
+  }else if(d.type==='splitter'){
+    /* CRISTALINO — quebra estrutural: 3 fragmentos angulares GRANDES
+       se separando ao longo do último impacto (3–5, nunca dezenas). */
+    for(let i=0;i<3;i++){
+      const ang=dir+(i-1)*1.15+(se-.5)*.5;
+      const off=R*.15+Math.pow(p,1.4)*R*.95;
+      ctx.save();
+      ctx.translate(Math.cos(ang)*off,Math.sin(ang)*off);
+      ctx.rotate(ang+p*(i===1?.9:-.7));
+      ctx.globalAlpha=k;ctx.fillStyle=d.color;
+      ctx.beginPath();ctx.moveTo(R*.5,0);ctx.lineTo(-R*.35,R*.3);
+      ctx.lineTo(-R*.2,-R*.3);ctx.closePath();ctx.fill();
+      ctx.restore();
+    }
+  }else if(d.type==='phantom'){
+    /* ESPECTRAL — dissolução sem corpo físico: fade não-linear,
+       contorno em dashing expansivo + eco de fase adiantado. */
+    const f=Math.pow(1-p,2);
+    ctx.rotate(dir);
+    ctx.globalAlpha=f;
+    ctx.strokeStyle=d.color;ctx.lineWidth=R*.16;
+    ctx.setLineDash([R*.5,R*.4]);ctx.lineDashOffset=p*R*2.2;
+    ctx.beginPath();
+    ctx.moveTo(R*.55,0);ctx.lineTo(-R*.5,R*.45);
+    ctx.quadraticCurveTo(-R*.55,0,-R*.5,-R*.45);ctx.closePath();ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha=f*.4;
+    ctx.translate(p*R*.5,0);
+    ctx.beginPath();
+    ctx.moveTo(R*.4,0);ctx.lineTo(-R*.38,R*.34);
+    ctx.quadraticCurveTo(-R*.42,0,-R*.38,-R*.34);ctx.closePath();ctx.stroke();
+  }else if(d.type==='anomaly'){
+    /* ANÔMALO — implosão curta: o triângulo colapsa para dentro e um
+       anel contrai (inversão), sem explosão. */
+    const sc=Math.pow(1-p,2);
+    ctx.rotate(dir+(se-.5)*.4);
+    ctx.scale(sc,sc);
+    ctx.globalAlpha=1-p;ctx.fillStyle=d.color;
+    ctx.beginPath();ctx.moveTo(R*1.25,0);ctx.lineTo(-R*.7,R*.95);
+    ctx.lineTo(-R*.3,-R*.6);ctx.closePath();ctx.fill();
+    ctx.globalAlpha=(1-p)*.6;
+    ctx.strokeStyle=d.color;ctx.lineWidth=1.5;
+    ctx.beginPath();ctx.arc(0,0,R*(.25+1.35*(1-p)),0,TAU);ctx.stroke();
+  }else if(d.type==='singular'){
+    /* GRAVITACIONAL — implosão: os anéis colapsam para o centro, o
+       core apaga e UM aneco curto se expande. Zero campo mecânico. */
+    ctx.strokeStyle=d.color;ctx.lineWidth=2;
+    for(let i=0;i<3;i++){
+      const rr=R*(1.7-((p*.9+i*.33)%1)*1.1);
+      ctx.globalAlpha=(1-p)*.8*rr/(R*1.7);
+      ctx.beginPath();ctx.arc(0,0,Math.max(2,rr),0,TAU);ctx.stroke();
+    }
+    ctx.globalAlpha=1-p;ctx.fillStyle=d.color;
+    ctx.beginPath();ctx.arc(0,0,R*.85*(1-.6*p),0,TAU);ctx.fill();
+    ctx.fillStyle='#12000f';
+    ctx.beginPath();ctx.arc(0,0,R*.35*(1+.4*p),0,TAU);ctx.fill();
+    ctx.globalAlpha=(1-p)*.5;
+    ctx.strokeStyle='#ff9df7';
+    ctx.beginPath();ctx.arc(0,0,R*(.3+1.1*p),0,TAU);ctx.stroke();
+  }else if(d.type==='spawner'){
+    /* BIO-MECÂNICO — colapso do núcleo: âncoras retraem, o olho de
+       fenda fecha e o casco se desfaz. */
+    const e1=Math.pow(p,1.6);
+    ctx.rotate(aim);
+    ctx.globalAlpha=(1-p)*.9;
+    ctx.strokeStyle='#1d6b48';ctx.lineWidth=R*.15;ctx.lineCap='round';
+    for(let i=0;i<4;i++){
+      const an=i/4*TAU+.78;
+      ctx.beginPath();ctx.moveTo(Math.cos(an)*R*.62,Math.sin(an)*R*.62);
+      ctx.lineTo(Math.cos(an)*R*(1.34-.34*e1),Math.sin(an)*R*(1.34-.34*e1));ctx.stroke();
+    }
+    ctx.lineCap='butt';
+    ctx.fillStyle=d.color;
+    ctx.beginPath();
+    for(let i=0;i<6;i++){const an=i/6*TAU+e1*.3;ctx[i?'lineTo':'moveTo'](Math.cos(an)*R*.82,Math.sin(an)*R*.82);}
+    ctx.closePath();ctx.fill();
+    ctx.fillStyle='#04170f';
+    ctx.beginPath();ctx.ellipse(0,0,R*.44,R*.2*(1-.7*e1),0,0,TAU);ctx.fill();
+  }else{
+    ctx.restore();return;                      // tipo fora do vocabulário: no-op
+  }
+  ctx.restore();
+}
+function drawDeathVisuals(){
+  if(!deathVisuals.length)return;              // fast path: no-op
+  for(let i=0;i<deathVisuals.length;i++){
+    const d=deathVisuals[i];
+    if(inView(d.x,d.y,(d.r||20)*3+48))drawDeathVisual(d);
+  }
+}
 function weaponVisualProfileBuild(def){
   def=def||{};
   return Object.freeze({category:def.melee?'melee':(def.beam?'beam':(def.sprite||'legacy')),
@@ -5037,13 +5381,31 @@ function weaponVisualProfileBuild(def){
 const WEAPON_VISUAL_PROFILE_CACHE=new Map(WEAPONS.map(def=>[def,weaponVisualProfileBuild(def)]));
 const WEAPON_VISUAL_PROFILE_FALLBACK=weaponVisualProfileBuild(null);
 function weaponVisualProfile(def){return WEAPON_VISUAL_PROFILE_CACHE.get(def)||WEAPON_VISUAL_PROFILE_FALLBACK;}
+/* Pose de HURT por família (PR15.5-C):
+   · fast path byte-a-byte o anterior: sem hurt ativo → null, zero custo;
+   · a direção vem do vetor unitário PRÉ-COMPUTADO no evento (hitX/hitY)
+     — ZERO trig por frame (antes: 1 atan2 + 2 trig por frame por inimigo
+     atingido, agora zero);
+   · magnitude/rotação/squash/dip por ENEMY_IMPACT_PROFILES (O(1));
+   · `lean` carrega o escalar de resposta (intensity×k) para os ajustes
+     de primitivas por família no draw (placa do bulwark, fissura do
+     splitter, dessincronização do orbiter, jitter do anômalo…);
+   · `alpha` carrega o dip espectral/energético (1 = neutro). */
 function visualHurtPose(entity,out){
   const v=visualPeek(entity);if(!v||v.event!=='hurt'||!(v.eventT>0))return null;
-  const k=VISUAL_EASING.easeOut(v.eventDuration>0?v.eventT/v.eventDuration:0);
-  const dx=(entity.x||0)-v.hitX,dy=(entity.y||0)-v.hitY,dir=Math.atan2(dy,dx)-(entity.aim||0);
-  out=out||VISUAL_POSE_SCRATCH;out.offsetX=Math.cos(dir)*k*.7;out.offsetY=Math.sin(dir)*k*.7;
-  out.rotation=Math.sin(dir)*k*.018;out.scaleX=1-k*.025;out.scaleY=1+k*.025;
-  out.recoil=out.lean=out.squash=out.stretch=0;out.alpha=1;return out;
+  const prof=enemyImpactVisualProfile(entity);
+  const k=prof.hurt.ease(v.eventDuration>0?v.eventT/v.eventDuration:0);
+  const off=prof.hurt.offset*visualFinite(entity.r,13)*k;
+  const side=(v.phase&1)?-1:1,along=(v.phase&2)?1:0;
+  out=out||VISUAL_POSE_SCRATCH;
+  out.offsetX=v.hitX*off;out.offsetY=v.hitY*off;
+  out.rotation=side*prof.hurt.rotation*k;
+  const sq=prof.hurt.squash*k,st=prof.hurt.stretch*k;
+  if(along){out.scaleX=1-sq;out.scaleY=1+st;}
+  else{out.scaleX=1+st;out.scaleY=1-sq;}
+  out.recoil=0;out.lean=prof.hurt.intensity*k;out.squash=sq;out.stretch=st;
+  out.alpha=prof.hurt.alphaDip>0?1-prof.hurt.alphaDip*k:1;
+  return out;
 }
 function visualWeaponRecoil(entity){
   const v=visualPeek(entity);return v&&v.recoil>0?v.recoil:0;
@@ -14364,6 +14726,7 @@ function updateResonance(dt){
 function killEnemy(e){
   visualAttackCancel(e);
   e.dead=true;kills++;
+  deathVisualPush(e);   // PR15.5-C: corpse 100% visual (pool+cap; zero gameplay)
   /* PR 11: hooks de abate — apenas abate DIRETO do jogador dispara proc,
      então explosões/cascatas não re-entram no mesmo gatilho (§8). */
   if(curAttacker===player&&player)itemEmit('onKill',{target:e,kill:e});
@@ -18739,6 +19102,7 @@ function resetRunWorld(){
   enemies=[];projectiles=[];xporbs=[];parts=[];ftexts=[];
   speechClear();
   swings=[];arcs=[];curAttacker=null;resoFlash=0;
+  deathVisualClear();   // PR15.5-C: corpse visual nunca atravessa runs/slots
   pickups=[];allies=[];beacon=null;curEv=null;evCount=0;
   /* PR 10.5: memória de eventos nova + limpeza de acontecimentos de arena */
   evMem=evMemFresh();evQueue=[];
@@ -19517,6 +19881,7 @@ function drawEnemy(e){
   const drawAim=e.type==='bulwark'&&isFinite(e.shieldAng)?e.shieldAng:e.aim;
   ctx.translate(e.x,e.y);ctx.rotate(drawAim);
   if(vp){ctx.translate(vp.offsetX,vp.offsetY);ctx.rotate(vp.rotation);ctx.scale(vp.scaleX,vp.scaleY);}
+  if(vp&&vp.alpha<1)ctx.globalAlpha=a*vp.alpha;  // PR15.5-C: dip espectral/energético
   ctx.lineJoin='round';
   const main=flash?'#ffffff':e.color;
 
@@ -19580,7 +19945,8 @@ function drawEnemy(e){
     ctx.shadowColor='#ffd166';ctx.shadowBlur=13;
     ctx.fillStyle=flash?'#fff':'#ffd166';
     const chg=clamp(1-e.fireT/1.6,0,1);
-    ctx.beginPath();ctx.arc(R*(1.48+.30*shotP),0,R*(.14+.16*chg+.34*shotP),0,TAU);ctx.fill();
+    const flick=vp?vp.lean:0;   // PR15.5-C: energia interrompe o brilho do orbe
+    ctx.beginPath();ctx.arc(R*(1.48+.30*shotP)-flick*R*.12,0,R*(.14+.16*chg+.34*shotP)*(1-flick*.25),0,TAU);ctx.fill();
     ctx.shadowBlur=0;
     // corpo
     const g=radGrad2('shr|'+(R|0)+'|'+(flash?1:0),
@@ -19612,7 +19978,7 @@ function drawEnemy(e){
     ctx.lineWidth=R*.13+chg*R*.12;
     ctx.shadowColor='#39d98a';ctx.shadowBlur=10+chg*22;
     ctx.setLineDash([R*.5,R*.36]);
-    ctx.beginPath();ctx.arc(0,0,R*(1.05+chg*.22),0,TAU);ctx.stroke();
+    ctx.beginPath();ctx.arc(0,0,R*(1.05+chg*.22+(vp?vp.lean*.10:0)),0,TAU);ctx.stroke();  // PR15.5-C: fenda incha no hit
     ctx.setLineDash([]);ctx.restore();
     ctx.shadowBlur=0;
     // casco hexagonal
@@ -19630,11 +19996,11 @@ function drawEnemy(e){
     ctx.beginPath();ctx.ellipse(0,0,R*.44,R*.20+chg*R*.22,rp*.6,0,TAU);ctx.fill();
     ctx.shadowColor='#7dffc4';ctx.shadowBlur=12+chg*20;
     ctx.fillStyle=flash?'#fff':'#7dffc4';
-    ctx.beginPath();ctx.ellipse(0,0,R*.26,R*(.07+chg*.20),rp*.6,0,TAU);ctx.fill();
+    ctx.beginPath();ctx.ellipse(0,0,R*.26,R*(.07+chg*.20)*(1-(vp?vp.lean*.4:0)),rp*.6,0,TAU);ctx.fill();  // PR15.5-C: fenda comprime
     ctx.shadowBlur=0;
   }else if(e.type==='anomaly'){
     /* ANÔMALO TEMPORAL — triângulo assimétrico com forte aberração cromática */
-    const jj=e.strikeT>0?3.2:1.4;
+    const jj=e.strikeT>0?3.2:1.4+(vp?vp.lean*2.4:0);  // PR15.5-C: hit amplia o desassombro (mesma contagem de amostras)
     const tri=(ox2,oy2,col,alp)=>{
       ctx.globalAlpha=a*alp;ctx.fillStyle=col;
       ctx.beginPath();
@@ -19692,14 +20058,14 @@ function drawEnemy(e){
     const sp=runTime*(3.2-2.4*orbP);
     ctx.shadowColor=e.color;ctx.shadowBlur=flash?20:11;
     ctx.strokeStyle=flash?'#fff':e.color;ctx.lineWidth=R*(.16+.16*orbP);
-    ctx.setLineDash([R*.7,R*.5]);ctx.lineDashOffset=-sp*R;
+    ctx.setLineDash([R*.7,R*.5]);ctx.lineDashOffset=-sp*R+(vp?vp.lean*R*.4:0);  // PR15.5-C: shell fora de fase
     ctx.beginPath();ctx.arc(0,0,R*.92,0,TAU);ctx.stroke();
     ctx.setLineDash([]);
     ctx.shadowBlur=0;
     const og=radGrad2('orb|'+(R|0)+'|'+(flash?1:0),0,0,1,0,0,R*.6,
       flash?'#fff':'#eaffff',flash?'#fff':'#2b6b7d');
     ctx.fillStyle=og;
-    ctx.beginPath();ctx.arc(0,0,R*.5,0,TAU);ctx.fill();
+    ctx.beginPath();ctx.arc(0,0,R*.5*(1-(vp?vp.lean*.2:0)),0,TAU);ctx.fill();  // PR15.5-C: core perde coesão
     ctx.fillStyle=flash?'#fff':e.color;
     ctx.fillRect(R*.4,-R*.13,R*.8,R*.26);
     ctx.fillStyle=flash?'#fff':'#dffdff';
@@ -19722,11 +20088,12 @@ function drawEnemy(e){
     ctx.fillStyle=flash?'#fff':'#f2e0ff';
     ctx.beginPath();ctx.arc(-R*.12,0,R*.24,0,TAU);ctx.fill();
     ctx.save();
+    const pl=vp?vp.lean*R*.09:0;  // PR15.5-C: a placa cede para o corpo no hit
     ctx.shadowColor='#c9a9ff';ctx.shadowBlur=14;
     ctx.strokeStyle=flash?'#fff':'#dcc4ff';ctx.lineWidth=R*.34;
-    ctx.beginPath();ctx.arc(R*.08,0,R*1.22,-1.08,1.08);ctx.stroke();
+    ctx.beginPath();ctx.arc(R*.08-pl,0,R*1.22,-1.08,1.08);ctx.stroke();
     ctx.globalAlpha=.28;ctx.strokeStyle='#c9a9ff';ctx.lineWidth=R*.68;
-    ctx.beginPath();ctx.arc(R*.08,0,R*1.22,-1.08,1.08);ctx.stroke();
+    ctx.beginPath();ctx.arc(R*.08-pl,0,R*1.22,-1.08,1.08);ctx.stroke();
     ctx.restore();
     ctx.strokeStyle=flash?'#fff':'#8f6fc4';ctx.lineWidth=R*.11;
     ctx.beginPath();
@@ -19739,7 +20106,7 @@ function drawEnemy(e){
     ctx.shadowColor=e.color;ctx.shadowBlur=flash?18:9;
     ctx.fillStyle=flash?'#fff':e.color;
     ctx.beginPath();
-    const splitGap=.18*splitP*R;
+    const splitGap=.18*splitP*R+(vp?vp.lean*R*.16:0);  // PR15.5-C: microfissura abre no hit
     ctx.moveTo(R,0);ctx.lineTo(R*.2,R*.9+splitGap);ctx.lineTo(-R*.8,R*.5+splitGap);
     ctx.lineTo(-R*.8,-R*.5-splitGap);ctx.lineTo(R*.2,-R*.9-splitGap);
     ctx.closePath();ctx.fill();
@@ -19760,6 +20127,17 @@ function drawEnemy(e){
     ctx.closePath();ctx.stroke();
     if(!gh){ctx.fillStyle=flash?'#fff':'rgba(191,251,255,.25)';ctx.fill();}
     ctx.shadowBlur=0;
+    if(vp){   // PR15.5-C: eco de fase — duplicação visual efêmera (zero clone mecânico)
+      const p1=1-pv.eventT/pv.eventDuration,eo=p1*R*.5;
+      ctx.globalAlpha=a*.3*vp.lean;
+      ctx.strokeStyle=flash?'#fff':e.color;ctx.lineWidth=R*.10;
+      ctx.beginPath();
+      ctx.moveTo(R*.45+pv.hitX*eo,pv.hitY*eo);
+      ctx.lineTo(-R*.4+pv.hitX*eo,R*.36+pv.hitY*eo);
+      ctx.quadraticCurveTo(-R*.45+pv.hitX*eo,pv.hitY*eo,-R*.4+pv.hitX*eo,-R*.36+pv.hitY*eo);
+      ctx.closePath();ctx.stroke();
+      ctx.globalAlpha=a*(gh?(.16+.54*matP):.95);
+    }
     ctx.fillStyle=flash?'#fff':'#eaffff';
     ctx.beginPath();ctx.arc(R*.25,0,R*.18,0,TAU);ctx.fill();
     ctx.globalAlpha=a;
@@ -19769,8 +20147,9 @@ function drawEnemy(e){
     const pa=reflecting?-(e.pulseA||0)*2:(e.pulseA||0);
     if(e.pullVisual>0){ctx.globalAlpha=.16+.28*e.pullVisual;ctx.strokeStyle='#ff9df7';ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(0,0,420,0,TAU);ctx.stroke();}
     ctx.globalAlpha=a;ctx.strokeStyle=reflecting?'#ffffff':(flash?'#fff':e.color);ctx.lineWidth=2;
+    const sgz=vp?1-vp.lean*.22:1;  // PR15.5-C: compressão radial no hit (mesmo nº de anéis)
     for(let i=0;i<3;i++){
-      const rr=R*(1.7-((pa*.35+i*.33)%1)*1.1);
+      const rr=R*(1.7-((pa*.35+i*.33)%1)*1.1)*sgz;
       ctx.globalAlpha=a*(rr/(R*1.7))*.8;
       ctx.beginPath();ctx.arc(0,0,Math.max(2,rr),0,TAU);ctx.stroke();
     }
@@ -19782,7 +20161,7 @@ function drawEnemy(e){
     ctx.beginPath();ctx.arc(0,0,R*.85,0,TAU);ctx.fill();
     ctx.shadowBlur=0;
     ctx.fillStyle='#12000f';
-    ctx.beginPath();ctx.arc(0,0,R*.35,0,TAU);ctx.fill();
+    ctx.beginPath();ctx.arc(0,0,R*.35*(1+(vp?vp.lean*.35:0)),0,TAU);ctx.fill();  // PR15.5-C: pulso invertido (inversão curta)
   }else{
     const tv=visualPeek(e),tankP=tv&&tv.attackStyle==='contact'?1-tv.attackP:0;
     /* TANQUE — mecha pesado, placas e canhão de impacto */
@@ -19800,10 +20179,11 @@ function drawEnemy(e){
       ctx.lineTo(R*.05,k*R*1.06);ctx.closePath();ctx.fill();
     }
     // canhão pesado (arma visível)
+    const tl=vp?vp.lean*R*.06:0;  // PR15.5-C: a peça pesada "atrasa" o recuo
     ctx.fillStyle=flash?'#fff':'#1a0409';
-    ctx.fillRect(R*(.35-.12*tankP),-R*(.30+.12*tankP),R*(1.15+.34*tankP),R*(.60+.24*tankP));
+    ctx.fillRect(R*(.35-.12*tankP)-tl,-R*(.30+.12*tankP),R*(1.15+.34*tankP),R*(.60+.24*tankP));
     ctx.fillStyle=flash?'#fff':'#3d0812';
-    ctx.fillRect(R*1.05,-R*.42,R*.30,R*.84);
+    ctx.fillRect(R*1.05-tl,-R*.42,R*.30,R*.84);
     ctx.shadowColor=e.color;ctx.shadowBlur=15;
     ctx.fillStyle=flash?'#fff':'#ff5c7a';
     ctx.beginPath();ctx.arc(R*1.42,0,R*.18,0,TAU);ctx.fill();
@@ -20014,6 +20394,7 @@ function render(){
     const pad=e.type==='boss'?900:(e.auraR||e.r||20)+48;
     if(inView(e.x,e.y,pad)){drawEnemy(e);if(e.st)drawStatus(e);}
   }
+  drawDeathVisuals();   // PR15.5-C: corpos visuais (independentes do pipeline mecânico)
   drawArcs();
   for(const e of echoes)if(inView(e.x,e.y,90))drawEchoEntity(e);
   if(player&&state!=='fracture')drawPlayer();
@@ -20438,6 +20819,7 @@ function loop(now){
     }else partRelease(p);
   }
   parts.length=_pw;
+  deathVisualTick(dt);   // PR15.5-C: cadáveres visuais drenam no mesmo relógio (no-op quando vazio)
   let _fw=0;
   for(let i=0;i<ftexts.length;i++){
     const f=ftexts[i];f.t+=dt;
