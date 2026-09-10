@@ -11,6 +11,17 @@ function readSource(ref){return (ref?execFileSync('git',['show',ref+':index.html
 function world(source){
   const filename=path.join(ROOT,'audit_pr135/harness.js');
   let code=fs.readFileSync(filename,'utf8');
+  /* Adapter de bases antigas: remove linhas de exportação de blocos
+     que ainda não existiam na fonte (nada do jogo é alterado). */
+  if(!source.includes('ENEMY_IMPACT_PROFILES')){
+    code=code.split('\n').filter(l=>!l.includes('ENEMY_IMPACT_PROFILES')&&!/PR15\.5-C: reação/.test(l)).join('\n');
+  }
+  if(!source.includes('MELEE_VISUAL_PROFILES')){
+    code=code.replace(/\/\* PR15\.5-D: animação física do arsenal melee \*\/\s*'[^']*meleeDrawTrail,'\+\s*/,'');
+  }
+  if(!source.includes('WEAPON_RANGED_VISUAL_PROFILES')){
+    code=code.split('\n').filter(l=>!l.includes('WEAPON_RANGED_VISUAL_PROFILES')&&!/PR15\.5-E: arsenal ranged/.test(l)).join('\n');
+  }
   code=code.replace(/^const html=.*;$/m,()=> 'const html='+JSON.stringify(source)+';');
   const m=new Module(filename,module);m.filename=filename;m.paths=module.paths;m._compile(code,filename);
   const h=m.exports;

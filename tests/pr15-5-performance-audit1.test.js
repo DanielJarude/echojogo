@@ -84,7 +84,12 @@ const mechanical={
   "spawnEnemy": "a7d85058edb0491e7269f546f89d17c47ff7ff9faf705caa49f9dc632ad3a2af",
   "damageEnemy": "6b19d82221dcc399895470bc87450f494872c05c86eae09d51d179e56a42a6c6",
   "damagePlayer": "70fcbcf1be3a91c767a57a83f677a57b55cad5065465f3462b7e8ea2613f491b",
-  "fireWeaponFrom": "f2d0b43d4ee9abba6b18d51de2def3aaa40def4842d262e47b21c7ca5279e909",
+  /* PR15.5-E: fireWeaponFrom re-baselineado — ganhou (1) o perfil visual
+     O(1) do disparo anexado ao projétil no spawn (pv/seed, sem RNG) e
+     (2) 1 muzzleVisualPush por disparo real. A ordem de consumo de RNG,
+     a contagem de projéteis, dano, origem e timing permanecem idênticos
+     (provado pela suíte E: gates G5–G10 e comparação ANTES×DEPOIS). */
+  "fireWeaponFrom": "34f7d222e44158c160b448e61c4ec6d50e415f5f62293dc434a1138ed54e944f",
   "updatePlayer": "f3c79a5aee6b35760600d0cdb35b063afef01dc89cad1f01dcdcad603a58e380",
   "updateEcho": "5349d56cc5636f3a29f731e3de479d150c070c1a76d36eb1182a0126567c39e2",
   "updateBoss": "d85abc88b8a06b8243f7df551772227a54b195dee0bee69900a98bda27d255d4",
@@ -104,7 +109,13 @@ const mechanical={
      Os goldens A–I (desenho idle sintético) continuam idênticos à
      base, comprovando que o fast path não mudou. */
   "drawEnemy": "669f39f70bfb7f147c7a13ebda101dc90099379751c59ed912fec428c78b1dfe",
-  "drawProjectile": "565cdac8706fc659607acab66596631b930430e41d064f20d2fc827631f32399",
+  /* PR15.5-E: drawProjectile re-baselineado — ganhou o despacho por
+     família (pv): projéteis do arsenal real ganham corpo+trail próprios
+     (drawRangedProjectileBody); projéteis SEM perfil (fixtures sintéticas
+     destes cenários, aliados/inimigos legados, fragmentos do Prisma)
+     seguem o caminho anterior EXATO — os goldens A–I abaixo continuam
+     idênticos à base, provando que o fast path não mudou. */
+  "drawProjectile": "a9338b8ea347808e78494bd3a78c9a46cb549d2872515b7ace318992be348237",
   /* PR15.5-D: drawSwings re-baselineado — ganhou o despacho para o trail
      por família (meleeDrawTrail, pinado abaixo). O fallback legado e o
      comportamento sem RNG permanecem; os goldens A–I comprovam que os

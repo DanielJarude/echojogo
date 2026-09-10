@@ -3122,6 +3122,7 @@ function sandboxClearRunState(){
   enemies=[];projectiles=[];xporbs=[];parts=[];ftexts=[];pickups=[];allies=[];
   swings=[];arcs=[];beacon=null;boss=null;miniBoss=null;
   deathVisualClear();   // PR15.5-C: corpse visual nunca atravessa runs/slots
+  rangedFxClear();      // PR15.5-E: muzzle/impacto nunca atravessam runs/slots
   speechClear();
   /* B3-FIX: histórico de variedade do laboratório não fica stale na memória
      (o Continue real já reconstruía do slot; aqui só evita estado morto). */
@@ -5411,6 +5412,653 @@ function visualWeaponRecoil(entity){
   const v=visualPeek(entity);return v&&v.recoil>0?v.recoil:0;
 }
 /* =====================================================================
+   PR15.5-E · ARSENAL RANGED — MUZZLE / PROJÉTIL / TRAIL / IMPACTO
+   ---------------------------------------------------------------------
+   O débito do arsenal à distância: TODA bala era "círculo colorido +
+   glow + linha de 5px", todo disparo nascia com as mesmas 3 partículas
+   genéricas e todo acerto não deixava assinatura. Este bloco dá ao
+   arsenal ranged IDENTIDADE por família (forma · movimento · timing),
+   sem tocar uma única linha mecânica:
+
+   · PERFIL VISUAL precomputado e congelado por arma ranged (20) — só
+     campos visuais (shapes/escala/duração), NUNCA stats mecânicos;
+   · MUZZLE que nasce exclusivamente no evento REAL de disparo
+     (fireWeaponFrom/fireBeam), com pool bounded e cap rígido;
+   · PROJÉTEIS desenhados por FORMA paramétrica (eixos dx,dy derivados
+     da velocidade REAL — zero trig nova, zero rotate, zero histórico);
+   · TRAIL calculado por direção × comprimento visual (sem arrays);
+   · IMPACTO que nasce exclusivamente no hit REAL (onProjectileHit) e
+     nas detonações existentes (explodeOrb/detonateSpecial), bounded;
+
+   Regras absolutas herdadas do PR15.5 (visual only + draw purity):
+   · o perfil viaja no próprio projétil (`pv`/`seed` anexados no spawn
+     real — fixtures sintéticas e projéteis legados sem perfil seguem
+     o caminho de desenho anterior byte-a-byte);
+   · zero aleatoriedade nova, zero relógio de parede, zero timer,
+     listener ou RAF neste bloco — variação estética deriva de `seed`
+     determinístico (contador global de spawns) e do relógio de jogo
+     já existente;
+   · draw NÃO cria/avança/remove estado: apenas renderiza o que o
+     pipeline de update/evento já produziu;
+   · fast path: sem FX ativos e sem perfil → custo idêntico ao anterior
+     (coleções vazias são no-op no render e no tick);
+   · zero desfoque de sombra novo; zero compositeOperation novo por
+     projétil.
+   ===================================================================== */
+const RANGED_VISUAL_FAMILIES=['kinetic','shotgun','precision','heavy','plasma',
+  'energy','arc','explosive','homing','anomaly','bio','flame','temporal','beam'];
+/* IDs numéricos do despacho (switch int no draw — sem lookup textual). */
+const RV_BODY={tracer:1,pellet:2,dart:3,slug:4,core:5,shard:6,bolt:7,shell:8,
+  missile:9,disc:10,spore:11,drop:12,orbdense:13,voidorb:14};
+const RV_TRAIL={none:0,tracer:1,thin:2,dense:3,ghost:4,after:5,jag:6};
+const RV_MUZZLE={none:0,cone:1,fan:2,needle:3,blast:4,pulse:5,discharge:6,
+  spray:7,ring:8,twin:9,bloom:10,beam:11};
+const RV_IMPACT={spark:1,burst:2,cut:3,ring:4,poly:5,halo:6,discharge:7,
+  bloom:8,twin:9};
+/* Tabelas de cossenos/senos de ângulos FIXOS (hexágono do shell armado,
+   tríscele do disc): a trig por vértice vira lookup — zero chamada de
+   Math.cos/sin por vértice no draw (o disc gira com p.spin REAL do
+   projétil e usa 1 par cos/sin por draw, não por vértice). */
+const RV_HEX_CK=[1,.5,-.5,-1,-.5,.5],RV_HEX_SK=[0,.8660254,.8660254,0,-.8660254,-.8660254];
+const RV_TRI_CJ=[1,-.5,-.5],RV_TRI_SJ=[0,.8660254,-.8660254];
+/* Tetos de vida (s) — os profiles nunca podem exceder estes valores. */
+const RANGED_MUZZLE_LIFE_MAX=.12, RANGED_IMPACT_LIFE_MAX=.2;
+/* Perfis VISUAIS congelados — exatamente um por arma ranged real (20).
+   Campos: family/muzzle/projShape/trailMode/impactShape (vocabulário) +
+   escalas/durações VISUAIS + recoilKick (multiplicador do coice legado
+   src.recoil, já decaído por visualTimelineTick) + muzzleRot (rotação
+   RENDER-ONLY do sprite sob coice). NENHUM campo mecânico é copiado. */
+const WEAPON_RANGED_VISUAL_PROFILES=(()=>{
+  function P(o){
+    o=Object.assign({family:'kinetic',
+      muzzle:'cone',muzzleScale:1,muzzleDur:.08,
+      recoilKick:1,muzzleRot:0,
+      projShape:'tracer',projLen:1,projW:1,
+      trailMode:'tracer',trailLen:24,
+      impactShape:'spark',impactScale:1,impactDur:.14},o);
+    /* despachos numéricos precomputados uma única vez no load */
+    o.body=RV_BODY[o.projShape]||1;
+    o.trailK=RV_TRAIL[o.trailMode]||0;
+    o.mzK=RV_MUZZLE[o.muzzle]||0;
+    o.imK=RV_IMPACT[o.impactShape]||1;
+    return Object.freeze(o);
+  }
+  return Object.freeze({
+    /* KINETIC — tracer/cápsula: leitura de bala convencional por cadência */
+    smg:P({family:'kinetic',muzzle:'cone',muzzleScale:.8,muzzleDur:.06,recoilKick:.8,
+      projShape:'tracer',projW:.8,trailMode:'tracer',trailLen:18,
+      impactShape:'spark',impactScale:.85,impactDur:.12}),
+    nail:P({family:'kinetic',muzzle:'cone',muzzleScale:.85,muzzleDur:.065,recoilKick:.9,
+      projShape:'dart',projLen:1.6,trailMode:'tracer',trailLen:22,
+      impactShape:'spark',impactScale:.95,impactDur:.12}),
+    gatling:P({family:'kinetic',muzzle:'cone',muzzleScale:1,muzzleDur:.065,recoilKick:1,
+      projShape:'tracer',projW:1.3,trailMode:'tracer',trailLen:20,
+      impactShape:'spark',impactScale:1,impactDur:.12}),
+    ricochet:P({family:'kinetic',muzzle:'cone',muzzleScale:.9,muzzleDur:.07,recoilKick:1.1,
+      projShape:'pellet',trailMode:'tracer',trailLen:14,
+      impactShape:'spark',impactScale:1,impactDur:.12}),
+    /* SHOTGUN — leque: abertura larga + pellets compactos quase sem trail */
+    shotgun:P({family:'shotgun',muzzle:'fan',muzzleScale:1.5,muzzleDur:.1,
+      recoilKick:1.9,muzzleRot:.06,
+      projShape:'pellet',trailMode:'none',trailLen:0,
+      impactShape:'burst',impactScale:1.5,impactDur:.12}),
+    /* PRECISION — agulha: flash mínimo, linha fina, pose estável */
+    sniper:P({family:'precision',muzzle:'needle',muzzleScale:1.3,muzzleDur:.1,
+      recoilKick:2.2,muzzleRot:.05,
+      projShape:'dart',projLen:2.1,projW:.6,trailMode:'thin',trailLen:34,
+      impactShape:'cut',impactScale:1.2,impactDur:.16}),
+    /* HEAVY — massa/perfuração: blast largo, compressão forte, slug denso */
+    rail:P({family:'heavy',muzzle:'blast',muzzleScale:1.8,muzzleDur:.12,
+      recoilKick:2.6,muzzleRot:.09,
+      projShape:'slug',trailMode:'dense',trailLen:46,
+      impactShape:'ring',impactScale:1.5,impactDur:.18}),
+    /* PLASMA — núcleo + carcaça geométrica; pulso, não fogo */
+    plasma:P({family:'plasma',muzzle:'pulse',muzzleScale:1.15,muzzleDur:.09,recoilKick:1,
+      projShape:'core',trailMode:'ghost',trailLen:20,
+      impactShape:'halo',impactScale:1.15,impactDur:.16}),
+    /* ENERGY — losango/cristal segmentado com fantasma curto */
+    cryo:P({family:'energy',muzzle:'pulse',muzzleScale:1.1,muzzleDur:.09,recoilKick:.9,
+      projShape:'shard',trailMode:'ghost',trailLen:16,
+      impactShape:'poly',impactScale:1.1,impactDur:.16}),
+    prism:P({family:'energy',muzzle:'pulse',muzzleScale:1.05,muzzleDur:.08,recoilKick:.9,
+      projShape:'shard',projLen:1.2,trailMode:'ghost',trailLen:14,
+      impactShape:'poly',impactScale:1,impactDur:.15}),
+    /* ARC — descarga quebrada curtíssima, poucos segmentos */
+    tesla:P({family:'arc',muzzle:'discharge',muzzleScale:1.2,muzzleDur:.07,recoilKick:.8,
+      projShape:'bolt',trailMode:'jag',trailLen:22,
+      impactShape:'discharge',impactScale:1.2,impactDur:.13}),
+    /* EXPLOSIVE — corpo com massa; detonação reagindo ao evento existente */
+    mine:P({family:'explosive',muzzle:'ring',muzzleScale:.8,muzzleDur:.1,recoilKick:.25,
+      projShape:'shell',trailMode:'none',trailLen:0,
+      impactShape:'bloom',impactScale:1.6,impactDur:.18}),
+    /* HOMING — corpo com aletas que comunica guiamento (trajetória intacta) */
+    homing:P({family:'homing',muzzle:'bloom',muzzleScale:1.1,muzzleDur:.09,recoilKick:.7,
+      projShape:'missile',trailMode:'thin',trailLen:20,
+      impactShape:'burst',impactScale:1.1,impactDur:.13}),
+    /* ANOMALY — afterimage: dupla silhueta deslocada (retorno/gravidade) */
+    boomer:P({family:'anomaly',muzzle:'twin',muzzleScale:.9,muzzleDur:.09,recoilKick:.4,
+      projShape:'disc',trailMode:'after',trailLen:12,
+      impactShape:'twin',impactScale:1,impactDur:.15}),
+    void:P({family:'anomaly',muzzle:'ring',muzzleScale:1.3,muzzleDur:.11,recoilKick:.9,
+      projShape:'voidorb',trailMode:'after',trailLen:16,
+      impactShape:'twin',impactScale:1.5,impactDur:.19}),
+    /* BIO — spray corrosivo: spores bolçosos, sem rastro limpo */
+    acid:P({family:'bio',muzzle:'spray',muzzleScale:1.1,muzzleDur:.08,recoilKick:.5,
+      projShape:'spore',trailMode:'none',trailLen:0,
+      impactShape:'bloom',impactScale:1,impactDur:.15}),
+    plague:P({family:'bio',muzzle:'spray',muzzleScale:1.15,muzzleDur:.09,recoilKick:.6,
+      projShape:'spore',trailMode:'none',trailLen:0,
+      impactShape:'bloom',impactScale:1.3,impactDur:.17}),
+    /* FLAME — jato: gotas alongadas com flicker determinístico */
+    flamer:P({family:'flame',muzzle:'spray',muzzleScale:1.25,muzzleDur:.07,recoilKick:.3,
+      projShape:'drop',trailMode:'none',trailLen:0,
+      impactShape:'bloom',impactScale:.9,impactDur:.1}),
+    /* TEMPORAL — orbe com dupla silhueta: deslocamento temporal */
+    orb:P({family:'temporal',muzzle:'ring',muzzleScale:1.2,muzzleDur:.11,recoilKick:.7,
+      projShape:'orbdense',trailMode:'after',trailLen:14,
+      impactShape:'twin',impactScale:1.6,impactDur:.2}),
+    /* BEAM — emissão limpa no início da rajada (1× por sessão de gatilho) */
+    beam:P({family:'beam',muzzle:'beam',muzzleScale:1,muzzleDur:.1,recoilKick:1,
+      projShape:'tracer',trailMode:'none',trailLen:0,
+      impactShape:'halo',impactScale:.8,impactDur:.12})
+  });
+})();
+/* Fallback congelado (def desconhecida/legada → família kinetic neutra). */
+const WEAPON_RANGED_VISUAL_FALLBACK=WEAPON_RANGED_VISUAL_PROFILES.smg;
+/* Cache fixo por definição — exatamente 20 entradas (arma ranged real). */
+const RANGED_PROFILE_BY_DEF=new Map(WEAPONS.filter(w=>!w.melee)
+  .map(w=>[w,WEAPON_RANGED_VISUAL_PROFILES[w.id]||WEAPON_RANGED_VISUAL_FALLBACK]));
+function rangedVisualProfile(def){
+  const p=def?RANGED_PROFILE_BY_DEF.get(def):null;
+  return p||WEAPON_RANGED_VISUAL_FALLBACK;
+}
+/* ---------- coleções bounded (cap rígido + pool de objetos) ---------- */
+const MUZZLE_FX_MAX=48, IMPACT_FX_MAX=96;          // tetos absolutos
+const RANGED_FX_POOL_MAX=192;                       // pool compartilhado bounded
+const muzzleFx=[], impactFx=[], rangedFxPool=[];
+let _rangedFxSeq=0;                                 // seed visual determinístico
+function rangedFxTake(){
+  return rangedFxPool.length?rangedFxPool.pop():{};
+}
+function rangedFxDrop(fx){
+  if(rangedFxPool.length<RANGED_FX_POOL_MAX){fx.prof=null;fx.color='';rangedFxPool.push(fx);}
+}
+/* MUZZLE: nasce SOMENTE no evento real de disparo (fireWeaponFrom /
+   início de rajada do beam). dx,dy = direção unitária pré-computada
+   pelo chamador (reuso dos cos/sin do disparo — zero trig aqui). */
+function muzzleVisualPush(x,y,dx,dy,def,crit){
+  if(muzzleFx.length>=MUZZLE_FX_MAX)rangedFxDrop(muzzleFx.shift());
+  const prof=rangedVisualProfile(def);
+  const m=rangedFxTake();
+  m.x=visualFinite(x,0);m.y=visualFinite(y,0);
+  const l=Math.hypot(visualFinite(dx,1),visualFinite(dy,0))||1;
+  m.dx=visualFinite(dx,1)/l;m.dy=visualFinite(dy,0)/l;
+  m.t=0;m.life=prof.muzzleDur;m.prof=prof;
+  m.color=crit?'#fff6b0':((def&&def.color)||'#9ff3ff');
+  muzzleFx.push(m);
+  return m;
+}
+/* IMPACTO: nasce SOMENTE em hit real (onProjectileHit) ou na detonação
+   já existente (explodeOrb/detonateSpecial). Direção da viagem real. */
+function impactVisualPush(x,y,vx,vy,def,crit){
+  if(impactFx.length>=IMPACT_FX_MAX)rangedFxDrop(impactFx.shift());
+  const prof=rangedVisualProfile(def);
+  const f=rangedFxTake();
+  f.x=visualFinite(x,0);f.y=visualFinite(y,0);
+  const sp=Math.hypot(visualFinite(vx,1),visualFinite(vy,0));
+  f.dx=sp>0?visualFinite(vx,1)/sp:1;f.dy=sp>0?visualFinite(vy,0)/sp:0;
+  f.t=0;f.life=prof.impactDur;f.prof=prof;
+  f.color=crit?'#fff6b0':((def&&def.color)||'#9ff3ff');
+  impactFx.push(f);
+  return f;
+}
+/* Tick no relógio do jogo (mesmo lugar de deathVisualTick): avança,
+   expira e compacta in-place. Fast path: coleções vazias → no-op. */
+function rangedFxTick(dt){
+  if(!muzzleFx.length&&!impactFx.length)return;
+  dt=Math.max(0,visualFinite(dt,0));
+  let w=0;
+  for(let i=0;i<muzzleFx.length;i++){
+    const m=muzzleFx[i];m.t+=dt;
+    if(m.t<m.life)muzzleFx[w++]=m;else rangedFxDrop(m);
+  }
+  muzzleFx.length=w;
+  w=0;
+  for(let i=0;i<impactFx.length;i++){
+    const f=impactFx[i];f.t+=dt;
+    if(f.t<f.life)impactFx[w++]=f;else rangedFxDrop(f);
+  }
+  impactFx.length=w;
+}
+/* Limpeza determinística (reset de run/sandbox/saída para menus). */
+function rangedFxClear(){
+  for(let i=0;i<muzzleFx.length;i++)rangedFxDrop(muzzleFx[i]);
+  muzzleFx.length=0;
+  for(let i=0;i<impactFx.length;i++)rangedFxDrop(impactFx[i]);
+  impactFx.length=0;
+}
+/* ---------- RENDER: muzzle (paramétrico, zero trig, zero blur) ---------- */
+function drawMuzzleFx(){
+  if(!muzzleFx.length)return;                    // fast path: no-op
+  for(let i=0;i<muzzleFx.length;i++){
+    const m=muzzleFx[i];
+    if(inView(m.x,m.y,72))drawMuzzleVisual(m);
+  }
+  ctx.globalAlpha=1;
+}
+function drawMuzzleVisual(m){
+  const k=1-m.t/m.life;                          // 1 → 0
+  const x=m.x,y=m.y,dx=m.dx,dy=m.dy,px=-dy,py=dx;// eixos locais (sem rotate)
+  const R=11*m.prof.muzzleScale,col=m.color;
+  const shape=m.prof.mzK;
+  ctx.fillStyle=col;ctx.strokeStyle=col;
+  if(shape===1){                                  // KINETIC cone: flash direcional
+    ctx.globalAlpha=.9*k;
+    ctx.beginPath();
+    ctx.moveTo(x+dx*R*1.9,y+dy*R*1.9);
+    ctx.lineTo(x-px*R*.42,y-py*R*.42);
+    ctx.lineTo(x+px*R*.42,y+py*R*.42);
+    ctx.closePath();ctx.fill();
+  }else if(shape===2){                            // SHOTGUN fan: abertura larga
+    const L=R*1.9*(.55+.45*k);
+    for(let j=-1;j<=1;j++){
+      ctx.globalAlpha=(j===0?.8:.42)*k;
+      ctx.beginPath();
+      ctx.moveTo(x,y);
+      ctx.lineTo(x+dx*L-px*R*j*.95,y+dy*L-py*R*j*.95);
+      ctx.lineTo(x+dx*R*.3-px*R*j*.5,y+dy*R*.3-py*R*j*.5);
+      ctx.closePath();ctx.fill();
+    }
+  }else if(shape===3){                            // PRECISION needle: linha fina
+    ctx.globalAlpha=.95*k;ctx.lineWidth=1.6;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(x-dx*R*.4,y-dy*R*.4);
+    ctx.lineTo(x+dx*R*3.1,y+dy*R*3.1);ctx.stroke();
+    ctx.globalAlpha=.8*k;
+    ctx.beginPath();ctx.arc(x+dx*R*3.1,y+dy*R*3.1,1.6,0,TAU);ctx.fill();
+    ctx.lineCap='butt';
+  }else if(shape===4){                            // HEAVY blast: massa + compressão
+    ctx.globalAlpha=.85*k;
+    ctx.beginPath();
+    ctx.moveTo(x+dx*R*1.5,y+dy*R*1.5);
+    ctx.lineTo(x-px*R*1.05,y-py*R*1.05);
+    ctx.lineTo(x-dx*R*.7,y-dy*R*.7);
+    ctx.lineTo(x+px*R*1.05,y+py*R*1.05);
+    ctx.closePath();ctx.fill();
+    ctx.globalAlpha=.55*k;ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(x-px*R*1.3,y-py*R*1.3);
+    ctx.lineTo(x+px*R*1.3,y+py*R*1.3);ctx.stroke();
+  }else if(shape===5){                            // PLASMA/ENERGY pulse geométrico
+    const e=1-k;                                  // expansão
+    ctx.globalAlpha=.9*k;ctx.lineWidth=1.8;
+    ctx.beginPath();
+    ctx.moveTo(x+dx*R*(.6+1.2*e),y+dy*R*(.6+1.2*e));
+    ctx.lineTo(x-px*R*(.5+.5*e),y-py*R*(.5+.5*e));
+    ctx.lineTo(x-dx*R*(.5+.9*e),y-dy*R*(.5+.9*e));
+    ctx.lineTo(x+px*R*(.5+.5*e),y+py*R*(.5+.5*e));
+    ctx.closePath();ctx.stroke();
+    ctx.globalAlpha=.5*k;
+    ctx.beginPath();ctx.arc(x,y,R*.32*(1+.6*e),0,TAU);ctx.fill();
+  }else if(shape===6){                            // ARC discharge quebrada
+    ctx.globalAlpha=.95*k;ctx.lineWidth=1.6;
+    const b=(m.t*90|0)&1?1:-1;                    // quebra determinística
+    ctx.beginPath();
+    ctx.moveTo(x,y);
+    ctx.lineTo(x+dx*R*.6-px*R*.45*b,y+dy*R*.6-py*R*.45*b);
+    ctx.lineTo(x+dx*R*1.2+px*R*.5*b,y+dy*R*1.2+py*R*.5*b);
+    ctx.lineTo(x+dx*R*1.9,y+dy*R*1.9);
+    ctx.stroke();
+  }else if(shape===7){                            // FLAME/BIO spray de gotas
+    for(let j=-1;j<=1;j++){
+      ctx.globalAlpha=.75*k;
+      ctx.beginPath();
+      ctx.arc(x+dx*R*(1.15-Math.abs(j)*.35)+px*R*j*.55,
+              y+dy*R*(1.15-Math.abs(j)*.35)+py*R*j*.55,
+              R*(.48-Math.abs(j)*.13)*(.6+.4*k),0,TAU);
+      ctx.fill();
+    }
+  }else if(shape===8){                            // TEMPORAL/DEPLOY ring
+    const e=1-k;
+    ctx.globalAlpha=.85*k;ctx.lineWidth=2;
+    ctx.beginPath();ctx.arc(x,y,R*(.45+1.1*e),0,TAU);ctx.stroke();
+    ctx.globalAlpha=.6*k;
+    ctx.beginPath();ctx.arc(x,y,R*.22,0,TAU);ctx.fill();
+  }else if(shape===9){                            // ANOMALY twin: dupla silhueta
+    ctx.globalAlpha=.85*k;ctx.lineWidth=1.7;
+    for(let j=-1;j<=1;j+=2){
+      ctx.beginPath();
+      ctx.moveTo(x+dx*R*1.3-px*R*j*.5,y+dy*R*1.3-py*R*j*.5);
+      ctx.lineTo(x-px*R*(.65+j*.18),y-py*R*(.65+j*.18));
+      ctx.lineTo(x-dx*R*.8-px*R*j*.5,y-dy*R*.8-py*R*j*.5);
+      ctx.closePath();ctx.stroke();
+    }
+  }else if(shape===10){                           // HOMING bloom: setor + núcleo
+    ctx.globalAlpha=.7*k;
+    ctx.beginPath();ctx.arc(x,R*.25,R*.75*(.6+.4*k),0,TAU);ctx.fill();
+    ctx.globalAlpha=.6*k;ctx.lineWidth=1.6;
+    for(let j=-1;j<=1;j++){
+      ctx.beginPath();
+      ctx.moveTo(x+dx*R*.4-px*R*j*.3,y+dy*R*.4-py*R*j*.3);
+      ctx.lineTo(x+dx*R*1.5-px*R*j*.9,y+dy*R*1.5-py*R*j*.9);
+      ctx.stroke();
+    }
+  }else if(shape===11){                           // BEAM: emissão limpa
+    ctx.globalAlpha=.9*k;ctx.lineWidth=1.6;
+    ctx.beginPath();
+    ctx.moveTo(x-px*R*.75,y-py*R*.75);ctx.lineTo(x+dx*R*1.4,y+dy*R*1.4);
+    ctx.moveTo(x+px*R*.75,y+py*R*.75);ctx.lineTo(x+dx*R*1.4,y+dy*R*1.4);
+    ctx.stroke();
+    ctx.globalAlpha=.65*k;
+    ctx.beginPath();ctx.arc(x+dx*R*1.4,y+dy*R*1.4,1.8,0,TAU);ctx.fill();
+  }
+}
+/* ---------- RENDER: impacto (paramétrico, zero trig, zero blur) ---------- */
+function drawImpactFx(){
+  if(!impactFx.length)return;                     // fast path: no-op
+  for(let i=0;i<impactFx.length;i++){
+    const f=impactFx[i];
+    if(inView(f.x,f.y,72))drawImpactVisual(f);
+  }
+  ctx.globalAlpha=1;
+}
+function drawImpactVisual(f){
+  const k=1-f.t/f.life;                           // 1 → 0
+  const x=f.x,y=f.y,dx=f.dx,dy=f.dy,px=-dy,py=dx;
+  const R=13*f.prof.impactScale,col=f.color;
+  const shape=f.prof.imK;
+  ctx.fillStyle=col;ctx.strokeStyle=col;
+  if(shape===1){                                  // KINETIC spark radial
+    ctx.globalAlpha=.9*k;ctx.lineWidth=1.6;
+    ctx.beginPath();
+    for(let j=-1;j<=1;j++){
+      const ox=dx+px*j*.75,oy=dy+py*j*.75,ol=Math.hypot(ox,oy)||1;
+      const ux=ox/ol,uy=oy/ol;
+      ctx.moveTo(x+ux*R*.15,y+uy*R*.15);
+      ctx.lineTo(x+ux*R*.85*k,y+uy*R*.85*k);
+    }
+    ctx.stroke();
+  }else if(shape===2){                            // SHOTGUN/HOMING burst amplo
+    ctx.globalAlpha=.85*k;ctx.lineWidth=1.6;
+    ctx.beginPath();
+    for(let j=-2;j<=2;j++){
+      const ox=dx+px*j*.5,oy=dy+py*j*.5,ol=Math.hypot(ox,oy)||1;
+      const ux=ox/ol,uy=oy/ol,L=R*(.5+.5*k)*(1-Math.abs(j)*.12);
+      ctx.moveTo(x+ux*R*.2,y+uy*R*.2);
+      ctx.lineTo(x+ux*(R*.2+L),y+uy*(R*.2+L));
+    }
+    ctx.stroke();
+    ctx.globalAlpha=.5*k;
+    ctx.beginPath();ctx.arc(x,y,R*.22,0,TAU);ctx.fill();
+  }else if(shape===3){                            // PRECISION cut fino
+    ctx.globalAlpha=.9*k;ctx.lineWidth=1.3;
+    ctx.beginPath();
+    ctx.moveTo(x-px*R*1.15,y-py*R*1.15);ctx.lineTo(x+px*R*1.15,y+py*R*1.15);
+    ctx.moveTo(x-dx*R*.5,y-dy*R*.5);ctx.lineTo(x+dx*R*.5,y+dy*R*.5);
+    ctx.stroke();
+  }else if(shape===4){                            // HEAVY ring curto
+    const e=1-k;
+    ctx.globalAlpha=.9*k;ctx.lineWidth=2.4*k+.6;
+    ctx.beginPath();ctx.arc(x,y,R*(.25+.95*e),0,TAU);ctx.stroke();
+    ctx.globalAlpha=.55*k;
+    ctx.beginPath();ctx.arc(x,y,R*.2,0,TAU);ctx.fill();
+  }else if(shape===5){                            // ENERGY polígono pulsante
+    const e=1-k;
+    ctx.globalAlpha=.9*k;ctx.lineWidth=1.7;
+    ctx.beginPath();
+    ctx.moveTo(x+dx*R*(.4+.9*e),y+dy*R*(.4+.9*e));
+    ctx.lineTo(x+px*R*(.35+.6*e),y+py*R*(.35+.6*e));
+    ctx.lineTo(x-dx*R*(.4+.9*e),y-dy*R*(.4+.9*e));
+    ctx.lineTo(x-px*R*(.35+.6*e),y-py*R*(.35+.6*e));
+    ctx.closePath();ctx.stroke();
+    ctx.globalAlpha=.18*k;
+    ctx.fill();
+  }else if(shape===6){                            // PLASMA halo + núcleo
+    const e=1-k;
+    ctx.globalAlpha=.85*k;ctx.lineWidth=1.6;
+    ctx.beginPath();ctx.arc(x,y,R*(.45+ .9*e),0,TAU);ctx.stroke();
+    ctx.globalAlpha=.8*k;
+    ctx.beginPath();ctx.arc(x,y,R*.3*(1-.4*e),0,TAU);ctx.fill();
+  }else if(shape===7){                            // ARC descarga curta
+    ctx.globalAlpha=.95*k;ctx.lineWidth=1.6;
+    const b=(f.t*90|0)&1?1:-1;
+    ctx.beginPath();
+    ctx.moveTo(x-dx*R*.5,y-dy*R*.5);
+    ctx.lineTo(x-px*R*.5*b,y-py*R*.5*b);
+    ctx.moveTo(x,y);
+    ctx.lineTo(x+dx*R*.6+px*R*.4*b,y+dy*R*.6+py*R*.4*b);
+    ctx.moveTo(x+dx*R*.4,y+dy*R*.4);
+    ctx.lineTo(x+dx*R*1.1-px*R*.35*b,y+dy*R*1.1-py*R*.35*b);
+    ctx.stroke();
+  }else if(shape===8){                            // EXPLOSIVE/FLAME/BIO bloom
+    const e=1-k;
+    ctx.globalAlpha=.5*k;
+    ctx.beginPath();ctx.arc(x,y,R*(.35+.8*e),0,TAU);ctx.fill();
+    ctx.globalAlpha=.85*k;ctx.lineWidth=2*k+.5;
+    ctx.beginPath();ctx.arc(x,y,R*(.35+.8*e),0,TAU);ctx.stroke();
+  }else{                                          // TEMPORAL/ANOMALY twin
+    const e=1-k;
+    ctx.globalAlpha=.9*k;ctx.lineWidth=1.6;
+    for(let j=-1;j<=1;j+=2){
+      ctx.beginPath();
+      ctx.moveTo(x+dx*R*(.5+.7*e)*j,y+dy*R*(.5+.7*e)*j);
+      ctx.lineTo(x+px*R*.45*j-dx*R*.3,y+py*R*.45*j-dy*R*.3);
+      ctx.lineTo(x-dx*R*(.5+.7*e)*j,y-dy*R*(.5+.7*e)*j);
+      ctx.closePath();ctx.stroke();
+    }
+  }
+}
+/* ---------- RENDER: corpo + trail do projétil por família ----------
+   Tudo paramétrico nos eixos (dx,dy)=velocidade normalizada e
+   (px,py)=perpendicular: ZERO rotate, ZERO atan2, ZERO histórico.
+   O legado continuava com 1 stroke genérico; aqui cada família usa
+   2–3 paths baratos. Projéteis SEM perfil (pv) nunca entram aqui. */
+function drawRangedProjectileBody(p,prof,fade){
+  const r=visualFinite(p.r,3);
+  const sp=Math.hypot(p.vx,p.vy);
+  const inv=sp>0?1/sp:0;
+  const dx=p.vx*inv,dy=p.vy*inv,px=-dy,py=dx;
+  const x=p.x,y=p.y,col=p.color,W=prof.projW,Ln=prof.projLen;
+  const sd=p.seed|0,blink=((runTime*22|0)+sd)&1;  // variação determinística
+  /* ---- TRAIL por direção × comprimento (sem arrays) ---- */
+  const tk=prof.trailK,tl=prof.trailLen;
+  if(tk===1){                                     // tracer linear
+    ctx.globalAlpha=.32*fade;ctx.strokeStyle=col;ctx.lineWidth=r*.85;
+    ctx.beginPath();
+    ctx.moveTo(x-dx*(r*3.4+tl),y-dy*(r*3.4+tl));
+    ctx.lineTo(x-dx*r*2.6,y-dy*r*2.6);ctx.stroke();
+  }else if(tk===2){                               // fino (precision/homing)
+    ctx.globalAlpha=.5*fade;ctx.strokeStyle=col;ctx.lineWidth=r*.5;
+    ctx.beginPath();
+    ctx.moveTo(x-dx*(r*3.6+tl),y-dy*(r*3.6+tl));
+    ctx.lineTo(x-dx*r*2.6,y-dy*r*2.6);ctx.stroke();
+  }else if(tk===3){                               // denso (heavy)
+    ctx.globalAlpha=.55*fade;ctx.strokeStyle=col;ctx.lineWidth=r*1.5;
+    ctx.beginPath();
+    ctx.moveTo(x-dx*(r*3.6+tl),y-dy*(r*3.6+tl));
+    ctx.lineTo(x-dx*r*2.8,y-dy*r*2.8);ctx.stroke();
+  }else if(tk===4){                               // fantasma curto (energy/plasma)
+    ctx.globalAlpha=.3*fade;ctx.fillStyle=col;
+    const gx=x-dx*(r*3.4+10),gy=y-dy*(r*3.4+10);
+    ctx.beginPath();
+    ctx.moveTo(gx+dx*r*1.2,gy+dy*r*1.2);
+    ctx.lineTo(gx+px*r*.7,gy+py*r*.7);
+    ctx.lineTo(gx-dx*r*.8,gy-dy*r*.8);
+    ctx.lineTo(gx-px*r*.7,gy-py*r*.7);
+    ctx.closePath();ctx.fill();
+  }else if(tk===5){                               // afterimage (anomaly/temporal)
+    ctx.globalAlpha=.35*fade;ctx.fillStyle=col;
+    ctx.beginPath();
+    ctx.arc(x-dx*(r*2.6+tl),y-dy*(r*2.6+tl),r*.85,0,TAU);ctx.fill();
+  }else if(tk===6){                               // jag quebrado (arc)
+    ctx.globalAlpha=.45*fade;ctx.strokeStyle=col;ctx.lineWidth=r*.55;
+    const b=(sd&1)?1:-1;
+    ctx.beginPath();
+    ctx.moveTo(x-dx*(r*2.4+tl),y-dy*(r*2.4+tl));
+    ctx.lineTo(x-dx*(r*2.4+tl*.5)+px*r*1.1*b,y-dy*(r*2.4+tl*.5)+py*r*1.1*b);
+    ctx.lineTo(x-dx*r*2.2-px*r*.6*b,y-dy*r*2.2-py*r*.6*b);
+    ctx.stroke();
+  }
+  /* ---- CORPO por família ---- */
+  const shape=prof.body;
+  if(shape===1){                                  // KINETIC tracer/cápsula
+    ctx.globalAlpha=.95*fade;ctx.strokeStyle=col;
+    ctx.lineWidth=r*1.9*W;ctx.lineCap='round';
+    ctx.beginPath();
+    ctx.moveTo(x-dx*r*3.2*Ln,y-dy*r*3.2*Ln);
+    ctx.lineTo(x+dx*r*1.1,y+dy*r*1.1);ctx.stroke();
+    ctx.globalAlpha=.85*fade;ctx.strokeStyle='#eaffff';ctx.lineWidth=r*.55;
+    ctx.beginPath();
+    ctx.moveTo(x-dx*r*2.2,y-dy*r*2.2);
+    ctx.lineTo(x+dx*r*.9,y+dy*r*.9);ctx.stroke();
+    ctx.lineCap='butt';
+  }else if(shape===2){                            // SHOTGUN/RICOCHET pellet
+    ctx.globalAlpha=.95*fade;ctx.fillStyle=col;
+    ctx.beginPath();ctx.arc(x,y,r*.92,0,TAU);ctx.fill();
+    ctx.globalAlpha=.5*fade;ctx.strokeStyle=col;ctx.lineWidth=1;
+    ctx.beginPath();ctx.arc(x,y,r*1.7,0,TAU);ctx.stroke();
+  }else if(shape===3){                            // KINETIC/PRECISION dart
+    ctx.globalAlpha=.95*fade;ctx.fillStyle=col;
+    ctx.beginPath();
+    ctx.moveTo(x+dx*r*4.4*Ln,y+dy*r*4.4*Ln);
+    ctx.lineTo(x+px*r*1.15*W,y+py*r*1.15*W);
+    ctx.lineTo(x-dx*r*2.2,y-dy*r*2.2);
+    ctx.lineTo(x-px*r*1.15*W,y-py*r*1.15*W);
+    ctx.closePath();ctx.fill();
+    ctx.globalAlpha=.8*fade;ctx.strokeStyle='#eaffff';ctx.lineWidth=r*.4;
+    ctx.beginPath();
+    ctx.moveTo(x+dx*r*3.6*Ln,y+dy*r*3.6*Ln);
+    ctx.lineTo(x-dx*r*1.8,y-dy*r*1.8);ctx.stroke();
+  }else if(shape===4){                            // HEAVY slug denso
+    ctx.globalAlpha=.95*fade;ctx.fillStyle=col;
+    ctx.beginPath();
+    ctx.moveTo(x+dx*r*2.8,y+dy*r*2.8);
+    ctx.lineTo(x+dx*r*1.6+px*r*1.7,y+dy*r*1.6+py*r*1.7);
+    ctx.lineTo(x-dx*r*3.6+px*r*1.1,y-dy*r*3.6+py*r*1.1);
+    ctx.lineTo(x-dx*r*3.6-px*r*1.1,y-dy*r*3.6-py*r*1.1);
+    ctx.lineTo(x+dx*r*1.6-px*r*1.7,y+dy*r*1.6-py*r*1.7);
+    ctx.closePath();ctx.fill();
+    ctx.globalAlpha=.85*fade;ctx.strokeStyle='#eaffff';ctx.lineWidth=r*.7;
+    ctx.beginPath();
+    ctx.moveTo(x-dx*r*2.6,y-dy*r*2.6);
+    ctx.lineTo(x+dx*r*2.2,y+dy*r*2.2);ctx.stroke();
+  }else if(shape===5){                            // PLASMA core: núcleo+carcaça
+    ctx.globalAlpha=.95*fade;ctx.fillStyle=col;
+    ctx.beginPath();ctx.arc(x,y,r*.85,0,TAU);ctx.fill();
+    ctx.globalAlpha=.85*fade;ctx.strokeStyle=col;ctx.lineWidth=r*.45;
+    ctx.beginPath();
+    ctx.moveTo(x+dx*r*2.6,y+dy*r*2.6);
+    ctx.lineTo(x+px*r*1.35,y+py*r*1.35);
+    ctx.lineTo(x-dx*r*2.6,y-dy*r*2.6);
+    ctx.lineTo(x-px*r*1.35,y-py*r*1.35);
+    ctx.closePath();ctx.stroke();
+  }else if(shape===6){                            // ENERGY shard cristalino
+    ctx.globalAlpha=.95*fade;ctx.fillStyle=col;
+    ctx.beginPath();
+    ctx.moveTo(x+dx*r*3.4*Ln,y+dy*r*3.4*Ln);
+    ctx.lineTo(x+px*r*1.5*W,y+py*r*1.5*W);
+    ctx.lineTo(x-dx*r*1.6,y-dy*r*1.6);
+    ctx.lineTo(x-px*r*1.5*W,y-py*r*1.5*W);
+    ctx.closePath();ctx.fill();
+    ctx.globalAlpha=.8*fade;ctx.strokeStyle='#eaffff';ctx.lineWidth=r*.35;
+    ctx.beginPath();
+    ctx.moveTo(x+dx*r*2.8*Ln,y+dy*r*2.8*Ln);
+    ctx.lineTo(x-dx*r*1.2,y-dy*r*1.2);
+    ctx.moveTo(x+px*r*1.2*W,y+py*r*1.2*W);
+    ctx.lineTo(x-px*r*1.2*W,y-py*r*1.2*W);ctx.stroke();
+  }else if(shape===7){                            // ARC bolt zigzag
+    ctx.globalAlpha=.95*fade;ctx.strokeStyle=col;ctx.lineWidth=r*.9;
+    ctx.lineJoin='round';
+    const b1=(sd&1)?1:-1,b2=(sd&2)?1:-1;
+    ctx.beginPath();
+    ctx.moveTo(x-dx*r*2.2,y-dy*r*2.2);
+    ctx.lineTo(x-dx*r*.8+px*r*1.2*b1,y-dy*r*.8+py*r*1.2*b1);
+    ctx.lineTo(x+dx*r*.8-px*r*1.2*b2,y+dy*r*.8-py*r*1.2*b2);
+    ctx.lineTo(x+dx*r*2.6,y+dy*r*2.6);
+    ctx.stroke();
+    ctx.globalAlpha=.9*fade;ctx.fillStyle='#fffbe0';
+    ctx.beginPath();ctx.arc(x,y,r*.55,0,TAU);ctx.fill();
+    ctx.lineJoin='butt';
+  }else if(shape===8){                            // EXPLOSIVE shell armada
+    ctx.globalAlpha=.95*fade;ctx.fillStyle=col;
+    ctx.beginPath();
+    for(let j=0;j<6;j++){
+      const ox=dx*RV_HEX_CK[j]+px*RV_HEX_SK[j],oy=dy*RV_HEX_CK[j]+py*RV_HEX_SK[j];
+      const rr=j%2?r*.62:r*1.05;
+      if(j)ctx.lineTo(x+ox*rr,y+oy*rr);else ctx.moveTo(x+ox*rr,y+oy*rr);
+    }
+    ctx.closePath();ctx.fill();
+    ctx.globalAlpha=blink?.95:.3*fade;ctx.fillStyle='#ffd166';
+    ctx.beginPath();ctx.arc(x,y,r*.42,0,TAU);ctx.fill();
+  }else if(shape===9){                            // HOMING missile + aletas
+    ctx.globalAlpha=.95*fade;ctx.strokeStyle=col;
+    ctx.lineWidth=r*1.5;ctx.lineCap='round';
+    ctx.beginPath();
+    ctx.moveTo(x-dx*r*1.6,y-dy*r*1.6);
+    ctx.lineTo(x+dx*r*1.4,y+dy*r*1.4);ctx.stroke();
+    ctx.lineCap='butt';
+    ctx.globalAlpha=.9*fade;ctx.fillStyle=col;
+    ctx.beginPath();
+    ctx.moveTo(x-dx*r*1.2,y-dy*r*1.2);
+    ctx.lineTo(x-dx*r*2.2+px*r*1.5,y-dy*r*2.2+py*r*1.5);
+    ctx.lineTo(x-dx*r*1.7+px*r*.5,y-dy*r*1.7+py*r*.5);
+    ctx.closePath();ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(x-dx*r*1.2,y-dy*r*1.2);
+    ctx.lineTo(x-dx*r*2.2-px*r*1.5,y-dy*r*2.2-py*r*1.5);
+    ctx.lineTo(x-dx*r*1.7-px*r*.5,y-dy*r*1.7-py*r*.5);
+    ctx.closePath();ctx.fill();
+    ctx.globalAlpha=.9*fade;ctx.fillStyle='#eaffff';
+    ctx.beginPath();ctx.arc(x+dx*r*1.2,y+dy*r*1.2,r*.5,0,TAU);ctx.fill();
+  }else if(shape===10){                           // ANOMALY disc giratório
+    ctx.globalAlpha=.95*fade;ctx.fillStyle=col;
+    ctx.beginPath();ctx.arc(x,y,r*1.05,0,TAU);ctx.fill();
+    ctx.globalAlpha=.7*fade;ctx.strokeStyle=col;ctx.lineWidth=r*.35;
+    ctx.beginPath();ctx.arc(x,y,r*1.55,0,TAU);ctx.stroke();
+    ctx.globalAlpha=.9*fade;ctx.lineWidth=r*.5;
+    const rot=p.spin||0;                          // giro REAL do boomerang
+    ctx.beginPath();
+    const ca2=Math.cos(rot),sa2=Math.sin(rot);   // 1× por draw (giro REAL)
+    for(let j=0;j<3;j++){
+      const cx=ca2*RV_TRI_CJ[j]-sa2*RV_TRI_SJ[j],cy=sa2*RV_TRI_CJ[j]+ca2*RV_TRI_SJ[j];
+      ctx.moveTo(x+cx*r*.6,y+cy*r*.6);
+      ctx.lineTo(x+cx*r*1.9,y+cy*r*1.9);
+    }
+    ctx.stroke();
+  }else if(shape===11){                           // BIO spore bolçante
+    ctx.globalAlpha=.95*fade;ctx.fillStyle=col;
+    ctx.beginPath();ctx.arc(x,y,r*.95,0,TAU);ctx.fill();
+    ctx.globalAlpha=(blink?.75:.3)*fade;
+    ctx.beginPath();
+    ctx.arc(x+px*r*1.5+dx*r*.3,y+py*r*1.5+dy*r*.3,r*.42,0,TAU);
+    ctx.arc(x-px*r*1.5+dx*r*.3,y-py*r*1.5+dy*r*.3,r*.42,0,TAU);
+    ctx.fill();
+  }else if(shape===12){                           // FLAME drop com flicker
+    const fl=.85+.2*blink;
+    ctx.globalAlpha=.95*fade;ctx.fillStyle=col;
+    ctx.beginPath();
+    ctx.moveTo(x+dx*r*2.9*fl,y+dy*r*2.9*fl);
+    ctx.lineTo(x+px*r*1.3*W,y+py*r*1.3*W);
+    ctx.lineTo(x-dx*r*1.2,y-dy*r*1.2);
+    ctx.lineTo(x-px*r*1.3*W,y-py*r*1.3*W);
+    ctx.closePath();ctx.fill();
+    ctx.globalAlpha=.85*fade;ctx.fillStyle='#ffe9b0';
+    ctx.beginPath();ctx.arc(x,y,r*.5,0,TAU);ctx.fill();
+  }else if(shape===13){                           // TEMPORAL orbe denso
+    ctx.globalAlpha=.95*fade;ctx.fillStyle=col;
+    ctx.beginPath();ctx.arc(x,y,r*1.05,0,TAU);ctx.fill();
+    ctx.globalAlpha=.55*fade;ctx.strokeStyle=col;ctx.lineWidth=1;
+    ctx.beginPath();ctx.arc(x,y,r*1.6,0,TAU);ctx.stroke();
+    ctx.globalAlpha=.9*fade;ctx.fillStyle='#eaffff';
+    ctx.beginPath();ctx.arc(x,y,r*.42,0,TAU);ctx.fill();
+  }else if(shape===14){                           // ANOMALY voidorb (núcleo escuro)
+    ctx.globalAlpha=.95*fade;ctx.fillStyle=col;
+    ctx.beginPath();ctx.arc(x,y,r*1.1,0,TAU);ctx.fill();
+    ctx.fillStyle='#12000f';
+    ctx.beginPath();ctx.arc(x,y,r*.5,0,TAU);ctx.fill();
+    ctx.globalAlpha=.5*fade;ctx.strokeStyle='#ff9df7';ctx.lineWidth=1;
+    ctx.beginPath();ctx.arc(x,y,r*1.7,0,TAU);ctx.stroke();
+  }
+}
+/* =====================================================================
    PR15.5-D · ARSENAL MELEE — ANIMAÇÃO FÍSICA, IDENTIDADE E IMPACTO
    ---------------------------------------------------------------------
    O maior débito visual do melee era "arma estática + arco genérico
@@ -5420,7 +6068,7 @@ function visualWeaponRecoil(entity){
      `visual.melee` da fundação A (sem máquina paralela);
    · pose rígida braços+mãos+arma girando em torno do peito — aplicada
      apenas ao RENDER (nunca a x/y/hitbox/mira/cooldown);
-   · trajetória e trail por família, SEM shadowBlur novo (Audit #1);
+   · trajetória e trail por família, SEM desfoque de sombra novo (Audit #1);
    · resposta de contato limitada (1 anel pequeno no pool de partículas).
 
    Regras absolutas herdadas do PR15.5:
@@ -14245,6 +14893,11 @@ function fireBeam(src,def,team,mul,dt){
   const range=def.range*srcRangeMul(src,'ranged');
   const ux=Math.cos(src.aim),uy=Math.sin(src.aim);
   const ox=src.x+ux*(src.r+6),oy=src.y+uy*(src.r+6);
+  /* PR15.5-E: emissão limpa UMA vez por rajada — enquanto o gatilho
+     segura, fireBeam roda a cada interval (.055s) e beamT (.09) nunca
+     zera entre ticks; ao soltar, beamT drena e a próxima rajada nasce
+     de novo. Zero custo em sustentação (não é um flash por frame). */
+  if(!(src.beamT>0))muzzleVisualPush(ox,oy,ux,uy,def,false);
   let best=null,bd=range;
   if(team==='ally'){
     for(const e of enemies){
@@ -14308,11 +14961,18 @@ function fireWeaponFrom(src,def,team,mul){
   const cm=crit?(src.critMul||1.8):1;
   const rng=srcRangeMul(src,'ranged'),aoeM=src.aoeMul||1,
         pier=src.pierce+effectivePierceItem(src);
+  /* PR15.5-E: perfil visual O(1) do disparo — anexado ao projétil no
+     spawn REAL (fixtures sintéticas/legados sem perfil seguem o draw
+     anterior). ux,uy reutilizam o par cos/sin da boca da arma que o
+     código já computava (−2 trig por projétil vs. base). */
+  const rvp=rangedVisualProfile(def);
+  const ux=Math.cos(src.aim),uy=Math.sin(src.aim);
+  const mx=src.x+ux*(src.r+6),my=src.y+uy*(src.r+6);
   for(let i=0;i<def.count;i++){
     const off=def.count>1?(i-(def.count-1)/2)*def.spread:0;
     const jt=def.spinUp?def.jitter*(1-.7*(src.spin||0)):def.jitter;
     const a=src.aim+off+(Math.random()-.5)*jt*2;
-    const px=src.x+Math.cos(src.aim)*(src.r+6),py=src.y+Math.sin(src.aim)*(src.r+6);
+    const px=mx,py=my;
     const spdM=src.projSpdMul||1;
     projectiles.push({x:px,y:py,vx:Math.cos(a)*def.speed*spdM,vy:Math.sin(a)*def.speed*spdM,
       r:def.pr*(crit?1.4:1),dmg:def.dmg*mul*cm,life:def.life,type:def.id,team,
@@ -14323,10 +14983,14 @@ function fireWeaponFrom(src,def,team,mul){
       // comportamentos especiais do arsenal estendido
       homing:def.homing||0,bounce:def.bounce||0,mine:!!def.mine,
       boomerang:def.boomerang?1:0,split:def.split||0,
-      born:runTime,ox:px,oy:py});
+      born:runTime,ox:px,oy:py,
+      // PR15.5-E: identidade visual apenas (profile congelado + seed
+      // determinístico de contador global — zero RNG consumido)
+      pv:rvp,seed:(_rangedFxSeq=(_rangedFxSeq+1)&1023)});
     if(def.basePierce)projectiles[projectiles.length-1].pierce=
       Math.max(pier,def.basePierce);
   }
+  muzzleVisualPush(mx,my,ux,uy,def,crit);   // PR15.5-E: muzzle só no disparo real
   spawnParticles(src.x+Math.cos(src.aim)*(src.r+10),src.y+Math.sin(src.aim)*(src.r+10),
     def.color,3,140,.18,2.5);
   src.recoil=1;                      // coice visual da arma empunhada
@@ -15239,6 +15903,7 @@ function drawArcs(){
   }
 }
 function explodeOrb(p){
+  if(p.pv)impactVisualPush(p.x,p.y,p.vx,p.vy,p.def,p.crit);  // PR15.5-E: assinatura temporal da detonação REAL
   spawnRing(p.x,p.y,p.color,10,p.aoe,.4);
   spawnParticles(p.x,p.y,p.color,18,300,.45,3.5);
   spawnShards(p.x,p.y,p.color,8,4);
@@ -17567,6 +18232,10 @@ function drawBeamFrom(src,def){
 function onProjectileHit(p,e,dmg){
   const d=p.def;if(!d)return;
   const src=p.owner;
+  /* PR15.5-E: impacto visual nasce exclusivamente no hit REAL — cada
+     acerto (incluindo cada alvo perfurado) assina o ponto de contato
+     da própria família. Sem dano/colisão/callback: só o FX bounded. */
+  if(p.pv)impactVisualPush(p.x,p.y,p.vx,p.vy,d,p.crit);
   if(src===player&&runSt)runSt.hi++;             // PR 8: acerto de projétil (precisão)
   if(d.fx)applyStatus(e,d.fx.k,d.fx.dur,d.fx.pow,src);
   if(d.chain)chainShock(e,dmg*.78,d.chain+Math.round(((src&&src.chainBonus)||0)*attuneFieldMul(src,'condutor')),src);   // B4
@@ -17589,6 +18258,7 @@ function onProjectileHit(p,e,dmg){
 function detonateSpecial(p){
   const d=p.def;if(!d)return;
   const R=(d.aoe||120)*((p.owner&&p.owner.aoeMul)||1);
+  if(p.pv)impactVisualPush(p.x,p.y,p.vx,p.vy,d,p.crit);   // PR15.5-E: bloom/twin da família na detonação REAL
   spawnRing(p.x,p.y,p.color,10,R,.45);
   spawnShards(p.x,p.y,p.color,10,5);
   spawnParticles(p.x,p.y,p.color,16,300,.45,3.2);
@@ -19103,6 +19773,7 @@ function resetRunWorld(){
   speechClear();
   swings=[];arcs=[];curAttacker=null;resoFlash=0;
   deathVisualClear();   // PR15.5-C: corpse visual nunca atravessa runs/slots
+  rangedFxClear();      // PR15.5-E: muzzle/impacto nunca atravessam runs/slots
   pickups=[];allies=[];beacon=null;curEv=null;evCount=0;
   /* PR 10.5: memória de eventos nova + limpeza de acontecimentos de arena */
   evMem=evMemFresh();evQueue=[];
@@ -19209,9 +19880,20 @@ function drawGrid(){
    ===================================================================== */
 /* --- armas empunhadas (espaço local: origem na mão, +x aponta à frente) --- */
 function drawWeaponSprite(wi,s,accent,recoil){
-  const rx=-(recoil||0)*3.2*s;
-  ctx.save();ctx.translate(rx,0);ctx.lineJoin='round';
   const wd=WEAPONS[wi]||WEAPONS[0];
+  /* PR15.5-E: coice render-only por família ranged — o recoil é o valor
+     mecânico-visual LEGADO (src.recoil/visual.recoil decai no tick da
+     fundação A); o perfil apenas escala a amplitude e adiciona uma
+     rotação discreta do sprite. Fast path: recoil 0 → exatamente o
+     caminho anterior (rx=0, zero rotate). Melee usa o valor puro. */
+  let rk=recoil||0,wrot=0;
+  if(rk>0&&!wd.melee){
+    const rvp=rangedVisualProfile(wd);
+    rk*=rvp.recoilKick;
+    wrot=rk*rvp.muzzleRot;
+  }
+  const rx=-rk*3.2*s;
+  ctx.save();ctx.translate(rx,0);if(wrot)ctx.rotate(wrot);ctx.lineJoin='round';
   const cls=wd.sprite;
   if(cls){
     /* ---- SILHUETAS DO ARSENAL ESTENDIDO (por classe) ---- */
@@ -20239,6 +20921,11 @@ function drawProjectile(p){
   ctx.drawImage(gs,p.x-gr,p.y-gr,gr*2,gr*2);
   ctx.globalCompositeOperation='source-over';
   ctx.globalAlpha=fade;
+  /* PR15.5-E: projéteis do arsenal (spawn REAL → pv) ganham corpo+trail
+     por família. Sem perfil (fixtures sintéticas, projéteis legados de
+     aliados/inimigos e fragmentos do Prisma): caminho anterior exato. */
+  const rv=p.pv;
+  if(rv){drawRangedProjectileBody(p,rv,fade);ctx.globalAlpha=1;return;}
   ctx.fillStyle=p.color;
   if(orb){
     ctx.beginPath();ctx.arc(p.x,p.y,p.r+Math.sin(runTime*10)*1.5,0,TAU);ctx.fill();
@@ -20402,7 +21089,9 @@ function render(){
   if(player&&WEAPONS[player.wi].beam)drawBeamFrom(player,WEAPONS[player.wi]);
   for(const e of echoes)if(e.alive&&e.beamT>0)drawBeamFrom(e,WEAPONS[4]);
   drawSwings();
+  drawMuzzleFx();      // PR15.5-E: muzzle por família (no-op quando vazio)
   for(const p of projectiles)if(inView(p.x,p.y,32))drawProjectile(p);
+  drawImpactFx();      // PR15.5-E: impacto por família (no-op quando vazio)
   // partículas
   for(const pt of parts){
     const pad=pt.ring?(pt.r1||40):((pt.size||pt.r||3)*3+12);
@@ -20820,6 +21509,7 @@ function loop(now){
   }
   parts.length=_pw;
   deathVisualTick(dt);   // PR15.5-C: cadáveres visuais drenam no mesmo relógio (no-op quando vazio)
+  rangedFxTick(dt);      // PR15.5-E: muzzle/impacto drenam no mesmo relógio (no-op quando vazio)
   let _fw=0;
   for(let i=0;i<ftexts.length;i++){
     const f=ftexts[i];f.t+=dt;
@@ -22291,6 +22981,7 @@ function clearRunEntities(){
   swings.length=0;
   parts.length=0;
   ftexts.length=0;
+  rangedFxClear();   // PR15.5-E: FX transitórios não sobrevivem à partida
   speechClear();
   boss=null;miniBoss=null;bossIntel=null;beacon=null;curEv=null;
   stopArenaEvent(false);arenaEv=null;arenaEvWave=-9;microT=26;_aeInterfT=0;
@@ -36900,6 +37591,11 @@ if(IS_DEV_BUILD){
 setAudio(audioOn);
 smBoot();            // PR 7.5: carrega echoSave.v3 (ou migra o save da Alpha) e ativa o último slot
 showTitle();         // título → seleção de memória → menu do save
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
+
 requestAnimationFrame(loop);
 </script>
 </body>

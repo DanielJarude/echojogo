@@ -43,6 +43,12 @@ function beforeWorld(){
   if(!source.includes('ENEMY_IMPACT_PROFILES')){
     code=code.split('\n').filter(l=>!l.includes('ENEMY_IMPACT_PROFILES')&&!/PR15\.5-C: reação/.test(l)).join('\n');
   }
+  /* PR15.5-E: a base 5d8e244 é anterior ao arsenal ranged visual —
+     remove a linha de exportação do bloco E (adapter, não enfraquece
+     nenhum check: os símbolos não existem nessa base). */
+  if(!source.includes('WEAPON_RANGED_VISUAL_PROFILES')){
+    code=code.split('\n').filter(l=>!l.includes('WEAPON_RANGED_VISUAL_PROFILES')&&!/PR15\.5-E: arsenal ranged/.test(l)).join('\n');
+  }
   code=code.replace(/^const html=.*;$/m,()=>'const html='+JSON.stringify(source)+';');
   const m=new Module(filename,module);m.filename=filename;m.paths=module.paths;m._compile(code,filename);
   const h=m.exports;
