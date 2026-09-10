@@ -72,7 +72,7 @@ ok('D12 valores inválidos ficam finitos',()=>assert.ok(finite(T.visualPose({rot
 ok('D13 composição soma offsets/rotação',()=>{const p=T.visualPoseCompose({offsetX:2,rotation:.2},{offsetX:3,rotation:.4});assert.ok(near(p.offsetX,5)&&near(p.rotation,.6));});
 ok('D14 composição multiplica escala/alpha',()=>{const p=T.visualPoseCompose({scaleX:2,alpha:.5},{scaleX:.5,alpha:.5});assert.ok(near(p.scaleX,1)&&near(p.alpha,.25));});
 ok('D15 pose não altera posição/hitbox',()=>{const e=entity(),before=[e.x,e.y,e.r];T.visualPose({offsetX:99,scaleX:4});assert.deepStrictEqual([e.x,e.y,e.r],before);});
-ok('D16 hurt pose é sutil e finita',()=>{const e=entity();T.visualNotify(e,'hurt',{x:0,y:80});const p=T.visualHurtPose(e);assert.ok(finite(p)&&Math.abs(p.offsetX)<=.7&&Math.abs(p.rotation)<=.018);});
+ok('D16 hurt pose é finita e bounded POR FAMÍLIA (PR15.5-C)',()=>{const e=entity();T.visualNotify(e,'hurt',{x:0,y:80});const p=T.visualHurtPose(e);const prof=T.enemyImpactVisualProfile(e);assert.ok(finite(p));assert.ok(Math.abs(p.offsetX)<=prof.hurt.offset*e.r+1e-9&&Math.abs(p.offsetY)<=prof.hurt.offset*e.r+1e-9);assert.ok(Math.abs(p.rotation)<=prof.hurt.rotation+1e-9);assert.ok(p.scaleX>0&&p.scaleY>0&&p.alpha>0);});
 
 // E/F · integrações reais
 ok('E01 damageEnemy registra hurt',()=>{T.startRun();const e=T.spawnEnemy('chaser',300,300,1);e.spawnT=0;T.damageEnemy(e,1,200,300,false,false);assert.strictEqual(e.visual.event,'hurt');});

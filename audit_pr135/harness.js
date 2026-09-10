@@ -13,6 +13,8 @@ src+='\n;globalThis.__t={'+
   'visualFinite,visualClamp01,visualPeek,visualState,visualReset,visualTimelineStart,visualTimelineCancel,visualTimelineProgress,visualTimelineTick,visualAttackObserve,visualAttackTrigger,visualAttackIdle,visualAttackCancel,visualNotify,visualNotifyHurt,visualNotifyWeaponFire,visualPose,visualPoseCompose,enemyVisualProfile,weaponVisualProfile,weaponVisualProfileBuild,WEAPON_VISUAL_PROFILE_CACHE,visualHurtPose,visualEnemyAttackPose,visualWeaponRecoil,'+
   /* PR15.5-D: animação física do arsenal melee */
   'MELEE_VISUAL_FAMILIES,MELEE_VISUAL_PROFILES,MELEE_VISUAL_PROFILE_DEFAULT,meleeVisualProfile,meleeVisualStart,meleeVisualCancel,meleeVisualPhaseDuration,meleeVisualPhaseProgress,visualMeleeWeaponPose,visualMeleeBodyPose,visualPlayerDrawPose,meleeVisualTrailAngle,meleeDrawTrail,'+
+  /* PR15.5-C: reação ao dano e morte por família de material (linha única — removível p/ fontes anteriores) */
+  'ENEMY_IMPACT_PROFILES,ENEMY_IMPACT_PROFILE_FALLBACK,enemyImpactVisualProfile,DEATH_VISUAL_CAP,deathVisualPush,deathVisualTick,deathVisualClear,drawDeathVisuals,getDeathVisuals:()=>deathVisuals,setDeathVisuals:a=>{deathVisuals.length=0;for(let i=0;i<a.length;i++)deathVisuals.push(a[i]);},'+
   'ECHO_LINES,PERSONALITIES,MORAL_AFFINITY,MORAL_BALANCE,ITEMS,UPGRADES,WEAPONS,MINIBOSS,'+
   'SM_STATS,SM_ORDER,UNLOCKS,BASE_WEAPONS,BASE_ITEMS,BASE_UPGRADES,CHARS,ECHO_SPEAK_INTERVAL,'+
   'SPEECH_PRI,ECHO_SPEECH_QUEUE_MAX,echoSpeechDuration,speechClear,speechTick,'+
