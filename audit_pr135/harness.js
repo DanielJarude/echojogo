@@ -27,6 +27,9 @@ src+='\n;globalThis.__t={'+
   'applyMoralTuning,countAttunedItems,smGet,smRefresh,smBreakdown,calcDamageMul,'+
   'smMul,smAdd,smFlat,smAddPct,smRemoveId,smRemoveSource,'+
   'fireMelee,fireBeam,fireWeaponFrom,updateProjectiles,weaponRange,srcRangeMul,migrateLegacyRangeMods,damageEnemy,spawnEnemy,updateEnemy,updatePlayer,drawWeaponSprite,drawPlayer,drawSwings,updateSwings,setWeaponSlot,'+
+  'enemyIsTargetable:(typeof enemyIsTargetable==="function"?enemyIsTargetable:undefined),'+
+  'makeElite:(typeof makeElite==="function"?makeElite:undefined),'+
+  'nearestEnemy:(typeof nearestEnemy==="function"?nearestEnemy:undefined),'+
   'getProjectiles:()=>projectiles,setProjectiles:a=>{projectiles=a;},'+
   'getSwings:()=>swings,setSwings:a=>{swings=a;},'+
   'getEnemies:()=>enemies,setEnemies:a=>{enemies=a;},'+

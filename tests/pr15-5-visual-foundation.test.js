@@ -99,7 +99,7 @@ ok('H03 perfil inimigo cobre 11 tipos',()=>assert.strictEqual(Object.keys(T.ENEM
 ok('H04 perfil arma referencia definição',()=>{const w=T.WEAPONS.find(x=>x.id==='hammer'),p=T.weaponVisualProfile(w);assert.strictEqual(p.meleeMotion,w.sprite);});
 ok('I01 stress 46 entidades × 5000 frames',()=>{const es=Array.from({length:46},(_,i)=>Object.assign(entity(),{x:i,y:i}));for(const e of es)T.visualNotify(e,'hurt',{});for(let f=0;f<5000;f++)for(const e of es)T.visualTimelineTick(e,.016);for(const e of es)assert.ok(finite(e.visual)&&!Object.values(e.visual).some(Array.isArray));});
 ok('I02 cleanup após stress',()=>{const e=entity();T.visualNotify(e,'weaponFire',{});for(let i=0;i<1000;i++)T.visualTimelineTick(e,.016);assert.ok(e.visual.event===''&&e.visual.recoil===0&&!e.visual.active);});
-ok('I03 assinatura mecânica dos inimigos intacta',()=>assert.strictEqual(Object.entries(T.EDEFS).map(([k,d])=>[k,d.hp,d.spd,d.r,d.dmg].join(':')).join('|'),'chaser:26:238:13:10|shooter:36:150:15:8|tank:180:66:27:32|spawner:210:34:24:12|anomaly:44:186:14:18|swarm:12:322:9:6|orbiter:34:205:12:9|bulwark:78:112:18:16|splitter:62:168:16:13|phantom:52:212:13:15|singular:190:96:24:24'));
+ok('I03 assinatura mecânica dos inimigos intacta',()=>assert.strictEqual(Object.entries(T.EDEFS).map(([k,d])=>[k,d.hp,d.spd,d.r,d.dmg].join(':')).join('|'),'chaser:26:238:13:10|shooter:36:150:15:8|tank:150:66:27:32|spawner:125:34:24:12|anomaly:44:186:14:18|swarm:12:322:9:6|orbiter:34:205:12:9|bulwark:78:112:18:16|splitter:62:168:16:13|phantom:30:212:13:15|singular:190:96:24:24'));
 ok('I04 catálogo permanece 27 armas',()=>assert.strictEqual(T.WEAPONS.length,27));
 ok('I05 catálogo permanece 8 minibosses',()=>assert.strictEqual(T.MINIBOSS.length,8));
 

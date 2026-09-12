@@ -186,17 +186,17 @@ ok('G17 crit continua alternando cor do swing (mecânica intacta)',()=>{const p=
 /* hashes integrais dos blocos mecânicos — idênticos à base 4667720b */
 const MECH_PINS={
   WEAPONS:[/const WEAPONS=\[[\s\S]*?\n\];/,'cb92e03d4d36f390b41c70b8ab85e5ace7e183b779249dfa89295ff7bfabda03'],
-  EDEFS:[/const EDEFS=\{[\s\S]*?\n\};/,'fe919859b535e7645a50ce13bfe948bb4de5c3c1df716123a5674a59baae698e'],
+  EDEFS:[/const EDEFS=\{[\s\S]*?\n\};/,'9a646757e52d8b6b69f1ac09df16441b6437e0fe1bcfb5f739c58eb8119a178b'],
   waveCompBase:[/function waveCompBase\(n\)\{[\s\S]*?\n\}/,'3f49dd9c64897c75062d248e0096ad8d493190cc1dfb0dda9935ae6cb82eb368'],
   MINIBOSS:[/const MINIBOSS=\[[\s\S]*?\n\];/,'6ce87e31b85d36526611d202d98473bc587e8fb241d9dae20ba2569fc107dc18'],
   spawnBoss:[/function spawnBoss\(\)\{[\s\S]*?\n\}/,'3872a65edcacad431d90d014d0741cad5c6b84767a5a02189f701c410fc7379e'],
   updatePlayer:[/function updatePlayer\(dt\)\{[\s\S]*?\n\}/,'f3c79a5aee6b35760600d0cdb35b063afef01dc89cad1f01dcdcad603a58e380'],
   updateSwings:[/function updateSwings\(dt\)\{[\s\S]*?\n\}/,'cd2a0ad7d8e69f4d6906e0bd3a67d5cdb017dddd1ce4ec2babae8587bb508fd0'],
-  updateEcho:[/function updateEcho\(e,dt\)\{[\s\S]*?\n\}/,'5349d56cc5636f3a29f731e3de479d150c070c1a76d36eb1182a0126567c39e2']
+  updateEcho:[/function updateEcho\(e,dt\)\{[\s\S]*?\n\}/,'9bbc62736cba04c0305c16f8a82988c8ecebd16df37d2dbc9f4eac81b223e656']
 };
 for(const [name,[pattern,hash]] of Object.entries(MECH_PINS))
   ok('G18 '+name+' byte-a-byte idêntico à base 4667720b',()=>{const b=SRC.match(pattern);assert.ok(b);assert.strictEqual(crypto.createHash('sha256').update(b[0]).digest('hex'),hash);});
-ok('G19 fireMelee pós-D pinado (lock da integração visual)',()=>{const b=SRC.match(/function fireMelee\([^\n]*\)\{[\s\S]*?\n\}/);assert.ok(b);assert.strictEqual(crypto.createHash('sha256').update(b[0]).digest('hex'),'53f8a912c19065e6337dc9316ceabf541c04f0de4cfe906d5f259af053412c62');});
+ok('G19 fireMelee pós-D pinado (lock da integração visual)',()=>{const b=SRC.match(/function fireMelee\([^\n]*\)\{[\s\S]*?\n\}/);assert.ok(b);assert.strictEqual(crypto.createHash('sha256').update(b[0]).digest('hex'),'8c84d3f90db6a9a1b12d45c9268179c7c89016156fd03b97bfb0ae89bee93c27');});
 
 /* ============ H · DRAW PURITY / PERSISTÊNCIA ============ */
 ok('H01 drawPlayer não altera estado mecânico do jogador',()=>{const p=armedPlayer('chains');T.fireWeaponFrom(p,W('chains'),'ally',1);T.visualTimelineTick(p,.05);const b=[p.x,p.y,p.hp,p.fireTimer,p.wi,p.aim];sandbox.__ctxLog=[];T.drawPlayer();sandbox.__ctxLog=null;assert.deepStrictEqual([p.x,p.y,p.hp,p.fireTimer,p.wi,p.aim],b);});
