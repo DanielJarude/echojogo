@@ -38,7 +38,7 @@ ok('C08 dt grande conclui sem estado órfão',()=>{const e={aim:0};T.visualAttac
 ok('C09 dt zero não avança active',()=>{const e={aim:0};T.visualAttackTrigger(e,0,10,'shot',.08);T.visualTimelineTick(e,0);assert.strictEqual(e.visual.attackT,.08);});
 ok('C10 dt inválido não gera NaN',()=>{const e={aim:0};T.visualAttackTrigger(e,0,10,'shot',.08);T.visualTimelineTick(e,NaN);assert.ok(finite(e.visual));});
 ok('C11 cancelamento limpa ataque',()=>{const e={aim:0};T.visualAttackTrigger(e,0,10,'shot',1);T.visualAttackCancel(e);assert.strictEqual(e.visual.attackState,'');});
-ok('C12 killEnemy cancela telegraph na fonte',()=>assert.ok(/function killEnemy\(e\)\{\s*visualAttackCancel\(e\)/.test(SRC)));
+ok('C12 killEnemy cancela telegraph na fonte',()=>assert.ok(/function killEnemy\(e(?:,damageSource)?\)\{\s*visualAttackCancel\(e\)/.test(SRC)));
 ok('C13 hurt compõe sem cancelar ataque',()=>{const e={x:0,y:0,aim:0};T.visualAttackTrigger(e,0,10,'shot',1);T.visualNotifyHurt(e,-1,0);assert.strictEqual(e.visual.attackState,'active');assert.strictEqual(e.visual.event,'hurt');});
 
 // D/E: ranged

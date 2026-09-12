@@ -190,9 +190,9 @@ const MECH_PINS={
   waveCompBase:[/function waveCompBase\(n\)\{[\s\S]*?\n\}/,'3f49dd9c64897c75062d248e0096ad8d493190cc1dfb0dda9935ae6cb82eb368'],
   MINIBOSS:[/const MINIBOSS=\[[\s\S]*?\n\];/,'6ce87e31b85d36526611d202d98473bc587e8fb241d9dae20ba2569fc107dc18'],
   spawnBoss:[/function spawnBoss\(\)\{[\s\S]*?\n\}/,'3872a65edcacad431d90d014d0741cad5c6b84767a5a02189f701c410fc7379e'],
-  /* PR15.7-A: único desvio mecânico aprovado neste pin é o tick O(1) de
-     expiração da ação temporal; não toca animação nem combate melee. */
-  updatePlayer:[/function updatePlayer\(dt\)\{[\s\S]*?\n\}/,'bdbe526ccb3e05ae63401ca014c324848b3e7f3d78f1e0429cba5b98c58bf6ed'],
+  /* PR15.7-A/B: desvios aprovados são os ticks O(1) de expiração/cooldown;
+     não tocam animação nem combate melee. */
+  updatePlayer:[/function updatePlayer\(dt\)\{[\s\S]*?\n\}/,'3ffe66f1d3cc91ca3a1a649725badda3b90d8bbf3caa7f7f49dd1b80377a54f4'],
   updateSwings:[/function updateSwings\(dt\)\{[\s\S]*?\n\}/,'cd2a0ad7d8e69f4d6906e0bd3a67d5cdb017dddd1ce4ec2babae8587bb508fd0'],
   updateEcho:[/function updateEcho\(e,dt\)\{[\s\S]*?\n\}/,'9bbc62736cba04c0305c16f8a82988c8ecebd16df37d2dbc9f4eac81b223e656']
 };
