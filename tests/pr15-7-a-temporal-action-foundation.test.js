@@ -38,7 +38,7 @@ ok('14c chamada interna proc em fireWeaponFrom não substitui a ação primária
 ok('15 posição é capturada por valor',()=>{const p=fresh();p.x=321;p.y=654;capture('plasma');const a=action();assert.strictEqual(a.x,321);assert.strictEqual(a.y,654);p.x=999;assert.strictEqual(action().x,321);});
 ok('16 direção é capturada',()=>{const p=fresh();p.aim=1.234;capture('rail');assert.strictEqual(action().angle,1.234);});
 ok('17 weaponId é capturado',()=>{fresh();capture('sniper');assert.strictEqual(action().weaponId,'sniper');});
-ok('18 payload é bounded e somente escalar',()=>{fresh();capture('shotgun');const p=action().payload;assert.deepStrictEqual(Object.keys(p).sort(),['damage','projectileCount','projectileRadius','projectileSpeed','range','spread']);assert.ok(p.projectileCount<=8);for(const k in p)assert.strictEqual(typeof p[k],'number');});
+ok('18 payload é bounded e somente escalar',()=>{fresh();capture('shotgun');const p=action().payload;assert.deepStrictEqual(Object.keys(p).sort(),['damage','pierce','projectileCount','projectileRadius','projectileSpeed','range','spread']);assert.ok(p.projectileCount<=8);for(const k in p)assert.strictEqual(typeof p[k],'number');});
 ok('19 payload não contém player',()=>{fresh();capture('plasma');assert.ok(!('player' in action().payload));assert.ok(!JSON.stringify(action()).includes('itemState'));});
 ok('20 payload não contém enemy',()=>{fresh();capture('plasma');assert.ok(!('enemy' in action().payload)&&!('target' in action().payload));});
 ok('21 payload não contém callbacks',()=>{fresh();capture('plasma');const a=action();for(const k in a)assert.notStrictEqual(typeof a[k],'function');for(const k in a.payload)assert.notStrictEqual(typeof a.payload[k],'function');});
@@ -48,10 +48,10 @@ ok('24 somente uma ação existe',()=>{fresh();for(const id of ['plasma','shotgu
 ok('25 expiresAt usa janela exata de 5s',()=>{fresh();capture('plasma');const a=action();assert.strictEqual(a.expiresAt-a.t,5);assert.strictEqual(X('TEMPORAL_ACTION_WINDOW'),5);});
 ok('26 ação expira deterministicamente',()=>{fresh();capture('plasma');X('temporalActionTick(14.999)');assert.ok(action());X('temporalActionTick(15)');assert.strictEqual(action(),null);assert.strictEqual(inspect().telemetry.expired,1);});
 ok('27 expirada deixa de estar elegível para uso futuro',()=>{fresh();capture('plasma');X('temporalActionTick(20)');assert.strictEqual(inspect().active,false);assert.strictEqual(inspect().state,'expired');});
-ok('28 morte limpa',()=>{fresh();capture('plasma');X('temporalActionClear("death")');assert.strictEqual(action(),null);assert.strictEqual(inspect().state,'death');assert.ok(section('onPlayerDeath').includes("temporalActionClear('death')"));});
-ok('29 vitória limpa',()=>{fresh();capture('plasma');X('temporalActionClear("victory")');assert.strictEqual(action(),null);assert.ok(section('onVictory').includes("temporalActionClear('victory')"));});
+ok('28 morte limpa',()=>{fresh();capture('plasma');X('temporalActionClear("death")');assert.strictEqual(action(),null);assert.strictEqual(inspect().state,'death');assert.ok(section('onPlayerDeath').includes("temporalReplayReset('death')"));});
+ok('29 vitória limpa',()=>{fresh();capture('plasma');X('temporalActionClear("victory")');assert.strictEqual(action(),null);assert.ok(section('onVictory').includes("temporalReplayReset('victory')"));});
 ok('30 nova run limpa estado e telemetria',()=>{fresh();capture('plasma');T.startRun({operatorId:'vector',freshMeta:true,noEchoes:true});assert.strictEqual(action(),null);assert.strictEqual(inspect().telemetry.recorded,0);});
-ok('31 reset/menu limpa',()=>{fresh();capture('plasma');X('temporalActionReset()');assert.strictEqual(action(),null);assert.ok(section('clearRunEntities').includes('temporalActionReset()'));});
+ok('31 reset/menu limpa',()=>{fresh();capture('plasma');X('temporalActionReset()');assert.strictEqual(action(),null);assert.ok(section('clearRunEntities').includes("temporalReplayReset('menu')"));});
 ok('32 wave transition limpa',()=>{fresh();capture('plasma');T.spawnWave(1);assert.strictEqual(action(),null);assert.strictEqual(inspect().state,'wave');});
 ok('33 checkpoint não persiste ação',()=>{fresh();capture('plasma');assert.strictEqual(T.captureCheckpoint('pr15.7-a',2),true);const cp=J('activeRun');const raw=JSON.stringify(cp);assert.ok(!raw.includes('temporalAction')&&!raw.includes('expiresAt'));});
 ok('34 Continue não restaura ação',()=>{fresh();capture('plasma');assert.strictEqual(T.captureCheckpoint('pr15.7-a',2),true);capture('rail');T.resumeRun();assert.strictEqual(action(),null);assert.strictEqual(inspect().telemetry.recorded,0);});
@@ -69,8 +69,8 @@ ok('45 não há arrays históricos crescentes',()=>{fresh();capture('plasma');as
 ok('46 action state é armed',()=>{fresh();capture('shotgun');assert.strictEqual(action().state,'armed');assert.strictEqual(action().source,'player');});
 ok('47 substituída não é executada',()=>{fresh();const p0=T.getProjectiles().length;capture('plasma');capture('rail');assert.strictEqual(T.getProjectiles().length,p0);});
 ok('48 expirada não é executada',()=>{fresh();const p0=T.getProjectiles().length;capture('shotgun');X('temporalActionTick(99)');assert.strictEqual(T.getProjectiles().length,p0);});
-ok('49 não existe input R temporal funcional',()=>{const s=normalizeSource(SRC);assert.ok(!/KeyR[^\n]{0,160}temporalAction/.test(s));assert.ok(!/temporalAction[^\n]{0,160}KeyR/.test(s));});
-ok('50 não existe replay temporal ofensivo',()=>{const s=normalizeSource(SRC);assert.ok(!/function temporalActionReplay\s*\(/.test(s));assert.ok(!/source:TEMPORAL_ACTION_SOURCES\.REPLAY/.test(s));assert.ok(!section('temporalActionCapture').includes('projectiles.push'));});
+ok('49 input do B não chama captura diretamente',()=>{const s=normalizeSource(SRC);assert.ok(!/KeyR[^\n]{0,160}temporalAction/.test(s));assert.ok(!/temporalAction[^\n]{0,160}KeyR/.test(s));});
+ok('50 replay do B permanece fora da captura A',()=>{const s=normalizeSource(SRC);assert.ok(!/function temporalActionReplay\s*\(/.test(s));assert.ok(/source:TEMPORAL_ACTION_SOURCES\.REPLAY/.test(s));assert.ok(!section('temporalActionCapture').includes('projectiles.push'));});
 
 console.log('\nPR15.7-A — '+passed+' PASSARAM · '+failed+' FALHARAM\n');
 if(failed)process.exit(1);

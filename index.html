@@ -159,6 +159,13 @@
     box-shadow:0 0 10px rgba(255,209,102,.45);}
   #spwrap.ready #spfill{animation:pulse 1.2s infinite;}
   #spwrap.active #spfill{background:#7dffc4;box-shadow:0 0 14px #7dffc4;}
+  /* PR15.7-B: indicador mínimo — reutiliza a linguagem das habilidades. */
+  #temporalwrap{position:absolute;right:16px;bottom:200px;width:136px;}
+  #temporalbar{height:4px;margin-top:4px;background:rgba(255,77,240,.08);
+    border:1px solid rgba(70,224,255,.18);overflow:hidden;}
+  #temporalfill{height:100%;width:0;background:#46e0ff;transition:width .09s linear;}
+  #temporalwrap.armed #temporalfill{background:#ff4df0;}
+  #temporalwrap.ready .lbl{color:#bffbff;}
   @keyframes pulse{50%{opacity:.55;}}
 
   /* PR15.5-B-FIX.2: diagnóstico discreto, fora da coluna superior direita.
@@ -949,6 +956,10 @@
   <div id="spwrap">
     <span class="lbl" id="splbl">ESPECIAL [E]</span>
     <div id="spbar"><div id="spfill"></div></div>
+  </div>
+  <div id="temporalwrap">
+    <span class="lbl" id="temporallbl">REPETIÇÃO [R]</span>
+    <div id="temporalbar"><div id="temporalfill"></div></div>
   </div>
   <div id="weapwrap"></div>
 </div>
@@ -1932,6 +1943,7 @@ window.addEventListener('keydown',e=>{
   if(e.code==='KeyQ')cycleWeapon(1);
   if(e.code==='KeyX')quickSwitchWeapon();   // §55: Q já é ciclar — X alterna
   if(e.code==='KeyE')trySpecial();
+  if(e.code==='KeyR'&&!e.ctrlKey&&!e.metaKey&&!e.repeat)temporalReplayTry('keyboard');
   if(e.code==='Space')tryDash();
 });
 window.addEventListener('keyup',e=>{
@@ -2125,6 +2137,7 @@ function pollGamepad(){
   if(dashNow&&!PAD.dash)tryDash();
   PAD.dash=dashNow;
   if(padEdge(gp,PB.X))trySpecial();
+  if(padEdge(gp,PB.R3))temporalReplayTry('gamepad');
   if(padEdge(gp,PB.LB))cycleWeapon(-1);
   if(padEdge(gp,PB.RB))cycleWeapon(1);
   if(padEdge(gp,PB.Y))cycleWeapon(1);
@@ -5816,7 +5829,9 @@ const $=id=>document.getElementById(id);
 const hpfill=$('hpfill'),hpnum=$('hpnum'),waveEl=$('wave'),timerEl=$('timer'),
   xpfill=$('xpfill'),lvlEl=$('lvl'),chip1=$('chip1'),chip2=$('chip2'),
   shfill=$('shfill'),shnum=$('shnum'),shbar=$('shbar'),
-  dashfill=$('dashfill'),dashwrap=$('dashwrap'),dashlbl=$('dashlbl'),bannerEl=$('banner'),fpindEl=$('fpind'),
+  dashfill=$('dashfill'),dashwrap=$('dashwrap'),dashlbl=$('dashlbl'),
+  temporalfill=$('temporalfill'),temporalwrap=$('temporalwrap'),temporallbl=$('temporallbl'),
+  bannerEl=$('banner'),fpindEl=$('fpind'),
   toastsEl=$('toasts'),overlay=$('overlay'),ovBody=$('ov-body'),
   ovGo=$('ov-go'),ovEchos=$('ov-echos'),ovFrac=$('ov-frac-lines'),
   ovTitle=$('ov-title'),ovSub=$('ov-sub');
@@ -5931,6 +5946,19 @@ function updateHUD(force){
   dashfill.style.width=(dr*100)+'%';
   dashwrap.classList.toggle('ready',player.dashCd<=0);
   if(dashlbl)hudText(dashlbl,player.dashCd>0?'DASH '+fmtSec(player.dashCd):'DASH [ESPAÇO]');   // B5-B-FIX: quanto falta
+  // ---- PR15.7-B: HUD temporal mínimo, sem barra/recurso novo expansivo ----
+  if(temporalwrap&&temporalfill&&temporallbl){
+    const armed=!!(temporalAction&&temporalAction.state==='armed');
+    const cd=temporalReplayCooldown>0;
+    const ratio=armed?clamp((temporalAction.expiresAt-runTime)/TEMPORAL_ACTION_WINDOW,0,1)
+      :(cd?clamp(1-temporalReplayCooldown/TEMPORAL_REPLAY_COOLDOWN,0,1):1);
+    temporalfill.style.width=(ratio*100)+'%';
+    temporalwrap.classList.toggle('armed',armed);
+    temporalwrap.classList.toggle('ready',armed&&!cd);
+    const temporalKey=padActive?'[R3]':'[R]';
+    hudText(temporallbl,armed?(cd?'REPETIÇÃO '+fmtSec(temporalReplayCooldown):'REPETIÇÃO ARMADA '+temporalKey)
+      :(cd?'REPETIÇÃO '+fmtSec(temporalReplayCooldown):'REPETIÇÃO '+temporalKey));
+  }
   // ---- HUD do especial ----
   const C=curChar(),spw=$('spwrap');
   if(spw&&C.sp){
@@ -14546,8 +14574,9 @@ function nearestEnemy(x,y,range){
   }
   return best;
 }
-function damageEnemy(e,d,srcx,srcy,crit,isDot){
+function damageEnemy(e,d,srcx,srcy,crit,isDot,damageSource){
   if(e.spawnT>0||e.dead)return;
+  const isTemporal=damageSource===TEMPORAL_ACTION_SOURCES.REPLAY;
   if(e.phaseT>0)return;                  // Anômalo fora de fase é intangível
   // LEVIANO: intangível enquanto em fase fantasma
   if(e.type==='phantom'&&e.ghostT>0)return;
@@ -14597,11 +14626,11 @@ function damageEnemy(e,d,srcx,srcy,crit,isDot){
     }
     e.hp-=d;e.flashT=Math.max(e.flashT,.05);
     if(curAttacker===player&&runSt)runSt.dd+=Math.min(d,999);   // PR 8
-    if(e.hp<=0)killEnemy(e);
+    if(e.hp<=0)killEnemy(e,damageSource);
     return;
   }
   // ---- SINCRONIA TEMPORAL: jogador + Echo no mesmo alvo em < 0.5s ----
-  if(curAttacker){
+  if(curAttacker&&!isTemporal){
     const isP=(curAttacker===player);
     const tag=isP?'p':'e'+(curAttacker.slot||0);
     let resoFired=false;
@@ -14691,7 +14720,7 @@ function damageEnemy(e,d,srcx,srcy,crit,isDot){
     runSt.dd+=Math.min(d,9999);
     if(e.hp<=0&&_preHp<=e.maxHp*.35)runSt.kw++;
   }
-  if(e.hp<=0)killEnemy(e);
+  if(e.hp<=0)killEnemy(e,damageSource);
   else sHit();
 }
 /* =====================================================================
@@ -14732,7 +14761,7 @@ function updateResonance(dt){
   if(resoFlash>0)resoFlash=Math.max(0,resoFlash-dt*2.6);
   for(const e of enemies){if(e.resoCd>0)e.resoCd-=dt;if(e.microCd>0)e.microCd-=dt;}
 }
-function killEnemy(e){
+function killEnemy(e,damageSource){
   visualAttackCancel(e);
   e.dead=true;kills++;
   deathVisualPush(e);   // PR15.5-C: corpse 100% visual (pool+cap; zero gameplay)
@@ -14748,7 +14777,9 @@ function killEnemy(e){
     try{fractureOnMiniKill(e.mb,wave|0);}catch(_e){}
   }
   if(curAttacker&&curAttacker!==player&&curAttacker.slot)bumpProg('echoKills');
-  if(player){
+  /* Recompensas universais continuam abaixo, mas procs de kill do operador
+     não classificam um abate temporal como abate direto do player. */
+  if(player&&!isTemporalDamageSource(damageSource)){
     player.waveKills=(player.waveKills||0)+1;              // MOTOR DE ENTROPIA
     if(player.waveKills%12===0)echoReact('killStreak');    // PR 8: fala de sequência
     if(player.killDash&&player.dashCd>0)                   // AMPULHETA QUEBRADA
@@ -14779,7 +14810,7 @@ function killEnemy(e){
     }
   }
   // PIRÓSTASE: alvo em chamas propaga fogo ao morrer
-  if(e.st&&e.st.burnT>0&&e.st.burnSrc&&e.st.burnSrc.burnSpread){
+  if(!isTemporalDamageSource(damageSource)&&e.st&&e.st.burnT>0&&e.st.burnSrc&&e.st.burnSrc.burnSpread){
     const src=e.st.burnSrc,pw=e.st.burnP*.6;
     spawnRing(e.x,e.y,'#ff7a2f',6,150,.5);
     for(const o of enemies){
@@ -17294,6 +17325,7 @@ function updateEcho(e,dt){
 function updatePlayer(dt){
   const p=player;
   temporalActionTick(runTime);             // PR15.7-A: expiração O(1), sem alocação
+  temporalReplayTick(dt);                  // PR15.7-B: cooldown independente
   visualTimelineTick(p,dt);
   let ix=0,iy=0;
   if(keys['KeyW']||keys['ArrowUp'])iy-=1;
@@ -17732,13 +17764,23 @@ function updateProjectiles(dt){
             const pd=p.def;
             // PERFURADOR: bônus próprio de longa distância
             if(pd&&pd.farBonus&&p.dist>450)dmgOut*=1+pd.farBonus;
-            damageEnemy(e,dmgOut,p.x-p.vx*dt,p.y-p.vy*dt,p.crit);
-            onProjectileHit(p,e,dmgOut);
+            if(p.temporalReplay){
+              const hp0=e.hp,shield0=e.shield||0,wasDead=!!e.dead;
+              damageEnemy(e,dmgOut,p.x-p.vx*dt,p.y-p.vy*dt,false,false,
+                TEMPORAL_ACTION_SOURCES.REPLAY);
+              if((e.hp<hp0||(e.shield||0)<shield0)&&!wasDead){
+                p.temporalHit=true;temporalActionTelemetryInc('hits');
+                if(e.dead)temporalActionTelemetryInc('kills');
+              }
+            }else{
+              damageEnemy(e,dmgOut,p.x-p.vx*dt,p.y-p.vy*dt,p.crit);
+              onProjectileHit(p,e,dmgOut);
+            }
             if(p.pierce>0){                       // perfuração
-              /* B3: LENTE DE FASE — atravessar CARREGA (×1.20) em vez da
-                 queda padrão (×0.82). Fator puro (testável). */
+              /* Replay preserva a identidade perfurante, mas nunca consulta
+                 Lente de Fase/build atual nem ganha dano ao atravessar. */
               p.pierce--;if(!p.hits)p.hits=[];p.hits.push(e);
-              p.dmg*=lensChargeMul();
+              if(!p.temporalReplay)p.dmg*=lensChargeMul();
               spawnParticles(p.x,p.y,p.color,3,150,.2,2);
             }else dead=true;
           }
@@ -17788,7 +17830,10 @@ function updateProjectiles(dt){
         if(dist2(p.x,p.y,ec.x,ec.y)<rr*rr){damageEcho(ec,p.dmg);dead=true;break;}
       }
     }
-    if(dead)projectiles.splice(i,1);
+    if(dead){
+      if(p.temporalReplay&&!p.temporalHit)temporalActionTelemetryInc('misses');
+      projectiles.splice(i,1);
+    }
   }
 }
 function updateOrbs(dt){
@@ -18062,7 +18107,7 @@ function resolveEnding(){
 
 function onVictory(){
   if(state==='victory')return;
-  temporalActionClear('victory');
+  temporalReplayReset('victory');
   clearBossVictoryTimers();
   /* PR 11.5 §90: vitória no laboratório NÃO registra final/variante/memória. */
   if(sandboxRun){sandboxVictory();return;}
@@ -19002,7 +19047,7 @@ function resumeRun(){
 /* ---------------- ciclo de morte ---------------- */
 function onPlayerDeath(){
   if(state!=='play')return;
-  temporalActionClear('death');
+  temporalReplayReset('death');
   /* PR 11.5 §89: morte no laboratório NÃO cria Echo e NÃO grava nada. */
   if(sandboxRun){sandboxDeath();return;}
   // ---- PROGRESSÃO: fecha a run ----
@@ -19107,7 +19152,7 @@ function hideOverlay(){
    resetRunWorld: parte comum (limpeza total do mundo) usada por
    startRun (run nova) e resumeRun (continuar um checkpoint). */
 function resetRunWorld(){
-  temporalActionReset();                 // PR15.7-A: estado e telemetria são run-scoped
+  temporalReplayReset('run');            // PR15.7: ação/cooldown/telemetria run-scoped
   metricsHide(); // mesma instância; nova janela em Nova Run/Continue/Sandbox
   clearBossVictoryTimers();
   if(sheetOpen)sheetHide();              // PR 11.5: ficha nunca atravessa runs
@@ -20406,6 +20451,7 @@ function render(){
   }
   ctx.shadowBlur=0;
   drawWorldExtras();
+  drawTemporalActionMarker();
   for(const e of enemies){
     const pad=e.type==='boss'?900:(e.auraR||e.r||20)+48;
     if(inView(e.x,e.y,pad)){drawEnemy(e);if(e.st)drawStatus(e);}
@@ -22297,7 +22343,7 @@ document.getElementById('p-abort').addEventListener('click',abortRun);
 /* ---- PR 7.5: limpeza comum de fim de partida (usada ao sair para menus) ---- */
 function clearRunEntities(){
   // 1. interrompe a partida e limpa TODAS as entidades ativas da run
-  temporalActionReset();
+  temporalReplayReset('menu');
   clearBossVictoryTimers();
   releaseAllInput();
   enemies.length=0;
@@ -36899,11 +36945,14 @@ function pr15IntentKitBoot(){
    PR15.7-A — FUNDAÇÃO DA REPETIÇÃO ANCORADA
    ---------------------------------------------------------------------
    Contrato estritamente run-scoped para UMA ação ranged recente. Este
-   bloco somente captura, substitui, expira, limpa e expõe inspeção; não
-   registra input, não reproduz ataque, não cria projétil/dano/FX e não
-   conversa com Echo, Fracture Director, facções ou progressão.
+   A fundação captura, substitui, expira e limpa. O PR15.7-B estende o
+   mesmo estado com input manual, replay simplificado e feedback bounded,
+   sem conversar com Echo, Fracture Director, facções ou progressão.
    ===================================================================== */
 const TEMPORAL_ACTION_WINDOW=5;
+const TEMPORAL_REPLAY_COOLDOWN=6;
+const MAX_TEMPORAL_PROJECTILES=8;
+const TEMPORAL_REPLAY_DAMAGE=.50;
 const TEMPORAL_ACTION_TELEMETRY_MAX=999999;
 const TEMPORAL_ACTION_SOURCES=Object.freeze({
   PLAYER:'player',ECHO:'echo',REPLAY:'temporalReplay',PROC:'proc',ENVIRONMENT:'environment'
@@ -36916,9 +36965,13 @@ let temporalAction=null;
 let temporalActionSeq=0;
 let temporalActionLastState=null;
 let temporalActionTelemetry=null;
+let temporalReplayCooldown=0;
+let temporalReplayFxT=0,temporalReplayFxX=0,temporalReplayFxY=0;
 
 function temporalActionTelemetryFresh(){
-  return {recorded:0,replaced:0,expired:0,rejected:0,lastWeaponId:null};
+  return {recorded:0,replaced:0,expired:0,rejected:0,used:0,invalidUse:0,
+    hits:0,kills:0,misses:0,maxTemporalProjectilesSeen:0,
+    lastWeaponId:null,lastUsedWeaponId:null};
 }
 function temporalActionTelemetryInc(key){
   const t=temporalActionTelemetry||(temporalActionTelemetry=temporalActionTelemetryFresh());
@@ -36943,7 +36996,8 @@ function temporalActionPayload(src,def,mul){
     projectileSpeed:Math.max(0,finite(def.speed,0)*Math.max(0,finite(src.projSpdMul,1))),
     range:Math.max(0,finite(def.range,finite(def.speed,0)*finite(def.life,0))*srcRangeMul(src,'ranged')),
     spread:finite(def.spread,0),
-    projectileRadius:Math.max(0,finite(def.pr,0))
+    projectileRadius:Math.max(0,finite(def.pr,0)),
+    pierce:clamp(Math.round(finite(def.pierce,0)+finite(src.pierce,0)),0,4)
   };
 }
 /* Chamado uma vez por fireWeaponFrom. Rejeições não alocam. Captura aceita
@@ -36994,6 +37048,94 @@ function temporalActionReset(){
   temporalActionLastState=null;temporalActionTelemetry=temporalActionTelemetryFresh();
   return true;
 }
+function isTemporalDamageSource(source){
+  return source===TEMPORAL_ACTION_SOURCES.REPLAY;
+}
+function temporalReplayHasLiveProjectiles(){
+  for(let i=0;i<projectiles.length;i++)if(projectiles[i].temporalReplay)return true;
+  return false;
+}
+function temporalReplayTick(dt){
+  if(temporalReplayCooldown>0)
+    temporalReplayCooldown=Math.max(0,temporalReplayCooldown-(Number.isFinite(dt)&&dt>0?dt:0));
+  if(temporalReplayFxT>0)temporalReplayFxT=Math.max(0,temporalReplayFxT-(Number.isFinite(dt)&&dt>0?dt:0));
+}
+/* Consome antes de despachar: mesmo uma exceção futura não pode reutilizar a
+   ação. O gate é chamado apenas por borda de R/R3 ou por fixture DEV. */
+function temporalReplayTry(inputSource){
+  temporalActionTick(runTime);
+  const a=temporalAction;
+  if(state!=='play'||!player||player.hp<=0||devPanelOpen||sheetOpen||
+     (codexEl&&codexEl.classList.contains('on'))||!a||a.state!=='armed'||
+     temporalReplayCooldown>0||temporalReplayHasLiveProjectiles()){
+    temporalActionTelemetryInc('invalidUse');return 0;
+  }
+  a.state='consumed';temporalActionLastState='consumed';temporalAction=null;
+  temporalReplayCooldown=TEMPORAL_REPLAY_COOLDOWN;
+  temporalActionTelemetryInc('used');
+  temporalActionTelemetry.lastUsedWeaponId=a.weaponId;
+  const count=replayTemporalAction(a);
+  temporalReplayFxT=.28;temporalReplayFxX=a.x;temporalReplayFxY=a.y;
+  spawnRing(a.x,a.y,'#46e0ff',5,54,.28);
+  spawnParticles(a.x,a.y,'#ff4df0',5,120,.22,2);
+  rumble(.12,.28,80);
+  return count;
+}
+/* Dispatcher fechado: não consulta player, WEAPONS, build, itemState ou RNG.
+   O spread do Shotgun é determinístico e deriva exclusivamente do payload. */
+function replayTemporalAction(a){
+  if(!a||!TEMPORAL_ACTION_WEAPONS[a.weaponId]||!a.payload)return 0;
+  const p=a.payload;
+  const requested=a.weaponId==='shotgun'?p.projectileCount:1;
+  const count=clamp(Math.round(finiteTemporal(requested)),1,MAX_TEMPORAL_PROJECTILES);
+  const speed=Math.max(1,finiteTemporal(p.projectileSpeed));
+  const range=Math.max(1,finiteTemporal(p.range));
+  const radius=clamp(finiteTemporal(p.projectileRadius),1,12);
+  const spread=finiteTemporal(p.spread);
+  const color=a.weaponId==='shotgun'?'#ff4df0':'#46e0ff';
+  for(let i=0;i<count;i++){
+    const off=count>1?((i/(count-1))-.5)*spread:0;
+    const ang=finiteTemporal(a.angle)+off;
+    projectiles.push({x:finiteTemporal(a.x),y:finiteTemporal(a.y),
+      vx:Math.cos(ang)*speed,vy:Math.sin(ang)*speed,r:radius,
+      dmg:Math.max(0,finiteTemporal(p.damage))*TEMPORAL_REPLAY_DAMAGE,
+      life:Math.max(.05,range/speed),type:a.weaponId,team:'ally',
+      color:color,aoe:0,pierce:a.weaponId==='rail'?clamp(p.pierce|0,1,4):0,
+      crit:false,hits:null,owner:null,def:null,dist:0,maxDist:range,
+      source:TEMPORAL_ACTION_SOURCES.REPLAY,temporalReplay:true,
+      temporalReplayId:a.id,temporalHit:false});
+  }
+  temporalActionTelemetry.maxTemporalProjectilesSeen=Math.max(
+    temporalActionTelemetry.maxTemporalProjectilesSeen,count);
+  return count;
+}
+function temporalReplayReset(reason){
+  temporalActionReset();temporalReplayCooldown=0;temporalReplayFxT=0;
+  temporalActionLastState=reason?String(reason).slice(0,16):null;
+  return true;
+}
+/* Marcador único e barato: anel de expiração + traço de direção. */
+function drawTemporalActionMarker(){
+  const a=temporalAction;
+  if(a&&a.state==='armed'){
+    const k=clamp((a.expiresAt-runTime)/TEMPORAL_ACTION_WINDOW,0,1);
+    if(k>0&&inView(a.x,a.y,44)){
+      ctx.save();ctx.globalAlpha=.24+.62*k;ctx.shadowBlur=0;
+      ctx.strokeStyle='#46e0ff';ctx.lineWidth=1.5;
+      ctx.beginPath();ctx.arc(a.x,a.y,17,-Math.PI/2,-Math.PI/2+TAU*k);ctx.stroke();
+      ctx.strokeStyle='#ff4df0';ctx.lineWidth=2;
+      ctx.beginPath();ctx.moveTo(a.x,a.y);
+      ctx.lineTo(a.x+Math.cos(a.angle)*31,a.y+Math.sin(a.angle)*31);ctx.stroke();
+      ctx.restore();
+    }
+  }
+  if(temporalReplayFxT>0&&inView(temporalReplayFxX,temporalReplayFxY,70)){
+    const k=temporalReplayFxT/.28;
+    ctx.save();ctx.globalAlpha=k*.55;ctx.shadowBlur=0;ctx.strokeStyle='#eaffff';
+    ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(temporalReplayFxX,temporalReplayFxY,
+      18+(1-k)*34,0,TAU);ctx.stroke();ctx.restore();
+  }
+}
 /* Snapshot de inspeção: cria cópia somente sob chamada explícita. Nunca é
    incluído em smBuildCheckpoint e não é persistido entre runs. */
 function temporalActionInspect(){
@@ -37001,12 +37143,18 @@ function temporalActionInspect(){
   return {active:!!(a&&a.state==='armed'),id:a?a.id:0,
     weaponId:a?a.weaponId:null,state:a?a.state:temporalActionLastState,
     age:a?Math.max(0,now-a.t):0,expiresIn:a?Math.max(0,a.expiresAt-now):0,
+    cooldown:temporalReplayCooldown,
+    temporalProjectiles:projectiles.reduce((n,p)=>n+(p.temporalReplay?1:0),0),
     telemetry:Object.assign({},temporalActionTelemetry||temporalActionTelemetryFresh())};
 }
 /* DEV/Sandbox: somente leitura, sem botão e sem caminho de replay. */
 DEV.temporalActionState=function(){
   if(!DEV_MODE&&!sandboxRun)return null;
   return temporalActionInspect();
+};
+DEV.temporalReplayCooldownZero=function(){
+  if(!DEV_MODE&&!sandboxRun)return false;
+  temporalReplayCooldown=0;return true;
 };
 
 /* =====================================================================

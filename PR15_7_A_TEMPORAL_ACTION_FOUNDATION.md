@@ -238,7 +238,7 @@ Não existe histórico. Contadores numéricos são saturados em `TEMPORAL_ACTION
 - nenhum loop novo sobre inimigos, projéteis ou armas;
 - nenhum array histórico;
 - nenhum Canvas, path, blur, partícula ou entidade;
-- payload com seis escalares;
+- payload com sete escalares após a extensão bounded de `pierce` no PR15.7-B;
 - inspeção aloca cópia apenas sob chamada explícita.
 
 ## 23. Testes
@@ -249,7 +249,7 @@ Suíte dedicada:
 tests/pr15-7-a-temporal-action-foundation.test.js
 ```
 
-Contém 52 verificações declaradas cobrindo whitelist, integração real em `fireWeaponFrom`, source contract, payload, substituição, sequência, expiração, cleanup, checkpoint, Continue, ausência de dano/projétil/proc e ausência de input/replay.
+Contém 52 verificações declaradas cobrindo whitelist, integração real em `fireWeaponFrom`, source contract, payload, substituição, sequência, expiração, cleanup, checkpoint, Continue e isolamento da captura. Input e replay foram adicionados posteriormente pelo PR15.7-B sem entrar no caminho de captura.
 
 ## 24. Regressão
 
