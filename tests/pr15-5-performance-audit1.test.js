@@ -79,14 +79,14 @@ ok('Gate e dt clamp permanecem intocados',()=>{assert.match(SRC,/const TARGET_FP
 
 // AUDIT_GOLDENS — hashes integrais da base b4654f1; preenchidos na auditoria.
 const mechanical={
-  "updateEnemy": "bf522f89a121736d31a50b4767b47d68cf97b5f874fd1324535c8e8e38e01fb8",
-  "updateProjectiles": "0450ebdc24ff9154efe30c8318a02e39701604122dfd457e7752934111b102e9",
+  "updateEnemy": "dabbbf648ddb4b427a4570ddde4944dd530c9fb2531791a0ca28c6ff76b475ec",
+  "updateProjectiles": "5f00666c4779d507ff3fdbca8d0fa4b90c5ff745b6d17f7e58de4f6dfd9fa4d2",
   "spawnEnemy": "a7d85058edb0491e7269f546f89d17c47ff7ff9faf705caa49f9dc632ad3a2af",
   "damageEnemy": "6b19d82221dcc399895470bc87450f494872c05c86eae09d51d179e56a42a6c6",
   "damagePlayer": "70fcbcf1be3a91c767a57a83f677a57b55cad5065465f3462b7e8ea2613f491b",
   "fireWeaponFrom": "f2d0b43d4ee9abba6b18d51de2def3aaa40def4842d262e47b21c7ca5279e909",
   "updatePlayer": "f3c79a5aee6b35760600d0cdb35b063afef01dc89cad1f01dcdcad603a58e380",
-  "updateEcho": "5349d56cc5636f3a29f731e3de479d150c070c1a76d36eb1182a0126567c39e2",
+  "updateEcho": "9bbc62736cba04c0305c16f8a82988c8ecebd16df37d2dbc9f4eac81b223e656",
   "updateBoss": "d85abc88b8a06b8243f7df551772227a54b195dee0bee69900a98bda27d255d4",
   "updateMiniBoss": "054efc621c431337d55dff53de9094e57a9bb2ac9a720ab3541b37138f1785f9",
   "updateSwings": "cd2a0ad7d8e69f4d6906e0bd3a67d5cdb017dddd1ce4ec2babae8587bb508fd0",

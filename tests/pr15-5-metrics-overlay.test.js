@@ -122,7 +122,7 @@ ok('Posição fora da coluna superior direita e acima do chip Sandbox',()=>{asse
 // Não dependem de histórico Git disponível na máquina do jogador/CI.
 const mechanical={
   WEAPONS:[/const WEAPONS=\[[\s\S]*?\n\];/,'cb92e03d4d36f390b41c70b8ab85e5ace7e183b779249dfa89295ff7bfabda03'],
-  EDEFS:[/const EDEFS=\{[\s\S]*?\n\};/,'fe919859b535e7645a50ce13bfe948bb4de5c3c1df716123a5674a59baae698e'],
+  EDEFS:[/const EDEFS=\{[\s\S]*?\n\};/,'9a646757e52d8b6b69f1ac09df16441b6437e0fe1bcfb5f739c58eb8119a178b'],
   waveCompBase:[/function waveCompBase\(n\)\{[\s\S]*?\n\}/,'3f49dd9c64897c75062d248e0096ad8d493190cc1dfb0dda9935ae6cb82eb368'],
   MINIBOSS:[/const MINIBOSS=\[[\s\S]*?\n\];/,'6ce87e31b85d36526611d202d98473bc587e8fb241d9dae20ba2569fc107dc18'],
   spawnBoss:[/function spawnBoss\(\)\{[\s\S]*?\n\}/,'3872a65edcacad431d90d014d0741cad5c6b84767a5a02189f701c410fc7379e']

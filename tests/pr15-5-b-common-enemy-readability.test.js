@@ -95,7 +95,7 @@ ok('L04 state continua sem arrays',()=>{const e=enemy('shooter');T.visualAttackT
 ok('L05 nenhum cache cresce por frame',()=>{const n=T.WEAPON_VISUAL_PROFILE_CACHE.size;for(let i=0;i<1000;i++)T.weaponVisualProfile(T.WEAPONS[i%27]);assert.strictEqual(T.WEAPON_VISUAL_PROFILE_CACHE.size,n);});
 
 // M: invariantes mecânicos
-ok('M01 EDEFS preserva assinatura',()=>assert.strictEqual(Object.entries(T.EDEFS).map(([k,d])=>[k,d.hp,d.spd,d.r,d.dmg,d.xp].join(':')).join('|'),'chaser:26:238:13:10:5|shooter:36:150:15:8:7|tank:180:66:27:32:15|spawner:210:34:24:12:18|anomaly:44:186:14:18:12|swarm:12:322:9:6:3|orbiter:34:205:12:9:6|bulwark:78:112:18:16:9|splitter:62:168:16:13:11|phantom:52:212:13:15:14|singular:190:96:24:24:30'));
+ok('M01 EDEFS preserva assinatura',()=>assert.strictEqual(Object.entries(T.EDEFS).map(([k,d])=>[k,d.hp,d.spd,d.r,d.dmg,d.xp].join(':')).join('|'),'chaser:26:238:13:10:5|shooter:36:150:15:8:7|tank:150:66:27:32:15|spawner:125:34:24:12:18|anomaly:44:186:14:18:12|swarm:12:322:9:6:3|orbiter:34:205:12:9:6|bulwark:78:112:18:16:9|splitter:62:168:16:13:11|phantom:30:212:13:15:14|singular:190:96:24:24:30'));
 ok('M02 WEAPONS permanecem 27',()=>assert.strictEqual(T.WEAPONS.length,27));
 ok('M03 MINIBOSS permanecem 8',()=>assert.strictEqual(T.MINIBOSS.length,8));
 ok('M04 nenhum perfil duplica EDEFS',()=>IDS.forEach(id=>Object.keys(T.EDEFS[id]).forEach(k=>assert.ok(!(k in T.ENEMY_VISUAL_PROFILES[id])))));

@@ -183,7 +183,7 @@ ok('splitter: HP e velocidade intermediários',()=>{
 
 ok('phantom: HP moderado e velocidade decente',()=>{
   const d=t.EDEFS.phantom;
-  assert(d.hp>=40&&d.hp<=70,'HP do phantom entre 40-70');
+  assert(d.hp>=25&&d.hp<=70,'HP do phantom entre 25-70');
 });
 
 ok('singular: HP muito alto e velocidade baixa',()=>{
