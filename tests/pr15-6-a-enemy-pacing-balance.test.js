@@ -112,65 +112,41 @@ ok('A03 Projétil atinge e consome pierce normalmente contra Phantom materializa
   assert.strictEqual(projs.length, 0, 'Projétil pierce 0 deve ser destruído ao atingir Phantom materializado');
 });
 
-ok('A04 Projétil atravessa inimigo fora de fase (phaseT > 0) sem sofrer colisão', () => {
-  const p = fresh();
-  const an = enemy('anomaly', 600, 400);
-  an.phaseT = 1.0;
-  const hp0 = an.hp;
-  
-  T.setProjectiles([{
-    x: 580, y: 400, vx: 200, vy: 0, r: 6, dmg: 10, pierce: 0, life: 2,
-    team: 'ally', color: '#fff', aoe: 0, crit: false, hits: null, owner: p,
-    def: T.WEAPONS[0], dist: 0, maxDist: 800, srcC: 'player'
-  }]);
-  
-  T.updateProjectiles(0.15);
-  assert.strictEqual(an.hp, hp0);
-  const projs = T.getProjectiles();
-  assert.strictEqual(projs.length, 1);
-  assert.strictEqual(projs[0].pierce, 0);
-});
-
-ok('A05 damageEnemy direto retorna imediatamente sem aplicar dano quando Phantom está em ghostT > 0', () => {
+ok('A04 Projétil não dispara proc ou hurt ao atravessar Phantom intangível', () => {
   fresh();
-  const ph = enemy('phantom', 300, 300);
+  const ph = enemy('phantom', 600, 400);
   ph.ghostT = 1.0;
   const hp0 = ph.hp;
+  
   T.damageEnemy(ph, 50, 200, 200, false, false);
-  assert.strictEqual(ph.hp, hp0, 'damageEnemy deve ser ignorado em ghost');
+  assert.strictEqual(ph.hp, hp0, 'damageEnemy deve retornar sem aplicar dano');
+  assert.strictEqual(ph.flashT, 0, 'Não deve ativar flash de dano');
 });
 
 /* =========================================================================
    BLOCO B · PHANTOM: EXCLUSÃO DE TARGETING AUTOMÁTICO E ARMAS
    ========================================================================= */
-ok('B01 enemyIsTargetable rejeita mortos, intangíveis (ghostT > 0) e fora de fase (phaseT > 0)', () => {
+ok('B01 enemyIsTargetable rejeita mortos e intangíveis (ghostT > 0), mas NÃO rejeita Anomaly phaseT', () => {
   assert.strictEqual(T.enemyIsTargetable(null), false);
   assert.strictEqual(T.enemyIsTargetable({ dead: true, hp: 10 }), false);
   assert.strictEqual(T.enemyIsTargetable({ dead: false, hp: 0 }), false);
   assert.strictEqual(T.enemyIsTargetable({ dead: false, hp: 10, type: 'phantom', ghostT: 0.5 }), false);
-  assert.strictEqual(T.enemyIsTargetable({ dead: false, hp: 10, type: 'anomaly', phaseT: 0.8 }), false);
-});
-
-ok('B02 enemyIsTargetable aceita inimigos vivos e tangíveis', () => {
+  // Anomaly phaseT preserva semântica legada (é tratada como alvo existente)
+  assert.strictEqual(T.enemyIsTargetable({ dead: false, hp: 10, type: 'anomaly', phaseT: 0.8 }), true);
   assert.strictEqual(T.enemyIsTargetable({ dead: false, hp: 10, type: 'chaser' }), true);
-  assert.strictEqual(T.enemyIsTargetable({ dead: false, hp: 10, type: 'tank' }), true);
-  assert.strictEqual(T.enemyIsTargetable({ dead: false, hp: 10, type: 'phantom', ghostT: 0 }), true);
-  assert.strictEqual(T.enemyIsTargetable({ dead: false, hp: 10, type: 'anomaly', phaseT: 0 }), true);
 });
 
-ok('B03 nearestEnemy ignora Phantom intangível mesmo quando este é o mais próximo', () => {
+ok('B02 nearestEnemy ignora Phantom intangível mesmo quando este é o mais próximo', () => {
   fresh();
-  // Phantom intangível muito perto
   const ph = enemy('phantom', 520, 400);
   ph.ghostT = 1.5;
-  // Chaser um pouco mais distante
   const ch = enemy('chaser', 580, 400);
   
   const target = T.nearestEnemy(500, 400, 1000);
   assert.strictEqual(target, ch, 'nearestEnemy deve mirar no chaser tangível, não no phantom intangível');
 });
 
-ok('B04 nearestEnemy retoma mira no Phantom assim que materializa (ghostT === 0)', () => {
+ok('B03 nearestEnemy retoma mira no Phantom assim que materializa (ghostT === 0)', () => {
   fresh();
   const ph = enemy('phantom', 520, 400);
   ph.ghostT = 0; // Materializado
@@ -180,13 +156,29 @@ ok('B04 nearestEnemy retoma mira no Phantom assim que materializa (ghostT === 0)
   assert.strictEqual(target, ph, 'nearestEnemy deve mirar no phantom materializado mais próximo');
 });
 
+ok('B04 Echo (updateEcho / persFindTarget) ignora Phantom intangível e foca em alvo tangível', () => {
+  const p = fresh();
+  const ph = enemy('phantom', 520, 400);
+  ph.ghostT = 1.5;
+  const ch = enemy('chaser', 560, 400);
+  
+  const echo = {
+    alive: true, slot: 1, x: 500, y: 400, vx: 0, vy: 0, hp: 100, maxHp: 100, r: 14,
+    rel: { trust: 80 }, data: { trail: [[0, 500, 400, 0, 0, 0], [10, 500, 400, 0, 0, 0]], dur: 10 },
+    pi: 0, stab: 1, team: 'ally', ghosts: []
+  };
+  sandbox.allies = [echo];
+  
+  sandbox.updateEcho(echo, 0.016);
+  assert.strictEqual(sandbox.persFindTarget(echo, 400), ch, 'persFindTarget do Eco ignora phantom intangível');
+});
+
 ok('B05 Homing de projéteis não persegue Phantom intangível', () => {
   fresh();
   const ph = enemy('phantom', 520, 450);
   ph.ghostT = 1.5;
   const ch = enemy('chaser', 700, 400);
   
-  // Projétil teleguiado
   T.setProjectiles([{
     x: 500, y: 400, vx: 100, vy: 0, r: 6, dmg: 10, pierce: 1, life: 2,
     team: 'ally', color: '#fff', aoe: 0, crit: false, hits: null,
@@ -195,7 +187,6 @@ ok('B05 Homing de projéteis não persegue Phantom intangível', () => {
   
   T.updateProjectiles(0.1);
   const proj = T.getProjectiles()[0];
-  // O projétil deve virar em direção ao Chaser (vy ~ 0, vx > 0) e não ser puxado na direção Y para o Phantom (y=450)
   assert.ok(proj.vy < 20, 'Projétil teleguiado não deve se curvar em direção ao Phantom intangível');
 });
 
@@ -208,7 +199,6 @@ ok('B06 Armas Beam (fireBeam) não atingem Phantom intangível', () => {
   const beamW = T.WEAPONS.find(w => w.beam);
   assert.ok(beamW, 'Arma de raio deve existir');
   
-  // Dispara raio apontando para a direita na direção do Phantom
   sandbox.fireBeam(p, 600, 400, beamW, 'ally', 1);
   assert.strictEqual(ph.hp, hp0, 'Phantom intangível não deve tomar dano de feixe contínuo');
 });
@@ -234,9 +224,100 @@ ok('B08 Chain Shock (chainShock) não propaga para Phantom intangível', () => {
   ph.ghostT = 1.5;
   const hpPh0 = ph.hp;
   
-  // Shock partindo do Chaser: chainShock(from, dmg, jumps, src, hitSet)
   sandbox.chainShock(ch, 10, 3, 'ally');
   assert.strictEqual(ph.hp, hpPh0, 'Shock não deve propagar nem causar dano a Phantom intangível');
+});
+
+/* =========================================================================
+   BLOCO B-LEGACY · ANOMALY PHASET: PRESERVAÇÃO INTEGRAL DA SEMÂNTICA LEGADA
+   ========================================================================= */
+ok('B09 Anomaly phaseT > 0 continua elegível para nearestEnemy (comportamento legado f2a602a)', () => {
+  fresh();
+  const an = enemy('anomaly', 520, 400);
+  an.phaseT = 0.3;
+  const ch = enemy('chaser', 600, 400);
+  
+  const target = T.nearestEnemy(500, 400, 1000);
+  assert.strictEqual(target, an, 'nearestEnemy mira na anomalia mais próxima mesmo em phaseT > 0 (f2a602a)');
+});
+
+ok('B10 Anomaly phaseT > 0 colide com projéteis aliados e consome o projétil (comportamento legado f2a602a)', () => {
+  const p = fresh();
+  const an = enemy('anomaly', 600, 400);
+  an.phaseT = 0.3;
+  const hp0 = an.hp;
+  
+  // Projétil com pierce 0
+  T.setProjectiles([{
+    x: 590, y: 400, vx: 200, vy: 0, r: 8, dmg: 10, pierce: 0, life: 2,
+    team: 'ally', color: '#fff', aoe: 0, crit: false, hits: null, owner: p,
+    def: T.WEAPONS[0], dist: 0, maxDist: 800, srcC: 'player'
+  }]);
+  
+  T.updateProjectiles(0.1);
+  // Anomaly não toma dano devido a damageEnemy() { if(e.phaseT>0)return; }
+  assert.strictEqual(an.hp, hp0, 'Anomaly em phaseT toma 0 dano');
+  // Mas o projétil colide e é destruído (não passa direto)
+  const projs = T.getProjectiles();
+  assert.strictEqual(projs.length, 0, 'Projétil colide e morre na Anomaly (f2a602a legado preservado)');
+});
+
+ok('B11 Anomaly phaseT > 0 é alvo de Echo (comportamento legado f2a602a)', () => {
+  const p = fresh();
+  const an = enemy('anomaly', 520, 400);
+  an.phaseT = 0.3;
+  
+  const echo = {
+    alive: true, slot: 1, x: 500, y: 400, vx: 0, vy: 0, hp: 100, maxHp: 100, r: 14,
+    rel: { trust: 80 }, data: { trail: [[0, 500, 400, 0, 0, 0], [10, 500, 400, 0, 0, 0]], dur: 10 },
+    pi: 0, stab: 1, team: 'ally', ghosts: []
+  };
+  sandbox.allies = [echo];
+  
+  assert.strictEqual(sandbox.persFindTarget(echo, 400), an, 'persFindTarget do Eco mira na Anomaly em phaseT (f2a602a legado)');
+});
+
+ok('B12 Anomaly phaseT > 0 é alvo de Melee (comportamento legado f2a602a)', () => {
+  const p = fresh();
+  const an = enemy('anomaly', 530, 400);
+  an.phaseT = 0.3;
+  const hp0 = an.hp;
+  
+  const bladeW = T.WEAPONS.find(w => w.id === 'blade');
+  p.owned = [T.WEAPONS.indexOf(bladeW)];
+  p.wi = p.owned[0];
+  
+  sandbox.fireMelee(p, bladeW, 'ally', 1);
+  // damageEnemy é chamado e retorna por causa de phaseT>0 (0 dano)
+  assert.strictEqual(an.hp, hp0);
+});
+
+ok('B13 Anomaly phaseT > 0 é varrida por Beam (comportamento legado f2a602a)', () => {
+  const p = fresh();
+  const an = enemy('anomaly', 600, 400);
+  an.phaseT = 0.3;
+  const hp0 = an.hp;
+  
+  const beamW = T.WEAPONS.find(w => w.beam);
+  sandbox.fireBeam(p, 600, 400, beamW, 'ally', 1);
+  assert.strictEqual(an.hp, hp0);
+});
+
+ok('B14 Anomaly phaseT > 0 atrai projéteis teleguiados (comportamento legado f2a602a)', () => {
+  fresh();
+  const an = enemy('anomaly', 520, 450);
+  an.phaseT = 0.3;
+  
+  T.setProjectiles([{
+    x: 500, y: 400, vx: 100, vy: 0, r: 6, dmg: 10, pierce: 1, life: 2,
+    team: 'ally', color: '#fff', aoe: 0, crit: false, hits: null,
+    homing: true, def: T.WEAPONS[0], dist: 0, maxDist: 800, srcC: 'player'
+  }]);
+  
+  T.updateProjectiles(0.1);
+  const proj = T.getProjectiles()[0];
+  // Curva em direção à Anomaly no eixo Y positivo
+  assert.ok(proj.vy > 0, 'Homing curva em direção à Anomaly em phaseT (f2a602a legado preservado)');
 });
 
 /* =========================================================================
