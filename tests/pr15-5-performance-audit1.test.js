@@ -80,7 +80,7 @@ ok('Gate e dt clamp permanecem intocados',()=>{assert.match(SRC,/const TARGET_FP
 // AUDIT_GOLDENS — hashes integrais da base b4654f1; preenchidos na auditoria.
 const mechanical={
   "updateEnemy": "dabbbf648ddb4b427a4570ddde4944dd530c9fb2531791a0ca28c6ff76b475ec",
-  "updateProjectiles": "5f00666c4779d507ff3fdbca8d0fa4b90c5ff745b6d17f7e58de4f6dfd9fa4d2",
+  "updateProjectiles": "c3dbcec7d8ae6c36b92c03162de97c60501f9d670d388a0b7a589bb0c8a16382",
   "spawnEnemy": "a7d85058edb0491e7269f546f89d17c47ff7ff9faf705caa49f9dc632ad3a2af",
   "damageEnemy": "6b19d82221dcc399895470bc87450f494872c05c86eae09d51d179e56a42a6c6",
   "damagePlayer": "70fcbcf1be3a91c767a57a83f677a57b55cad5065465f3462b7e8ea2613f491b",

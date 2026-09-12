@@ -4463,7 +4463,7 @@ function persBiasMul(bias,en,raw){
 }
 /* PR15.6-A: elegibilidade de alvo para sistemas automáticos ofensivos */
 function enemyIsTargetable(e){
-  return !!e && !e.dead && !(e.hp<=0) && !(e.spawnT>0) && !(e.type==='phantom'&&(e.ghostT||0)>0) && !(e.phaseT>0);
+  return !!e && !e.dead && !(e.hp<=0) && !(e.spawnT>0) && !(e.type==='phantom'&&(e.ghostT||0)>0);
 }
 function persFindTarget(e,range){
   const P=e.pers;
@@ -17711,7 +17711,6 @@ function updateProjectiles(dt){
       for(const e of enemies){
         if(e.spawnT>0||e.dead)continue;
         if(e.type==='phantom'&&(e.ghostT||0)>0)continue;
-        if(e.phaseT>0)continue;
         if(p.hits&&p.hits.indexOf(e)>=0)continue;
         const rr=e.r+p.r;
         if(dist2(p.x,p.y,e.x,e.y)<rr*rr){

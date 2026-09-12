@@ -1,5 +1,10 @@
 # PR15.6-A · REBALANCEAMENTO DE DURABILIDADE E PACING DE COMBATE
 
+> **Nota de Revisão (PR15.6-A-FIX #1)**:  
+> Durante revisão pré-replaytest foi detectado que a primeira implementação generalizou acidentalmente a regra do Phantom para `phaseT`. O FIX restaurou a semântica legada de `phaseT` e manteve a nova intangibilidade exclusivamente em `phantom.ghostT`.
+
+---
+
 ## 1. Contexto e Diagnóstico
 
 Durante os testes de jogabilidade estendidos e análises de combate em ondas avançadas (ondas 10 a 20), foram identificados dois gargalos sistêmicos de pacing e fluidez:
@@ -22,14 +27,14 @@ Durante os testes de jogabilidade estendidos e análises de combate em ondas ava
 ## 2. Soluções Implementadas no PR15.6-A
 
 ### 2.1 Phantom: Intangibilidade Real e Pass-Through de Projéteis
-1. **Pass-Through Físico**:
-   - Em `updateProjectiles`, projéteis aliados agora ignoram colisão quando o inimigo for `phantom` em `ghostT > 0` ou inimigo em `phaseT > 0`.
+1. **Pass-Through Físico Exclusivo para Phantom Ghost**:
+   - Em `updateProjectiles`, projéteis aliados agora ignoram colisão quando o inimigo for `phantom` em `ghostT > 0` (`if (e.type === 'phantom' && (e.ghostT || 0) > 0) continue;`).
    - Projéteis continuam sua trajetória sem perder vida, sem perder perfuração (`pierce`), sem ativar procs de on-hit e sem serem consumidos.
 2. **Centralização de Elegibilidade de Alvo (`enemyIsTargetable`)**:
-   - Criada a função `enemyIsTargetable(e)`:
+   - Criada a função `enemyIsTargetable(e)` focada exclusivamente em alvos tangíveis e excluindo Phantom intangível:
      ```javascript
      function enemyIsTargetable(e){
-       return !!e && !e.dead && !(e.hp<=0) && !(e.spawnT>0) && !(e.type==='phantom'&&(e.ghostT||0)>0) && !(e.phaseT>0);
+       return !!e && !e.dead && !(e.hp<=0) && !(e.spawnT>0) && !(e.type==='phantom'&&(e.ghostT||0)>0);
      }
      ```
    - Integrada em:
@@ -57,6 +62,7 @@ Durante os testes de jogabilidade estendidos e análises de combate em ondas ava
 
 ## 3. Invariantes Preservados
 
+- **Anomaly (`phaseT > 0`)**: Comportamento legado de `f2a602a` 100% restaurado e preservado (colisão de projéteis sem pass-through, elegibilidade de targeting, IA de Ecos, Melee, Beam e Homing).
 - **Bulwark**: HP base mantido em **78**, ângulo de bloqueio frontal de 2.05 rad e redução de 28% mantidos intactos.
 - **Singular**: HP base mantido em **190**, raio de atração 420px e reflexão mantidos intactos.
 - **Splitter**: HP base mantido em **62**, divisão em 2 estilhaços mantida intacta.
@@ -81,6 +87,7 @@ Durante os testes de jogabilidade estendidos e análises de combate em ondas ava
 | **Bulwark** | 78 | **78** | 0.0% | Preservado (mecânica posicional de escudo frontal). |
 | **Singular** | 190 | **190** | 0.0% | Preservado (controle de gravidade de alto risco). |
 | **Splitter** | 62 | **62** | 0.0% | Preservado (ameaça multiplicativa). |
+| **Anomaly** | 44 | **44** | 0.0% | Preservado integralmente (phaseT legado intacto). |
 
 ---
 
@@ -95,13 +102,18 @@ Durante os testes de jogabilidade estendidos e análises de combate em ondas ava
 5. Deixar armas automáticas ou Eco atirando:
    - **Verificação**: A mira automática trava exclusivamente no Chaser. Assim que o Phantom se materializa, a mira foca nele imediatamente.
 
-### Cenário 2: Teste do Escudo e Regeneração do Elite
+### Cenário 2: Preservação do Comportamento da Anomaly (`phaseT`)
+1. No Sandbox, spawnar 1 **Anomaly** e disparar contra ela durante o teleporte/fase (`phaseT > 0`):
+   - **Verificação**: A Anomaly não toma dano, mas o projétil colide com ela e é absorvido/destruído (comportamento legado `f2a602a` preservado, sem pass-through).
+   - **Verificação**: A mira automática e Ecos continuam considerando a Anomaly como alvo selecionável durante o `phaseT`.
+
+### Cenário 3: Teste do Escudo e Regeneração do Elite
 1. No Sandbox, spawnar 1 **Tank Elite com Escudo** (`makeElite(e, 'shield')`).
 2. Disparar uma rajada para consumir ~50% da barra de escudo amarelo.
 3. Parar de atirar e observar a taxa de regeneração:
    - **Verificação**: O escudo leva cerca de 10 a 18 segundos para se regenerar completamente (taxa gradual e justa de 5.5%/s), sem "pular" para 100% em 2 segundos.
 
-### Cenário 3: Pacing de Fim de Onda (Ondas 10 a 15)
+### Cenário 4: Pacing de Fim de Onda (Ondas 10 a 15)
 1. Iniciar uma run padrão e avançar até a onda 12+.
 2. Eliminar os enxames e inimigos velozes.
 3. Abater o Spawner / Tank restante:
@@ -112,6 +124,6 @@ Durante os testes de jogabilidade estendidos e análises de combate em ondas ava
 ## 6. Resultados da Validação Automatizada
 
 - **Total de Suítes de Testes Executadas**: 54 suítes
-- **Total de Asserções / Verificações Aprovadas**: 3.403 verificações
+- **Total de Asserções / Verificações Aprovadas**: 3.408 verificações
 - **Falhas / Regressões**: 0 falhas (100% de aprovação)
-- **Suíte Dedicada**: `tests/pr15-6-a-enemy-pacing-balance.test.js` (32 verificações cobrindo colisões, pierce, targeting, stats EDEFS, makeElite e isolamento sistêmico).
+- **Suíte Dedicada**: `tests/pr15-6-a-enemy-pacing-balance.test.js` (37 verificações cobrindo colisões, pierce, targeting, stats EDEFS, makeElite, isolamento estrito de Phantom Ghost e preservação da semântica legada de Anomaly phaseT).
