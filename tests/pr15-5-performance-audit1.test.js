@@ -84,8 +84,10 @@ const mechanical={
   "spawnEnemy": "a7d85058edb0491e7269f546f89d17c47ff7ff9faf705caa49f9dc632ad3a2af",
   "damageEnemy": "6b19d82221dcc399895470bc87450f494872c05c86eae09d51d179e56a42a6c6",
   "damagePlayer": "70fcbcf1be3a91c767a57a83f677a57b55cad5065465f3462b7e8ea2613f491b",
-  "fireWeaponFrom": "f2d0b43d4ee9abba6b18d51de2def3aaa40def4842d262e47b21c7ca5279e909",
-  "updatePlayer": "f3c79a5aee6b35760600d0cdb35b063afef01dc89cad1f01dcdcad603a58e380",
+  /* PR15.7-A: re-baselineados apenas para o hook semântico de captura e
+     o tick O(1) de expiração; a suíte temporal prova zero replay/dano. */
+  "fireWeaponFrom": "46e74865169416e8d35743221667ef0ea9e27a271d2df4fe8e65fc1074d7d5f9",
+  "updatePlayer": "bdbe526ccb3e05ae63401ca014c324848b3e7f3d78f1e0429cba5b98c58bf6ed",
   "updateEcho": "9bbc62736cba04c0305c16f8a82988c8ecebd16df37d2dbc9f4eac81b223e656",
   "updateBoss": "d85abc88b8a06b8243f7df551772227a54b195dee0bee69900a98bda27d255d4",
   "updateMiniBoss": "054efc621c431337d55dff53de9094e57a9bb2ac9a720ab3541b37138f1785f9",

@@ -14295,7 +14295,12 @@ function fireBeam(src,def,team,mul,dt){
     }
   }
 }
-function fireWeaponFrom(src,def,team,mul){
+function fireWeaponFrom(src,def,team,mul,actionSource){
+  /* PR15.7-A: captura semântica acontece no evento REAL de disparo. O
+     quinto argumento é o contrato mínimo de origem: apenas 'player',
+     informado pelo disparo primário, pode armar uma ação. Echo, proc e o
+     futuro temporalReplay passam por este mesmo gate e são rejeitados. */
+  temporalActionCapture(src,def,team,mul,actionSource);
   visualNotifyWeaponFire(src); // PR15.5-A-FIX #1: evento sem alocação por disparo
   // SOBRECARGA RESSONANTE: Ecos turbinados temporariamente
   if(src&&src.spBoost&&src.spBoost>1)mul*=src.spBoost;
@@ -16408,6 +16413,8 @@ function mbPolyAt(x,y,n,R,rot){
   ctx.closePath();
 }
 function spawnWave(n){
+  /* PR15.7-A: uma ação armada nunca atravessa a fronteira de onda. */
+  temporalActionClear('wave');
   waveCleared=false;
   /* PR 10.5: acontecimento de arena da onda anterior sempre termina aqui
      (cleanup total: timers/entidades/marcadores — nada atravessa ondas) */
@@ -17286,6 +17293,7 @@ function updateEcho(e,dt){
 /* ---------------- atualização principal ---------------- */
 function updatePlayer(dt){
   const p=player;
+  temporalActionTick(runTime);             // PR15.7-A: expiração O(1), sem alocação
   visualTimelineTick(p,dt);
   let ix=0,iy=0;
   if(keys['KeyW']||keys['ArrowUp'])iy-=1;
@@ -17426,9 +17434,9 @@ function updatePlayer(dt){
   if(firing&&p.fireTimer<=0){
     // PR 7: multiplicador de dano centralizado (base + modificadores + condicionais)
     let mul=calcDamageMul(p)*mEff.dmgMul;
-    fireWeaponFrom(p,wdef,'ally',mul);
+    fireWeaponFrom(p,wdef,'ally',mul,'player');
     if(p.doubleTap&&Math.random()<p.doubleTap)           // PRISMA FRATURADO
-      fireWeaponFrom(p,wdef,'ally',mul);
+      fireWeaponFrom(p,wdef,'ally',mul,'proc');
     const spinM=wdef.spinUp?(1+1.2*p.spin):1;
     p.fireTimer=wdef.interval/(p.fireRateMul*spinM);
   }
@@ -18054,6 +18062,7 @@ function resolveEnding(){
 
 function onVictory(){
   if(state==='victory')return;
+  temporalActionClear('victory');
   clearBossVictoryTimers();
   /* PR 11.5 §90: vitória no laboratório NÃO registra final/variante/memória. */
   if(sandboxRun){sandboxVictory();return;}
@@ -18993,6 +19002,7 @@ function resumeRun(){
 /* ---------------- ciclo de morte ---------------- */
 function onPlayerDeath(){
   if(state!=='play')return;
+  temporalActionClear('death');
   /* PR 11.5 §89: morte no laboratório NÃO cria Echo e NÃO grava nada. */
   if(sandboxRun){sandboxDeath();return;}
   // ---- PROGRESSÃO: fecha a run ----
@@ -19097,6 +19107,7 @@ function hideOverlay(){
    resetRunWorld: parte comum (limpeza total do mundo) usada por
    startRun (run nova) e resumeRun (continuar um checkpoint). */
 function resetRunWorld(){
+  temporalActionReset();                 // PR15.7-A: estado e telemetria são run-scoped
   metricsHide(); // mesma instância; nova janela em Nova Run/Continue/Sandbox
   clearBossVictoryTimers();
   if(sheetOpen)sheetHide();              // PR 11.5: ficha nunca atravessa runs
@@ -22286,6 +22297,7 @@ document.getElementById('p-abort').addEventListener('click',abortRun);
 /* ---- PR 7.5: limpeza comum de fim de partida (usada ao sair para menus) ---- */
 function clearRunEntities(){
   // 1. interrompe a partida e limpa TODAS as entidades ativas da run
+  temporalActionReset();
   clearBossVictoryTimers();
   releaseAllInput();
   enemies.length=0;
@@ -36883,6 +36895,119 @@ function pr15IntentKitBoot(){
 }
 /* ==================== PR15·fim b4 ==================== */
 
+/* =====================================================================
+   PR15.7-A — FUNDAÇÃO DA REPETIÇÃO ANCORADA
+   ---------------------------------------------------------------------
+   Contrato estritamente run-scoped para UMA ação ranged recente. Este
+   bloco somente captura, substitui, expira, limpa e expõe inspeção; não
+   registra input, não reproduz ataque, não cria projétil/dano/FX e não
+   conversa com Echo, Fracture Director, facções ou progressão.
+   ===================================================================== */
+const TEMPORAL_ACTION_WINDOW=5;
+const TEMPORAL_ACTION_TELEMETRY_MAX=999999;
+const TEMPORAL_ACTION_SOURCES=Object.freeze({
+  PLAYER:'player',ECHO:'echo',REPLAY:'temporalReplay',PROC:'proc',ENVIRONMENT:'environment'
+});
+/* Lookup O(1). IDs reais do catálogo WEAPONS; nomes de display não entram
+   no contrato persistível. */
+const TEMPORAL_ACTION_WEAPONS=Object.freeze({plasma:1,shotgun:1,rail:1,sniper:1});
+const TEMPORAL_ACTION_STATES=Object.freeze({armed:'armed',consumed:'consumed',expired:'expired'});
+let temporalAction=null;
+let temporalActionSeq=0;
+let temporalActionLastState=null;
+let temporalActionTelemetry=null;
+
+function temporalActionTelemetryFresh(){
+  return {recorded:0,replaced:0,expired:0,rejected:0,lastWeaponId:null};
+}
+function temporalActionTelemetryInc(key){
+  const t=temporalActionTelemetry||(temporalActionTelemetry=temporalActionTelemetryFresh());
+  t[key]=Math.min(TEMPORAL_ACTION_TELEMETRY_MAX,Math.max(0,(t[key]|0))+1);
+}
+/* Elegibilidade pura e O(1): exige origem explícita do disparo primário.
+   Não infere player a partir de owner/team, evitando que proc, Echo ou o
+   futuro replay sejam reclassificados acidentalmente. */
+function temporalActionEligible(src,def,team,source){
+  return !!(source===TEMPORAL_ACTION_SOURCES.PLAYER&&src&&src===player&&
+    def&&typeof def.id==='string'&&TEMPORAL_ACTION_WEAPONS[def.id]===1&&
+    team==='ally'&&!def.melee&&!def.beam);
+}
+/* Payload pequeno, plano e serializável. O dano é pré-crit e já incorpora
+   a build do instante da captura; PR15.7-B aplicará coeficiente próprio e
+   não recalculará stats futuros. Nenhuma referência viva é retida. */
+function temporalActionPayload(src,def,mul){
+  const finite=(v,d)=>Number.isFinite(+v)?+v:d;
+  return {
+    damage:Math.max(0,finite(def.dmg,0)*Math.max(0,finite(mul,1))),
+    projectileCount:clamp(Math.round(finite(def.count,1)),1,8),
+    projectileSpeed:Math.max(0,finite(def.speed,0)*Math.max(0,finite(src.projSpdMul,1))),
+    range:Math.max(0,finite(def.range,finite(def.speed,0)*finite(def.life,0))*srcRangeMul(src,'ranged')),
+    spread:finite(def.spread,0),
+    projectileRadius:Math.max(0,finite(def.pr,0))
+  };
+}
+/* Chamado uma vez por fireWeaponFrom. Rejeições não alocam. Captura aceita
+   substitui a anterior sem executá-la e mantém no máximo um objeto ativo. */
+function temporalActionCapture(src,def,team,mul,source){
+  if(!temporalActionEligible(src,def,team,source)){
+    temporalActionTelemetryInc('rejected');return null;
+  }
+  if(temporalAction&&temporalAction.state==='armed'){
+    temporalAction.state='expired';
+    temporalActionTelemetryInc('replaced');
+  }
+  const now=Number.isFinite(+runTime)?+runTime:0;
+  const id=++temporalActionSeq;
+  temporalAction={
+    id:id,t:now,expiresAt:now+TEMPORAL_ACTION_WINDOW,type:'shot',
+    weaponId:def.id,x:finiteTemporal(src.x),y:finiteTemporal(src.y),
+    angle:finiteTemporal(src.aim),payload:temporalActionPayload(src,def,mul),
+    state:'armed',source:TEMPORAL_ACTION_SOURCES.PLAYER
+  };
+  temporalActionLastState='armed';
+  temporalActionTelemetryInc('recorded');
+  temporalActionTelemetry.lastWeaponId=def.id;
+  return temporalAction;
+}
+function finiteTemporal(v){return Number.isFinite(+v)?+v:0;}
+/* Expiração determinística pelo relógio da run. A referência global é
+   removida no mesmo tick; o objeto retornado na captura conserva 'expired'
+   apenas para observabilidade/testes, nunca como entidade utilizável. */
+function temporalActionTick(now){
+  const a=temporalAction;
+  if(!a||a.state!=='armed')return false;
+  const t=Number.isFinite(+now)?+now:0;
+  if(t<a.expiresAt)return false;
+  a.state='expired';temporalActionLastState='expired';
+  temporalAction=null;temporalActionTelemetryInc('expired');
+  return true;
+}
+/* Wave/morte/vitória removem a ação sem efeito colateral. Cleanup não conta
+   como expiração natural e nunca executa a ação substituída. */
+function temporalActionClear(reason){
+  if(temporalAction){temporalAction.state='expired';temporalAction=null;}
+  temporalActionLastState=reason?String(reason).slice(0,16):null;
+  return true;
+}
+function temporalActionReset(){
+  temporalActionClear('reset');temporalActionSeq=0;
+  temporalActionLastState=null;temporalActionTelemetry=temporalActionTelemetryFresh();
+  return true;
+}
+/* Snapshot de inspeção: cria cópia somente sob chamada explícita. Nunca é
+   incluído em smBuildCheckpoint e não é persistido entre runs. */
+function temporalActionInspect(){
+  const a=temporalAction,now=Number.isFinite(+runTime)?+runTime:0;
+  return {active:!!(a&&a.state==='armed'),id:a?a.id:0,
+    weaponId:a?a.weaponId:null,state:a?a.state:temporalActionLastState,
+    age:a?Math.max(0,now-a.t):0,expiresIn:a?Math.max(0,a.expiresAt-now):0,
+    telemetry:Object.assign({},temporalActionTelemetry||temporalActionTelemetryFresh())};
+}
+/* DEV/Sandbox: somente leitura, sem botão e sem caminho de replay. */
+DEV.temporalActionState=function(){
+  if(!DEV_MODE&&!sandboxRun)return null;
+  return temporalActionInspect();
+};
 
 /* =====================================================================
    BOOT
