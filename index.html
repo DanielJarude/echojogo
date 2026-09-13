@@ -1414,6 +1414,14 @@ class AudioManager{
   echoShoot(){this.tone(rand(570,630),.05,'square',.011,-310);}
   echoShatter(){this.tone(700,.4,'square',.048,-610);this.tone(240,.5,'sawtooth',.048,-192);
     this.noise(.45,.05,1500,.6);}
+  /* PR15.7-C: ataque agudo + cópia defasada descendente. Curto, pontual e
+     sintetizado no mesmo barramento; mute, suspensão e budgets continuam
+     sendo respeitados por tone()/noise(). */
+  temporalReplay(){
+    this.tone(1480,.13,'triangle',.030,-760);
+    this.tone(980,.18,'sine',.022,-430,.035,18);
+    this.noise(.09,.010,3600,2.4,'highpass');
+  }
   ui(f){this.tone(f||560,.07,'square',.026,120);}
   /* --- chefe --- */
   bossRoar(){
@@ -34184,6 +34192,9 @@ const PR15_PRES_CFG={
 };
 /* duração total do ciclo — derivada, nunca digitada solta */
 const PR15_PRES_TOTAL=PR15_PRES_CFG.entryTime+PR15_PRES_CFG.activeTime+PR15_PRES_CFG.exitTime;
+/* PR15.7-C: resposta visual curta à manipulação do jogador atual. Não faz
+   parte do lifecycle mecânico e deliberadamente não entra no checkpoint. */
+const PR15_PRES_REPLAY_REACT_TIME=.36;
 /* fases do ciclo de vida (§5) */
 const PR15_PRES_PHASES={spawning:1,active:1,leaving:1,done:1};
 /* identidade cromática do ECHO: ciano = alinhado ao presente;
@@ -34389,6 +34400,7 @@ function pr15PresSpawn(enc,opts){
     orbit:((seed%3600)/3600)*TAU,
     dir:(seed&1)?1:-1,
     ghosts:[],ghostT:0,pUsed:0,
+    replayReactT:0,                    // PR15.7-C: somente visual, efêmero
     vis:pr15PresReadVisual(res.rec),
     fb:pos.fb|0,
     dev:!!opts.dev,
@@ -34422,6 +34434,7 @@ function pr15PresUpdate(dt){
   if(!p)return null;
   const C=PR15_PRES_CFG;
   const d=Number.isFinite(+dt)?clamp(+dt,0,0.25):0;
+  if(p.replayReactT>0)p.replayReactT=Math.max(0,p.replayReactT-d);
   p.age=clamp((Number.isFinite(p.age)?p.age:0)+d,0,PR15_PRES_TOTAL);
   p.ttl=Math.max(0,PR15_PRES_TOTAL-p.age);
   /* fase derivada da idade — uma única fonte de verdade */
@@ -34444,6 +34457,16 @@ function pr15PresUpdate(dt){
   if(p.phase==='leaving'&&!p.exitFx){p.exitFx=1;pr15PresBurst(p,3,PR15_PRES_MAGENTA);}
   if(p.phase==='done'){pr15PresEnd('ttl');return null;}
   return p;
+}
+/* PR15.7-C — receptor semântico da Physical Temporal Presence.
+   A Repetição apenas notifica uma ativação válida; esta camada decide se há
+   algo para reagir. Sem presença, é no-op. Com presença, arma um único
+   escalar visual: sem posição, memória, intenção, TTL ou gameplay novos. */
+function pr15PresOnTemporalReplay(){
+  const p=pr15Presence;
+  if(!p||p.phase==='done')return false;
+  p.replayReactT=PR15_PRES_REPLAY_REACT_TIME;
+  return true;
 }
 
 /* ---------------- MOVIMENTO BASE (§12) ----------------
@@ -34803,6 +34826,19 @@ function pr15PresDraw(){
   ctx.strokeStyle=PR15_PRES_MAGENTA;ctx.lineWidth=2.4;
   const a0=p.orbit*0.7+t*0.5, a1=a0+0.7+V.split*0.12;
   ctx.beginPath();ctx.arc(p.x,p.y,R+6,a0,a1);ctx.stroke();
+
+  /* PR15.7-C — a timeline materializada reconhece uma Repetição válida.
+     Dois arcos curtos se separam cromaticamente e somem em 0,36s; nenhum
+     campo mecânico, partícula, entidade ou texto é produzido. */
+  if(p.replayReactT>0){
+    const rk=clamp(p.replayReactT/PR15_PRES_REPLAY_REACT_TIME,0,1);
+    const rr=R+9+(1-rk)*24;
+    ctx.lineWidth=2;ctx.globalAlpha=A*rk*.66;
+    ctx.strokeStyle=PR15_PRES_CYAN;
+    ctx.beginPath();ctx.arc(p.x-2*(1-rk),p.y,rr,-.2,Math.PI+.35);ctx.stroke();
+    ctx.strokeStyle=PR15_PRES_MAGENTA;ctx.globalAlpha=A*rk*.58;
+    ctx.beginPath();ctx.arc(p.x+2*(1-rk),p.y,rr+.8,Math.PI-.2,TAU+.35);ctx.stroke();
+  }
 
   /* 6 — MARCA DISCRETA DO BUILD PROFILE (decorativa, §14) */
   if(p.vis&&p.vis.arch){
@@ -36254,6 +36290,17 @@ function pr15IntentDraw(){
   ctx.globalAlpha=A*(0.30+0.16*Math.sin(t*2.6));
   ctx.beginPath();ctx.moveTo(N.x,N.y-13);ctx.lineTo(N.x+5,N.y);
   ctx.lineTo(N.x,N.y+13);ctx.lineTo(N.x-5,N.y);ctx.closePath();ctx.stroke();
+  /* PR15.7-C: a âncora existente compartilha o mesmo pulso efêmero da
+     Presença. Não cria âncora, interação, texto, buff ou estado próprio. */
+  if(p.replayReactT>0){
+    const rk=clamp(p.replayReactT/PR15_PRES_REPLAY_REACT_TIME,0,1);
+    const rr=22+(1-rk)*30;
+    ctx.globalAlpha=A*rk*.58;ctx.lineWidth=1.8;
+    ctx.strokeStyle=PR15_PRES_CYAN;
+    ctx.beginPath();ctx.arc(N.x-2*(1-rk),N.y,rr,-.35,Math.PI+.2);ctx.stroke();
+    ctx.strokeStyle=PR15_PRES_MAGENTA;
+    ctx.beginPath();ctx.arc(N.x+2*(1-rk),N.y,rr+.8,Math.PI-.35,TAU+.2);ctx.stroke();
+  }
   /* 3 — TELEGRAPH da pressão (agência do jogador: aviso antes do efeito) */
   if(p.it.variant==='pressure'&&p.it.tel>0){
     const C=PR15_INTENT_CFG;
@@ -37216,6 +37263,11 @@ function temporalReplayTry(inputSource){
   temporalActionTelemetryInc('used');
   temporalActionTelemetry.lastUsedWeaponId=a.weaponId;
   const count=replayTemporalAction(a);
+  /* PR15.7-C: exatamente uma confirmação sensorial por ativação válida.
+     A camada de Presença recebe uma notificação opcional; sem presença é
+     no-op e a Repetição continua independente de memória/histórico. */
+  AUDIO.temporalReplay();
+  pr15PresOnTemporalReplay();
   temporalReplayFxT=.28;temporalReplayFxX=a.x;temporalReplayFxY=a.y;
   spawnRing(a.x,a.y,TEMPORAL_REPLAY_COLOR,5,54,.28);
   spawnParticles(a.x,a.y,TEMPORAL_REPLAY_COLOR,5,120,.22,2);
