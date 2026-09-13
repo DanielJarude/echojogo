@@ -129,10 +129,28 @@
   #xpfill{height:100%;width:0%;background:linear-gradient(90deg,#7b5cff,#c9a9ff);
     box-shadow:0 0 10px rgba(150,110,255,.5);transition:width .12s;}
   #lvl{font-family:Consolas,monospace;font-size:var(--fs-md);color:#cdb9ff;letter-spacing:.18em;margin-top:3px;}
-  #weapwrap{position:absolute;right:16px;bottom:16px;display:flex;gap:8px;align-items:flex-end;}
+  /* PR15.7-B.5: Kit de Combate — uma coluna compacta, sem competir com
+     Integridade/Escudo ou Sincronia. A variável temporal é alimentada pela
+     constante TEMPORAL_REPLAY_COLOR quando o módulo é inicializado. */
+  #combat-kit{position:fixed;right:clamp(8px,1.25vw,16px);bottom:clamp(8px,1.25vh,16px);
+    z-index:10;width:min(720px,calc(100vw - 24px));max-width:calc(100vw - 24px);
+    display:flex;flex-direction:column;align-items:stretch;gap:6px;padding:8px;
+    border:1px solid rgba(70,224,255,.22);border-radius:4px;
+    background:rgba(4,12,20,.72);box-shadow:0 0 22px rgba(0,0,0,.35),
+      inset 0 0 18px rgba(70,224,255,.035);pointer-events:none;}
+  #combat-kit::before{content:'KIT DE COMBATE';display:block;
+    font:var(--fs-3xs)/1 Consolas,"Cascadia Code",monospace;letter-spacing:.28em;
+    color:rgba(160,220,240,.52);text-align:right;}
+  #combat-kit>*{min-width:0;}
+  #combat-kit[hidden],#spwrap[hidden]{display:none;}
+  #weapwrap{position:static;order:1;display:flex;gap:6px;align-items:stretch;
+    justify-content:flex-end;width:100%;max-width:100%;overflow-x:auto;padding-bottom:1px;
+    scrollbar-width:thin;}
+  #weapwrap::-webkit-scrollbar{height:4px;}
+  #weapwrap::-webkit-scrollbar-thumb{background:rgba(70,224,255,.28);}
   /* PR 11.5 §61: cards compactos — o card ATIVO fica maior/claro; os outros
      viram resumo. Cinco slots ainda cabem sem comer a arena. */
-  .wslot{width:122px;padding:6px 8px;border:1px solid rgba(120,140,160,.22);
+  .wslot{flex:0 0 122px;width:122px;padding:6px 8px;border:1px solid rgba(120,140,160,.22);
     background:rgba(4,12,20,.55);border-radius:2px;transition:all .15s;opacity:.78;}
   .wslot .key{font-family:Consolas,monospace;font-size:var(--fs-xs);color:rgba(160,190,210,.5);
     letter-spacing:.2em;}
@@ -140,33 +158,72 @@
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .wslot .wrange{font-family:Consolas,monospace;font-size:var(--fs-3xs);letter-spacing:.12em;
     color:rgba(150,200,225,.55);margin-top:3px;}
-  .wslot.empty{opacity:.32;border-style:dashed;width:92px;}
+  .wslot.empty{opacity:.32;border-style:dashed;width:92px;flex-basis:92px;}
   .wslot.empty .nm{color:rgba(140,170,190,.55);}
   .wslot.act .wrange{color:rgba(190,240,255,.85);}
   .wslot svg{display:block;margin:4px 0 2px;opacity:.75;}
-  .wslot.act{opacity:1;border-color:var(--cy);width:138px;
+  .wslot.act{opacity:1;border-color:var(--cy);width:138px;flex-basis:138px;
     box-shadow:0 0 14px rgba(70,224,255,.3),inset 0 0 12px rgba(70,224,255,.07);}
   .wslot.act .nm{color:#d8f7ff;}
-  #dashwrap{position:absolute;right:16px;bottom:104px;width:136px;}
-  #dashbar{height:6px;margin-top:4px;background:rgba(70,224,255,.08);
-    border:1px solid rgba(70,224,255,.22);overflow:hidden;}
+  #dashwrap,#spwrap,#temporalwrap{position:static;order:2;width:100%;padding:5px 7px 6px;
+    border:1px solid rgba(120,140,160,.22);border-radius:3px;
+    background:rgba(4,12,20,.48);}
+  #dashwrap{border-color:rgba(70,224,255,.28);}
+  #spwrap{order:3;border-color:rgba(255,209,102,.28);}
+  #temporalwrap{order:4;border-color:rgba(70,224,255,.24);}
+  #combat-kit .lbl{display:block;line-height:1.25;letter-spacing:.2em;}
+  #dashbar,#spbar,#temporalbar{height:5px;margin-top:4px;overflow:hidden;}
+  #dashbar{background:rgba(70,224,255,.08);border:1px solid rgba(70,224,255,.22);}
   #dashfill{height:100%;width:100%;background:#7df9ff;box-shadow:0 0 10px var(--cy-dim);}
   #dashwrap.ready #dashfill{animation:pulse 1.4s infinite;}
-  #spwrap{position:absolute;right:16px;bottom:152px;width:136px;}
-  #spbar{height:6px;margin-top:4px;background:rgba(255,209,102,.08);
-    border:1px solid rgba(255,209,102,.28);overflow:hidden;}
+  #spbar{background:rgba(255,209,102,.08);border:1px solid rgba(255,209,102,.28);}
   #spfill{height:100%;width:100%;background:#ffd166;
     box-shadow:0 0 10px rgba(255,209,102,.45);}
   #spwrap.ready #spfill{animation:pulse 1.2s infinite;}
   #spwrap.active #spfill{background:#7dffc4;box-shadow:0 0 14px #7dffc4;}
-  /* PR15.7-B: indicador mínimo — reutiliza a linguagem das habilidades. */
-  #temporalwrap{position:absolute;right:16px;bottom:200px;width:136px;}
-  #temporalbar{height:4px;margin-top:4px;background:rgba(255,77,240,.08);
-    border:1px solid rgba(70,224,255,.18);overflow:hidden;}
-  #temporalfill{height:100%;width:0;background:#46e0ff;transition:width .09s linear;}
-  #temporalwrap.armed #temporalfill{background:#ff4df0;}
+  /* Em recarga, o input continua visível mesmo que o texto mostre só o tempo. */
+  #dashlbl.pad-input::after,#splbl.pad-input::after,
+  #dashlbl.show-input::after,#splbl.show-input::after{content:' · '+attr(data-input);
+    color:#bffbff;letter-spacing:.12em;}
+  #dashwrap:not(.ready),#spwrap:not(.ready):not(.active){opacity:.82;}
+  /* PR15.7-B.5: READY é captura futura; ARMED é decisão disponível;
+     COOLDOWN é recarga. Texto, barra e peso visual não dependem só da cor. */
+  #temporalbar{background:rgba(70,224,255,.08);border:1px solid rgba(70,224,255,.22);}
+  #temporalfill{height:100%;width:0;background:var(--cy);transition:width .09s linear;}
+  #temporalwrap.ready{border-color:rgba(70,224,255,.42);}
   #temporalwrap.ready .lbl{color:#bffbff;}
+  #temporalwrap.cooldown{border-color:rgba(120,140,160,.28);opacity:.72;}
+  #temporalwrap.cooldown .lbl{color:rgba(190,210,220,.72);}
+  #temporalwrap.armed{border-color:var(--temporal-replay-color,var(--mg));
+    box-shadow:0 0 16px color-mix(in srgb,var(--temporal-replay-color,var(--mg)) 30%,transparent),
+      inset 0 0 12px color-mix(in srgb,var(--temporal-replay-color,var(--mg)) 8%,transparent);}
+  #temporalwrap.armed .lbl{color:#ffc7fb;text-shadow:0 0 10px var(--temporal-replay-color,var(--mg));}
+  #temporalwrap.armed #temporalfill{background:var(--temporal-replay-color,var(--mg));
+    box-shadow:0 0 10px var(--temporal-replay-color,var(--mg));}
+  #temporalwrap.expiring .lbl{animation:temporalUrgency .7s ease-in-out infinite alternate;}
+  #temporalwrap.state-pulse-ready,#temporalwrap.state-pulse-armed,#temporalwrap.state-pulse-cooldown{
+    animation:combatKitPulse .42s ease-out;}
+  @keyframes combatKitPulse{0%{transform:scale(1);filter:brightness(1);}
+    38%{transform:scale(1.018);filter:brightness(1.28);}
+    100%{transform:scale(1);filter:brightness(1);}}
+  @keyframes temporalUrgency{from{opacity:.72;}to{opacity:1;}}
   @keyframes pulse{50%{opacity:.55;}}
+  @media(max-width:1100px){
+    #combat-kit{width:min(560px,calc(100vw - 24px));padding:7px;gap:5px;}
+    #combat-kit::before{letter-spacing:.22em;}
+    .wslot{flex-basis:112px;width:112px;padding:5px 7px;}
+    .wslot.act{flex-basis:126px;width:126px;}
+    .wslot.empty{flex-basis:86px;width:86px;}
+  }
+  @media(max-height:600px){
+    #combat-kit{bottom:8px;gap:4px;padding:6px;}
+    #combat-kit::before{font-size:var(--fs-2xs);}
+    #combat-kit .lbl{font-size:var(--fs-2xs);}
+    #dashwrap,#spwrap,#temporalwrap{padding:4px 6px 5px;}
+    #dashbar,#spbar,#temporalbar{margin-top:3px;height:4px;}
+  }
+  /* O toast fica acima da altura ocupada pelo kit em 1280×720 e 960×540. */
+  @media(max-height:800px){#toasts{bottom:clamp(220px,34vh,280px);}}
 
   /* PR15.5-B-FIX.2: diagnóstico discreto, fora da coluna superior direita.
      Acima da Sincronia e do chip Sandbox inclusive no mínimo 960×540. */
@@ -194,7 +251,9 @@
   #banner.show{opacity:1;transform:scale(1);}
   #banner small{display:block;font-size:var(--fs-md);letter-spacing:.4em;
     color:rgba(170,225,245,.6);margin-top:8px;}
-  #toasts{position:fixed;bottom:120px;left:50%;transform:translateX(-50%);
+  /* PR15.7-B.5: o Kit ocupa o rodapé direito; os toasts sobem para não
+     ficar sob a coluna de ações em telas baixas. */
+  #toasts{position:fixed;bottom:clamp(180px,22vh,250px);left:50%;transform:translateX(-50%);
     z-index:11;pointer-events:none;display:flex;flex-direction:column;
     align-items:center;gap:5px;}
   .toast{font-family:Consolas,monospace;font-size:var(--fs-lg);letter-spacing:.3em;
@@ -949,19 +1008,21 @@
     <div id="xpbar"><div id="xpfill"></div></div>
     <div id="lvl">NV 1 · 0/20</div>
   </div>
-  <div id="dashwrap">
-    <span class="lbl" id="dashlbl">DASH [ESPAÇO]</span>
-    <div id="dashbar"><div id="dashfill"></div></div>
+  <div id="combat-kit" role="group" aria-label="Kit de combate">
+    <div id="weapwrap" aria-label="Armas"></div>
+    <div id="dashwrap" class="kit-ability">
+      <span class="lbl" id="dashlbl">DASH [ESPAÇO]</span>
+      <div id="dashbar"><div id="dashfill"></div></div>
+    </div>
+    <div id="spwrap" class="kit-ability">
+      <span class="lbl" id="splbl">ESPECIAL [E]</span>
+      <div id="spbar"><div id="spfill"></div></div>
+    </div>
+    <div id="temporalwrap" class="kit-ability" data-state="ready">
+      <span class="lbl" id="temporallbl">REPETIÇÃO · AGUARDANDO AÇÃO [R]</span>
+      <div id="temporalbar"><div id="temporalfill"></div></div>
+    </div>
   </div>
-  <div id="spwrap">
-    <span class="lbl" id="splbl">ESPECIAL [E]</span>
-    <div id="spbar"><div id="spfill"></div></div>
-  </div>
-  <div id="temporalwrap">
-    <span class="lbl" id="temporallbl">REPETIÇÃO [R]</span>
-    <div id="temporalbar"><div id="temporalfill"></div></div>
-  </div>
-  <div id="weapwrap"></div>
 </div>
   <aside id="metrics-overlay" hidden aria-label="Métricas de desempenho">
     <h3>MÉTRICAS</h3>
@@ -5830,6 +5891,7 @@ const hpfill=$('hpfill'),hpnum=$('hpnum'),waveEl=$('wave'),timerEl=$('timer'),
   xpfill=$('xpfill'),lvlEl=$('lvl'),chip1=$('chip1'),chip2=$('chip2'),
   shfill=$('shfill'),shnum=$('shnum'),shbar=$('shbar'),
   dashfill=$('dashfill'),dashwrap=$('dashwrap'),dashlbl=$('dashlbl'),
+  spfill=$('spfill'),spwrap=$('spwrap'),splbl=$('splbl'),
   temporalfill=$('temporalfill'),temporalwrap=$('temporalwrap'),temporallbl=$('temporallbl'),
   bannerEl=$('banner'),fpindEl=$('fpind'),
   toastsEl=$('toasts'),overlay=$('overlay'),ovBody=$('ov-body'),
@@ -5918,6 +5980,114 @@ function setChip(el,slot,echo){
 /* THROTTLE DO HUD: escrever ~20 propriedades de DOM a cada frame força
    recálculo de estilo/layout 60x por segundo. 11 Hz é imperceptível
    (as barras já têm transição CSS de 150ms) e devolve esse tempo à GPU. */
+let _combatKitTemporalState=null;
+function combatKitPulse(el,state){
+  if(!el)return;
+  /* Nomes de animação por estado reiniciam o pulso sem forçar reflow/layout. */
+  el.classList.remove('state-pulse','state-pulse-ready','state-pulse-armed','state-pulse-cooldown');
+  el.classList.add('state-pulse','state-pulse-'+state);
+}
+function updateAnchoredReplayHUD(){
+  if(!temporalwrap||!temporalfill||!temporallbl)return;
+  const armed=!!(temporalAction&&temporalAction.state==='armed');
+  const cd=temporalReplayCooldown>0;
+  /* Um estado principal por vez. Se uma nova captura ocorrer durante a
+     recarga, a ação continua ARMADA e o sufixo de recarga fica explícito. */
+  const state=armed?'armed':(cd?'cooldown':'ready');
+  const temporalKey=padActive?'[R3]':'[R]';
+  const ratio=armed?clamp((temporalAction.expiresAt-runTime)/TEMPORAL_ACTION_WINDOW,0,1)
+    :(cd?clamp(1-temporalReplayCooldown/TEMPORAL_REPLAY_COOLDOWN,0,1):1);
+  temporalfill.style.width=(ratio*100)+'%';
+  temporalwrap.classList.toggle('armed',state==='armed');
+  temporalwrap.classList.toggle('cooldown',state==='cooldown');
+  temporalwrap.classList.toggle('ready',state==='ready');
+  temporalwrap.classList.toggle('cooling',armed&&cd);
+  const expiring=armed&&temporalAction.expiresAt-runTime<=1.5;
+  temporalwrap.classList.toggle('expiring',expiring);
+  if(temporalwrap.dataset.state!==state)temporalwrap.dataset.state=state;
+  if(_combatKitTemporalState!==null&&_combatKitTemporalState!==state)
+    combatKitPulse(temporalwrap,state);
+  _combatKitTemporalState=state;
+  const label=armed
+    ?'REPETIÇÃO · AÇÃO ARMADA '+temporalKey+(cd?' · RECARGA '+fmtSec(temporalReplayCooldown):'')
+    :(cd?'REPETIÇÃO · RECARGA '+fmtSec(temporalReplayCooldown)+' · '+temporalKey
+      :'REPETIÇÃO · AGUARDANDO AÇÃO · '+temporalKey);
+  hudText(temporallbl,label);
+}
+function updateCombatKitHUD(){
+  if(!player)return;
+  const dashCd=player.dashCd>0;
+  const dashRatio=dashCd?1-player.dashCd/player.dashCdMax:1;
+  dashfill.style.width=(dashRatio*100)+'%';
+  dashwrap.classList.toggle('ready',!dashCd);
+  if(dashlbl){
+    const dashInput=padActive?'[A / LT]':'[ESPAÇO]';
+    dashlbl.classList.toggle('pad-input',padActive);
+    dashlbl.classList.toggle('show-input',dashCd&&!padActive);
+    if(dashlbl.dataset.input!==dashInput)dashlbl.dataset.input=dashInput;
+    hudText(dashlbl,padActive
+      ?(dashCd?'DASH '+fmtSec(player.dashCd):'DASH')
+      :(dashCd?'DASH '+fmtSec(player.dashCd):'DASH [ESPAÇO]'));
+  }
+
+  updateAnchoredReplayHUD();
+
+  const C=curChar(),sp=C&&C.sp;
+  if(spwrap){
+    spwrap.hidden=!sp;
+    if(!sp){
+      spwrap.classList.remove('ready','active','cooldown');
+      if(splbl)splbl.classList.remove('pad-input','show-input');
+    }else{
+      const active=player.spT>0;
+      if(active&&!player.spMax)player.spMax=player.spT;
+      if(!active)player.spMax=0;
+      const r=active?player.spT/(player.spMax||6)
+        :(player.spCd>0?1-player.spCd/sp.cd:1);
+      spfill.style.width=clamp(r*100,0,100)+'%';
+      const spInput=padActive?'[X]':'[E]';
+      if(splbl){
+        splbl.classList.toggle('pad-input',padActive);
+        splbl.classList.toggle('show-input',player.spCd>0&&!active&&!padActive);
+        if(splbl.dataset.input!==spInput)splbl.dataset.input=spInput;
+        hudText(splbl,padActive
+          ?(active?sp.nm+' '+fmtSec(player.spT)
+            :(player.spCd>0?sp.nm+' '+fmtSec(player.spCd):sp.nm))
+          :(active?sp.nm+' '+fmtSec(player.spT)
+            :(player.spCd>0?sp.nm+' '+fmtSec(player.spCd):sp.nm+' [E]')));
+      }
+      spwrap.classList.toggle('ready',player.spCd<=0&&!active);
+      spwrap.classList.toggle('active',active);
+      spwrap.classList.toggle('cooldown',player.spCd>0&&!active);
+    }
+  }
+
+  const wrapW=weapWrapEl;
+  if(wrapW)for(let slot=0;slot<wrapW.children.length;slot++){
+    const el=wrapW.children[slot];
+    if(el.dataset.slot===undefined)continue;
+    el.classList.toggle('act',player.owned[slot]===player.wi);
+  }
+}
+function resetCombatKitHUD(){
+  _combatKitTemporalState=null;
+  if(temporalwrap){
+    temporalwrap.dataset.state='ready';
+    temporalwrap.classList.remove('armed','cooldown','cooling','expiring','state-pulse',
+      'state-pulse-ready','state-pulse-armed','state-pulse-cooldown');
+  }
+  if(temporalfill)temporalfill.style.width='100%';
+  if(temporallbl)hudText(temporallbl,'REPETIÇÃO · AGUARDANDO AÇÃO · '+(padActive?'[R3]':'[R]'));
+  if(dashlbl){
+    dashlbl.classList.remove('pad-input','show-input');
+    dashlbl.dataset.input='[ESPAÇO]';hudText(dashlbl,'DASH [ESPAÇO]');
+  }
+  if(splbl){
+    splbl.classList.remove('pad-input','show-input');
+    splbl.dataset.input='[E]';hudText(splbl,'ESPECIAL [E]');
+  }
+  if(spwrap)spwrap.hidden=false;
+}
 let hudAcc=1;
 function updateHUD(force){
   if(!player)return;
@@ -5942,43 +6112,7 @@ function updateHUD(force){
   hudText(timerEl,fmtTime(runTime)+' · ABATES '+kills);
   xpfill.style.width=clamp(player.xp/player.xpNext*100,0,100)+'%';
   hudText(lvlEl,'NV '+player.level+' · '+Math.floor(player.xp)+'/'+player.xpNext);
-  const dr=player.dashCd>0?1-player.dashCd/player.dashCdMax:1;
-  dashfill.style.width=(dr*100)+'%';
-  dashwrap.classList.toggle('ready',player.dashCd<=0);
-  if(dashlbl)hudText(dashlbl,player.dashCd>0?'DASH '+fmtSec(player.dashCd):'DASH [ESPAÇO]');   // B5-B-FIX: quanto falta
-  // ---- PR15.7-B: HUD temporal mínimo, sem barra/recurso novo expansivo ----
-  if(temporalwrap&&temporalfill&&temporallbl){
-    const armed=!!(temporalAction&&temporalAction.state==='armed');
-    const cd=temporalReplayCooldown>0;
-    const ratio=armed?clamp((temporalAction.expiresAt-runTime)/TEMPORAL_ACTION_WINDOW,0,1)
-      :(cd?clamp(1-temporalReplayCooldown/TEMPORAL_REPLAY_COOLDOWN,0,1):1);
-    temporalfill.style.width=(ratio*100)+'%';
-    temporalwrap.classList.toggle('armed',armed);
-    temporalwrap.classList.toggle('ready',armed&&!cd);
-    const temporalKey=padActive?'[R3]':'[R]';
-    hudText(temporallbl,armed?(cd?'REPETIÇÃO '+fmtSec(temporalReplayCooldown):'REPETIÇÃO ARMADA '+temporalKey)
-      :(cd?'REPETIÇÃO '+fmtSec(temporalReplayCooldown):'REPETIÇÃO '+temporalKey));
-  }
-  // ---- HUD do especial ----
-  const C=curChar(),spw=$('spwrap');
-  if(spw&&C.sp){
-    const act=player.spT>0;
-    if(act&&!player.spMax)player.spMax=player.spT;
-    if(!act)player.spMax=0;
-    const r=act?player.spT/(player.spMax||6)
-      :(player.spCd>0?1-player.spCd/C.sp.cd:1);
-    $('spfill').style.width=clamp(r*100,0,100)+'%';
-    hudText($('splbl'),act?(C.sp.nm+' '+fmtSec(player.spT))
-      :(player.spCd>0?C.sp.nm+' '+fmtSec(player.spCd):C.sp.nm+' [E]'));
-    spw.classList.toggle('ready',player.spCd<=0&&!act);
-    spw.classList.toggle('active',act);
-  }
-  const wrapW=weapWrapEl;
-  if(wrapW)for(let slot=0;slot<wrapW.children.length;slot++){
-    const el=wrapW.children[slot];
-    if(el.dataset.slot===undefined)continue;
-    el.classList.toggle('act',player.owned[slot]===player.wi);
-  }
+  updateCombatKitHUD();
   // busca por SLOT (e não por índice): o Modo DEV pode criar só o Echo·02
   setChip(chip1,1,echoes.find(e=>e&&e.slot===1)||null);
   setChip(chip2,2,echoes.find(e=>e&&e.slot===2)||null);
@@ -22379,6 +22513,7 @@ function clearRunEntities(){
   waveEl.textContent='ONDA 01 / 20';timerEl.textContent='00:00 · ABATES 0';
   xpfill.style.width='0%';lvlEl.textContent='NV 1 · 0/20';
   dashfill.style.width='100%';dashwrap.classList.remove('ready');
+  resetCombatKitHUD();
   coinsEl.textContent='◈ 0';
   const wrapW=document.getElementById('weapwrap');
   if(wrapW)wrapW.innerHTML='';
@@ -36951,6 +37086,12 @@ function pr15IntentKitBoot(){
    ===================================================================== */
 const TEMPORAL_ACTION_WINDOW=5;
 const TEMPORAL_REPLAY_COOLDOWN=6;
+/* PR15.7-B.5: fonte única da identidade temporal da Repetição. O ciano
+   continua sendo o estado presente/READY; o magenta marca a fratura ARMED. */
+const TEMPORAL_REPLAY_COLOR='#ff4df0';
+if(document.documentElement&&document.documentElement.style&&
+   typeof document.documentElement.style.setProperty==='function')
+  document.documentElement.style.setProperty('--temporal-replay-color',TEMPORAL_REPLAY_COLOR);
 const MAX_TEMPORAL_PROJECTILES=8;
 const TEMPORAL_REPLAY_DAMAGE=.50;
 const TEMPORAL_ACTION_TELEMETRY_MAX=999999;
@@ -37076,8 +37217,8 @@ function temporalReplayTry(inputSource){
   temporalActionTelemetry.lastUsedWeaponId=a.weaponId;
   const count=replayTemporalAction(a);
   temporalReplayFxT=.28;temporalReplayFxX=a.x;temporalReplayFxY=a.y;
-  spawnRing(a.x,a.y,'#46e0ff',5,54,.28);
-  spawnParticles(a.x,a.y,'#ff4df0',5,120,.22,2);
+  spawnRing(a.x,a.y,TEMPORAL_REPLAY_COLOR,5,54,.28);
+  spawnParticles(a.x,a.y,TEMPORAL_REPLAY_COLOR,5,120,.22,2);
   rumble(.12,.28,80);
   return count;
 }
@@ -37092,7 +37233,7 @@ function replayTemporalAction(a){
   const range=Math.max(1,finiteTemporal(p.range));
   const radius=clamp(finiteTemporal(p.projectileRadius),1,12);
   const spread=finiteTemporal(p.spread);
-  const color=a.weaponId==='shotgun'?'#ff4df0':'#46e0ff';
+  const color=a.weaponId==='shotgun'?TEMPORAL_REPLAY_COLOR:'#46e0ff';
   for(let i=0;i<count;i++){
     const off=count>1?((i/(count-1))-.5)*spread:0;
     const ang=finiteTemporal(a.angle)+off;
@@ -37123,7 +37264,7 @@ function drawTemporalActionMarker(){
       ctx.save();ctx.globalAlpha=.24+.62*k;ctx.shadowBlur=0;
       ctx.strokeStyle='#46e0ff';ctx.lineWidth=1.5;
       ctx.beginPath();ctx.arc(a.x,a.y,17,-Math.PI/2,-Math.PI/2+TAU*k);ctx.stroke();
-      ctx.strokeStyle='#ff4df0';ctx.lineWidth=2;
+      ctx.strokeStyle=TEMPORAL_REPLAY_COLOR;ctx.lineWidth=2;
       ctx.beginPath();ctx.moveTo(a.x,a.y);
       ctx.lineTo(a.x+Math.cos(a.angle)*31,a.y+Math.sin(a.angle)*31);ctx.stroke();
       ctx.restore();
