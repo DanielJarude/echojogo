@@ -29,7 +29,13 @@ ok('Sampler único mesmo após alternar overlays 120 vezes',()=>{ready();const f
 ok('Sem escrita textual por frame nos overlays',()=>{ready();run("state='event'");tick(0);let n=0;const old=h.sandbox.metricsText;h.sandbox.metricsText=function(){n++;return old.apply(this,arguments);};try{for(let i=1;i<=120;i++)tick(i*20);assert.strictEqual(n,9*7);}finally{h.sandbox.metricsText=old;}});
 ok('Sem NaN/Infinity ao atravessar overlays',()=>{ready();tick(0);for(const s of ['event','sheet','shop','paused','sandbox']){run('state='+JSON.stringify(s));tick(300);tick(600);for(const id of ['fps','frame','enemies','projectiles','fx','echoes','total'])assert.ok(!/NaN|Infinity|undefined|null/.test(run('metricsEls.'+id+'.textContent')));}});
 ok('Documento oculto encerra amostra de suspensão',()=>{ready();tick(0);run('document.hidden=true');tick(500);assert.ok(run('metricsPanel.hidden'));run('document.hidden=false');tick(5000);assert.strictEqual(run('metricsFrames'),0);});
-ok('Painel fora do stacking context do HUD',()=>assert.match(SRC,/<div id="weapwrap"><\/div>\s*<\/div>\s*<aside id="metrics-overlay"/));
+ok('Painel fora do stacking context do HUD',()=>{
+  const hudStart=SRC.indexOf('<div id="hud">'),aside=SRC.indexOf('<aside id="metrics-overlay"');
+  assert.ok(hudStart>=0&&aside>hudStart,'HUD/metrics ausentes');
+  const hud=SRC.slice(hudStart,aside);
+  assert.match(hud,/<div id="combat-kit"[\s\S]*id="weapwrap"/);
+  assert.match(SRC,/<div id="combat-kit"[\s\S]*<\/div>\s*<\/div>\s*<aside id="metrics-overlay"/);
+});
 ok('Camada acima dos overlays/DEV sem capturar clique',()=>{assert.match(SRC,/#metrics-overlay\{position:fixed;left:16px;bottom:178px;width:174px;z-index:84;/);const css=SRC.slice(SRC.indexOf('#metrics-overlay{'),SRC.indexOf('/* ---------- banner'));assert.match(css,/pointer-events:none/);assert.ok(!/animation|transition|blur\(/.test(css));});
 ok('Faixa compacta cabe na margem superior de 20px',()=>assert.match(SRC,/#metrics-overlay.metrics-dock\{top:1px;bottom:auto;right:16px;width:auto;height:18px;/));
 ok('Preferência permanece global fora do checkpoint',()=>{ready();const cp=run("smBuildCheckpoint('auditoria',1)");assert.ok(!JSON.stringify(cp).includes('metrics'));});
