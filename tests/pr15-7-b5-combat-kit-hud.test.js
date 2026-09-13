@@ -49,6 +49,9 @@ ok('01 wrapper semântico agrupa arma, dash, especial e repetição na ordem do 
 ok('02 wrapper permanece compacto no canto inferior direito e não usa blur próprio',()=>{
   const css=SRC.slice(SRC.indexOf('#combat-kit{'),SRC.indexOf('#metrics-overlay{'));
   assert.match(css,/position:fixed/);assert.match(css,/right:clamp\(/);assert.match(css,/bottom:clamp\(/);
+  assert.match(css,/width:max-content/);assert.match(css,/max-width:calc\(100vw - 16px\)/);
+  assert.match(css,/\.wslot\{flex:0 0 78px/);assert.match(css,/width:min\(250px/);
+  assert.ok(!css.includes('width:min(720px'),'Kit não volta à largura ampla do B.5');
   assert.match(css,/background:rgba\(/);assert.match(css,/border:1px solid/);
   assert.ok(!css.includes('backdrop-filter'),'Kit não adiciona blur caro');
 });
@@ -155,11 +158,12 @@ ok('13 Especial ausente esconde o bloco e libera automaticamente o espaço do ki
 });
 
 ok('14 responsividade cobre 1280×720 e o caso crítico 960×540 sem reposicionar para o centro',()=>{
-  assert.match(SRC,/@media\(max-width:1100px\)[\s\S]*#combat-kit\{width:min\(560px/);
+  assert.match(SRC,/@media\(max-width:1100px\)[\s\S]*#combat-kit\{max-width:calc\(100vw - 16px\)/);
   assert.match(SRC,/@media\(max-height:600px\)[\s\S]*#combat-kit\{bottom:8px/);
   const css=SRC.slice(SRC.indexOf('#combat-kit{'),SRC.indexOf('#metrics-overlay{'));
   assert.ok(!css.includes('left:50%'),'Kit não invade o centro por posicionamento');
-  assert.match(css,/max-width:calc\(100vw - 24px\)/);
+  assert.match(css,/max-width:calc\(100vw - 16px\)/);
+  assert.match(css,/width:min\(236px/);
 });
 
 ok('15 animação da HUD é bounded: apenas pulso transitório e urgência curta',()=>{
