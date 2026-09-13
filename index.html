@@ -133,58 +133,57 @@
      Integridade/Escudo ou Sincronia. A variável temporal é alimentada pela
      constante TEMPORAL_REPLAY_COLOR quando o módulo é inicializado. */
   #combat-kit{position:fixed;right:clamp(8px,1.25vw,16px);bottom:clamp(8px,1.25vh,16px);
-    z-index:10;width:min(720px,calc(100vw - 24px));max-width:calc(100vw - 24px);
-    display:flex;flex-direction:column;align-items:stretch;gap:6px;padding:8px;
+    z-index:10;width:max-content;max-width:calc(100vw - 16px);
+    display:flex;flex-direction:column;align-items:stretch;gap:4px;padding:6px;
     border:1px solid rgba(70,224,255,.22);border-radius:4px;
-    background:rgba(4,12,20,.72);box-shadow:0 0 22px rgba(0,0,0,.35),
-      inset 0 0 18px rgba(70,224,255,.035);pointer-events:none;}
+    background:rgba(4,12,20,.72);box-shadow:0 0 18px rgba(0,0,0,.35),
+      inset 0 0 12px rgba(70,224,255,.035);pointer-events:none;}
   #combat-kit::before{content:'KIT DE COMBATE';display:block;
-    font:var(--fs-3xs)/1 Consolas,"Cascadia Code",monospace;letter-spacing:.28em;
+    font:var(--fs-3xs)/1 Consolas,"Cascadia Code",monospace;letter-spacing:.2em;
     color:rgba(160,220,240,.52);text-align:right;}
   #combat-kit>*{min-width:0;}
   #combat-kit[hidden],#spwrap[hidden]{display:none;}
-  #weapwrap{position:static;order:1;display:flex;gap:6px;align-items:stretch;
-    justify-content:flex-end;width:100%;max-width:100%;overflow-x:auto;padding-bottom:1px;
+  #weapwrap{position:static;order:1;display:flex;gap:4px;align-items:stretch;
+    justify-content:flex-end;width:max-content;max-width:100%;overflow-x:auto;padding-bottom:1px;
     scrollbar-width:thin;}
-  #weapwrap::-webkit-scrollbar{height:4px;}
+  #weapwrap::-webkit-scrollbar{height:3px;}
   #weapwrap::-webkit-scrollbar-thumb{background:rgba(70,224,255,.28);}
-  /* PR 11.5 §61: cards compactos — o card ATIVO fica maior/claro; os outros
-     viram resumo. Cinco slots ainda cabem sem comer a arena. */
-  .wslot{flex:0 0 122px;width:122px;padding:6px 8px;border:1px solid rgba(120,140,160,.22);
-    background:rgba(4,12,20,.55);border-radius:2px;transition:all .15s;opacity:.78;}
-  .wslot .key{font-family:Consolas,monospace;font-size:var(--fs-xs);color:rgba(160,190,210,.5);
-    letter-spacing:.2em;}
-  .wslot .nm{font-size:var(--fs-sm);letter-spacing:.1em;color:#9db8c8;margin-top:2px;
+  /* PR15.7-B.5-FIX: slots informam de relance; só o ativo mantém destaque. */
+  .wslot{flex:0 0 78px;width:78px;padding:4px 5px;border:1px solid rgba(120,140,160,.22);
+    background:rgba(4,12,20,.55);border-radius:2px;transition:all .15s;opacity:.72;}
+  .wslot .key{font-family:Consolas,monospace;font-size:var(--fs-2xs);color:rgba(160,190,210,.5);
+    letter-spacing:.12em;}
+  .wslot .nm{font-size:var(--fs-2xs);letter-spacing:.05em;color:#9db8c8;margin-top:1px;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .wslot .wrange{font-family:Consolas,monospace;font-size:var(--fs-3xs);letter-spacing:.12em;
-    color:rgba(150,200,225,.55);margin-top:3px;}
-  .wslot.empty{opacity:.32;border-style:dashed;width:92px;flex-basis:92px;}
+  .wslot .wrange{font-family:Consolas,monospace;font-size:var(--fs-3xs);letter-spacing:.06em;
+    color:rgba(150,200,225,.55);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .wslot.empty{opacity:.28;border-style:dashed;width:62px;flex-basis:62px;}
   .wslot.empty .nm{color:rgba(140,170,190,.55);}
   .wslot.act .wrange{color:rgba(190,240,255,.85);}
-  .wslot svg{display:block;margin:4px 0 2px;opacity:.75;}
-  .wslot.act{opacity:1;border-color:var(--cy);width:138px;flex-basis:138px;
-    box-shadow:0 0 14px rgba(70,224,255,.3),inset 0 0 12px rgba(70,224,255,.07);}
-  .wslot.act .nm{color:#d8f7ff;}
-  #dashwrap,#spwrap,#temporalwrap{position:static;order:2;width:100%;padding:5px 7px 6px;
-    border:1px solid rgba(120,140,160,.22);border-radius:3px;
+  .wslot svg{display:block;width:28px;height:10px;margin:2px 0 1px;opacity:.75;}
+  .wslot.act{opacity:1;border-color:var(--cy);width:88px;flex-basis:88px;
+    box-shadow:0 0 12px rgba(70,224,255,.3),inset 0 0 9px rgba(70,224,255,.07);}
+  .wslot.act .nm{color:#d8f7ff;font-size:var(--fs-sm);}
+  #dashwrap,#spwrap,#temporalwrap{position:static;order:2;width:min(250px,calc(100vw - 28px));
+    padding:3px 6px 4px;border:1px solid rgba(120,140,160,.22);border-radius:3px;
     background:rgba(4,12,20,.48);}
   #dashwrap{border-color:rgba(70,224,255,.28);}
   #spwrap{order:3;border-color:rgba(255,209,102,.28);}
   #temporalwrap{order:4;border-color:rgba(70,224,255,.24);}
-  #combat-kit .lbl{display:block;line-height:1.25;letter-spacing:.2em;}
-  #dashbar,#spbar,#temporalbar{height:5px;margin-top:4px;overflow:hidden;}
+  #combat-kit .lbl{display:block;line-height:1.2;letter-spacing:.16em;white-space:nowrap;}
+  #dashbar,#spbar,#temporalbar{height:3px;margin-top:3px;overflow:hidden;}
   #dashbar{background:rgba(70,224,255,.08);border:1px solid rgba(70,224,255,.22);}
-  #dashfill{height:100%;width:100%;background:#7df9ff;box-shadow:0 0 10px var(--cy-dim);}
+  #dashfill{height:100%;width:100%;background:#7df9ff;box-shadow:0 0 8px var(--cy-dim);}
   #dashwrap.ready #dashfill{animation:pulse 1.4s infinite;}
   #spbar{background:rgba(255,209,102,.08);border:1px solid rgba(255,209,102,.28);}
   #spfill{height:100%;width:100%;background:#ffd166;
-    box-shadow:0 0 10px rgba(255,209,102,.45);}
+    box-shadow:0 0 8px rgba(255,209,102,.45);}
   #spwrap.ready #spfill{animation:pulse 1.2s infinite;}
-  #spwrap.active #spfill{background:#7dffc4;box-shadow:0 0 14px #7dffc4;}
+  #spwrap.active #spfill{background:#7dffc4;box-shadow:0 0 10px #7dffc4;}
   /* Em recarga, o input continua visível mesmo que o texto mostre só o tempo. */
   #dashlbl.pad-input::after,#splbl.pad-input::after,
   #dashlbl.show-input::after,#splbl.show-input::after{content:' · '+attr(data-input);
-    color:#bffbff;letter-spacing:.12em;}
+    color:#bffbff;letter-spacing:.1em;}
   #dashwrap:not(.ready),#spwrap:not(.ready):not(.active){opacity:.82;}
   /* PR15.7-B.5: READY é captura futura; ARMED é decisão disponível;
      COOLDOWN é recarga. Texto, barra e peso visual não dependem só da cor. */
@@ -195,11 +194,11 @@
   #temporalwrap.cooldown{border-color:rgba(120,140,160,.28);opacity:.72;}
   #temporalwrap.cooldown .lbl{color:rgba(190,210,220,.72);}
   #temporalwrap.armed{border-color:var(--temporal-replay-color,var(--mg));
-    box-shadow:0 0 16px color-mix(in srgb,var(--temporal-replay-color,var(--mg)) 30%,transparent),
-      inset 0 0 12px color-mix(in srgb,var(--temporal-replay-color,var(--mg)) 8%,transparent);}
-  #temporalwrap.armed .lbl{color:#ffc7fb;text-shadow:0 0 10px var(--temporal-replay-color,var(--mg));}
+    box-shadow:0 0 14px color-mix(in srgb,var(--temporal-replay-color,var(--mg)) 30%,transparent),
+      inset 0 0 10px color-mix(in srgb,var(--temporal-replay-color,var(--mg)) 8%,transparent);}
+  #temporalwrap.armed .lbl{color:#ffc7fb;text-shadow:0 0 8px var(--temporal-replay-color,var(--mg));}
   #temporalwrap.armed #temporalfill{background:var(--temporal-replay-color,var(--mg));
-    box-shadow:0 0 10px var(--temporal-replay-color,var(--mg));}
+    box-shadow:0 0 8px var(--temporal-replay-color,var(--mg));}
   #temporalwrap.expiring .lbl{animation:temporalUrgency .7s ease-in-out infinite alternate;}
   #temporalwrap.state-pulse-ready,#temporalwrap.state-pulse-armed,#temporalwrap.state-pulse-cooldown{
     animation:combatKitPulse .42s ease-out;}
@@ -209,18 +208,19 @@
   @keyframes temporalUrgency{from{opacity:.72;}to{opacity:1;}}
   @keyframes pulse{50%{opacity:.55;}}
   @media(max-width:1100px){
-    #combat-kit{width:min(560px,calc(100vw - 24px));padding:7px;gap:5px;}
-    #combat-kit::before{letter-spacing:.22em;}
-    .wslot{flex-basis:112px;width:112px;padding:5px 7px;}
-    .wslot.act{flex-basis:126px;width:126px;}
-    .wslot.empty{flex-basis:86px;width:86px;}
+    #combat-kit{max-width:calc(100vw - 16px);padding:5px;gap:3px;}
+    #combat-kit::before{letter-spacing:.16em;}
+    .wslot{flex-basis:72px;width:72px;padding:3px 4px;}
+    .wslot.act{flex-basis:82px;width:82px;}
+    .wslot.empty{flex-basis:58px;width:58px;}
+    #dashwrap,#spwrap,#temporalwrap{width:min(236px,calc(100vw - 24px));}
   }
   @media(max-height:600px){
-    #combat-kit{bottom:8px;gap:4px;padding:6px;}
+    #combat-kit{bottom:8px;gap:3px;padding:5px;}
     #combat-kit::before{font-size:var(--fs-2xs);}
     #combat-kit .lbl{font-size:var(--fs-2xs);}
-    #dashwrap,#spwrap,#temporalwrap{padding:4px 6px 5px;}
-    #dashbar,#spbar,#temporalbar{margin-top:3px;height:4px;}
+    #dashwrap,#spwrap,#temporalwrap{padding:3px 5px;}
+    #dashbar,#spbar,#temporalbar{margin-top:2px;height:3px;}
   }
   /* O toast fica acima da altura ocupada pelo kit em 1280×720 e 960×540. */
   @media(max-height:800px){#toasts{bottom:clamp(220px,34vh,280px);}}

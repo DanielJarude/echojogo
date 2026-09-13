@@ -10,6 +10,32 @@ leitura de que a Repetição é uma capacidade central do jogador.
 Este bloco não altera o contrato de combate da Repetição. A intervenção é
 exclusivamente de comunicação, hierarquia, responsividade e feedback visual.
 
+## PR15.7-B.5-FIX — compactação após replaytest humano
+
+O replaytest confirmou que a organização funcionava, mas apontou que o kit
+ficou desnecessariamente grande. O B.5 usava uma faixa de até 720 px em
+1920×1080 (560 px no breakpoint de telas menores), com cada habilidade
+ocupando toda a largura e slots de arma de 122 px, chegando a 138 px no
+ativo.
+
+A correção mantém o mesmo wrapper e a mesma hierarquia, mas passa a abraçar
+o conteúdo: o kit usa `width: max-content`, largura máxima apenas defensiva
+para não sair da viewport e habilidades com largura controlada de até 250 px.
+Os slots passam para 78 px (88 px no ativo), com padding/gaps menores,
+ícones reduzidos e metadados secundários mais discretos. As barras passam a
+3 px e os blocos de habilidade usam padding vertical mínimo.
+
+Em uma composição completa, isso reduz a largura típica do kit de cerca de
+720 px para aproximadamente 430 px, sem reduzir a clareza da Repetição.
+Com poucos slots, o wrapper acompanha a largura das habilidades em vez de
+preencher espaço vazio. Em ARMED, apenas a Repetição recupera presença
+extra por borda, brilho e pulso temporal.
+
+Preservados integralmente: `#combat-kit`, agrupamento dos quatro elementos,
+estados READY/ARMED/COOLDOWN, inputs R/R3 e Dash/Especial, constante
+`TEMPORAL_REPLAY_COLOR`, integração com o marker, responsividade, feedback,
+especial ausente e todos os invariantes mecânicos.
+
 ## Solução escolhida
 
 Foi implementado o **Layout B — reorganização moderada**: um wrapper fixo e
