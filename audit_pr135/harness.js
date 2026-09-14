@@ -184,6 +184,10 @@ src+='\n;globalThis.__t={'+
   'drawProjectileLegacyLine:(typeof drawProjectileLegacyLine==="function"?drawProjectileLegacyLine:undefined),'+
   'drawProjectile:(typeof drawProjectile==="function"?drawProjectile:undefined),'+
   /* PR15.5-E2 — identidade temporal (guardas typeof: ver nota acima). */
+  /* PR15.5-E3 — família slug/penetrador (guardas typeof: ver nota acima). */
+  'drawProjectileSlug:(typeof drawProjectileSlug==="function"?drawProjectileSlug:undefined),'+
+  'projectileTravelDistance:(typeof projectileTravelDistance==="function"?projectileTravelDistance:undefined),'+
+  'SNIPER_FAR_DIST:(typeof SNIPER_FAR_DIST!=="undefined"?SNIPER_FAR_DIST:undefined),'+
   'projectileTemporalMode:(typeof projectileTemporalMode==="function"?projectileTemporalMode:undefined),'+
   'drawProjectileTemporalLayer:(typeof drawProjectileTemporalLayer==="function"?drawProjectileTemporalLayer:undefined),'+
   'PTM:(typeof PTM_NONE!=="undefined"?{NONE:PTM_NONE,ECHO:PTM_ECHO,REPLAY:PTM_REPLAY}:undefined),'+

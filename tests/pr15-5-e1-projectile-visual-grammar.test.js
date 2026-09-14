@@ -138,26 +138,44 @@ function comparaTracos(p){
 }
 /* varredura ampla: todo tipo conhecido + inimigo + desconhecido, em
    várias fases de alcance, cores e vetores de velocidade */
+/* PR15.5-E3: rail, sniper e nail ganharam formas próprias (família
+   SLUG) — divergir da base é o OBJETIVO daquele PR, não uma regressão.
+   A garantia do E1 continua valendo integralmente para todo o resto, e
+   ficou MAIS forte: além de exigir equivalência exata fora da família
+   SLUG, agora exigimos que as 3 armas do E3 tenham de fato mudado. */
+const SLUG_E3=['rail','sniper','nail'];
 const TIPOS_C=RANGED.concat(['eorb','tipo_inexistente_xyz',undefined,null]);
-let compC=0,divC=0;
-for(const t of TIPOS_C)
-  for(const [dist,maxDist] of [[0,0],[0,1000],[500,1000],[850,1000],[1000,1000]])
-    for(const color of ['#46e0ff','#ff7a2f','#a8ff3d'])
-      for(const [vx,vy] of [[300,-140],[0,0],[-980,0]]){
-        const r=comparaTracos({type:t,x:120.5,y:80.25,vx,vy,r:4.5,color,dist,maxDist});
-        compC++;if(r.novo!==r.velho)divC++;
-      }
-ok('C01 traço Canvas idêntico à base em '+compC+' combinações',()=>{
+const CASOS=[];
+for(const [dist,maxDist] of [[0,0],[0,1000],[500,1000],[850,1000],[1000,1000]])
+  for(const color of ['#46e0ff','#ff7a2f','#a8ff3d'])
+    for(const [vx,vy] of [[300,-140],[0,0],[-980,0]])
+      CASOS.push({dist,maxDist,color,vx,vy});
+let compC=0,divC=0,compSlug=0,divSlug=0;
+for(const t of TIPOS_C){
+  const isSlug=SLUG_E3.indexOf(t)>=0;
+  for(const c of CASOS){
+    const r=comparaTracos({type:t,x:120.5,y:80.25,vx:c.vx,vy:c.vy,r:4.5,
+      color:c.color,dist:c.dist,maxDist:c.maxDist});
+    const diff=r.novo!==r.velho;
+    if(isSlug){compSlug++;if(diff)divSlug++;}
+    else{compC++;if(diff)divC++;}
+  }
+}
+ok('C01 fora da família SLUG, traço idêntico à base em '+compC+' combinações',()=>{
   assert.strictEqual(divC,0,divC+' divergências de '+compC);});
+ok('C01b família SLUG (E3) mudou em TODAS as '+compSlug+' combinações',()=>{
+  assert.strictEqual(divSlug,compSlug,
+    'rail/sniper/nail deveriam ter forma própria: só '+divSlug+' de '+compSlug);});
 ok('C02 a cobertura da varredura é significativa',()=>{
-  assert.ok(compC>=500,'apenas '+compC+' combinações');});
+  assert.ok(compC+compSlug>=500,'apenas '+(compC+compSlug)+' combinações');});
 ok('C03 plasma mantém o comprimento 10 (demais 5)',()=>{
   const L=t=>{const g=trace('drawProjectile(__pp)',
     {type:t,x:0,y:0,vx:100,vy:0,r:4,color:'#46e0ff',dist:0,maxDist:0});
     const lt=g.find(e=>e[0]==='lineTo');return lt&&Math.abs(lt[1][0]);};
   assert.strictEqual(L('plasma'),10);
-  assert.strictEqual(L('rail'),5);
-  assert.strictEqual(L('smg'),5);});
+  /* rail saiu do caminho legado no E3; smg e cryo continuam nele */
+  assert.strictEqual(L('smg'),5);
+  assert.strictEqual(L('cryo'),5);});
 ok('C04 fade de alcance preservado (últimos 22%)',()=>{
   assert.strictEqual(T.projectileRangeFade({maxDist:0}),1);
   assert.strictEqual(T.projectileRangeFade({dist:0,maxDist:1000}),1);
@@ -170,7 +188,7 @@ ok('C05 alpha do halo: .60 para orbe, .48 para linha',()=>{
       {type:t,x:0,y:0,vx:100,vy:0,r:4,color:'#46e0ff',dist:0,maxDist:0});
     const s=g.find(e=>e[0]==='set:globalAlpha');return s&&s[1][0];};
   assert.ok(Math.abs(a('orb')-0.60)<1e-9);
-  assert.ok(Math.abs(a('rail')-0.48)<1e-9);});
+  assert.ok(Math.abs(a('cryo')-0.48)<1e-9);});
 
 /* ============ D · FORMA: ORB E FALLBACK (itens 18.C/18.D/18.E) ============ */
 console.log('\n[D] forma, orbe e fallback');
@@ -178,7 +196,7 @@ ok('D01 orb usa o caminho de círculo',()=>{
   assert.strictEqual(T.projectileUsesOrbShape({type:'orb'}),true);});
 ok('D02 eorb (todo projétil inimigo/boss) usa círculo, como antes',()=>{
   assert.strictEqual(T.projectileUsesOrbShape({type:'eorb'}),true);});
-ok('D03 demais armas usam a linha legada',()=>{
+ok('D03 demais armas não usam a forma de orbe',()=>{
   RANGED_NO_BEAM.filter(id=>id!=='orb').forEach(id=>
     assert.strictEqual(T.projectileUsesOrbShape({type:id}),false,id));});
 ok('D04 orbe desenha círculo pulsante + anel (2 arcos)',()=>{
@@ -188,8 +206,10 @@ ok('D04 orbe desenha círculo pulsante + anel (2 arcos)',()=>{
   assert.strictEqual(opsOf(g).filter(o=>o==='fill').length,1);
   assert.strictEqual(opsOf(g).filter(o=>o==='stroke').length,1);});
 ok('D05 linha legada desenha 1 moveTo + 1 lineTo + 1 stroke',()=>{
+  /* `cryo` no lugar de `rail`: o E3 deu forma própria à família SLUG,
+     cryo permanece representando o caminho legado. */
   const g=trace('drawProjectile(__pp)',
-    {type:'rail',x:0,y:0,vx:100,vy:0,r:4,color:'#8ff6ff',dist:0,maxDist:0});
+    {type:'cryo',x:0,y:0,vx:100,vy:0,r:4,color:'#7fd8ff',dist:0,maxDist:0});
   const o=opsOf(g);
   assert.strictEqual(o.filter(x=>x==='moveTo').length,1);
   assert.strictEqual(o.filter(x=>x==='lineTo').length,1);
@@ -388,7 +408,10 @@ ok('I06 a arquitetura permite ao E2 aplicar camada sem duplicar',()=>{
   const b=body('drawProjectile');
   const linhas=b.split('\n').filter(l=>l.trim()&&!l.trim().startsWith('/*')&&
     !l.trim().startsWith('*')&&!l.trim().startsWith('//'));
-  assert.ok(linhas.length<=14,'dispatch inchado: '+linhas.length+' linhas');
+  /* Teto ampliado de 14 → 22: o E2 somou a camada temporal (2 linhas) e
+     o E3 somou o ramo da família SLUG (4 linhas). Continua travando o
+     crescimento descontrolado do dispatch, que é o ponto do check. */
+  assert.ok(linhas.length<=22,'dispatch inchado: '+linhas.length+' linhas');
   assert.ok(b.includes('projectileUsesOrbShape'),'usa helper de forma');
   assert.ok(b.includes('drawProjectileGlow'),'usa helper de halo');});
 
@@ -418,7 +441,9 @@ ok('J06 glowSprite mantém cache limitado',()=>{
 ok('J07 o número de comandos Canvas por projétil não aumentou',()=>{
   /* Limiar ancorado no LEGADO, não num número inventado: o E1 não pode
      emitir nem um comando a mais que a implementação da base. */
-  for(const t of ['rail','plasma','orb','eorb','desconhecido_xyz']){
+  /* rail/sniper/nail saíram do caminho legado no E3 e têm custo próprio,
+     coberto por tests/pr15-5-e3-slug-penetrator-identity.test.js §H05. */
+  for(const t of ['cryo','plasma','orb','eorb','desconhecido_xyz']){
     const p={type:t,x:0,y:0,vx:100,vy:0,r:4,color:'#8ff6ff',dist:0,maxDist:0};
     S.__pp=p;run('glowSprite(__pp.color)');
     S.__ctxLog=[];run('drawProjectile(__pp)');const novo=S.__ctxLog.length;
