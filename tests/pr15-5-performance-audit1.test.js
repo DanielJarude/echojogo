@@ -155,7 +155,20 @@ const mechanical={
      A mudança visual é intencional e restrita a projéteis temporais,
      coberta por tests/pr15-5-e2-temporal-projectile-identity.test.js.
      Nenhuma assertiva afrouxada: continua igualdade estrita de SHA-256. */
-  "drawProjectile": "baf7a88b947b2ba581f0292eeec9168aea5d16720e866c4f7856ac2bc1679f40",
+  /* PR15.5-E3: re-baseline do hash do TEXTO-FONTE (o anterior era do
+     E2). drawProjectile ganhou o ramo da família SLUG, que despacha
+     rail/sniper/nail para drawProjectileSlug.
+
+     As 9 cenas de benchmark continuam com `hashCanvas` IDÊNTICO e
+     `consumo de RNG de draw` = 0, sem nenhuma alteração nesta suíte:
+     os fixtures A–I não contêm projéteis de rail, sniper nem nail, logo
+     a mudança de forma não os alcança. Isso confirma que o E3 alterou
+     exatamente as 3 armas pretendidas e nada mais — o que também é
+     medido em pr15-5-e1 §C01/§C01b (945 combinações idênticas fora da
+     família SLUG, 135 de 135 alteradas dentro dela).
+
+     Nenhuma assertiva afrouxada: igualdade estrita de SHA-256. */
+  "drawProjectile": "cbdf38364f8d36dab91e35f84811d8a1de0364d82eeb91fa73595b52d8730214",
   /* PR15.5-D: drawSwings re-baselineado — ganhou o despacho para o trail
      por família (meleeDrawTrail, pinado abaixo). O fallback legado e o
      comportamento sem RNG permanecem; os goldens A–I comprovam que os

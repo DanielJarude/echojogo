@@ -20686,15 +20686,123 @@ function drawProjectileTemporalLayer(p,k,strong){
   ctx.stroke();
   ctx.globalAlpha=1;
 }
+/* =====================================================================
+   PR15.5-E3 — FAMÍLIA SLUG / PENETRADOR (rail · sniper · nail)
+   ---------------------------------------------------------------------
+   As três eram a MESMA linha, variando só cor e espessura (pr 5 / 4 /
+   2.4). Agora são três CONSTRUÇÕES diferentes — não três escalas da
+   mesma primitiva. O critério: em escala de cinza, sem glow e sem HUD,
+   a silhueta sozinha deve dizer qual arma é.
+
+     rail   → cabeça compacta + streak longo e afilado (velocidade)
+     sniper → agulha fina de espessura constante + marcas (precisão)
+     nail   → polígono sólido com ponta e cauda (massa física)
+
+   Geometria montada com moveTo/lineTo sobre a direção normalizada e sua
+   perpendicular: sem save/rotate/restore, sem Path2D, sem gradiente,
+   sem alocação, sem RNG. `projectileTravelDistance` é a MESMA base que
+   a mecânica usa para o farBonus. */
+function projectileTravelDistance(p){return (p&&p.dist)||0;}
+/* Limiar do estado visual de longa distância do sniper. Espelha
+   EXATAMENTE a regra mecânica de updateProjectiles:
+     `if(pd&&pd.farBonus&&p.dist>450)dmgOut*=1+pd.farBonus;`
+   Não cria uma segunda regra — se a mecânica mudar, este valor tem de
+   acompanhar, e há teste amarrando os dois. */
+const SNIPER_FAR_DIST=450;
+function drawProjectileSlug(p){
+  const sp=Math.hypot(p.vx,p.vy)||1;
+  const nx=p.vx/sp, ny=p.vy/sp;      // direção do voo
+  const px=-ny, py=nx;               // perpendicular
+  const t=p.type;
+  if(t==='nail'){
+    /* HASTE: polígono sólido fechado — ponta à frente, corpo reto de
+       largura constante, cauda cortada em V. É a única das três com
+       ÁREA preenchida: lê como objeto material, não como efeito. */
+    const w=Math.max(1.1,p.r*.62);   // meia-largura do corpo
+    const head=p.r*2.6;              // ponta
+    const tail=p.r*3.4;              // corpo para trás
+    const hx=p.x+nx*head, hy=p.y+ny*head;
+    const bx=p.x-nx*tail, by=p.y-ny*tail;
+    ctx.beginPath();
+    ctx.moveTo(hx,hy);                                   // ponta
+    ctx.lineTo(p.x+px*w,p.y+py*w);                       // ombro
+    ctx.lineTo(bx+px*w*.72,by+py*w*.72);                 // cauda
+    ctx.lineTo(bx-nx*p.r*.7,by-ny*p.r*.7);               // entalhe em V
+    ctx.lineTo(bx-px*w*.72,by-py*w*.72);
+    ctx.lineTo(p.x-px*w,p.y-py*w);
+    ctx.closePath();ctx.fill();
+    return;
+  }
+  if(t==='sniper'){
+    /* AGULHA: duas partes com espessuras distintas — uma PONTA curta e
+       densa e uma HASTE longa e muito fina atrás dela. Essa quebra de
+       espessura é o que diferencia a leitura "cirúrgica" de uma linha
+       comum: o olho encontra um ponto de precisão, não um traço. Sem
+       preenchimento e sem massa frontal — o oposto do rail. */
+    const far=projectileTravelDistance(p)>SNIPER_FAR_DIST;
+    const len=far?30:22;
+    const tip=p.r*1.1;
+    ctx.lineWidth=Math.max(1,p.r*.30);          // haste: a mais fina
+    ctx.beginPath();
+    ctx.moveTo(p.x-nx*tip,p.y-ny*tip);
+    ctx.lineTo(p.x-nx*len,p.y-ny*len);
+    ctx.stroke();
+    ctx.lineWidth=Math.max(1,p.r*.72);          // ponta: curta e densa
+    ctx.beginPath();
+    ctx.moveTo(p.x+nx*(far?5:3),p.y+ny*(far?5:3));
+    ctx.lineTo(p.x-nx*tip,p.y-ny*tip);
+    ctx.stroke();
+    /* ESTADO DE LONGA DISTÂNCIA (dist>450, o mesmo do farBonus): duas
+       marcas perpendiculares curtas, como retículas. Informação
+       funcional, discreta e geométrica — NÃO é cor nem partícula. */
+    if(far){
+      const m=p.r*.85;
+      ctx.lineWidth=Math.max(1,p.r*.26);
+      ctx.beginPath();
+      for(let i=0;i<2;i++){
+        const d=6+i*7;
+        const mx=p.x-nx*d, my=p.y-ny*d;
+        ctx.moveTo(mx+px*m,my+py*m);
+        ctx.lineTo(mx-px*m,my-py*m);
+      }
+      ctx.stroke();
+    }
+    return;
+  }
+  /* RAIL: cabeça compacta (losango curto) + streak longo que AFINA para
+     trás. O streak é geométrico, derivado da posição do frame — sem
+     histórico, sem array, sem estado. A diferença entre cabeça densa e
+     cauda afilada é o que comunica velocidade extrema e penetração,
+     sem virar um feixe de largura constante (que seria o Beam). */
+  const hw=p.r*.78;                  // meia-largura da cabeça
+  const head=p.r*1.5, back=p.r*7.2;
+  ctx.beginPath();
+  ctx.moveTo(p.x+nx*head,p.y+ny*head);
+  ctx.lineTo(p.x+px*hw,p.y+py*hw);
+  ctx.lineTo(p.x-nx*back,p.y-ny*back);   // vértice traseiro: afilamento
+  ctx.lineTo(p.x-px*hw,p.y-py*hw);
+  ctx.closePath();ctx.fill();
+  /* núcleo interno: fio brilhante que reforça a leitura de "linha de
+     tiro atravessando", com 1 stroke barato */
+  ctx.lineWidth=Math.max(1,p.r*.30);
+  ctx.beginPath();
+  ctx.moveTo(p.x+nx*head,p.y+ny*head);
+  ctx.lineTo(p.x-nx*(back+p.r*2.4),p.y-ny*(back+p.r*2.4));
+  ctx.stroke();
+}
 function drawProjectile(p){
   const orb=projectileUsesOrbShape(p);
   const fade=projectileRangeFade(p);
   drawProjectileGlow(p,fade,orb);
   ctx.globalAlpha=fade;
   ctx.fillStyle=p.color;
-  /* Ponto de extensão de E3–E10: a família já está resolvida aqui e o
+  /* Ponto de extensão de E4–E10: a família já está resolvida aqui e o
      corpo é uma única chamada de forma. */
   if(orb)drawProjectileOrbShape(p);
+  else if(visualFamilyForProjectile(p)===PVF_SLUG){
+    ctx.strokeStyle=p.color;
+    drawProjectileSlug(p);
+  }
   else drawProjectileLegacyLine(p);
   /* Camada temporal DEPOIS da forma base — a arma é desenhada primeiro e
      permanece dominante. Custo zero quando não é temporal. */
