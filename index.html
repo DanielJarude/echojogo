@@ -14511,6 +14511,120 @@ function fireBeam(src,def,team,mul,dt){
     }
   }
 }
+/* =====================================================================
+   PR15.5-E8 — MUZZLE / EMISSÃO POR FAMÍLIA
+   ---------------------------------------------------------------------
+   ANTES: uma única linha servia às 20 armas ranged —
+     spawnParticles(x,y,def.color,3,140,.18,2.5)
+   Rail (dmg 78, kick 280) e SMG (dmg 4.2, kick 22) saíam do cano
+   exatamente iguais. O instante do disparo não carregava identidade.
+
+   O problema não era "poucas partículas": é que spawnParticles sorteia
+   o ângulo em TAU cheio (rand(0,TAU)), então a emissão nunca podia ser
+   direcional — um leque de shotgun e um flash de sniper produziam a
+   mesma nuvem isotrópica. Por isso o E8 introduz emissão DIRECIONAL
+   determinística (muzzleShot), que dispersa em torno do eixo do cano
+   com abertura controlada por família.
+
+   Ganho colateral: muzzleShot NÃO consome RNG (spawnParticles gasta 4
+   rand() por partícula). Como ele substitui a maior parte das
+   emissões, o consumo global de RNG no disparo CAI.
+
+   Isto é um EVENTO, não render: acontece em fireWeaponFrom, no momento
+   do disparo. O renderer segue observador. */
+const MZ_BASE_SPD=140;
+/* Emissão direcional determinística: `n` partículas distribuídas em
+   leque de meia-abertura `spread` em torno de `ang`. O índice da
+   partícula define seu ângulo e sua fração de velocidade — mesma
+   entrada, mesma saída, zero RNG, zero alocação (usa o pool). */
+function muzzleShot(x,y,ang,color,n,spd,life,r,spread){
+  if(!cfg.parts)n=Math.max(1,Math.round(n*.35));
+  for(let i=0;i<n;i++){
+    if(parts.length>=PARTS_MAX){trimParts();if(parts.length>=PARTS_MAX)break;}
+    /* -1..1 simétrico sobre o eixo; com n=1 sai exatamente no eixo */
+    const u=n>1?(i/(n-1))*2-1:0;
+    const a=ang+u*spread;
+    const s=spd*(.55+.45*(1-Math.abs(u)));   // centro mais rápido que as bordas
+    const p=partTake();
+    p.x=x;p.y=y;p.vx=Math.cos(a)*s;p.vy=Math.sin(a)*s;
+    p.t=0;p.life=life*(.72+.28*(1-Math.abs(u)));
+    p.r=r*(.7+.3*(1-Math.abs(u)));p.color=color;
+    p.ring=false;p.shard=false;
+    parts.push(p);
+  }
+}
+/* Potência visual relativa derivada do kick — SINAL, não escala crua:
+   kick 280 (rail) não pode virar 50 partículas. Comprimido em 0.75..1.4. */
+function muzzlePower(def){
+  const k=Math.abs((def&&def.kick)||0);
+  return clamp(.75+k/420,.75,1.4);
+}
+/* Assinatura de emissão por família visual (reusa PROJ_FAMILY do E1 —
+   nenhuma tabela nova). Subvariações por arma onde a identidade exige.
+   Custo por disparo mantido baixo: nenhuma arma passa de 6 partículas,
+   e as de alta cadência (smg, gatling, flamer) usam 1. */
+function emitWeaponMuzzleVisual(src,def){
+  if(!src||!def)return 0;
+  const ang=src.aim;
+  const ox=src.x+Math.cos(ang)*(src.r+10), oy=src.y+Math.sin(ang)*(src.r+10);
+  const col=def.color, pw=muzzlePower(def), fam=PROJ_FAMILY[def.id];
+  const id=def.id;
+  if(fam===PVF_SLUG){
+    /* descarga estreita e direcional: quase um jato no eixo do cano */
+    if(id==='sniper')      muzzleShot(ox,oy,ang,col,2,120*pw,.12,1.6,.05);
+    else if(id==='nail')   muzzleShot(ox,oy,ang,col,2,150*pw,.10,2.0,.10);
+    else                   muzzleShot(ox,oy,ang,col,4,210*pw,.16,2.2,.07);  // rail
+    return 1;
+  }
+  if(fam===PVF_ENERGY){
+    /* condensação compacta: lenta e curta, sugere massa sendo liberada */
+    muzzleShot(ox,oy,ang,col,3,95*pw,.20,2.8,.55);
+    return 1;
+  }
+  if(fam===PVF_FLUID){
+    /* boca de spray: abertura larga e vida curta — a densidade vem da
+       cadência (flamer dispara a cada .045 s), não do volume por tiro.
+       Um cone precisa de DUAS bordas: com n=1 a partícula cai em u=0 e o
+       flamer sairia como agulha, idêntico a um slug. 2 é o mínimo que
+       lê como abertura — e ainda é menos que as 3 do emissor antigo.
+       Vida curta: abertura de cone, não fluxo persistente (isso é o E5). */
+    muzzleShot(ox,oy,ang,col,2,170*pw,id==='flamer'?.10:.13,2.4,.62);
+    return 1;
+  }
+  if(fam===PVF_SWARM){
+    if(id==='shotgun'){    // leque largo: a dispersão é a identidade
+      muzzleShot(ox,oy,ang,col,6,230*pw,.17,2.4,.58);
+    }else if(id==='smg'||id==='gatling'){
+      muzzleShot(ox,oy,ang,col,1,180*pw,.07,1.8,.20);   // cadência alta: mínimo
+    }else if(id==='homing'){
+      muzzleShot(ox,oy,ang,col,3,110*pw,.18,2.2,.42);   // cápsulas
+    }else{
+      muzzleShot(ox,oy,ang,col,3,150*pw,.14,2.0,.30);   // prism: segmentado
+    }
+    return 1;
+  }
+  if(fam===PVF_CONDUCT){
+    if(id==='tesla'){
+      /* centelha: duas partículas rápidas e quase opostas fora do eixo,
+         sugerindo bifurcação elétrica — determinística, sem RNG */
+      muzzleShot(ox,oy,ang,col,2,240*pw,.09,1.7,.85);
+    }else{
+      muzzleShot(ox,oy,ang,col,3,85*pw,.24,3.0,.50);    // plague: orgânico, lento
+    }
+    return 1;
+  }
+  if(fam===PVF_KINETIC){
+    if(id==='gatling')     muzzleShot(ox,oy,ang,col,1,180*pw,.07,1.8,.20);
+    else if(id==='mine')   muzzleShot(ox,oy,ang,col,2,70*pw,.22,2.6,.75); // lançamento curto
+    else if(id==='boomer') muzzleShot(ox,oy,ang,col,3,130*pw,.16,2.2,.66);
+    else                   muzzleShot(ox,oy,ang,col,2,190*pw,.12,2.0,.34); // ricochet
+    return 1;
+  }
+  /* fallback: armas sem família (legado/futuro) mantêm o volume antigo,
+     agora direcional e sem RNG */
+  muzzleShot(ox,oy,ang,col,3,MZ_BASE_SPD*pw,.18,2.5,.45);
+  return 1;
+}
 function fireWeaponFrom(src,def,team,mul,actionSource){
   /* PR15.7-A: captura semântica acontece no evento REAL de disparo. O
      quinto argumento é o contrato mínimo de origem: apenas 'player',
@@ -14552,8 +14666,7 @@ function fireWeaponFrom(src,def,team,mul,actionSource){
     if(def.basePierce)projectiles[projectiles.length-1].pierce=
       Math.max(pier,def.basePierce);
   }
-  spawnParticles(src.x+Math.cos(src.aim)*(src.r+10),src.y+Math.sin(src.aim)*(src.r+10),
-    def.color,3,140,.18,2.5);
+  emitWeaponMuzzleVisual(src,def);
   src.recoil=1;                      // coice visual da arma empunhada
   if(src===player){
     player.vx-=Math.cos(src.aim)*def.kick;player.vy-=Math.sin(src.aim)*def.kick;

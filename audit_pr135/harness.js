@@ -184,6 +184,10 @@ src+='\n;globalThis.__t={'+
   'drawProjectileLegacyLine:(typeof drawProjectileLegacyLine==="function"?drawProjectileLegacyLine:undefined),'+
   'drawProjectile:(typeof drawProjectile==="function"?drawProjectile:undefined),'+
   /* PR15.5-E2 — identidade temporal (guardas typeof: ver nota acima). */
+  /* PR15.5-E8 — muzzle/emissão (guardas typeof: ver nota acima). */
+  'emitWeaponMuzzleVisual:(typeof emitWeaponMuzzleVisual==="function"?emitWeaponMuzzleVisual:undefined),'+
+  'muzzleShot:(typeof muzzleShot==="function"?muzzleShot:undefined),'+
+  'muzzlePower:(typeof muzzlePower==="function"?muzzlePower:undefined),'+
   /* PR15.5-E3 — família slug/penetrador (guardas typeof: ver nota acima). */
   'drawProjectileSlug:(typeof drawProjectileSlug==="function"?drawProjectileSlug:undefined),'+
   'projectileTravelDistance:(typeof projectileTravelDistance==="function"?projectileTravelDistance:undefined),'+
