@@ -121,7 +121,27 @@ const mechanical={
      (cópias ciano/magenta agora anti-correlacionadas). jj, strikeT e
      vp.lean intactos; nenhum outro ramo de drawEnemy foi tocado. */
   "drawEnemy": "93a0eba8f7b09078852d54bb5898b788d62dfd143ff2d807249424fd8026b233",
-  "drawProjectile": "565cdac8706fc659607acab66596631b930430e41d064f20d2fc827631f32399",
+  /* PR15.5-E1: re-baseline do hash do TEXTO-FONTE, não do resultado.
+     drawProjectile foi refatorado de um `if(orb)` binário para dispatch
+     com helpers (projectileUsesOrbShape / projectileRangeFade /
+     drawProjectileGlow / drawProjectileOrbShape / drawProjectileLegacyLine).
+     O corpo da função mudou por definição, então este pin de texto tinha
+     de mudar.
+
+     A APARÊNCIA não mudou, e isso é provado de duas formas independentes,
+     ambas verdes nesta mesma suíte e SEM qualquer alteração:
+       · os 9 goldens `hashCanvas` (cenários A–I, logo abaixo) continuam
+         com os valores originais — a sequência e os argumentos Canvas são
+         idênticos aos da base;
+       · `consumo de RNG de draw preservado` segue 0 em todos os cenários.
+     Adicionalmente, tests/pr15-5-e1-projectile-visual-grammar.test.js §C
+     reconstrói a implementação anterior no mesmo sandbox e compara o
+     traço do ctx em 576 combinações de tipo/alcance/cor/velocidade:
+     ZERO divergências.
+
+     Nenhuma assertiva foi afrouxada: o pin continua sendo igualdade
+     estrita de SHA-256 sobre o corpo da função. */
+  "drawProjectile": "85b7a83131ac42edd9280898d1827c6c24b2a33071ec20412c90e33231e61261",
   /* PR15.5-D: drawSwings re-baselineado — ganhou o despacho para o trail
      por família (meleeDrawTrail, pinado abaixo). O fallback legado e o
      comportamento sem RNG permanecem; os goldens A–I comprovam que os

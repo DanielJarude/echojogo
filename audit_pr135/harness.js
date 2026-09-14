@@ -173,6 +173,18 @@ src+='\n;globalThis.__t={'+
      guarda, o bridge lançaria ReferenceError e derrubaria suítes antigas. */
   'vHash32:(typeof vHash32==="function"?vHash32:undefined),'+
   'vJit1:(typeof vJit1==="function"?vJit1:undefined),'+
+  /* PR15.5-E1 — gramática visual dos projéteis. Guardas `typeof` são
+     OBRIGATÓRIAS: este harness também instancia fontes HISTÓRICAS via
+     `git show <ref>:index.html`, onde estes símbolos não existem. */
+  'visualFamilyForProjectile:(typeof visualFamilyForProjectile==="function"?visualFamilyForProjectile:undefined),'+
+  'projectileUsesOrbShape:(typeof projectileUsesOrbShape==="function"?projectileUsesOrbShape:undefined),'+
+  'projectileRangeFade:(typeof projectileRangeFade==="function"?projectileRangeFade:undefined),'+
+  'drawProjectileGlow:(typeof drawProjectileGlow==="function"?drawProjectileGlow:undefined),'+
+  'drawProjectileOrbShape:(typeof drawProjectileOrbShape==="function"?drawProjectileOrbShape:undefined),'+
+  'drawProjectileLegacyLine:(typeof drawProjectileLegacyLine==="function"?drawProjectileLegacyLine:undefined),'+
+  'drawProjectile:(typeof drawProjectile==="function"?drawProjectile:undefined),'+
+  'PROJ_FAMILY:(typeof PROJ_FAMILY!=="undefined"?PROJ_FAMILY:undefined),'+
+  'PVF:(typeof PVF_LEGACY!=="undefined"?{LEGACY:PVF_LEGACY,SLUG:PVF_SLUG,ENERGY:PVF_ENERGY,FLUID:PVF_FLUID,SWARM:PVF_SWARM,CONDUCT:PVF_CONDUCT,KINETIC:PVF_KINETIC}:undefined),'+
   'vSeedOf:(typeof vSeedOf==="function"?vSeedOf:undefined),'+
   'echoUnstableEmit:(typeof echoUnstableEmit==="function"?echoUnstableEmit:undefined),'+
   'ECHO_UNSTABLE_EMIT_HZ:(typeof ECHO_UNSTABLE_EMIT_HZ!=="undefined"?ECHO_UNSTABLE_EMIT_HZ:undefined),'+
