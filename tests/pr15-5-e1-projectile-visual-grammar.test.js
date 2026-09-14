@@ -149,22 +149,28 @@ const SLUG_E3=['rail','sniper','nail'];
    balde com prova POSITIVA (C01c) — a varredura não foi enfraquecida:
    continua exigindo equivalência exata para todo o resto. */
 const SWARM_E4=['smg','shotgun','homing','prism'];
+/* PR15.5-E10: a família CINÉTICO/RETORNO também ganhou forma própria.
+   Quarto balde com prova POSITIVA (C01d). A varredura segue exigindo
+   equivalência exata para tudo que ainda não foi redesenhado. */
+const KINETIC_E10=['ricochet','boomer','gatling','mine'];
 const TIPOS_C=RANGED.concat(['eorb','tipo_inexistente_xyz',undefined,null]);
 const CASOS=[];
 for(const [dist,maxDist] of [[0,0],[0,1000],[500,1000],[850,1000],[1000,1000]])
   for(const color of ['#46e0ff','#ff7a2f','#a8ff3d'])
     for(const [vx,vy] of [[300,-140],[0,0],[-980,0]])
       CASOS.push({dist,maxDist,color,vx,vy});
-let compC=0,divC=0,compSlug=0,divSlug=0,compSwarm=0,divSwarm=0;
+let compC=0,divC=0,compSlug=0,divSlug=0,compSwarm=0,divSwarm=0,compKin=0,divKin=0;
 for(const t of TIPOS_C){
   const isSlug=SLUG_E3.indexOf(t)>=0;
   const isSwarm=SWARM_E4.indexOf(t)>=0;
+  const isKin=KINETIC_E10.indexOf(t)>=0;
   for(const c of CASOS){
     const r=comparaTracos({type:t,x:120.5,y:80.25,vx:c.vx,vy:c.vy,r:4.5,
       color:c.color,dist:c.dist,maxDist:c.maxDist});
     const diff=r.novo!==r.velho;
     if(isSlug){compSlug++;if(diff)divSlug++;}
     else if(isSwarm){compSwarm++;if(diff)divSwarm++;}
+    else if(isKin){compKin++;if(diff)divKin++;}
     else{compC++;if(diff)divC++;}
   }
 }
@@ -176,8 +182,11 @@ ok('C01b família SLUG (E3) mudou em TODAS as '+compSlug+' combinações',()=>{
 ok('C01c família ENXAME (E4) mudou em TODAS as '+compSwarm+' combinações',()=>{
   assert.strictEqual(divSwarm,compSwarm,
     'smg/shotgun/homing/prism deveriam ter forma própria: só '+divSwarm+' de '+compSwarm);});
+ok('C01d família CINÉTICO (E10) mudou em TODAS as '+compKin+' combinações',()=>{
+  assert.strictEqual(divKin,compKin,
+    'ricochet/boomer/gatling/mine deveriam ter forma própria: só '+divKin+' de '+compKin);});
 ok('C02 a cobertura da varredura é significativa',()=>{
-  const tot=compC+compSlug+compSwarm;
+  const tot=compC+compSlug+compSwarm+compKin;
   assert.ok(tot>=500,'apenas '+tot+' combinações');});
 ok('C03 plasma mantém o comprimento 10 (demais 5)',()=>{
   const L=t=>{const g=trace('drawProjectile(__pp)',

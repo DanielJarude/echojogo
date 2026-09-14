@@ -198,10 +198,17 @@ ok('O02 E3 preservado: rail/sniper/nail inalterados (§16)',()=>{
     'beginPath,moveTo,lineTo,lineTo,lineTo,lineTo,lineTo,closePath,fill');
   assert.strictEqual(run('SNIPER_FAR_DIST'),450);});
 ok('O03 famílias fora do E4 seguem na linha legada (§35)',()=>{
+  /* ricochet/boomer/gatling/mine ganharam forma própria no PR15.5-E10 */
   const legado=topo({type:'cryo'});
-  for(const id of ['plasma','flamer','acid','tesla','boomer','mine','void',
-                   'ricochet','gatling','plague'])
+  for(const id of ['plasma','flamer','acid','tesla','void','plague'])
     assert.strictEqual(topo({type:id}),legado,id+' foi alterado fora do escopo');});
+ok('O03b E10: as 4 cinéticas não copiam nenhuma forma do enxame',()=>{
+  const legado=topo({type:'cryo'});
+  for(const id of ['ricochet','boomer','gatling','mine']){
+    assert.notStrictEqual(topo({type:id}),legado,id+' deveria ter forma própria');
+    for(const sw of SWARM)
+      assert.notStrictEqual(topo({type:id})+'|'+JSON.stringify(verts({type:id})),
+        topo({type:sw})+'|'+JSON.stringify(verts({type:sw})),id+' == '+sw);}});
 /* Contrato REAL do E2: Echo é owner.slot>0 && owner.data — não uma flag
    solta no projétil (o E2 proibiu explicitamente heurística por flag). */
 const ECHO_OWNER={slot:1,data:{}};
