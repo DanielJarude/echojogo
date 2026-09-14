@@ -54,11 +54,22 @@ for(const t of SLUGS)
     const legacy=opsOf(geomOf(trace(P('cryo'))));
     assert.notDeepStrictEqual(g,legacy,t+' ainda desenha a linha legada');});
 ok('A05 demais famílias NÃO usam o helper slug (21.D)',()=>{
-  /* uma arma de cada outra família continua na linha legada */
+  /* uma arma de cada outra família continua na linha legada.
+     smg/shotgun/homing/prism saíram desta lista no PR15.5-E4, que lhes deu
+     forma própria — o que o E3 precisa garantir é que elas não usam a
+     geometria SLUG, verificado logo abaixo em A05b. */
   const legacy=opsOf(geomOf(trace(P('cryo'))));
-  for(const t of ['plasma','shotgun','smg','acid','tesla','ricochet','gatling'])
+  for(const t of ['plasma','acid','tesla','ricochet','gatling','mine','plague'])
     assert.deepStrictEqual(opsOf(geomOf(trace(P(t)))),legacy,
       t+' mudou de forma — fora do escopo do E3');});
+ok('A05b família ENXAME (E4) tem forma própria e NÃO é slug',()=>{
+  const legacy=opsOf(geomOf(trace(P('cryo')))).join(',');
+  for(const t of ['smg','shotgun','homing','prism']){
+    const g=opsOf(geomOf(trace(P(t)))).join(',');
+    assert.notStrictEqual(g,legacy,t+' deveria ter forma própria (E4)');
+    for(const sl of SLUGS)
+      assert.notStrictEqual(g,opsOf(geomOf(trace(P(sl)))).join(','),
+        t+' copiou a geometria de '+sl);}});
 ok('A06 o dispatch não voltou a ser monolítico (§3)',()=>{
   const b=body('drawProjectile');
   assert.ok(b.includes('drawProjectileSlug'));
@@ -359,8 +370,9 @@ ok('J04 beam intacto (21.W)',()=>{
   assert.ok(b.includes('createLinearGradient')&&b.includes('rampMax'));});
 ok('J05 as outras 16 armas continuam na linha legada (§16)',()=>{
   const legacy=opsOf(geomOf(trace(P('cryo')))).join(',');
-  for(const t of ['plasma','shotgun','flamer','smg','tesla','acid','boomer',
-                  'homing','mine','void','ricochet','gatling','prism','plague','cryo'])
+  /* as 4 do ENXAME saíram da linha legada no E4 (ver A05b) */
+  for(const t of ['plasma','flamer','tesla','acid','boomer',
+                  'mine','void','ricochet','gatling','plague','cryo'])
     assert.strictEqual(opsOf(geomOf(trace(P(t)))).join(','),legacy,t+' foi alterada');});
 
 /* ============ K · REGRESSÕES (§24) ============ */

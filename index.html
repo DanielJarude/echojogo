@@ -20903,6 +20903,107 @@ function drawProjectileSlug(p){
   ctx.lineTo(p.x-nx*(back+p.r*2.4),p.y-ny*(back+p.r*2.4));
   ctx.stroke();
 }
+/* ===================== PR15.5-E4 · ENXAME / MÚLTIPLO =====================
+   SMG, Shotgun, Homing e Prism. A família compartilha uma GRAMÁTICA
+   (escala pequena, eixo forte, pouca massa individual, poucos segmentos,
+   zero ornamento) mas cada arma tem TOPOLOGIA própria:
+
+     smg      → 1 corpo compacto      (losango curto de 4 vértices)
+     shotgun  → 1 fragmento           (cunha trapezoidal assimétrica)
+     homing   → cabeça + estabilizadores (corpo fechado + 2 aletas)
+     prism    → corpo facetado        (2 planos + aresta interna)
+
+   Se cor, glow e partículas somem, a forma ainda diz o que é. Todas
+   construídas com o eixo nx/ny (direção real do voo) e sua perpendicular
+   px/py — nenhum ctx.rotate, save/restore, gradiente ou alocação. */
+function drawProjectileSwarm(p){
+  const sp=Math.hypot(p.vx,p.vy)||1;
+  const nx=p.vx/sp, ny=p.vy/sp;      // eixo do voo (orientação real)
+  const px=-ny, py=nx;               // perpendicular
+  const t=p.type;
+  if(t==='smg'){
+    /* MICROCÁPSULA: losango curto e estreito. Corpo mínimo, ponta e
+       cauda simétricas — munição repetida, não um mini-rail. A rajada
+       nasce da cadência (interval .065) e não do tamanho. */
+    const head=p.r*1.9, tail=p.r*1.5, w=Math.max(.9,p.r*.52);
+    ctx.beginPath();
+    ctx.moveTo(p.x+nx*head,p.y+ny*head);
+    ctx.lineTo(p.x+px*w,p.y+py*w);
+    ctx.lineTo(p.x-nx*tail,p.y-ny*tail);
+    ctx.lineTo(p.x-px*w,p.y-py*w);
+    ctx.closePath();ctx.fill();
+    return;
+  }
+  if(t==='shotgun'){
+    /* PELLET: fragmento IRREGULAR de 5 vértices. Frente chata e estreita
+       (não tem ponta — pellet não é dardo), corpo que alarga para trás e
+       traseira QUEBRADA em dois planos desiguais. Essa quebra é o que o
+       distingue topologicamente da microcápsula do SMG: o SMG é um
+       losango simétrico de 4 vértices, o pellet é um caco assimétrico.
+       A assimetria é fixa e determinística — sem leque desenhado, porque
+       a dispersão já existe no spread mecânico do conjunto. */
+    const head=p.r*1.15, back=p.r*1.30;
+    const wf=Math.max(.8,p.r*.42), wb=Math.max(1.2,p.r*.98);
+    ctx.beginPath();
+    ctx.moveTo(p.x+nx*head+px*wf,p.y+ny*head+py*wf);   // frente chata
+    ctx.lineTo(p.x+nx*head-px*wf,p.y+ny*head-py*wf);
+    ctx.lineTo(p.x-nx*back*.72-px*wb,p.y-ny*back*.72-py*wb);
+    ctx.lineTo(p.x-nx*back-px*wb*.30,p.y-ny*back-py*wb*.30); // quebra
+    ctx.lineTo(p.x-nx*back*.55+px*wb*.88,p.y-ny*back*.55+py*wb*.88);
+    ctx.closePath();ctx.fill();
+    return;
+  }
+  if(t==='homing'){
+    /* BUSCADOR: cabeça ogival + corpo + DOIS estabilizadores traseiros
+       destacados. É a única da família com apêndices fora do casco —
+       assinatura de unidade autopropelida. Como o steering reescreve
+       vx/vy a cada frame, a forma acompanha a correção de curso. */
+    const head=p.r*2.2, tail=p.r*1.6, w=Math.max(1,p.r*.60);
+    const sx=p.x-nx*tail, sy=p.y-ny*tail;     // base do casco
+    ctx.beginPath();
+    ctx.moveTo(p.x+nx*head,p.y+ny*head);      // ogiva
+    ctx.lineTo(p.x+px*w,p.y+py*w);
+    ctx.lineTo(sx+px*w*.80,sy+py*w*.80);
+    ctx.lineTo(sx-px*w*.80,sy-py*w*.80);
+    ctx.lineTo(p.x-px*w,p.y-py*w);
+    ctx.closePath();ctx.fill();
+    /* aletas: 2 traços curtos e divergentes na traseira */
+    const fw=w*2.1, fb=p.r*.9;
+    ctx.strokeStyle=p.color;ctx.lineWidth=Math.max(1,p.r*.30);
+    ctx.beginPath();
+    ctx.moveTo(sx+px*w*.8,sy+py*w*.8);
+    ctx.lineTo(sx-nx*fb+px*fw,sy-ny*fb+py*fw);
+    ctx.moveTo(sx-px*w*.8,sy-py*w*.8);
+    ctx.lineTo(sx-nx*fb-px*fw,sy-ny*fb-py*fw);
+    ctx.stroke();
+    return;
+  }
+  /* PRISMA: corpo dividido em DOIS planos de larguras diferentes, com a
+     aresta de divisão visível. Não é um triângulo: é um sólido que o
+     olho lê como facetado. O fragmento pós-split (split=0, def=null)
+     usa o mesmo esquema em escala menor — coerente com a mecânica real
+     de divisão em 2 ao acertar. */
+  const head=p.r*2.0, mid=p.r*.35, back=p.r*1.7;
+  const w1=Math.max(1,p.r*.78), w2=Math.max(.7,p.r*.44);
+  const mx=p.x+nx*mid, my=p.y+ny*mid;        // linha da aresta
+  const bx=p.x-nx*back, by=p.y-ny*back;
+  ctx.beginPath();                            // faceta dianteira (larga)
+  ctx.moveTo(p.x+nx*head,p.y+ny*head);
+  ctx.lineTo(mx+px*w1,my+py*w1);
+  ctx.lineTo(mx-px*w1,my-py*w1);
+  ctx.closePath();ctx.fill();
+  ctx.beginPath();                            // faceta traseira (estreita)
+  ctx.moveTo(mx+px*w1,my+py*w1);
+  ctx.lineTo(bx+px*w2,by+py*w2);
+  ctx.lineTo(bx-px*w2,by-py*w2);
+  ctx.lineTo(mx-px*w1,my-py*w1);
+  ctx.closePath();ctx.fill();
+  ctx.strokeStyle=p.color;ctx.lineWidth=Math.max(1,p.r*.26);
+  ctx.beginPath();                            // aresta de divisão
+  ctx.moveTo(mx+px*w1,my+py*w1);
+  ctx.lineTo(mx-px*w1,my-py*w1);
+  ctx.stroke();
+}
 function drawProjectile(p){
   const orb=projectileUsesOrbShape(p);
   const fade=projectileRangeFade(p);
@@ -20916,6 +21017,7 @@ function drawProjectile(p){
     ctx.strokeStyle=p.color;
     drawProjectileSlug(p);
   }
+  else if(visualFamilyForProjectile(p)===PVF_SWARM)drawProjectileSwarm(p);
   else drawProjectileLegacyLine(p);
   /* Camada temporal DEPOIS da forma base — a arma é desenhada primeiro e
      permanece dominante. Custo zero quando não é temporal. */
