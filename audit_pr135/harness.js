@@ -165,6 +165,24 @@ src+='\n;globalThis.__t={'+
   'getRunTimeRef:()=>runTime,getToastsEl:()=>toastsEl,getBannerEl:()=>bannerEl,'+
   'fractureMakeSeed,fractureEnsureTheme,fractureGetIntensity,'+
   'spawnParticles,floatText,spawnRing,getPartsRef:()=>parts,'+
+  /* PR15.5-E0: determinismo visual — helpers puros, emissão instável do
+     Echo (movida do draw para o update) e renderers corrigidos.
+     TODOS os símbolos NOVOS vão sob `typeof`: este harness também é usado
+     para instanciar FONTES HISTÓRICAS (git show <ref>:index.html) nas
+     suítes de comparação com a base, e ali eles ainda não existem. Sem a
+     guarda, o bridge lançaria ReferenceError e derrubaria suítes antigas. */
+  'vHash32:(typeof vHash32==="function"?vHash32:undefined),'+
+  'vJit1:(typeof vJit1==="function"?vJit1:undefined),'+
+  'vSeedOf:(typeof vSeedOf==="function"?vSeedOf:undefined),'+
+  'echoUnstableEmit:(typeof echoUnstableEmit==="function"?echoUnstableEmit:undefined),'+
+  'ECHO_UNSTABLE_EMIT_HZ:(typeof ECHO_UNSTABLE_EMIT_HZ!=="undefined"?ECHO_UNSTABLE_EMIT_HZ:undefined),'+
+  'drawStatus,drawArcs,drawEchoEntity,drawWorldExtras,drawUnit,updateEcho,'+
+  'getArcs:()=>arcs,setArcs:a=>{arcs=a;},updateArcs,'+
+  'getBeacon:()=>beacon,setBeacon:b=>{beacon=b;},'+
+  'setPartsRef:a=>{parts.length=0;for(let i=0;i<a.length;i++)parts.push(a[i]);},'+
+  'setShakeV:v=>{shake=v;},getShakeV:()=>shake,'+
+  'setAberrV:v=>{aberr=v;},getAberrV:()=>aberr,'+
+  'setFracTV:v=>{fracT=v;},getCfg:()=>cfg,'+
   'getEchoSpeechActive:()=>speechActive,getEchoSpeechQueue:()=>speechQueue,'+
   'setEchoSpeechClock:v=>{_speechClock=v;},'+
   'AUDIO,sandboxStart,sandboxExit,devEnable,devDisable'+

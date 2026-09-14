@@ -1189,6 +1189,47 @@ function angTo(cur,tgt,step){
 }
 
 /* =====================================================================
+   PR15.5-E0 — DETERMINISMO VISUAL · "o renderer é um observador"
+   ---------------------------------------------------------------------
+   rand()/randi() são wrappers diretos de Math.random(), o MESMO fluxo
+   global que alimenta crit, spread, Elite, drops, eventos e AI. Qualquer
+   rand() dentro do pipeline de draw fazia o número de frames desenhados
+   deslocar a sequência mecânica — FPS, refresh rate, culling de câmera,
+   tempo parado num modal e até opções visuais mudavam o futuro da run.
+
+   vHash32 / vJit1 são os substitutos para TODO jitter visual: funções
+   PURAS, sem estado, sem alocação, sem Math.random. Mesma entrada ⇒
+   mesma saída. O padrão é sempre o mesmo e espelha o que o PR15.5-C já
+   faz com d.seed:
+
+       seed estável da entidade + tempo lógico QUANTIZADO + índice fixo
+
+   A quantização do tempo (ex.: (runTime*40)|0) é o que torna o efeito
+   independente de FPS: 30, 60 ou 144 Hz caem no mesmo tick visual e
+   produzem exatamente a mesma imagem para o mesmo instante lógico.
+
+   NÃO é um framework de RNG e NÃO substitui rand() no gameplay — rand()
+   continua existindo, intacto, para toda a simulação.                */
+function vHash32(a,b,c){
+  let h=(a|0)^Math.imul((b|0)+0x9E3779B1,0x85EBCA6B);
+  h^=Math.imul((c|0)+0x165667B1,0xC2B2AE35);
+  h=Math.imul(h^(h>>>15),0x2C1B3C6D);
+  h^=h>>>13;h=Math.imul(h,0x297A2D39);
+  return (h^(h>>>16))>>>0;
+}
+/* jitter simétrico em [-1,1) — o análogo determinístico de rand(-1,1) */
+function vJit1(a,b,c){return vHash32(a,b,c)/2147483648-1;}
+/* seed visual inteira e estável de uma entidade. e.visualSeed (inimigos,
+   0..1) e e.seed (Echos, 0..100) já existem; a posição de spawn cobre o
+   resto. Nunca consulta nem altera estado de gameplay.                */
+function vSeedOf(e){
+  if(!e)return 0;
+  if(e.visualSeed!=null&&isFinite(e.visualSeed))return (e.visualSeed*4294967296)|0;
+  if(e.seed!=null&&isFinite(e.seed))return (e.seed*42949672)|0;
+  return ((e.x|0)*73856093^(e.y|0)*19349663)|0;
+}
+
+/* =====================================================================
    FORMATAÇÃO CENTRAL DE NÚMEROS (PR 11.5)
    ---------------------------------------------------------------------
    ÚNICA fonte de formatação para HUD, TAB (Ficha de Combate), Loja,
@@ -14010,7 +14051,12 @@ function drawWorldExtras(){
       }
     }else if(b.kind==='ambush'){
       /* SINAL CORROMPIDO — baliza falsa com estática e marcas hostis */
-      const gl=Math.random()<.22?rand(-3,3):0;
+      /* PR15.5-E0: glitch do ambush sem RNG. b.pulse (já avançado pelo
+         tick lógico) quantizado em ~14 Hz + a posição do beacon como
+         seed implícita — ela já foi sorteada no spawn, que continua
+         intacto. Nenhum campo novo é persistido. */
+      const amT=(b.pulse*14)|0, amH=vHash32(amT,(b.x|0)^(b.y|0),0x0A);
+      const gl=((amH&1023)<225)?vJit1(amT,(b.x|0)^(b.y|0),0x0B)*3:0;
       ctx.save();ctx.translate(gl,0);
       ctx.strokeStyle='#ff8095';ctx.lineWidth=1.8;
       ctx.shadowColor='#ff4d6d';ctx.shadowBlur=13;
@@ -14034,7 +14080,7 @@ function drawWorldExtras(){
       // ruído de estática
       ctx.strokeStyle='rgba(255,128,149,.4)';ctx.lineWidth=1;
       for(let i=0;i<2;i++){
-        const yy=rand(-16,14);
+        const yy=-16+(vHash32(amT,(b.x|0)^(b.y|0),0x10+i)&1023)/1023*30;
         ctx.beginPath();ctx.moveTo(-14,yy);ctx.lineTo(14,yy);ctx.stroke();
       }
     }else if(EV_LABEL[b.kind]&&b.kind!=='survivor'&&b.kind!=='merchant'){
@@ -15375,10 +15421,17 @@ function drawStatus(e){
     ctx.beginPath();ctx.arc(e.x,e.y,R+9,0,TAU);ctx.stroke();
     ctx.setLineDash([]);ctx.restore();
   }
-  if(s.shockT>0&&Math.random()<.4){
+  /* PR15.5-E0: o choque era o ÚNICO status não determinístico — os cinco
+     vizinhos (stun, chill, burn, corrode, pips) já derivavam de runTime.
+     Agora ele segue o mesmo padrão: tick de 22 Hz + seed da entidade.
+     O gate (h&7)<3 ≈ 37,5%, próximo dos 40% originais, e a quantização
+     mantém cada raio visível por ~45 ms — em 144 Hz o efeito antes
+     piscava rápido demais para ser lido. */
+  const shkT=(runTime*22)|0, shkH=vHash32(shkT,vSeedOf(e),0x51);
+  if(s.shockT>0&&(shkH&7)<3){
     ctx.save();ctx.globalAlpha=.7;
     ctx.strokeStyle='#ffe74d';ctx.lineWidth=1.3;
-    const a=rand(0,TAU);
+    const a=(shkH>>>8)/16777216*TAU;
     ctx.beginPath();
     ctx.moveTo(e.x+Math.cos(a)*R,e.y+Math.sin(a)*R);
     ctx.lineTo(e.x+Math.cos(a+.6)*(R+9),e.y+Math.sin(a+.6)*(R+9));
@@ -15414,8 +15467,16 @@ function drawArcs(){
     ctx.shadowColor=a.color;ctx.shadowBlur=10;
     ctx.beginPath();ctx.moveTo(a.x1,a.y1);
     const seg=4,dx=(a.x2-a.x1)/seg,dy=(a.y2-a.y1)/seg;
+    /* PR15.5-E0: jitter determinístico por segmento. A geometria do arco
+       (já única por par origem→alvo) é a seed; a idade quantizada em
+       60 Hz mantém o raio tremendo ao longo dos ~0,2 s de vida. O array
+       `arcs` NÃO é tocado aqui — chainLightning e reap continuam donos
+       exclusivos do push/splice. Zero alocação no laço. */
+    const ag=((a.x1|0)*7+(a.y1|0)*13+(a.x2|0)*17+(a.y2|0)*23)|0,
+          at=(a.t*60)|0;
     for(let i=1;i<seg;i++)
-      ctx.lineTo(a.x1+dx*i+rand(-9,9),a.y1+dy*i+rand(-9,9));
+      ctx.lineTo(a.x1+dx*i+vJit1(ag,at,i)*9,
+                 a.y1+dy*i+vJit1(ag,at,i+64)*9);
     ctx.lineTo(a.x2,a.y2);ctx.stroke();
     ctx.restore();
   }
@@ -17328,9 +17389,33 @@ function echoSurvivalAdjust(e,tx,ty){
   const bx=lerp(tx,rx,need),by=lerp(ty,ry,need);
   return {x:isFinite(bx)?bx:tx,y:isFinite(by)?by:ty};
 }
+/* PR15.5-E0 — emissão instável do Echo, movida do DRAW para o UPDATE.
+   Antes vivia em drawEchoEntity() como `Math.random()<.05 &&
+   spawnParticles(...)`: o renderer criava entidades, mutava o array
+   `parts` (que tem teto rígido PARTS_MAX e pool) e a densidade escalava
+   com o FPS — em 144 Hz emitia 2,4× mais que em 60 Hz.
+
+   Agora é um ACUMULADOR determinístico em dt: nada de RNG, cadência
+   fixa de 3 emissões/s (exatamente 0.05×60, a densidade percebida a
+   60 FPS). Só roda no mesmo estado 'unstable' que justificava o efeito;
+   como vive no updateEcho, congela em pausa/modal e não depende de
+   quantos frames foram desenhados.                                   */
+const ECHO_UNSTABLE_EMIT_HZ=3;
+function echoUnstableEmit(e,dt){
+  if(!e||!e.dis||e.dis.st!=='unstable'){if(e)e._unsAcc=0;return 0;}
+  let acc=(e._unsAcc||0)+dt*ECHO_UNSTABLE_EMIT_HZ;
+  let n=0;
+  /* epsilon: sem ele, 3×(1/30) somado 10 vezes dá 0.9999999999999999 e a
+     emissão "perde" um tick — 30 e 60 FPS divergiriam por erro de float. */
+  while(acc>=1-1e-9&&n<4){acc-=1;n++;} // teto por tick: sem rajada após lag
+  e._unsAcc=acc;
+  for(let i=0;i<n;i++)spawnParticles(e.x,e.y,DIS_COLOR.unstable,1,90,.25,2);
+  return n;
+}
 function updateEcho(e,dt){
   visualTimelineTick(e,dt);
   if(!e.alive)return;
+  echoUnstableEmit(e,dt);
   regenEchoShield(e,dt);            // escudo regenera (suspenso durante a ruptura)
   if(e.trustFx)e.trustFx*=Math.pow(.12,dt);
   /* PR 10: relação + máquina de estados da Dissonância (O(1) por tick) */
@@ -19679,7 +19764,13 @@ function drawUnit(x,y,aim,r,pal,opts){
   opts=opts||{};
   const s=r/14, al=opts.alpha==null?1:opts.alpha;
   const gl=opts.glitch?2.4:0;
-  const ox=gl?rand(-gl,gl):0, oy=gl?rand(-gl,gl):0;
+  /* PR15.5-E0: glitch determinístico. Sem mudar a assinatura pública —
+     reusa opts.phase, que TODOS os callers já passam (phase:e.seed nos
+     Echos, phase:0 no player) e cujo default 0 mantém o comportamento
+     estável para qualquer caller futuro. Tick de 30 Hz: continua
+     deslocando e parecendo instável, mas igual em qualquer FPS. */
+  const glT=gl?((runTime*30)|0):0, glS=gl?((opts.phase||0)*4294967|0):0;
+  const ox=gl?vJit1(glS,glT,0x21)*gl:0, oy=gl?vJit1(glS,glT,0x22)*gl:0;
   const wi=opts.wi|0;
   const walk=opts.walk||0;
   const ph=(opts.phase||0)+runTime*(6+walk*7);
@@ -19799,8 +19890,12 @@ function drawEchoEntity(e){
     }
     ctx.globalAlpha=1;
     const jit=frac?(3+pulse*5):(hostile?4:2);
+    /* PR15.5-E0: jitter da Dissonância derivado de e.seed + tick de
+       30 Hz. Amplitude, leitura de estado e o restante do corpo são
+       preservados; só a fonte da irregularidade mudou. */
+    const ecT=(runTime*30)|0, ecS=vSeedOf(e);
     ctx.save();ctx.globalCompositeOperation='lighter';
-    drawUnit(e.x+rand(-jit,jit),e.y+rand(-jit*.5,jit*.5),e.aim,e.r,{
+    drawUnit(e.x+vJit1(ecS,ecT,0x31)*jit,e.y+vJit1(ecS,ecT,0x32)*jit*.5,e.aim,e.r,{
       body:hostile?'rgba(120,10,30,.95)':(frac?'rgba(120,64,10,.92)':'rgba(30,96,124,.9)'),
       dark:'rgba(50,2,12,.98)',edge:col,glow:col,
       visor:hostile?'#ffe0e6':'#eaffff',
@@ -19851,16 +19946,22 @@ function drawEchoEntity(e){
   }
   ctx.globalAlpha=1;
   if(e.slot===2){ // GLITCH: fatias deslocadas + cintilação + imagem cromática
-    if(Math.random()<.06)return; // pisca fora
+    /* PR15.5-E0: blink/deslocamento/cópias/scanlines do Echo 2 agora
+       derivam de e.seed + tick de 30 Hz. As probabilidades (6% de pisca
+       fora, 25% de deslocamento) e as amplitudes são as mesmas; o
+       cromatismo, a afterimage e o corpo seguem intactos. */
+    const g2T=(runTime*30)|0, g2S=vSeedOf(e), g2H=vHash32(g2S,g2T,0x40);
+    if((g2H&1023)<61)return; // pisca fora (~6%)
     const amp=e.glitchAmp;
     ctx.save();
-    if(Math.random()<.25)ctx.translate(rand(-amp,amp)*.4,rand(-amp,amp)*.25);
+    if((vHash32(g2S,g2T,0x41)&1023)<256)
+      ctx.translate(vJit1(g2S,g2T,0x42)*amp*.4,vJit1(g2S,g2T,0x43)*amp*.25);
     ctx.globalCompositeOperation='lighter';
-    drawUnit(e.x+rand(-3,3),e.y,e.aim,e.r,{
+    drawUnit(e.x+vJit1(g2S,g2T,0x44)*3,e.y,e.aim,e.r,{
       body:'rgba(90,40,120,.85)',dark:'rgba(40,10,60,.9)',edge:'#46e0ff',
       glow:'#46e0ff',visor:'#bff6ff',head:'rgba(80,40,110,.9)',wep:'#46e0ff'
     },{alpha:.30,glitch:true,wi:e.curW|0,walk:.6,recoil:Math.max(e.recoil||0,visualWeaponRecoil(e)),melee:visualMeleeWeaponPose(e),phase:e.seed});
-    drawUnit(e.x+rand(-3,3),e.y,e.aim,e.r,{
+    drawUnit(e.x+vJit1(g2S,g2T,0x45)*3,e.y,e.aim,e.r,{
       body:'rgba(150,40,140,.9)',dark:'rgba(60,10,55,.92)',edge:'#ff4df0',
       glow:'#ff4df0',visor:'#ffd9fb',head:'rgba(130,35,125,.92)',wep:'#ff4df0'
     },{alpha:.58,glitch:true,wi:e.curW|0,walk:.6,recoil:Math.max(e.recoil||0,visualWeaponRecoil(e)),melee:visualMeleeWeaponPose(e),phase:e.seed});
@@ -19868,7 +19969,7 @@ function drawEchoEntity(e){
     // scanlines cortadas
     ctx.strokeStyle='rgba(255,120,250,.35)';ctx.lineWidth=1;
     for(let i=0;i<2;i++){
-      const yy=e.y+rand(-e.r,e.r);
+      const yy=e.y+vJit1(g2S,g2T,0x46+i)*e.r;
       ctx.beginPath();ctx.moveTo(e.x-e.r-6,yy);ctx.lineTo(e.x+e.r+6,yy);ctx.stroke();
     }
     ctx.restore();
@@ -19899,7 +20000,9 @@ function drawEchoEntity(e){
     ctx.beginPath();ctx.arc(e.x,e.y,e.r+11,0,TAU);ctx.stroke();
     ctx.setLineDash([]);
     ctx.restore();
-    if(Math.random()<.05)spawnParticles(e.x,e.y,DIS_COLOR.unstable,1,90,.25,2);
+    /* PR15.5-E0: a emissão de partícula que existia AQUI foi movida para
+       o helper echoUnstableEmit, chamado pelo updateEcho. O draw não cria
+       mais entidades — era o único ponto do renderer que mutava `parts`. */
   }
   if(e.trustFx){
     ctx.globalAlpha=Math.abs(e.trustFx);
@@ -20213,8 +20316,16 @@ function drawEnemy(e){
       ctx.closePath();ctx.fill();
     };
     ctx.save();ctx.globalCompositeOperation='lighter';
-    tri(rand(-jj,jj),rand(-jj,jj),'#46e0ff',.55);
-    tri(rand(-jj,jj),rand(-jj,jj),'#ff2fa0',.55);
+    /* PR15.5-E0: aberração determinística. A fase deriva de runTime +
+       e.visualSeed (já existente desde o spawn), então dois anômalos
+       nunca tremem em sincronia. As cópias ciano/magenta são ANTI-
+       CORRELACIONADAS (sinal oposto): elas se separam em vez de às vezes
+       se sobrepor, o que melhora a leitura sem mudar a direção de arte.
+       jj, strikeT e vp.lean seguem intactos. */
+    const anPh=runTime*23.7+(e.visualSeed==null?0:e.visualSeed)*TAU;
+    const aox=Math.sin(anPh)*jj, aoy=Math.cos(anPh*1.31)*jj;
+    tri( aox, aoy,'#46e0ff',.55);
+    tri(-aox,-aoy,'#ff2fa0',.55);
     ctx.restore();
     ctx.globalAlpha=a;
     ctx.shadowColor=e.color;ctx.shadowBlur=flash?26:16;
@@ -20481,7 +20592,12 @@ function drawPlayer(){
     ctx.globalAlpha=.10;ctx.fillStyle='#7df9ff';ctx.fill();
     ctx.restore();
   }
-  const hurt=p.hurtT>0&&Math.random()<.55;
+  /* PR15.5-E0: flicker de dano determinístico, derivado do PRÓPRIO
+     hurtT (timer lógico que decai com dt). Strobe de ~9 Hz: legível e
+     idêntico em 30/60/144 Hz — antes, em 144 Hz o pisca-pisca virava um
+     borrão rosado. A POSE de hurt (visualPlayerDrawPose, PR15.5-C) não é
+     tocada: aqui só se decide a troca de paleta. */
+  const hurt=p.hurtT>0&&((((p.hurtT*18)|0)&1)===0);
   const spd=Math.hypot(p.vx,p.vy);
   const PL=p.pal||{body:'#4d788f',dark:'#22394a',edge:'#8fd6ef',
     glow:'#9ff3ff',visor:'#eaffff',head:'#5b8ba3'};
@@ -20576,7 +20692,12 @@ function render(){
   }
   if(shake>0)shake*=Math.pow(.001,1/60);
   const shM=SHAKE_MUL();
-  const shx=shake>0.3?rand(-shake,shake)*shM:0,shy=shake>0.3?rand(-shake,shake)*shM:0;
+  /* PR15.5-E0: shake determinístico. Duas senoides de frequência
+     incomensurável (37/43 Hz) batem entre si e nunca repetem o padrão em
+     escala perceptível — a irregularidade é preservada sem RNG. A
+     intensidade (shake), o decaimento e cfg.shake seguem intactos. */
+  const shx=shake>0.3?Math.sin(runTime*37.1)*Math.cos(runTime*11.7)*shake*shM:0,
+        shy=shake>0.3?Math.cos(runTime*43.3)*Math.sin(runTime*13.9)*shake*shM:0;
 
   ctx.save();
   ctx.translate(shx,shy);
@@ -20745,11 +20866,17 @@ function render(){
     ctx.fillStyle='#ff00e0';ctx.fillRect(0,0,vw*.035,vh);
     ctx.fillStyle='#00e5ff';ctx.fillRect(vw-vw*.035,0,vw*.035,vh);
     ctx.restore();
-    // bandas de deslocamento temporal
-    if(aberr>.4&&Math.random()<.5){
-      const y=rand(0,vh),h=rand(3,20);
+    /* bandas de deslocamento temporal — PR15.5-E0: mesmo gate de ~50% e
+       mesmas faixas de valores, agora derivados do tick visual (24 Hz).
+       cfg.aberr passa a ser puramente cosmético: ligar/desligar já não
+       desloca a sequência mecânica, porque nada aqui consome RNG. */
+    const abT=(runTime*24)|0, abH=vHash32(abT,0x0AB3,0);
+    if(aberr>.4&&(abH&1023)<512){
+      const y=(vHash32(abT,0x0AB3,1)&1023)/1023*vh,
+            h=3+(vHash32(abT,0x0AB3,2)&1023)/1023*17,
+            dx=vJit1(abT,0x0AB3,3)*22;
       ctx.save();ctx.globalAlpha=.5*aberr;
-      ctx.drawImage(cv,0,y*dpr,cv.width,h*dpr,rand(-22,22),y,vw,h);
+      ctx.drawImage(cv,0,y*dpr,cv.width,h*dpr,dx,y,vw,h);
       ctx.restore();
     }
   }
@@ -20768,12 +20895,17 @@ function render(){
     ctx.fillRect(0,0,vw,vh);
     // número de bandas proporcional à intensidade do colapso
     const bands=k>.5?4:2;
+    /* PR15.5-E0: SOMENTE o RENDER da Fratura. O Diretor (tema,
+       intensidade, stage, composição, miniboss, facções, seed da run)
+       usa os geradores semeados do Diretor e continua exatamente como
+       estava — nada aqui toca a DECISÃO da Fracture. */
+    const frT=(runTime*26)|0;
     ctx.save();
     ctx.globalCompositeOperation='lighter';
     for(let i=0;i<bands;i++){
-      const h=rand(3,26);                                  // altura lógica
-      const y=rand(0,Math.max(1,vh-h-2));                  // y lógico
-      const dx=rand(-30,30)*k;                             // deslocamento lógico
+      const h=3+(vHash32(frT,0x0F2A,i)&1023)/1023*23;      // altura lógica
+      const y=(vHash32(frT,0x0F2B,i)&1023)/1023*Math.max(1,vh-h-2); // y lógico
+      const dx=vJit1(frT,0x0F2C,i)*30*k;                   // deslocamento lógico
       const srcY=Math.max(0,Math.floor(y*dpr));
       const srcH=Math.max(1,Math.floor(h*dpr));
       if(srcY>=cv.height-1)continue;
@@ -20791,9 +20923,11 @@ function render(){
     ctx.save();
     ctx.globalAlpha=.5*k;ctx.lineWidth=1;
     for(let i=0;i<3;i++){
-      const y=rand(0,vh);
-      ctx.strokeStyle=Math.random()<.5?'rgba(255,77,240,.6)':'rgba(70,224,255,.6)';
-      ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(vw,y+rand(-8,8));ctx.stroke();
+      const lh=vHash32(frT,0x0F3A,i);
+      const y=(lh&1023)/1023*vh;
+      ctx.strokeStyle=(lh&1024)?'rgba(255,77,240,.6)':'rgba(70,224,255,.6)';
+      ctx.beginPath();ctx.moveTo(0,y);
+      ctx.lineTo(vw,y+vJit1(frT,0x0F3B,i)*8);ctx.stroke();
     }
     ctx.restore();
   }

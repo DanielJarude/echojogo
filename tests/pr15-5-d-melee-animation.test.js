@@ -194,7 +194,15 @@ const MECH_PINS={
      não tocam animação nem combate melee. */
   updatePlayer:[/function updatePlayer\(dt\)\{[\s\S]*?\n\}/,'3ffe66f1d3cc91ca3a1a649725badda3b90d8bbf3caa7f7f49dd1b80377a54f4'],
   updateSwings:[/function updateSwings\(dt\)\{[\s\S]*?\n\}/,'cd2a0ad7d8e69f4d6906e0bd3a67d5cdb017dddd1ce4ec2babae8587bb508fd0'],
-  updateEcho:[/function updateEcho\(e,dt\)\{[\s\S]*?\n\}/,'9bbc62736cba04c0305c16f8a82988c8ecebd16df37d2dbc9f4eac81b223e656']
+  /* PR15.5-E0: re-baseline de UMA linha. `echoUnstableEmit(e,dt)` foi
+     inserido logo após o guard `if(!e.alive)return;` porque a emissão de
+     partícula do Echo instável vivia dentro de drawEchoEntity — o draw
+     criava entidades e mutava `parts`, e a densidade escalava com o FPS.
+     A animação melee é intocada: visualTimelineTick continua sendo a
+     PRIMEIRA chamada da função, e nada no caminho de swing/pose/trail
+     mudou (G19 fireMelee e os pins de updateSwings/updatePlayer seguem
+     verdes). Cobertura: tests/pr15-5-e0-visual-determinism.test.js §K. */
+  updateEcho:[/function updateEcho\(e,dt\)\{[\s\S]*?\n\}/,'d07bf292026f348599f4a0662bd60e183832ee5071944caceb0983a652491fac']
 };
 for(const [name,[pattern,hash]] of Object.entries(MECH_PINS))
   ok('G18 '+name+' byte-a-byte idêntico à base 4667720b',()=>{const b=SRC.match(pattern);assert.ok(b);assert.strictEqual(crypto.createHash('sha256').update(b[0]).digest('hex'),hash);});

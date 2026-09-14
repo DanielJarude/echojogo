@@ -78,7 +78,11 @@ ok('Render offscreen não remove inimigo nem altera seu estado',()=>{ready();run
 ok('Inimigo offscreen continua passando pelo update mecânico',()=>{run('enemies[0].flashT=1;updateEnemy(enemies[0],.016)');assert.ok(run('enemies[0].flashT')<1);assert.strictEqual(run('enemies.length'),1);});
 ok('Projétil offscreen continua existindo e se movendo',()=>{ready('B');run('projectiles[0].x=player.x+500;projectiles[0].y=player.y+500');const x=run('projectiles[0].x'),n=run('projectiles.length');run('render();updateProjectiles(.001)');assert.strictEqual(run('projectiles.length'),n);assert.ok(run('projectiles[0].x')>x);});
 ok('FX offscreen não é eliminado pelo render',()=>{ready('H');run('for(const p of parts)p.x=player.x+5000');const n=run('parts.length');run('render()');assert.strictEqual(run('parts.length'),n);});
-ok('Não há culling novo que pule RNG dos arcos',()=>{const b=SRC.match(/function drawArcs\(\)\{[\s\S]*?\n\}/)[0];assert.ok(!b.includes('inView'));assert.ok(b.includes('rand(-9,9)'));});
+/* PR15.5-E0: o jitter dos arcos deixou de ser rand(-9,9) e passou a ser
+   vJit1(...)*9 — mesma amplitude, fonte determinística. O que este teste
+   protege continua valendo: nenhum culling novo foi introduzido em
+   drawArcs, e o jitter segue existindo com amplitude 9. */
+ok('Não há culling novo em drawArcs e o jitter mantém amplitude 9',()=>{const b=SRC.match(/function drawArcs\(\)\{[\s\S]*?\n\}/)[0];assert.ok(!b.includes('inView'));assert.ok(/vJit1\([^)]*\)\*9/.test(b));assert.ok(!/Math\.random|[^A-Za-z0-9_$.]rand\(/.test(b));});
 ok('Pool e partículas conservam limites originais',()=>assert.match(SRC,/const PARTS_MAX=900, PARTS_POOL_MAX=900;/));
 ok('LOW/MEDIUM/HIGH continuam .62/.84/1',()=>assert.match(SRC,/renderQuality=cfg.quality===0\?\.62:\(cfg.quality===2\?1:\.84\)/));
 ok('Gate e dt clamp permanecem intocados',()=>{assert.match(SRC,/const TARGET_FPS=60;/);assert.match(SRC,/gateOn=avg<13\.2/);assert.match(SRC,/if\(raw>\.05\)raw=\.05/);});
@@ -95,7 +99,7 @@ const mechanical={
      provam caps e isolamento; cenários sem replay mantêm Canvas/RNG. */
   "fireWeaponFrom": "46e74865169416e8d35743221667ef0ea9e27a271d2df4fe8e65fc1074d7d5f9",
   "updatePlayer": "3ffe66f1d3cc91ca3a1a649725badda3b90d8bbf3caa7f7f49dd1b80377a54f4",
-  "updateEcho": "9bbc62736cba04c0305c16f8a82988c8ecebd16df37d2dbc9f4eac81b223e656",
+  "updateEcho": "d07bf292026f348599f4a0662bd60e183832ee5071944caceb0983a652491fac",
   "updateBoss": "d85abc88b8a06b8243f7df551772227a54b195dee0bee69900a98bda27d255d4",
   "updateMiniBoss": "054efc621c431337d55dff53de9094e57a9bb2ac9a720ab3541b37138f1785f9",
   "updateSwings": "cd2a0ad7d8e69f4d6906e0bd3a67d5cdb017dddd1ce4ec2babae8587bb508fd0",
@@ -112,7 +116,11 @@ const mechanical={
      A pose de hurt agora é por família (ENEMY_IMPACT_PROFILES).
      Os goldens A–I (desenho idle sintético) continuam idênticos à
      base, comprovando que o fast path não mudou. */
-  "drawEnemy": "669f39f70bfb7f147c7a13ebda101dc90099379751c59ed912fec428c78b1dfe",
+  /* PR15.5-E0: re-baseline. A aberração cromática do Anômalo deixou de
+     usar 4× rand()/frame e passou a derivar de runTime + e.visualSeed
+     (cópias ciano/magenta agora anti-correlacionadas). jj, strikeT e
+     vp.lean intactos; nenhum outro ramo de drawEnemy foi tocado. */
+  "drawEnemy": "93a0eba8f7b09078852d54bb5898b788d62dfd143ff2d807249424fd8026b233",
   "drawProjectile": "565cdac8706fc659607acab66596631b930430e41d064f20d2fc827631f32399",
   /* PR15.5-D: drawSwings re-baselineado — ganhou o despacho para o trail
      por família (meleeDrawTrail, pinado abaixo). O fallback legado e o
@@ -120,46 +128,74 @@ const mechanical={
      cenários sintéticos (swings sem perfil) desenham idêntico à base. */
   "drawSwings": "8d98d6109726464ef4b2816c3246d2550557e3db671299811204e3aa9dc378e0",
   "meleeDrawTrail": "c756290f87617435b59587bfcb25f47c20f4a7f8d4c992ee6d1d771c33e77176",
-  "drawArcs": "7f31f510dc22eb909d146489f7ad1f0a17cafe555cd7c71fb5fd57f56715bb76",
+  /* PR15.5-E0: re-baseline. Os 6 rand()/arco/frame viraram vJit1 sobre
+     (geometria do arco, idade quantizada em 60 Hz, índice do segmento).
+     Mesma amplitude (±9), mesmos 4 segmentos, mesmas cores; o array
+     `arcs` continua sendo mutado só por chainLightning/reap/updateArcs. */
+  "drawArcs": "666fc01be45c35a1456cea612350c3cb640b050317898332a1e3072d039fe61a",
   "updateRenderGovernor": "42c6df21322a4150a590bfad63e1b4494c14c860da150b9cc3f3142d623f2d1f"
 };
 for(const [name,hash] of Object.entries(mechanical))ok('Mecânica/RNG intactos: '+name,()=>{const pattern=new RegExp('function '+name+'\\([^\\n]*\\)\\{[\\s\\S]*?\\n\\}');const code=SRC.match(pattern);assert.ok(code,name);assert.strictEqual(crypto.createHash('sha256').update(code[0]).digest('hex'),hash);});
+/* GOLDENS DE RENDER — RE-BASELINE PR15.5-E0
+   ---------------------------------------------------------------------
+   O campo `random` era o CONSUMO DE RNG GLOBAL durante render(). Os
+   valores antigos (B:6 C:24 D:48 E:72 G:18 H:96 I:36) eram justamente o
+   defeito que o PR15.5-E0 corrigiu: rand() é wrapper de Math.random(),
+   o mesmo fluxo de crit/spread/Elite/drops, então cada frame desenhado
+   deslocava a sequência mecânica (FPS, refresh rate, culling de câmera,
+   tempo em modal e cfg.aberr mudavam o resultado da run).
+
+   Agora TODOS os cenários medem `random: 0` — o renderer virou
+   observador. Esse 0 é um invariante muito mais forte que os números
+   antigos: qualquer regressão futura que reintroduza RNG no draw falha
+   aqui imediatamente.
+
+   `hashCanvas` mudou junto porque o jitter passou a ser derivado de
+   hash determinístico (vHash32/vJit1) em vez de Math.random — mesmas
+   amplitudes e frequências, fonte diferente. O cenário F continua
+   BIT-IDÊNTICO à base (já não usava RNG), o que comprova que os
+   caminhos sem aleatoriedade não foram tocados.
+
+   Precedente: PR15.5-C e PR15.5-D já re-baselinearam drawEnemy,
+   drawSwings e meleeDrawTrail por mudança intencional (ver `mechanical`
+   acima). A cobertura de determinismo vive em
+   tests/pr15-5-e0-visual-determinism.test.js.                        */
 const golden={
   "A": {
     "hashCanvas": "92128f38fc4c28e08e4e1f3e62de2c3433383fddfc52e3bd59c31494c0c7ba55",
     "random": 0
   },
   "B": {
-    "hashCanvas": "a65c77b9bc355164dc24a50965cb6dd22bd5bb32f3e5d1a8f6d268d5ddfc1d02",
-    "random": 6
+    "hashCanvas": "d1b82ed9d8e6a3a42c442bc1c286d960ce6ce6d57b3a7f089103bc9a275f45f3",
+    "random": 0
   },
   "C": {
-    "hashCanvas": "80e9ca8f29870a5aec642c4f92ec44fead9c6385b364dbd115645e6f738602b6",
-    "random": 24
+    "hashCanvas": "96d93bfdc8664cac7a698c5dac2aba1f1b3c9f23a0a7ebd02ebfe2401d35b3d9",
+    "random": 0
   },
   "D": {
-    "hashCanvas": "d774033e97d43e7244a7407e38237da5f836f345096a89e483b5193c7386668d",
-    "random": 48
+    "hashCanvas": "1a4f79656168a8bb2e2efe85396c94c3e02cbad5c10b135d375d5bcec0d7e928",
+    "random": 0
   },
   "E": {
-    "hashCanvas": "ec1364c2a73177926743c53a4a9053356802c98515732c2084832e61117e1b4c",
-    "random": 72
+    "hashCanvas": "6b335ca32b694023c78fdea9074fb8c66a4c77bc2d6725c3f4182fc1c32fe919",
+    "random": 0
   },
   "F": {
     "hashCanvas": "139789a530f80437f9055f2e13d64b9208ded3c3fdfc7946e61549c9ec91e764",
     "random": 0
   },
   "G": {
-    "hashCanvas": "57d3eecfd8f7348e37a597a68b8dc034611113d8413008f96ec6e1784d5ecb0a",
-    "random": 18
+    "hashCanvas": "2ecefc873bd62d5e179f6606fb056988d54b684a2afaf7680beb538b5b1eedc2",
+    "random": 0
   },
   "H": {
-    "hashCanvas": "41dd77dcf5ee998a12cde7e33582e54ce52dd45680d1e5cec1dacdc4d78b9e76",
-    "random": 96
+    "hashCanvas": "27c938706629cdea897438365a19f8da5a0347b3794c52e2a9e272bf17d73947",
+    "random": 0
   },
   "I": {
-    "hashCanvas": "78c229eb704fcec8fe7432b01c3742e27fe3a7f312521176fd2c24ed18c12c4c",
-    "random": 36
+    "hashCanvas": "79fe7e07c9cc5b34a45a1155a6bb0fa19ca1cdabe191514c5e654899a1561631",
+    "random": 0
   }
 };
 for(const [id,g] of Object.entries(golden)){
