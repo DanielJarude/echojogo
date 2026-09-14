@@ -21004,6 +21004,135 @@ function drawProjectileSwarm(p){
   ctx.lineTo(mx-px*w1,my-py*w1);
   ctx.stroke();
 }
+/* =================== PR15.5-E10 · CINÉTICO / RETORNO ===================
+   Ricochet, Boomer, Gatling e Mine. A gramática da família é MATERIAL:
+   geometria sólida, massa legível, construção mecânica, eixo claro e
+   nenhum ornamento energético. Cada forma nasce da mecânica real:
+
+     ricochet → bounce:3 nas paredes, dmg*1.15 por quique
+                corpo chanfrado com FACES de impacto; p.bounce (3→0) é
+                estado real e reduz o chanfro conforme se desgasta
+     boomer   → boomerang:true, p.returning, p.spin+=dt*18, pierce 99
+                corpo central com DOIS braços; o giro real orienta a peça
+     gatling  → bala comum, speed 1000, spinUp só afeta o jitter da ARMA
+                cartucho mínimo: ogiva curta + base reta cortada
+     mine     → desacelera a ~0, p.armT arma em .45s, gatilho por
+                proximidade, aoe 120 — CASCO com pernas de implantação
+
+   Vetores diretos (nx/ny + perpendicular), sem rotate/save/restore, sem
+   gradiente, sem alocação, sem RNG. */
+function drawProjectileKinetic(p){
+  const sp=Math.hypot(p.vx,p.vy)||1;
+  const nx=p.vx/sp, ny=p.vy/sp;
+  const px=-ny, py=nx;
+  const t=p.type;
+  if(t==='gatling'){
+    /* CARTUCHO: ogiva curta e base RETA cortada — a base chata é o que o
+       separa do losango simétrico do SMG (E4) e da haste longa do Nail
+       (E3). O mais barato da família: 1 path, 4 vértices, sem stroke. */
+    const head=p.r*1.6, back=p.r*1.1, w=Math.max(.9,p.r*.46);
+    ctx.beginPath();
+    ctx.moveTo(p.x+nx*head,p.y+ny*head);          // ogiva
+    ctx.lineTo(p.x+px*w,p.y+py*w);
+    ctx.lineTo(p.x-nx*back+px*w,p.y-ny*back+py*w);// base reta
+    ctx.lineTo(p.x-nx*back-px*w,p.y-ny*back-py*w);
+    ctx.lineTo(p.x-px*w,p.y-py*w);
+    ctx.closePath();ctx.fill();
+    return;
+  }
+  if(t==='ricochet'){
+    /* PEÇA CHANFRADA: hexágono alongado com as quatro quinas cortadas —
+       são FACES de impacto, a razão de ela sobreviver ao rebote. O
+       chanfro encolhe conforme p.bounce cai (3→0): a peça vai ficando
+       "gasta". Estado real já existente, sem flag nova, sem histórico. */
+    const bmax=(p.def&&p.def.bounce)||3;
+    const left=p.bounce===undefined?bmax:p.bounce;
+    const wear=bmax>0?clamp(left/bmax,0,1):1;     // 1 = intacta
+    const ch=p.r*(.30+.34*wear);                  // profundidade do chanfro
+    const head=p.r*1.75, back=p.r*1.45, w=Math.max(1,p.r*.62);
+    ctx.beginPath();
+    ctx.moveTo(p.x+nx*head,p.y+ny*head);                     // bico
+    ctx.lineTo(p.x+nx*(head-ch)+px*w,p.y+ny*(head-ch)+py*w); // face dianteira
+    ctx.lineTo(p.x-nx*(back-ch)+px*w,p.y-ny*(back-ch)+py*w);
+    ctx.lineTo(p.x-nx*back+px*w*.42,p.y-ny*back+py*w*.42);   // face traseira
+    ctx.lineTo(p.x-nx*back-px*w*.42,p.y-ny*back-py*w*.42);
+    ctx.lineTo(p.x-nx*(back-ch)-px*w,p.y-ny*(back-ch)-py*w);
+    ctx.lineTo(p.x+nx*(head-ch)-px*w,p.y+ny*(head-ch)-py*w);
+    ctx.closePath();ctx.fill();
+    return;
+  }
+  if(t==='boomer'){
+    /* LÂMINA DUPLA: cubo central + DOIS braços opostos. A simetria
+       rotacional de 180° é a assinatura de "feito para voltar". O eixo
+       dos braços vem de p.spin (que a mecânica já incrementa), então a
+       peça gira de verdade; na volta (p.returning) o vetor já aponta ao
+       jogador e a forma acompanha sozinha. Sem trail, sem seta. */
+    const a=p.spin||0;
+    const ca=Math.cos(a), sa=Math.sin(a);
+    /* eixo dos braços = eixo do voo girado por p.spin */
+    const ax=nx*ca-ny*sa, ay=ny*ca+nx*sa;
+    const bx=-ay, by=ax;                 // perpendicular ao braço
+    const arm=p.r*1.55, hub=p.r*.46, tipw=p.r*.30;
+    ctx.beginPath();                      // braço A -> cubo -> braço B
+    ctx.moveTo(p.x+ax*arm+bx*tipw,p.y+ay*arm+by*tipw);
+    ctx.lineTo(p.x+ax*arm-bx*tipw,p.y+ay*arm-by*tipw);
+    ctx.lineTo(p.x-bx*hub,p.y-by*hub);
+    ctx.lineTo(p.x-ax*arm-bx*tipw,p.y-ay*arm-by*tipw);
+    ctx.lineTo(p.x-ax*arm+bx*tipw,p.y-ay*arm+by*tipw);
+    ctx.lineTo(p.x+bx*hub,p.y+by*hub);
+    ctx.closePath();ctx.fill();
+    /* EIXO DO CUBO: traço curto transversal aos braços, marcando o eixo
+       em torno do qual a peça gira (p.spin é real e cresce dt*18). Além
+       de reforçar a leitura rotacional, é o que impede a silhueta de
+       coincidir com a haste do Nail (E3), que tem a mesma contagem de
+       vértices mas função oposta — penetrar, não retornar. */
+    ctx.strokeStyle=p.color;ctx.lineWidth=Math.max(1,p.r*.20);
+    ctx.beginPath();
+    ctx.moveTo(p.x+bx*hub*1.5,p.y+by*hub*1.5);
+    ctx.lineTo(p.x-bx*hub*1.5,p.y-by*hub*1.5);
+    ctx.stroke();
+    return;
+  }
+  /* MINE — DISPOSITIVO: casco hexagonal compacto (massa material, não
+     esfera energética: nada de arc, para não colidir com o Orb) mais
+     PERNAS de implantação. As pernas só aparecem depois de p.armT>.45,
+     que é exatamente o instante em que a mecânica arma a proximidade —
+     estado real, nada de timer visual paralelo. */
+  const R=p.r*.92;
+  const hx=nx*R, hy=ny*R, wx=px*R*.62, wy=py*R*.62;
+  ctx.beginPath();
+  ctx.moveTo(p.x+hx,p.y+hy);
+  ctx.lineTo(p.x+hx*.42+wx,p.y+hy*.42+wy);
+  ctx.lineTo(p.x-hx*.42+wx,p.y-hy*.42+wy);
+  ctx.lineTo(p.x-hx,p.y-hy);
+  ctx.lineTo(p.x-hx*.42-wx,p.y-hy*.42-wy);
+  ctx.lineTo(p.x+hx*.42-wx,p.y+hy*.42-wy);
+  ctx.closePath();ctx.fill();
+  /* COSTURA DA CARCAÇA: banda transversal que marca a junta das placas.
+     Presente SEMPRE — é ela que distingue a mine em voo do cubo+braços
+     do boomer, que de outro modo compartilhariam a silhueta hexagonal.
+     Leitura material (peça montada), não ornamento energético. */
+  ctx.strokeStyle=p.color;ctx.lineWidth=Math.max(1,p.r*.22);
+  ctx.beginPath();
+  ctx.moveTo(p.x+hx*.42+wx*.92,p.y+hy*.42+wy*.92);   // junta dianteira
+  ctx.lineTo(p.x+hx*.42-wx*.92,p.y+hy*.42-wy*.92);
+  ctx.moveTo(p.x-hx*.42+wx*.92,p.y-hy*.42+wy*.92);   // junta traseira
+  ctx.lineTo(p.x-hx*.42-wx*.92,p.y-hy*.42-wy*.92);
+  ctx.stroke();
+  if((p.armT||0)>.45){
+    /* 4 pernas curtas na diagonal: leitura de dispositivo assentado */
+    const L=p.r*1.34, k=0.7071;
+    ctx.strokeStyle=p.color;ctx.lineWidth=Math.max(1,p.r*.24);
+    ctx.beginPath();
+    for(let i=0;i<4;i++){
+      const sx=(i===0||i===3)?k:-k, sy=(i<2)?k:-k;
+      const dx=nx*sx+px*sy, dy=ny*sx+py*sy;
+      ctx.moveTo(p.x+dx*R*.72,p.y+dy*R*.72);
+      ctx.lineTo(p.x+dx*L,p.y+dy*L);
+    }
+    ctx.stroke();
+  }
+}
 function drawProjectile(p){
   const orb=projectileUsesOrbShape(p);
   const fade=projectileRangeFade(p);
@@ -21018,6 +21147,7 @@ function drawProjectile(p){
     drawProjectileSlug(p);
   }
   else if(visualFamilyForProjectile(p)===PVF_SWARM)drawProjectileSwarm(p);
+  else if(visualFamilyForProjectile(p)===PVF_KINETIC)drawProjectileKinetic(p);
   else drawProjectileLegacyLine(p);
   /* Camada temporal DEPOIS da forma base — a arma é desenhada primeiro e
      permanece dominante. Custo zero quando não é temporal. */

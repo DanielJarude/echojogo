@@ -189,7 +189,17 @@ const mechanical={
      ficaram IDÊNTICOS a de4ce87 — 0 divergências. Os 9 cenários de
      Canvas acima seguem byte-idênticos (nenhum usa essas 4 armas) e o
      RNG continua em 0. */
-  "drawProjectile": "ab862aadeeb5f392957c24153148ddd8812c519218b0e35b5b03be6c31d2278b",
+  /* PR15.5-E10: re-baselineado pelo mesmo motivo do E4 — UMA linha
+     ADICIONADA ao dispatch, nada removido:
+       else if(visualFamilyForProjectile(p)===PVF_KINETIC)drawProjectileKinetic(p);
+     Nas 4 armas cinéticas (ricochet/boomer/gatling/mine), com RNG
+     determinístico, count, vx/vy, dmg, r, color, type, life, maxDist,
+     bounce, homing, aoe, pierce, mine, boomerang, crit e o recoil
+     ficaram IDÊNTICOS a 4366eb6 — 0 divergências. O quique real do
+     ricochet (vx invertido, bounce 3->2, dmg 12->13.8) e o ciclo da
+     mine (desaceleração 300->22, armT 0.667) também conferem. Os 9
+     cenários de Canvas acima seguem byte-idênticos e o RNG em 0. */
+  "drawProjectile": "6b7dad123d1431d606c12fe13b1d366682620309d2b06645974e38ffa2171a5f",
   /* PR15.5-D: drawSwings re-baselineado — ganhou o despacho para o trail
      por família (meleeDrawTrail, pinado abaixo). O fallback legado e o
      comportamento sem RNG permanecem; os goldens A–I comprovam que os

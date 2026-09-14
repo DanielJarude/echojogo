@@ -59,9 +59,17 @@ ok('A05 demais famílias NÃO usam o helper slug (21.D)',()=>{
      forma própria — o que o E3 precisa garantir é que elas não usam a
      geometria SLUG, verificado logo abaixo em A05b. */
   const legacy=opsOf(geomOf(trace(P('cryo'))));
-  for(const t of ['plasma','acid','tesla','ricochet','gatling','mine','plague'])
+  for(const t of ['plasma','acid','tesla','plague'])
     assert.deepStrictEqual(opsOf(geomOf(trace(P(t)))),legacy,
       t+' mudou de forma — fora do escopo do E3');});
+ok('A05c família CINÉTICO (E10) tem forma própria e NÃO é slug',()=>{
+  const legacy=opsOf(geomOf(trace(P('cryo')))).join(',');
+  for(const t of ['ricochet','boomer','gatling','mine']){
+    const g=opsOf(geomOf(trace(P(t)))).join(',');
+    assert.notStrictEqual(g,legacy,t+' deveria ter forma própria (E10)');
+    for(const sl of SLUGS)
+      assert.notStrictEqual(g,opsOf(geomOf(trace(P(sl)))).join(','),
+        t+' copiou a geometria de '+sl);}});
 ok('A05b família ENXAME (E4) tem forma própria e NÃO é slug',()=>{
   const legacy=opsOf(geomOf(trace(P('cryo')))).join(',');
   for(const t of ['smg','shotgun','homing','prism']){
@@ -371,8 +379,8 @@ ok('J04 beam intacto (21.W)',()=>{
 ok('J05 as outras 16 armas continuam na linha legada (§16)',()=>{
   const legacy=opsOf(geomOf(trace(P('cryo')))).join(',');
   /* as 4 do ENXAME saíram da linha legada no E4 (ver A05b) */
-  for(const t of ['plasma','flamer','tesla','acid','boomer',
-                  'mine','void','ricochet','gatling','plague','cryo'])
+  /* as 4 do CINÉTICO saíram da linha legada no E10 (ver A05c) */
+  for(const t of ['plasma','flamer','tesla','acid','void','plague','cryo'])
     assert.strictEqual(opsOf(geomOf(trace(P(t)))).join(','),legacy,t+' foi alterada');});
 
 /* ============ K · REGRESSÕES (§24) ============ */

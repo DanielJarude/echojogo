@@ -366,9 +366,16 @@ ok('H01 formas do E3 (rail/sniper/nail) inalteradas (§25)',()=>{
 ok('H02 as armas fora de SLUG/ENXAME seguem na linha legada (§2)',()=>{
   /* smg/shotgun/homing/prism ganharam forma própria no PR15.5-E4 */
   const legacy=shapeOf('cryo');
-  for(const id of ['plasma','flamer','tesla','acid','boomer',
-                   'mine','void','ricochet','gatling','plague'])
+  /* ricochet/boomer/gatling/mine ganharam forma própria no PR15.5-E10 */
+  for(const id of ['plasma','flamer','tesla','acid','void','plague'])
     assert.strictEqual(shapeOf(id),legacy,id+' teve o projétil alterado');});
+ok('H02c E10: as 4 cinéticas têm forma própria e o muzzle não as tocou',()=>{
+  const legacy=shapeOf('cryo');
+  const s={};
+  for(const id of ['ricochet','boomer','gatling','mine']){
+    s[id]=shapeOf(id);
+    assert.notStrictEqual(s[id],legacy,id+' perdeu a forma do E10');}
+  assert.strictEqual(new Set(Object.values(s)).size,4,'formas do E10 colidiram');});
 ok('H02b E4: as 4 do ENXAME têm forma própria e o muzzle não as tocou',()=>{
   const legacy=shapeOf('cryo');
   const s={};
