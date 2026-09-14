@@ -20538,35 +20538,107 @@ function drawEnemy(e){
    Com escopeta + Ecos atirando há dezenas de projéteis por frame, cada um
    com um blur próprio. O halo agora vem de um sprite pré-renderizado por
    cor (uma drawImage), com aparência idêntica. */
-function drawProjectile(p){
-  const orb=(p.type==='orb'||p.type==='eorb');
+/* =====================================================================
+   PR15.5-E1 — GRAMÁTICA VISUAL DOS PROJÉTEIS
+   ---------------------------------------------------------------------
+   TRILHO ESTRUTURAL, VISUALMENTE NEUTRO. Esta etapa NÃO redesenha nada:
+   o Canvas recebe exatamente a mesma sequência de comandos de antes
+   (provado por hash em tests/pr15-5-e1-projectile-visual-grammar.test.js).
+
+   O que muda é a ARQUITETURA. Antes, drawProjectile era um `if(orb)`
+   binário: 18 das 20 armas ranged caíam no mesmo `else`, diferindo só em
+   cor e espessura. Agora existe:
+
+     · uma TABELA ESTÁTICA type → família visual (PROJ_FAMILY);
+     · uma função PURA de classificação (visualFamilyForProjectile);
+     · HELPERS de desenho isolados, um por forma existente.
+
+   As famílias já classificam as 20 armas, mas AINDA NÃO alteram o
+   desenho — a escolha de forma continua sendo exatamente a de antes
+   (orb → círculo, resto → linha). É isso que torna o E1 neutro e
+   reversível. E2–E10 passarão a variar o helper por família, uma de
+   cada vez, sem reescrever o dispatch.
+
+   Determinismo (PR15.5-E0): nenhum helper abaixo consome Math.random,
+   rand ou randi, nem cria/muta estado. O renderer segue observador. */
+const PVF_LEGACY =0,  // fallback: legado, inimigo, Echo, temporal, futuro
+      PVF_SLUG   =1,  // penetrador rígido
+      PVF_ENERGY =2,  // massa energética
+      PVF_FLUID  =3,  // jato/spray contínuo
+      PVF_SWARM  =4,  // multiplicidade
+      PVF_CONDUCT=5,  // condução/contágio
+      PVF_KINETIC=6;  // reflexão/retorno/rotação
+/* Tabela estática (criada UMA vez, nunca por frame). Chave = p.type, que
+   para armas do jogador é o `id` da arma em WEAPONS[]. `beam` não entra:
+   feixes não geram projétil, são desenhados por drawBeamFrom. `eorb` não
+   entra de propósito — é o tipo de TODO projétil inimigo/boss, sem arma
+   associada, e deve permanecer no fallback legado. */
+const PROJ_FAMILY={
+  rail:PVF_SLUG,    sniper:PVF_SLUG,   nail:PVF_SLUG,
+  plasma:PVF_ENERGY,orb:PVF_ENERGY,    void:PVF_ENERGY,  cryo:PVF_ENERGY,
+  flamer:PVF_FLUID, acid:PVF_FLUID,
+  smg:PVF_SWARM,    shotgun:PVF_SWARM, homing:PVF_SWARM, prism:PVF_SWARM,
+  tesla:PVF_CONDUCT,plague:PVF_CONDUCT,
+  ricochet:PVF_KINETIC,boomer:PVF_KINETIC,gatling:PVF_KINETIC,mine:PVF_KINETIC
+};
+/* Classificação pura: mesma entrada ⇒ mesma saída, sem alocação, sem
+   estado, sem RNG. Tipo desconhecido/ausente ⇒ PVF_LEGACY (fallback). */
+function visualFamilyForProjectile(p){
+  if(!p)return PVF_LEGACY;
+  const f=PROJ_FAMILY[p.type];
+  return f===undefined?PVF_LEGACY:f;
+}
+/* A FORMA ainda é escolhida como antes — deliberadamente desacoplada da
+   família. Em E1 orb/eorb usam o círculo e todo o resto a linha; quando
+   uma família ganhar forma própria, só esta função muda. */
+function projectileUsesOrbShape(p){
+  return p.type==='orb'||p.type==='eorb';
+}
+/* Fade dos últimos 22% do alcance — leitura clara do limite da arma. */
+function projectileRangeFade(p){
+  if(!p.maxDist)return 1;
+  const left=1-p.dist/p.maxDist;
+  return left<.22?clamp(left/.22,0,1)*.85+.15:1;
+}
+/* Halo aditivo compartilhado por TODAS as famílias (sprite em cache, sem
+   gradiente por frame). */
+function drawProjectileGlow(p,fade,orb){
   const gs=glowSprite(p.color);
   const gr=(orb?p.r*2.6:p.r*2.9)+6;
-  // desvanece nos últimos 22% do alcance — leitura clara do limite da arma
-  let fade=1;
-  if(p.maxDist){
-    const left=1-p.dist/p.maxDist;
-    if(left<.22)fade=clamp(left/.22,0,1)*.85+.15;
-  }
   ctx.globalCompositeOperation='lighter';
   ctx.globalAlpha=(orb?.60:.48)*fade;
   ctx.drawImage(gs,p.x-gr,p.y-gr,gr*2,gr*2);
   ctx.globalCompositeOperation='source-over';
+}
+/* FORMA: orbe — círculo pulsante + anel. Preservado integralmente
+   (classificado como bom caso na auditoria PR15.5-E). */
+function drawProjectileOrbShape(p){
+  ctx.beginPath();ctx.arc(p.x,p.y,p.r+Math.sin(runTime*10)*1.5,0,TAU);ctx.fill();
+  ctx.globalAlpha=.4;ctx.strokeStyle=p.color;ctx.lineWidth=1;
+  ctx.beginPath();ctx.arc(p.x,p.y,p.r+5,0,TAU);ctx.stroke();
+  ctx.globalAlpha=1;
+}
+/* FORMA: linha legada, orientada pela velocidade. É o visual atual de 18
+   das 20 armas ranged — mantido byte-a-byte como fallback universal. */
+function drawProjectileLegacyLine(p){
+  const l=p.type==='plasma'?10:5;
+  const sp=Math.hypot(p.vx,p.vy)||1;
+  ctx.strokeStyle=p.color;ctx.lineWidth=p.r;
+  ctx.beginPath();ctx.moveTo(p.x,p.y);
+  ctx.lineTo(p.x-p.vx/sp*l,p.y-p.vy/sp*l);
+  ctx.stroke();
+}
+function drawProjectile(p){
+  const orb=projectileUsesOrbShape(p);
+  const fade=projectileRangeFade(p);
+  drawProjectileGlow(p,fade,orb);
   ctx.globalAlpha=fade;
   ctx.fillStyle=p.color;
-  if(orb){
-    ctx.beginPath();ctx.arc(p.x,p.y,p.r+Math.sin(runTime*10)*1.5,0,TAU);ctx.fill();
-    ctx.globalAlpha=.4;ctx.strokeStyle=p.color;ctx.lineWidth=1;
-    ctx.beginPath();ctx.arc(p.x,p.y,p.r+5,0,TAU);ctx.stroke();
-    ctx.globalAlpha=1;
-  }else{
-    const l=p.type==='plasma'?10:5;
-    const sp=Math.hypot(p.vx,p.vy)||1;
-    ctx.strokeStyle=p.color;ctx.lineWidth=p.r;
-    ctx.beginPath();ctx.moveTo(p.x,p.y);
-    ctx.lineTo(p.x-p.vx/sp*l,p.y-p.vy/sp*l);
-    ctx.stroke();
-  }
+  /* Ponto de extensão de E2–E10: a família já está resolvida aqui e o
+     corpo é uma única chamada de forma. Uma camada temporal (E2) ou uma
+     forma por família entram SEM duplicar o preâmbulo acima. */
+  if(orb)drawProjectileOrbShape(p);
+  else drawProjectileLegacyLine(p);
   ctx.globalAlpha=1;
 }
 function drawPlayer(){
