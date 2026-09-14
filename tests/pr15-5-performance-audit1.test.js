@@ -97,7 +97,18 @@ const mechanical={
   /* PR15.7-A/B: re-baselineados somente nos pontos temporais explícitos:
      captura, expiração/cooldown, colisão e source de dano. As suítes 15.7
      provam caps e isolamento; cenários sem replay mantêm Canvas/RNG. */
-  "fireWeaponFrom": "46e74865169416e8d35743221667ef0ea9e27a271d2df4fe8e65fc1074d7d5f9",
+  /* PR15.5-E8: re-baselineado. O diff no corpo de fireWeaponFrom é UMA linha
+     e nada mais — a chamada de emissão genérica
+       spawnParticles(src.x+cos(aim)*(r+10),...,def.color,3,140,.18,2.5)
+     virou emitWeaponMuzzleVisual(src,def). É hash de TEXTO-FONTE, então
+     qualquer edição o move; a equivalência foi provada por comportamento:
+     nas 19 armas ranged, com Math.random determinístico, projectiles.length,
+     vx/vy/dmg/color/type de cada projétil e o recoil (player.vx/vy) ficaram
+     IDÊNTICOS — 0 campos divergentes. O RNG consumido por disparo CAIU de
+     294 para 66 chamadas (-78%), porque o muzzle antigo gastava 4 rand() por
+     partícula e o novo é determinístico. Nenhuma mudança de dmg, speed,
+     spread, count, cooldown, kick ou geometria de projétil. */
+  "fireWeaponFrom": "d53ff3c0823f2bfaf1961cb2c7287e71accad8223f9bbff79a3cd3f6fe64db60",
   "updatePlayer": "3ffe66f1d3cc91ca3a1a649725badda3b90d8bbf3caa7f7f49dd1b80377a54f4",
   "updateEcho": "d07bf292026f348599f4a0662bd60e183832ee5071944caceb0983a652491fac",
   "updateBoss": "d85abc88b8a06b8243f7df551772227a54b195dee0bee69900a98bda27d255d4",
