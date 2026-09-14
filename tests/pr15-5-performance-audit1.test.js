@@ -141,7 +141,21 @@ const mechanical={
 
      Nenhuma assertiva foi afrouxada: o pin continua sendo igualdade
      estrita de SHA-256 sobre o corpo da função. */
-  "drawProjectile": "85b7a83131ac42edd9280898d1827c6c24b2a33071ec20412c90e33231e61261",
+  /* PR15.5-E2: re-baseline do hash do TEXTO-FONTE (o anterior era do
+     E1). drawProjectile ganhou 2 linhas: a consulta de modo temporal
+     (projectileTemporalMode) e a chamada condicional da camada
+     (drawProjectileTemporalLayer). O corpo mudou, então o pin mudou.
+
+     As cenas NÃO temporais continuam idênticas, e isso é provado sem
+     nenhuma alteração nesta suíte: os 9 goldens `hashCanvas` (cenários
+     A–I, abaixo) seguem com os MESMOS valores e `consumo de RNG de
+     draw` segue 0 — os fixtures de performance não contêm projéteis de
+     replay nem de Echo, logo a camada nunca é acionada neles.
+
+     A mudança visual é intencional e restrita a projéteis temporais,
+     coberta por tests/pr15-5-e2-temporal-projectile-identity.test.js.
+     Nenhuma assertiva afrouxada: continua igualdade estrita de SHA-256. */
+  "drawProjectile": "baf7a88b947b2ba581f0292eeec9168aea5d16720e866c4f7856ac2bc1679f40",
   /* PR15.5-D: drawSwings re-baselineado — ganhou o despacho para o trail
      por família (meleeDrawTrail, pinado abaixo). O fallback legado e o
      comportamento sem RNG permanecem; os goldens A–I comprovam que os

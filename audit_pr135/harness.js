@@ -183,6 +183,11 @@ src+='\n;globalThis.__t={'+
   'drawProjectileOrbShape:(typeof drawProjectileOrbShape==="function"?drawProjectileOrbShape:undefined),'+
   'drawProjectileLegacyLine:(typeof drawProjectileLegacyLine==="function"?drawProjectileLegacyLine:undefined),'+
   'drawProjectile:(typeof drawProjectile==="function"?drawProjectile:undefined),'+
+  /* PR15.5-E2 — identidade temporal (guardas typeof: ver nota acima). */
+  'projectileTemporalMode:(typeof projectileTemporalMode==="function"?projectileTemporalMode:undefined),'+
+  'drawProjectileTemporalLayer:(typeof drawProjectileTemporalLayer==="function"?drawProjectileTemporalLayer:undefined),'+
+  'PTM:(typeof PTM_NONE!=="undefined"?{NONE:PTM_NONE,ECHO:PTM_ECHO,REPLAY:PTM_REPLAY}:undefined),'+
+  'TEMPORAL_REPLAY_COLOR:(typeof TEMPORAL_REPLAY_COLOR!=="undefined"?TEMPORAL_REPLAY_COLOR:undefined),'+
   'PROJ_FAMILY:(typeof PROJ_FAMILY!=="undefined"?PROJ_FAMILY:undefined),'+
   'PVF:(typeof PVF_LEGACY!=="undefined"?{LEGACY:PVF_LEGACY,SLUG:PVF_SLUG,ENERGY:PVF_ENERGY,FLUID:PVF_FLUID,SWARM:PVF_SWARM,CONDUCT:PVF_CONDUCT,KINETIC:PVF_KINETIC}:undefined),'+
   'vSeedOf:(typeof vSeedOf==="function"?vSeedOf:undefined),'+
