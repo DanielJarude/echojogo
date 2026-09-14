@@ -20628,17 +20628,78 @@ function drawProjectileLegacyLine(p){
   ctx.lineTo(p.x-p.vx/sp*l,p.y-p.vy/sp*l);
   ctx.stroke();
 }
+/* =====================================================================
+   PR15.5-E2 — IDENTIDADE TEMPORAL DOS PROJÉTEIS
+   ---------------------------------------------------------------------
+   A camada temporal é ORTOGONAL à forma: ela não sabe o que é um Rail,
+   um Sniper ou um Plasma, e por isso continuará funcionando quando as
+   formas-base forem redesenhadas em E3+. Ela apenas lê posição, direção
+   e raio — o contrato mínimo que qualquer forma futura terá.
+
+   Princípio: o tempo deixa uma CICATRIZ sobre a arma, não substitui a
+   arma. A cor da arma permanece dominante; o acento temporal entra com
+   alpha baixo e deslocamento pequeno. */
+const PTM_NONE=0, PTM_ECHO=1, PTM_REPLAY=2;
+/* Detecção por METADATA REAL, nunca por p.type. `eorb` é o tipo de TODO
+   projétil de inimigo/miniboss/boss e jamais deve ganhar camada.
+   Validado no código: `player.slot` é undefined (makePlayer não define
+   slot) e nenhum inimigo possui slot (conferido em 183 inimigos de 7
+   cenários); apenas makeEcho(data,slot) atribui slot 1..N. A checagem
+   `owner!==player` é redundante mas barata, e protege caso um operador
+   futuro passe a ter slot. Replay tem prioridade sobre Echo (§18). */
+function projectileTemporalMode(p){
+  if(!p)return PTM_NONE;
+  if(p.temporalReplay)return PTM_REPLAY;
+  const o=p.owner;
+  if(o&&o!==player&&o.slot>0&&o.data)return PTM_ECHO;
+  return PTM_NONE;
+}
+/* Camada temporal. `k` é a intensidade já multiplicada pelo fade de
+   alcance — base e fantasma desaparecem JUNTOS no fim do alcance (§19).
+   Determinística: o deslocamento vem da direção do projétil e de born,
+   nunca de RNG nem da contagem de frames desenhados. */
+function drawProjectileTemporalLayer(p,k,strong){
+  if(k<=.02)return;
+  const sp=Math.hypot(p.vx,p.vy)||1;
+  const ux=p.vx/sp, uy=p.vy/sp;
+  /* Fantasma ATRÁS do corpo, na própria linha de voo: lê como "eco do
+     que já passou" e não alarga a silhueta — crucial para não poluir
+     combate denso nem confundir a leitura da arma. */
+  /* UM único path com os subtraços e UM stroke — metade dos comandos de
+     duas chamadas separadas, e o estado de linha é configurado uma vez
+     só. Custo total: 9 comandos no replay, 7 no Echo. */
+  ctx.globalAlpha=k*(strong?.30:.20);
+  ctx.strokeStyle=TEMPORAL_REPLAY_COLOR;
+  ctx.lineWidth=Math.max(1,p.r*(strong?.55:.40));
+  ctx.beginPath();
+  const back=strong?7:4;
+  const gx=p.x-ux*back, gy=p.y-uy*back;
+  ctx.moveTo(gx,gy);
+  ctx.lineTo(gx-ux*(strong?6:4),gy-uy*(strong?6:4));
+  /* Segundo subtraço só no replay: dupla-imagem curta = "isto aconteceu
+     duas vezes". É o que separa Repetição (forte) de Echo (sutil). */
+  if(strong){
+    const hx=p.x-ux*13, hy=p.y-uy*13;
+    ctx.moveTo(hx,hy);
+    ctx.lineTo(hx-ux*5,hy-uy*5);
+  }
+  ctx.stroke();
+  ctx.globalAlpha=1;
+}
 function drawProjectile(p){
   const orb=projectileUsesOrbShape(p);
   const fade=projectileRangeFade(p);
   drawProjectileGlow(p,fade,orb);
   ctx.globalAlpha=fade;
   ctx.fillStyle=p.color;
-  /* Ponto de extensão de E2–E10: a família já está resolvida aqui e o
-     corpo é uma única chamada de forma. Uma camada temporal (E2) ou uma
-     forma por família entram SEM duplicar o preâmbulo acima. */
+  /* Ponto de extensão de E3–E10: a família já está resolvida aqui e o
+     corpo é uma única chamada de forma. */
   if(orb)drawProjectileOrbShape(p);
   else drawProjectileLegacyLine(p);
+  /* Camada temporal DEPOIS da forma base — a arma é desenhada primeiro e
+     permanece dominante. Custo zero quando não é temporal. */
+  const tm=projectileTemporalMode(p);
+  if(tm!==PTM_NONE)drawProjectileTemporalLayer(p,fade,tm===PTM_REPLAY);
   ctx.globalAlpha=1;
 }
 function drawPlayer(){
@@ -37491,7 +37552,21 @@ function replayTemporalAction(a){
   const range=Math.max(1,finiteTemporal(p.range));
   const radius=clamp(finiteTemporal(p.projectileRadius),1,12);
   const spread=finiteTemporal(p.spread);
-  const color=a.weaponId==='shotgun'?TEMPORAL_REPLAY_COLOR:'#46e0ff';
+  /* PR15.5-E2: IDENTIDADE DA ARMA PRIMEIRO, camada temporal depois.
+     ANTES: `a.weaponId==='shotgun'?TEMPORAL_REPLAY_COLOR:'#46e0ff'` —
+     toda arma que não fosse shotgun era repintada de ciano, que é
+     exatamente a cor do plasma. Um Rail, Sniper ou Acid repetido ficava
+     visualmente IDÊNTICO a um tiro comum de plasma: a Repetição apagava
+     a identidade da arma que ela estava repetindo.
+     AGORA a cor vem da PRÓPRIA arma (via weaponId, que o snapshot já
+     guarda — sem acoplamento novo e sem tocar payload mecânico). A
+     assinatura temporal passou a ser uma CAMADA no render
+     (drawProjectileTemporalLayer), ortogonal à forma e à cor.
+     TEMPORAL_REPLAY_COLOR continua existindo e sendo usado — como
+     ACENTO na camada, nunca como corpo. Fallback ciano preservado para
+     um weaponId desconhecido. */
+  const wdefTemporal=WEAPONS.find(w=>w.id===a.weaponId);
+  const color=(wdefTemporal&&wdefTemporal.color)||'#46e0ff';
   for(let i=0;i<count;i++){
     const off=count>1?((i/(count-1))-.5)*spread:0;
     const ang=finiteTemporal(a.angle)+off;

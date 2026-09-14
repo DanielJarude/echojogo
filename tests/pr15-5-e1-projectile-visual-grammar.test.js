@@ -360,16 +360,25 @@ ok('I02 projétil de Echo desenha como antes (sem camada nova)',()=>{
     {type:'plasma',x:0,y:0,vx:300,vy:0,r:4,color:'#46e0ff',dist:0,maxDist:0});
   assert.strictEqual(JSON.stringify(g),JSON.stringify(g2),
     'E1 não pode introduzir camada de Echo (isso é o E2)');});
-ok('I03 E1 NÃO corrige o temporalReplay (é escopo do E2)',()=>{
+/* PR15.5-E2: estes dois checks foram INVERTIDOS, não removidos.
+   Quando o E1 foi escrito, eles travavam o escopo: o fix temporal era
+   explicitamente do E2, então o E1 tinha de deixar o bug intacto. O E2
+   chegou e corrigiu. Agora eles protegem o inverso — que a camada
+   temporal EXISTE e que a forma base continua sendo desenhada primeiro.
+   Cobertura detalhada: tests/pr15-5-e2-temporal-projectile-identity.js */
+ok('I03 o dispatch aplica a camada temporal (entregue pelo E2)',()=>{
   const b=body('drawProjectile');
-  assert.ok(!/temporalReplay/.test(b),
-    'o fix temporal pertence ao E2, não ao E1');});
-ok('I04 projétil temporal desenha exatamente como o comum',()=>{
+  assert.ok(/projectileTemporalMode/.test(b),'camada temporal ausente');
+  assert.ok(/drawProjectileTemporalLayer/.test(b));});
+ok('I04 projétil temporal = forma base + camada (base preservada)',()=>{
   const base={type:'rail',x:0,y:0,vx:2100,vy:0,r:4,color:'#46e0ff',dist:0,maxDist:1100};
   const a=trace('drawProjectile(__pp)',Object.assign({},base));
   const b=trace('drawProjectile(__pp)',Object.assign({},base,
     {temporalReplay:true,temporalReplayId:7,source:'replay'}));
-  assert.strictEqual(JSON.stringify(a),JSON.stringify(b));});
+  /* a forma base é idêntica e vem primeiro; a camada só acrescenta */
+  assert.deepStrictEqual(b.slice(0,a.length-1),a.slice(0,a.length-1),
+    'a camada temporal alterou a forma base');
+  assert.ok(b.length>a.length,'a camada temporal não foi aplicada');});
 ok('I05 constantes mecânicas da Repetição intactas',()=>{
   assert.strictEqual(run('TEMPORAL_REPLAY_DAMAGE'),0.50);
   assert.ok(/TEMPORAL_REPLAY_DAMAGE\s*=\s*\.?0?\.50/.test(SRC)||
