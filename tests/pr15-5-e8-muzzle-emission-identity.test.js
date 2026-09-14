@@ -363,11 +363,19 @@ ok('H01 formas do E3 (rail/sniper/nail) inalteradas (§25)',()=>{
     'beginPath,moveTo,lineTo,stroke,beginPath,moveTo,lineTo,stroke');
   assert.strictEqual(shapeOf('nail'),
     'beginPath,moveTo,lineTo,lineTo,lineTo,lineTo,lineTo,closePath,fill');});
-ok('H02 as demais 16 armas seguem na linha legada (§2)',()=>{
+ok('H02 as armas fora de SLUG/ENXAME seguem na linha legada (§2)',()=>{
+  /* smg/shotgun/homing/prism ganharam forma própria no PR15.5-E4 */
   const legacy=shapeOf('cryo');
-  for(const id of ['plasma','shotgun','flamer','smg','tesla','acid','boomer','homing',
-                   'mine','void','ricochet','gatling','prism','plague'])
+  for(const id of ['plasma','flamer','tesla','acid','boomer',
+                   'mine','void','ricochet','gatling','plague'])
     assert.strictEqual(shapeOf(id),legacy,id+' teve o projétil alterado');});
+ok('H02b E4: as 4 do ENXAME têm forma própria e o muzzle não as tocou',()=>{
+  const legacy=shapeOf('cryo');
+  const s={};
+  for(const id of ['smg','shotgun','homing','prism']){
+    s[id]=shapeOf(id);
+    assert.notStrictEqual(s[id],legacy,id+' perdeu a forma do E4');}
+  assert.strictEqual(new Set(Object.values(s)).size,4,'formas do E4 colidiram');});
 ok('H03 orb e eorb intactos',()=>{
   assert.ok(shapeOf('orb').includes('arc,fill'));
   assert.strictEqual(shapeOf('eorb'),shapeOf('orb'));});

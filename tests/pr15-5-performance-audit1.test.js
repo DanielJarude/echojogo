@@ -179,7 +179,17 @@ const mechanical={
      família SLUG, 135 de 135 alteradas dentro dela).
 
      Nenhuma assertiva afrouxada: igualdade estrita de SHA-256. */
-  "drawProjectile": "cbdf38364f8d36dab91e35f84811d8a1de0364d82eeb91fa73595b52d8730214",
+  /* PR15.5-E4: re-baselineado. O diff no corpo de drawProjectile é UMA
+     linha ADICIONADA e nada removido:
+       else if(visualFamilyForProjectile(p)===PVF_SWARM)drawProjectileSwarm(p);
+     É hash de TEXTO-FONTE, então qualquer edição o move. Nada de
+     mecânico mudou: nas 4 armas do enxame (smg/shotgun/homing/prism),
+     com Math.random determinístico, count, vx/vy, dmg, r, color, type,
+     life, maxDist, homing, split, pierce, bounce, aoe e o recoil
+     ficaram IDÊNTICOS a de4ce87 — 0 divergências. Os 9 cenários de
+     Canvas acima seguem byte-idênticos (nenhum usa essas 4 armas) e o
+     RNG continua em 0. */
+  "drawProjectile": "ab862aadeeb5f392957c24153148ddd8812c519218b0e35b5b03be6c31d2278b",
   /* PR15.5-D: drawSwings re-baselineado — ganhou o despacho para o trail
      por família (meleeDrawTrail, pinado abaixo). O fallback legado e o
      comportamento sem RNG permanecem; os goldens A–I comprovam que os
