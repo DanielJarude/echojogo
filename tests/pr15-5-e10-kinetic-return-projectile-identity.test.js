@@ -349,9 +349,17 @@ ok('AD01 beam e eorb fora da família (29.AD)',()=>{
   assert.strictEqual(topo(P('eorb')),topo(P('orb')));
   assert.ok(!/drawProjectileKinetic/.test(body('drawBeamFrom')));});
 ok('AD02 famílias ainda não implementadas seguem no legado',()=>{
-  const leg=topo(P('cryo'));
-  for(const id of ['plasma','void','flamer','acid','tesla','plague'])
+  /* plasma/orb/void/cryo ganharam forma própria no PR15.5-E5 (ver AD02b) */
+  const leg=topo(P('flamer'));
+  for(const id of ['flamer','acid','tesla','plague'])
     assert.strictEqual(topo(P(id)),leg,id+' foi alterado fora do escopo');});
+ok('AD02b E5: ENERGIA/MASSA tem forma própria e não colide com a cinética',()=>{
+  const leg=topo(P('flamer'));
+  for(const id of ['plasma','orb','void','cryo']){
+    assert.notStrictEqual(topo(P(id)),leg,id+' regrediu para a linha legada');
+    for(const k of ['ricochet','boomer','gatling','mine'])
+      assert.notStrictEqual(topo(P(id))+'|'+JSON.stringify(verts(P(id))),
+        topo(P(k))+'|'+JSON.stringify(verts(P(k))),id+' colidiu com '+k);}});
 
 /* ============ MECÂNICA (§33) ============ */
 console.log('\n[I] mecânica preservada');

@@ -58,10 +58,23 @@ ok('A05 demais famílias NÃO usam o helper slug (21.D)',()=>{
      smg/shotgun/homing/prism saíram desta lista no PR15.5-E4, que lhes deu
      forma própria — o que o E3 precisa garantir é que elas não usam a
      geometria SLUG, verificado logo abaixo em A05b. */
-  const legacy=opsOf(geomOf(trace(P('cryo'))));
-  for(const t of ['plasma','acid','tesla','plague'])
+  /* plasma/orb/void/cryo saíram desta lista no PR15.5-E5 (família
+     ENERGIA/MASSA); a âncora de legado passou a ser flamer. O que o E3
+     precisa garantir sobre elas está em A05d: não usam geometria SLUG. */
+  const legacy=opsOf(geomOf(trace(P('flamer'))));
+  for(const t of ['acid','tesla','plague'])
     assert.deepStrictEqual(opsOf(geomOf(trace(P(t)))),legacy,
       t+' mudou de forma — fora do escopo do E3');});
+ok('A05d família ENERGIA/MASSA (E5) tem forma própria e NÃO é slug',()=>{
+  const legacy=opsOf(geomOf(trace(P('flamer')))).join(',');
+  const slug=opsOf(geomOf(trace(P('rail',{r:5})))).join(',');
+  const vis=new Set();
+  for(const t of ['plasma','orb','void','cryo']){
+    const g=opsOf(geomOf(trace(P(t,{r:6})))).join(',');
+    assert.notStrictEqual(g,legacy,t+' regrediu para a linha legada');
+    assert.notStrictEqual(g,slug,t+' colidiu com a geometria SLUG');
+    vis.add(g);}
+  assert.strictEqual(vis.size,4,'as 4 armas do E5 devem ter topologias distintas');});
 ok('A05c família CINÉTICO (E10) tem forma própria e NÃO é slug',()=>{
   const legacy=opsOf(geomOf(trace(P('cryo')))).join(',');
   for(const t of ['ricochet','boomer','gatling','mine']){
@@ -377,10 +390,11 @@ ok('J04 beam intacto (21.W)',()=>{
   assert.ok(!/drawProjectileSlug|SNIPER_FAR_DIST/.test(b));
   assert.ok(b.includes('createLinearGradient')&&b.includes('rampMax'));});
 ok('J05 as outras 16 armas continuam na linha legada (§16)',()=>{
-  const legacy=opsOf(geomOf(trace(P('cryo')))).join(',');
+  const legacy=opsOf(geomOf(trace(P('flamer')))).join(',');
   /* as 4 do ENXAME saíram da linha legada no E4 (ver A05b) */
   /* as 4 do CINÉTICO saíram da linha legada no E10 (ver A05c) */
-  for(const t of ['plasma','flamer','tesla','acid','void','plague','cryo'])
+  /* as 4 de ENERGIA/MASSA saíram da linha legada no E5 (ver A05d) */
+  for(const t of ['flamer','tesla','acid','plague'])
     assert.strictEqual(opsOf(geomOf(trace(P(t)))).join(','),legacy,t+' foi alterada');});
 
 /* ============ K · REGRESSÕES (§24) ============ */

@@ -21133,6 +21133,115 @@ function drawProjectileKinetic(p){
     ctx.stroke();
   }
 }
+/* ==================== PR15.5-E5 · ENERGIA / MASSA ====================
+   Plasma, Orb, Void e Cryo. A gramática da família é VOLUMÉTRICA: massa
+   energética contida, e não uma peça sólida (E3/E10) nem munição miúda
+   (E4). Cada silhueta nasce da mecânica REAL auditada:
+
+     plasma → speed 980, r 4, aoe 0, sem status: dardo energético
+              NÚCLEO + ENVELOPE alongado no eixo. Energia dirigida.
+     orb    → speed 250, r 8, aoe 105, explodeOrb + slowT 1.4
+              massa volumétrica pulsante (identidade histórica preservada)
+     void   → speed 340, r 9. AUDITADO: implode/aoe NUNCA disparam para o
+              void (detonateSpecial só roda para p.mine) — ele é um
+              projétil de impacto único e pesado. Casco INTERROMPIDO com
+              núcleo ausente: contenção, não explosão que não existe.
+     cryo   → speed 600, r 6, fx chill que ACUMULA até congelar
+              massa facetada/cristalizada, sem RNG e sem partículas.
+
+   Vetores diretos, sem rotate/save/restore, sem gradiente, sem alocação.
+   Nenhum arc no plasma/void/cryo: o círculo é assinatura exclusiva do
+   Orb (e do eorb inimigo, que segue intocado). */
+function drawProjectileEnergyMass(p){
+  const t=p.type;
+  if(t==='orb'){
+    /* ORBE: identidade histórica preservada byte a byte — massa
+       volumétrica que pulsa e anel de contenção. É a única da família
+       com arc, e isso é o que a torna imediatamente reconhecível. */
+    drawProjectileOrbShape(p);
+    return;
+  }
+  const sp=Math.hypot(p.vx,p.vy)||1;
+  const nx=p.vx/sp, ny=p.vy/sp;
+  const px=-ny, py=nx;
+  if(t==='plasma'){
+    /* DARDO ENERGÉTICO: envelope hexagonal alongado (a massa sendo
+       empurrada pelo ar) com um NÚCLEO curto e denso dentro dele. A
+       leitura de "energia dirigida" vem da dupla camada, não de trail:
+       é a arma mais rápida da família (980) e a mais barata de desenhar. */
+    const head=p.r*2.3, back=p.r*1.7, w=Math.max(1,p.r*.52);
+    ctx.beginPath();
+    ctx.moveTo(p.x+nx*head,p.y+ny*head);
+    ctx.lineTo(p.x+nx*head*.30+px*w,p.y+ny*head*.30+py*w);
+    ctx.lineTo(p.x-nx*back*.55+px*w,p.y-ny*back*.55+py*w);
+    ctx.lineTo(p.x-nx*back,p.y-ny*back);
+    ctx.lineTo(p.x-nx*back*.55-px*w,p.y-ny*back*.55-py*w);
+    ctx.lineTo(p.x+nx*head*.30-px*w,p.y+ny*head*.30-py*w);
+    ctx.closePath();ctx.fill();
+    /* NÚCLEO: losango pequeno e denso suspenso dentro do envelope. É um
+       segundo corpo PREENCHIDO — não um traço —, o que dá a leitura de
+       "massa contida dentro de um campo" e evita que a silhueta coincida
+       com o cubo+eixo do Boomer (E10), que tem a mesma contagem de ops
+       mas função oposta. */
+    const cw=Math.max(.8,p.r*.26), cf=p.r*.85, cb=p.r*.55;
+    ctx.beginPath();
+    ctx.moveTo(p.x+nx*cf,p.y+ny*cf);
+    ctx.lineTo(p.x+px*cw,p.y+py*cw);
+    ctx.lineTo(p.x-nx*cb,p.y-ny*cb);
+    ctx.lineTo(p.x-px*cw,p.y-py*cw);
+    ctx.closePath();ctx.fill();
+    return;
+  }
+  if(t==='void'){
+    /* CONTENÇÃO: casco octogonal INTERROMPIDO — quatro arcos-de-canto
+       desenhados como segmentos retos, com VAZIOS entre eles e nenhum
+       preenchimento central. O espaço negativo é a forma: massa que
+       falta, não massa que brilha. Coerente com a auditoria (impacto
+       único e pesado), sem prometer a implosão que o código não executa. */
+    const R=p.r*.95, k=0.4142;            // tan(22.5°) → octógono
+    ctx.strokeStyle=p.color;ctx.lineWidth=Math.max(1.2,p.r*.30);
+    ctx.beginPath();
+    for(let i=0;i<4;i++){
+      /* eixos alternados do octógono: 2 segmentos por quadrante */
+      const ux=(i===0?nx:i===1?px:i===2?-nx:-px);
+      const uy=(i===0?ny:i===1?py:i===2?-ny:-py);
+      const vx=(i===0?px:i===1?-nx:i===2?-px:nx);
+      const vy=(i===0?py:i===1?-ny:i===2?-py:ny);
+      ctx.moveTo(p.x+ux*R+vx*R*k,p.y+uy*R+vy*R*k);
+      ctx.lineTo(p.x+ux*R*k+vx*R,p.y+uy*R*k+vy*R);
+    }
+    ctx.stroke();
+    /* marca de colapso: dois traços curtos convergindo ao centro ausente */
+    ctx.lineWidth=Math.max(1,p.r*.22);
+    ctx.beginPath();
+    ctx.moveTo(p.x+nx*R*.46,p.y+ny*R*.46);
+    ctx.lineTo(p.x+nx*R*.16,p.y+ny*R*.16);
+    ctx.moveTo(p.x-nx*R*.46,p.y-ny*R*.46);
+    ctx.lineTo(p.x-nx*R*.16,p.y-ny*R*.16);
+    ctx.stroke();
+    return;
+  }
+  /* CRYO — CRISTAL: corpo em losango alongado com DUAS farpas laterais
+     salientes, como gelo crescendo para fora do eixo. Massa facetada e
+     sólida (preenchida), o oposto do vazio do Void e do círculo do Orb.
+     Sem partícula de neve, sem RNG: a cristalização é geometria. */
+  const head=p.r*1.9, back=p.r*1.5, w=Math.max(1,p.r*.42);
+  ctx.beginPath();
+  ctx.moveTo(p.x+nx*head,p.y+ny*head);
+  ctx.lineTo(p.x+px*w,p.y+py*w);
+  ctx.lineTo(p.x-nx*back,p.y-ny*back);
+  ctx.lineTo(p.x-px*w,p.y-py*w);
+  ctx.closePath();ctx.fill();
+  /* farpas: cristais transversais, curtos e assimétricos no eixo */
+  const bw=p.r*1.18, bo=p.r*.34;
+  ctx.strokeStyle=p.color;ctx.lineWidth=Math.max(1,p.r*.26);
+  ctx.beginPath();
+  ctx.moveTo(p.x+nx*bo+px*w*.5,p.y+ny*bo+py*w*.5);
+  ctx.lineTo(p.x-nx*bo*.4+px*bw,p.y-ny*bo*.4+py*bw);
+  ctx.moveTo(p.x-nx*bo-px*w*.5,p.y-ny*bo-py*w*.5);
+  ctx.lineTo(p.x+nx*bo*.4-px*bw,p.y+ny*bo*.4-py*bw);
+  ctx.stroke();
+}
 function drawProjectile(p){
   const orb=projectileUsesOrbShape(p);
   const fade=projectileRangeFade(p);
@@ -21141,7 +21250,9 @@ function drawProjectile(p){
   ctx.fillStyle=p.color;
   /* Ponto de extensão de E4–E10: a família já está resolvida aqui e o
      corpo é uma única chamada de forma. */
-  if(orb)drawProjectileOrbShape(p);
+  /* eorb (inimigo/boss) segue no caminho histórico, intocado pelo E5. */
+  if(p.type==='eorb')drawProjectileOrbShape(p);
+  else if(visualFamilyForProjectile(p)===PVF_ENERGY)drawProjectileEnergyMass(p);
   else if(visualFamilyForProjectile(p)===PVF_SLUG){
     ctx.strokeStyle=p.color;
     drawProjectileSlug(p);
