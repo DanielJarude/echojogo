@@ -370,10 +370,23 @@ ok('J05 E1: gramática intacta',()=>{
     .forEach(n=>assert.ok(SRC.includes(n),n));
   assert.strictEqual(T.projectileRangeFade({maxDist:0}),1);});
 ok('J06 famílias ainda não implementadas seguem no legado',()=>{
-  const leg=topo(P('flamer'));
-  for(const id of ['acid','tesla','plague'])
+  /* PR15.5-E6: flamer/acid saíram desta lista (família FLUIDO/SPRAY); a
+     âncora do legado passou a ser tesla. O assert positivo abaixo cancela a
+     exigência silenciosa do par antigo e PROVA a nova arquitetura. */
+  const leg=topo(P('tesla'));
+  for(const id of ['tesla','plague'])
     assert.strictEqual(topo(P(id)),leg,id+' foi alterado fora do escopo');
   assert.ok(leg.includes('stroke')&&!leg.includes('fill'),'legado é traço');});
+ok('J07 família FLUIDO/SPRAY (E6) tem forma própria e distinta',()=>{
+  const leg=topo(P('tesla'));
+  const a=topo(P('flamer')),b=topo(P('acid'));
+  for(const [id,t] of [['flamer',a],['acid',b]]){
+    assert.notStrictEqual(t,leg,id+' regrediu para o legado');
+    /* nenhuma copia as formas do E5: nem envelope+núcleo (plasma), nem
+       casco interrompido (void), nem facetado (cryo), nem círculo (orb) */
+    for(const id2 of ['plasma','orb','void','cryo'])
+      assert.notStrictEqual(t,topo(P(id2)),id+' colidiu com '+id2);}
+  assert.notStrictEqual(a,b,'flamer e acid precisam de silhuetas próprias');});
 
 /* ============ 10/18 · MECÂNICA ============ */
 console.log('\n[K] mecânica inalterada');

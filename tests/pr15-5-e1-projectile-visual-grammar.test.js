@@ -158,18 +158,23 @@ const KINETIC_E10=['ricochet','boomer','gatling','mine'];
    ele tem de continuar BYTE-IDÊNTICO à base e permanece no balde C — uma
    exigência mais forte. Prova positiva das outras três em C01e. */
 const ENERGY_E5=['plasma','void','cryo'];
+/* PR15.5-E6: a família FLUIDO/SPRAY ganhou forma própria. Quinto balde com
+   prova POSITIVA (C01g). A varredura segue exigindo equivalência exata para
+   tudo que ainda não foi redesenhado (tesla/plague e os tipos de sistema). */
+const FLUID_E6=['flamer','acid'];
 const TIPOS_C=RANGED.concat(['eorb','tipo_inexistente_xyz',undefined,null]);
 const CASOS=[];
 for(const [dist,maxDist] of [[0,0],[0,1000],[500,1000],[850,1000],[1000,1000]])
   for(const color of ['#46e0ff','#ff7a2f','#a8ff3d'])
     for(const [vx,vy] of [[300,-140],[0,0],[-980,0]])
       CASOS.push({dist,maxDist,color,vx,vy});
-let compC=0,divC=0,compSlug=0,divSlug=0,compSwarm=0,divSwarm=0,compKin=0,divKin=0,compEner=0,divEner=0;
+let compC=0,divC=0,compSlug=0,divSlug=0,compSwarm=0,divSwarm=0,compKin=0,divKin=0,compEner=0,divEner=0,compFluid=0,divFluid=0;
 for(const t of TIPOS_C){
   const isSlug=SLUG_E3.indexOf(t)>=0;
   const isSwarm=SWARM_E4.indexOf(t)>=0;
   const isKin=KINETIC_E10.indexOf(t)>=0;
   const isEner=ENERGY_E5.indexOf(t)>=0;
+  const isFluid=FLUID_E6.indexOf(t)>=0;
   for(const c of CASOS){
     const r=comparaTracos({type:t,x:120.5,y:80.25,vx:c.vx,vy:c.vy,r:4.5,
       color:c.color,dist:c.dist,maxDist:c.maxDist});
@@ -178,6 +183,7 @@ for(const t of TIPOS_C){
     else if(isSwarm){compSwarm++;if(diff)divSwarm++;}
     else if(isKin){compKin++;if(diff)divKin++;}
     else if(isEner){compEner++;if(diff)divEner++;}
+    else if(isFluid){compFluid++;if(diff)divFluid++;}
     else{compC++;if(diff)divC++;}
   }
 }
@@ -195,6 +201,9 @@ ok('C01d família CINÉTICO (E10) mudou em TODAS as '+compKin+' combinações',(
 ok('C01e família ENERGIA/MASSA (E5) mudou em TODAS as '+compEner+' combinações',()=>{
   assert.strictEqual(divEner,compEner,
     'plasma/void/cryo deveriam ter forma própria: só '+divEner+' de '+compEner);});
+ok('C01g família FLUIDO/SPRAY (E6) mudou em TODAS as '+compFluid+' combinações',()=>{
+  assert.strictEqual(divFluid,compFluid,
+    'flamer/acid deveriam ter forma própria: só '+divFluid+' de '+compFluid);});
 ok('C01f orb continua BYTE-IDÊNTICO à base (E5 delega ao desenho histórico)',()=>{
   for(const c of CASOS){
     const r=comparaTracos({type:'orb',x:120.5,y:80.25,vx:c.vx,vy:c.vy,r:4.5,
@@ -207,13 +216,13 @@ ok('C03 plasma mantém o comprimento 10 (demais 5)',()=>{
   const L=t=>{const g=trace('drawProjectile(__pp)',
     {type:t,x:0,y:0,vx:100,vy:0,r:4,color:'#46e0ff',dist:0,maxDist:0});
     const lt=g.find(e=>e[0]==='lineTo');return lt&&Math.abs(lt[1][0]);};
-  /* PR15.5-E5: plasma/cryo/void saíram do caminho legado e não têm mais um
-     "comprimento de traço" único. A âncora do comprimento legado passa a ser
-     flamer (5); o assert positivo garante que as três NÃO usam mais a reta
-     legada de meio-comprimento. */
-  assert.strictEqual(L('flamer'),5);
-  assert.strictEqual(L('acid'),5);
-  for(const t of ['plasma','cryo','void'])
+  /* PR15.5-E5: plasma/cryo/void saíram do caminho legado. PR15.5-E6:
+     flamer/acid também (família FLUIDO/SPRAY) — a âncora do comprimento
+     legado de meio-comprimento (5) passou a ser tesla, ainda no ramo
+     final do dispatcher. O assert positivo garante que as redesenhadas
+     NÃO usam a reta legada (e que o ramo legado segue intacto em tesla). */
+  assert.strictEqual(L('tesla'),5);
+  for(const t of ['plasma','cryo','void','flamer','acid'])
     assert.notStrictEqual(L(t),5,t+' regrediu para a reta legada');});
 ok('C04 fade de alcance preservado (últimos 22%)',()=>{
   assert.strictEqual(T.projectileRangeFade({maxDist:0}),1);
@@ -245,10 +254,11 @@ ok('D04 orbe desenha círculo pulsante + anel (2 arcos)',()=>{
   assert.strictEqual(opsOf(g).filter(o=>o==='fill').length,1);
   assert.strictEqual(opsOf(g).filter(o=>o==='stroke').length,1);});
 ok('D05 linha legada desenha 1 moveTo + 1 lineTo + 1 stroke',()=>{
-  /* `flamer` no lugar de `cryo`: o E3 deu forma própria à família SLUG e o
-     E5 à ENERGIA/MASSA (cryo incluído); flamer representa o caminho legado. */
+  /* `tesla` no lugar de `flamer`: o E3 deu forma própria à família SLUG, o
+     E5 à ENERGIA/MASSA e o E6 à FLUIDO/SPRAY (flamer/acid inclusos); tesla
+     representa o caminho legado. */
   const g=trace('drawProjectile(__pp)',
-    {type:'flamer',x:0,y:0,vx:100,vy:0,r:4,color:'#7fd8ff',dist:0,maxDist:0});
+    {type:'tesla',x:0,y:0,vx:100,vy:0,r:4,color:'#7fd8ff',dist:0,maxDist:0});
   const o=opsOf(g);
   assert.strictEqual(o.filter(x=>x==='moveTo').length,1);
   assert.strictEqual(o.filter(x=>x==='lineTo').length,1);
@@ -448,9 +458,10 @@ ok('I06 a arquitetura permite ao E2 aplicar camada sem duplicar',()=>{
   const linhas=b.split('\n').filter(l=>l.trim()&&!l.trim().startsWith('/*')&&
     !l.trim().startsWith('*')&&!l.trim().startsWith('//'));
   /* Teto ampliado de 14 → 22: o E2 somou a camada temporal (2 linhas) e
-     o E3 somou o ramo da família SLUG (4 linhas). Continua travando o
-     crescimento descontrolado do dispatch, que é o ponto do check. */
-  assert.ok(linhas.length<=22,'dispatch inchado: '+linhas.length+' linhas');
+     o E3 somou o ramo da família SLUG (4 linhas). 22 → 23 no E6, que somou
+     UMA linha (ramo PVF_FLUID). Continua travando o crescimento
+     descontrolado do dispatch, que é o ponto do check. */
+  assert.ok(linhas.length<=23,'dispatch inchado: '+linhas.length+' linhas');
   assert.ok(b.includes('projectileUsesOrbShape'),'usa helper de forma');
   assert.ok(b.includes('drawProjectileGlow'),'usa helper de halo');});
 
@@ -482,10 +493,11 @@ ok('J07 o número de comandos Canvas por projétil não aumentou',()=>{
      emitir nem um comando a mais que a implementação da base. */
   /* rail/sniper/nail saíram do caminho legado no E3 e têm custo próprio,
      coberto por tests/pr15-5-e3-slug-penetrator-identity.test.js §H05. */
-  /* PR15.5-E5: plasma/cryo saíram desta lista — ganharam forma própria e
-     por isso têm orçamento próprio, verificado em J07b logo abaixo. orb e
-     eorb seguem aqui porque continuam no desenho histórico. */
-  for(const t of ['flamer','acid','orb','eorb','desconhecido_xyz']){
+  /* PR15.5-E5: plasma/cryo saíram desta lista — forma própria, orçamento
+     em J07b. PR15.5-E6: flamer/acid saíram — forma própria, orçamento em
+     J07c. tesla/plague mantêm a cobertura do ramo legado; orb e eorb
+     seguem aqui porque continuam no desenho histórico. */
+  for(const t of ['tesla','plague','orb','eorb','desconhecido_xyz']){
     const p={type:t,x:0,y:0,vx:100,vy:0,r:4,color:'#8ff6ff',dist:0,maxDist:0};
     S.__pp=p;run('glowSprite(__pp.color)');
     S.__ctxLog=[];run('drawProjectile(__pp)');const novo=S.__ctxLog.length;
@@ -503,6 +515,19 @@ ok('J07b E5: o custo das 3 redesenhadas é limitado e dentro da faixa do E10',()
     S.__ctxLog=[];run('drawProjectile(__pp)');const n=S.__ctxLog.length;
     S.__ctxLog=null;
     assert.ok(n<=TETO,t+': '+n+' ops excede o teto '+TETO);}});
+ok('J07c E6: flamer/acid limitados, dentro da faixa — flamer mais barato',()=>{
+  /* teto 26 (o `prism` do E10) continua sendo o limite aceito. O flamer é a
+     arma de MAIOR cadência do jogo (interval .045): sua forma foi desenhada
+     para ser a mais barata das duas. */
+  const TETO=26;
+  const custo=t=>{const p={type:t,x:0,y:0,vx:100,vy:0,r:5,color:'#8ff6ff',dist:0,maxDist:0};
+    S.__pp=p;run('glowSprite(__pp.color)');
+    S.__ctxLog=[];run('drawProjectile(__pp)');const n=S.__ctxLog.length;
+    S.__ctxLog=null;return n;};
+  const cf=custo('flamer'),ca=custo('acid');
+  assert.ok(cf<=TETO,'flamer: '+cf+' ops excede o teto '+TETO);
+  assert.ok(ca<=TETO,'acid: '+ca+' ops excede o teto '+TETO);
+  assert.ok(cf<=ca,'flamer ('+cf+') deveria ser <= acid ('+ca+')');});
 
 /* ============ K · CULLING E INTEGRAÇÃO ============ */
 console.log('\n[K] integração no laço de render');

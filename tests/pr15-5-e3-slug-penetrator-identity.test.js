@@ -59,14 +59,16 @@ ok('A05 demais famílias NÃO usam o helper slug (21.D)',()=>{
      forma própria — o que o E3 precisa garantir é que elas não usam a
      geometria SLUG, verificado logo abaixo em A05b. */
   /* plasma/orb/void/cryo saíram desta lista no PR15.5-E5 (família
-     ENERGIA/MASSA); a âncora de legado passou a ser flamer. O que o E3
-     precisa garantir sobre elas está em A05d: não usam geometria SLUG. */
-  const legacy=opsOf(geomOf(trace(P('flamer'))));
-  for(const t of ['acid','tesla','plague'])
+     ENERGIA/MASSA). flamer/acid saíram no PR15.5-E6 (família
+     FLUIDO/SPRAY); a âncora de legado passou a ser tesla. O que o E3
+     precisa garantir sobre as famílias E5/E6 está em A05d e A05e:
+     não usam geometria SLUG. */
+  const legacy=opsOf(geomOf(trace(P('tesla'))));
+  for(const t of ['tesla','plague'])
     assert.deepStrictEqual(opsOf(geomOf(trace(P(t)))),legacy,
       t+' mudou de forma — fora do escopo do E3');});
 ok('A05d família ENERGIA/MASSA (E5) tem forma própria e NÃO é slug',()=>{
-  const legacy=opsOf(geomOf(trace(P('flamer')))).join(',');
+  const legacy=opsOf(geomOf(trace(P('tesla')))).join(',');
   const slug=opsOf(geomOf(trace(P('rail',{r:5})))).join(',');
   const vis=new Set();
   for(const t of ['plasma','orb','void','cryo']){
@@ -75,6 +77,16 @@ ok('A05d família ENERGIA/MASSA (E5) tem forma própria e NÃO é slug',()=>{
     assert.notStrictEqual(g,slug,t+' colidiu com a geometria SLUG');
     vis.add(g);}
   assert.strictEqual(vis.size,4,'as 4 armas do E5 devem ter topologias distintas');});
+ok('A05e família FLUIDO/SPRAY (E6) tem forma própria e NÃO é slug',()=>{
+  const legacy=opsOf(geomOf(trace(P('tesla')))).join(',');
+  const slug=opsOf(geomOf(trace(P('rail',{r:5})))).join(',');
+  const vis=new Set();
+  for(const t of ['flamer','acid']){
+    const g=opsOf(geomOf(trace(P(t,{r:5})))).join(',');
+    assert.notStrictEqual(g,legacy,t+' regrediu para a linha legada');
+    assert.notStrictEqual(g,slug,t+' colidiu com a geometria SLUG');
+    vis.add(g);}
+  assert.strictEqual(vis.size,2,'as 2 armas do E6 devem ter topologias distintas');});
 ok('A05c família CINÉTICO (E10) tem forma própria e NÃO é slug',()=>{
   const legacy=opsOf(geomOf(trace(P('cryo')))).join(',');
   for(const t of ['ricochet','boomer','gatling','mine']){
@@ -389,12 +401,13 @@ ok('J04 beam intacto (21.W)',()=>{
   const b=body('drawBeamFrom');
   assert.ok(!/drawProjectileSlug|SNIPER_FAR_DIST/.test(b));
   assert.ok(b.includes('createLinearGradient')&&b.includes('rampMax'));});
-ok('J05 as outras 16 armas continuam na linha legada (§16)',()=>{
-  const legacy=opsOf(geomOf(trace(P('flamer')))).join(',');
+ok('J05 as armas fora do escopo continuam na linha legada (§16)',()=>{
+  const legacy=opsOf(geomOf(trace(P('tesla')))).join(',');
   /* as 4 do ENXAME saíram da linha legada no E4 (ver A05b) */
   /* as 4 do CINÉTICO saíram da linha legada no E10 (ver A05c) */
   /* as 4 de ENERGIA/MASSA saíram da linha legada no E5 (ver A05d) */
-  for(const t of ['flamer','tesla','acid','plague'])
+  /* as 2 de FLUIDO/SPRAY saíram da linha legada no E6 (ver A05e) */
+  for(const t of ['tesla','plague'])
     assert.strictEqual(opsOf(geomOf(trace(P(t)))).join(','),legacy,t+' foi alterada');});
 
 /* ============ K · REGRESSÕES (§24) ============ */

@@ -21242,6 +21242,87 @@ function drawProjectileEnergyMass(p){
   ctx.lineTo(p.x+nx*bo*.4-px*bw,p.y+ny*bo*.4-py*bw);
   ctx.stroke();
 }
+/* ==================== PR15.5-E6 · FLUIDO / SPRAY ====================
+   Flamer e Acid. A gramática da família é FLUXO: geometria que se lê
+   como MATERIAL LANÇADO em movimento — não peça sólida (E3/E10), não
+   munição miúda (E4), não massa energética contida (E5). Cada forma
+   nasce da mecânica REAL auditada (empíricamente, não pelo nome):
+
+     flamer → interval .045 (a maior cadência do jogo), jitter .30 (o
+              maior do arsenal), speed 430, life .5, range 210 (o mais
+              curto), pr 5. fx burn 3.2s/9: DoT real que EMPILHA até
+              6× (medido: 12 ticks de 2.25 por stack). Sem aoe, sem
+              pierce, sem explosão: gota incendiária de impacto direto
+              num JATO caótico e curtíssimo.
+     acid   → interval .28, count 2 com spread .10, speed 520, range
+              330, pr 4. fx corrode 4.5s/.12: o alvo RECEBE +12% de
+              dano por stack (acumula até .60; medido 1.12×→1.24×) e
+              NÃO tem DoT (medido: 0 de dano em 2s de tick — a
+              partícula isolada de tickStatus é visual, não dano).
+              Sem aoe/pierce: glóbulo pesado de contato direto.
+
+   Nenhum dos dois produz AoE, splash, poça, nuvem ou explosão — as
+   formas NÃO prometem o que a mecânica não executa. A separação vem
+   da topologia: flamer é UM corpo alongado de cauda partida (instável,
+   veloz); acid é UM corpo compacto + UM satélite destacado (pesado,
+   viscoso). Vetores diretos (nx/ny + perpendicular): sem arc, sem
+   rotate/save/restore, sem gradiente, sem Path2D, sem alocação, sem
+   runTime e sem RNG. */
+function drawProjectileFluidSpray(p){
+  const sp=Math.hypot(p.vx,p.vy)||1;
+  const nx=p.vx/sp, ny=p.vy/sp;      // eixo do voo (orientação real)
+  const px=-ny, py=nx;               // perpendicular
+  const t=p.type;
+  if(t==='acid'){
+    /* GLÓBULO CORROSIVO + SATÉLITE: gota pesada com a massa no terço
+       dianteiro (bojo largo, cintura visível atrás) e uma MICROGOTA
+       DESTACADA atrás, separada por um vazio de ~.72r. O espaço
+       negativo entre os dois corpos é a assinatura: é a ÚNICA forma do
+       arsenal com dois preenchimentos DISJUNTOS — o núcleo do plasma
+       fica DENTRO do envelope e as facetas do prism se tocam. Pesado,
+       não veloz: impacto direto + corrosão. Sem arco: o círculo é do
+       Orb. */
+    const wf=Math.max(1,p.r*.82);    // bojo dianteiro (lado +)
+    const wa=Math.max(1,p.r*.50);    // cintura
+    const wb=Math.max(1,p.r*.85);    // barriga (lado −, mais funda)
+    ctx.beginPath();
+    ctx.moveTo(p.x+nx*p.r*1.60+px*p.r*.06,p.y+ny*p.r*1.60+py*p.r*.06); // nariz (levemente fora do eixo)
+    ctx.lineTo(p.x+nx*p.r*.45+px*wf,      p.y+ny*p.r*.45+py*wf);       // bojo dianteiro
+    ctx.lineTo(p.x-nx*p.r*.75+px*wa,      p.y-ny*p.r*.75+py*wa);       // cintura
+    ctx.lineTo(p.x-nx*p.r*1.70+px*p.r*.05,p.y-ny*p.r*1.70+py*p.r*.05); // rabicho fino
+    ctx.lineTo(p.x+nx*p.r*.20-px*wb,      p.y+ny*p.r*.20-py*wb);       // barriga
+    ctx.closePath();ctx.fill();
+    /* SATÉLITE: microgota que a viscosidade destacou. ATRÁS e SEPARADA,
+       nunca à frente nem sobreposta — não é splash, poça nem AoE (que
+       a mecânica não tem); é leitura material do líquido em voo. */
+    ctx.beginPath();
+    ctx.moveTo(p.x-nx*p.r*2.45+px*p.r*.22,p.y-ny*p.r*2.45+py*p.r*.22);
+    ctx.lineTo(p.x-nx*p.r*3.05+px*p.r*.04,p.y-ny*p.r*3.05+py*p.r*.04);
+    ctx.lineTo(p.x-nx*p.r*2.42-px*p.r*.14,p.y-ny*p.r*2.42-py*p.r*.14);
+    ctx.closePath();ctx.fill();
+    return;
+  }
+  /* FLAMER — LÍNGUA DE JATO: corpo ÚNICO, alongado e pontiagudo à
+     frente, com a traseira partida em GARFO TRIPLO — três pontas de
+     comprimentos DESIGUAIS separadas por dois entalhes. A instabilidade
+     do material é geometria fixa e determinística, não jitter nem RNG:
+     é a desestabilização congelada do spray de alta cadência (interval
+     .045, jitter .30) que a mecânica realmente produz. A cauda em garfo
+     é a assinatura da arma: nenhum slug (E3), munição (E4), cinético
+     (E10) ou massa (E5) tem traseira bifurcada. */
+  const wr=Math.max(1,p.r*.55);      // asa direita (mais larga)
+  const wl=Math.max(1,p.r*.42);      // asa esquerda
+  ctx.beginPath();
+  ctx.moveTo(p.x+nx*p.r*2.15,p.y+ny*p.r*2.15);                        // bico
+  ctx.lineTo(p.x-nx*p.r*.35+px*wr, p.y-ny*p.r*.35+py*wr);             // asa direita
+  ctx.lineTo(p.x-nx*p.r*3.30+px*p.r*.34,p.y-ny*p.r*3.30+py*p.r*.34);  // ponta A (a mais longa)
+  ctx.lineTo(p.x-nx*p.r*2.45+px*p.r*.10,p.y-ny*p.r*2.45+py*p.r*.10);  // entalhe 1
+  ctx.lineTo(p.x-nx*p.r*2.90-px*p.r*.06,p.y-ny*p.r*2.90-py*p.r*.06);  // ponta média
+  ctx.lineTo(p.x-nx*p.r*2.30-px*p.r*.16,p.y-ny*p.r*2.30-py*p.r*.16);  // entalhe 2
+  ctx.lineTo(p.x-nx*p.r*2.65-px*p.r*.42,p.y-ny*p.r*2.65-py*p.r*.42);  // ponta B (a mais curta)
+  ctx.lineTo(p.x-nx*p.r*.55-px*wl, p.y-ny*p.r*.55-py*wl);             // asa esquerda
+  ctx.closePath();ctx.fill();
+}
 function drawProjectile(p){
   const orb=projectileUsesOrbShape(p);
   const fade=projectileRangeFade(p);
@@ -21253,6 +21334,7 @@ function drawProjectile(p){
   /* eorb (inimigo/boss) segue no caminho histórico, intocado pelo E5. */
   if(p.type==='eorb')drawProjectileOrbShape(p);
   else if(visualFamilyForProjectile(p)===PVF_ENERGY)drawProjectileEnergyMass(p);
+  else if(visualFamilyForProjectile(p)===PVF_FLUID)drawProjectileFluidSpray(p);
   else if(visualFamilyForProjectile(p)===PVF_SLUG){
     ctx.strokeStyle=p.color;
     drawProjectileSlug(p);
