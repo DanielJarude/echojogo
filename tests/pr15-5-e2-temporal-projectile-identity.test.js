@@ -453,9 +453,13 @@ ok('J08 E1: drawProjectile não voltou a ser monolítico (§10)',()=>{
   assert.ok(b.includes('projectileUsesOrbShape')&&b.includes('drawProjectileGlow'));
   const linhas=b.split('\n').filter(l=>l.trim()&&!l.trim().startsWith('/*')&&
     !l.trim().startsWith('*')&&!l.trim().startsWith('//'));
-  /* teto elevado 18 -> 20: o E4 acrescentou UM ramo (PVF_SWARM) ao
-     dispatch. Continua sendo um encaminhador enxuto, não um monólito. */
-  assert.ok(linhas.length<=20,'dispatch inchado: '+linhas.length);});
+  /* teto elevado 18 -> 20 (E4, ramo PVF_SWARM) -> 21 (E5, ramo PVF_ENERGY).
+     Continua sendo um encaminhador enxuto, não um monólito: o assert abaixo
+     exige que NENHUMA geometria seja desenhada inline no dispatch — todo
+     traço tem de sair de um helper drawProjectile*. */
+  assert.ok(linhas.length<=21,'dispatch inchado: '+linhas.length);
+  assert.ok(!/\b(?:ctx\.)?(?:moveTo|lineTo|arc|rect|bezierCurveTo|quadraticCurveTo)\s*\(/.test(b),
+    'dispatch voltou a desenhar geometria inline');});
 ok('J09 E1: classificação por família intacta',()=>{
   assert.strictEqual(T.visualFamilyForProjectile({type:'rail'}),T.PVF.SLUG);
   assert.strictEqual(T.visualFamilyForProjectile({type:'plasma'}),T.PVF.ENERGY);

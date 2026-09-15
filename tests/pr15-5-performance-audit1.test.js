@@ -87,7 +87,13 @@ ok('Pool e partículas conservam limites originais',()=>assert.match(SRC,/const 
 ok('LOW/MEDIUM/HIGH continuam .62/.84/1',()=>assert.match(SRC,/renderQuality=cfg.quality===0\?\.62:\(cfg.quality===2\?1:\.84\)/));
 ok('Gate e dt clamp permanecem intocados',()=>{assert.match(SRC,/const TARGET_FPS=60;/);assert.match(SRC,/gateOn=avg<13\.2/);assert.match(SRC,/if\(raw>\.05\)raw=\.05/);});
 
-// AUDIT_GOLDENS — hashes integrais da base b4654f1; preenchidos na auditoria.
+/* AUDIT_GOLDENS — hashes integrais da base b4654f1; preenchidos na auditoria.
+   PR15.5-E5: as cenas B..I foram re-baselineadas. Todas usam EXCLUSIVAMENTE
+   projéteis `plasma` (a arma inicial) — verificado enumerando os tipos em
+   cada fixture — e o plasma recebeu forma própria no E5. A cena A, a única
+   SEM projéteis, manteve o hash `92128f38…` inalterado, o que confirma que
+   nada fora do escopo mudou. O consumo de RNG de draw continua 0 nas 9
+   cenas (todos os 9 asserts de RNG seguem passando sem rebaseline). */
 const mechanical={
   "updateEnemy": "dabbbf648ddb4b427a4570ddde4944dd530c9fb2531791a0ca28c6ff76b475ec",
   "updateProjectiles": "a6b0ad8213a2bf6f8140777be9368965951e60ee958efdd9c7dd8d4d7a1abbda",
@@ -199,7 +205,14 @@ const mechanical={
      ricochet (vx invertido, bounce 3->2, dmg 12->13.8) e o ciclo da
      mine (desaceleração 300->22, armT 0.667) também conferem. Os 9
      cenários de Canvas acima seguem byte-idênticos e o RNG em 0. */
-  "drawProjectile": "6b7dad123d1431d606c12fe13b1d366682620309d2b06645974e38ffa2171a5f",
+  /* PR15.5-E5: re-baselineado. Uma linha ADICIONADA ao dispatch
+     (ramo PVF_ENERGY) + o desvio explícito do eorb para o caminho
+     histórico, de modo que o orb do JOGADOR passe pela família e o
+     eorb INIMIGO continue intocado. Mecânica idêntica a 81b0076:
+     0 divergências em plasma/orb/void/cryo (count, vx/vy, dmg, r,
+     color, type, life, maxDist, aoe, pierce, crit e recoil), com o
+     AoE do orb e o impacto único do void confirmados em runtime. */
+  "drawProjectile": "d4f2d106d4a78dc1fa8b537c2ab71a1b71ed25c8b48832ef05f5b37ede6f25d5",
   /* PR15.5-D: drawSwings re-baselineado — ganhou o despacho para o trail
      por família (meleeDrawTrail, pinado abaixo). O fallback legado e o
      comportamento sem RNG permanecem; os goldens A–I comprovam que os
@@ -244,35 +257,35 @@ const golden={
     "random": 0
   },
   "B": {
-    "hashCanvas": "d1b82ed9d8e6a3a42c442bc1c286d960ce6ce6d57b3a7f089103bc9a275f45f3",
+    "hashCanvas": "193cfe5b00d1e8bc167578da27a82a2e64fcf0c4c31c8a681c797ebdfd1cd0b2",
     "random": 0
   },
   "C": {
-    "hashCanvas": "96d93bfdc8664cac7a698c5dac2aba1f1b3c9f23a0a7ebd02ebfe2401d35b3d9",
+    "hashCanvas": "13d67b2ca4584ebf4ab97bacaaa5bb60e662b7a76d7882c9f00c7b9330268dc6",
     "random": 0
   },
   "D": {
-    "hashCanvas": "1a4f79656168a8bb2e2efe85396c94c3e02cbad5c10b135d375d5bcec0d7e928",
+    "hashCanvas": "443c84548afe75be9d0c3af2f572cb2898bfe7f4a4ad75da99bf6647497de441",
     "random": 0
   },
   "E": {
-    "hashCanvas": "6b335ca32b694023c78fdea9074fb8c66a4c77bc2d6725c3f4182fc1c32fe919",
+    "hashCanvas": "019ac635ee24ef205cd94eeb7f619fc21dafa1a2c0560dcd387dd2247963b9f5",
     "random": 0
   },
   "F": {
-    "hashCanvas": "139789a530f80437f9055f2e13d64b9208ded3c3fdfc7946e61549c9ec91e764",
+    "hashCanvas": "517bb713670e0e8a80d041abf71bbcbf212abfcb1c517303842a9b44d6a41866",
     "random": 0
   },
   "G": {
-    "hashCanvas": "2ecefc873bd62d5e179f6606fb056988d54b684a2afaf7680beb538b5b1eedc2",
+    "hashCanvas": "6f0c0698f53758c088e8c2921ebf7d330c3bc5501428c28dba08b550278198df",
     "random": 0
   },
   "H": {
-    "hashCanvas": "27c938706629cdea897438365a19f8da5a0347b3794c52e2a9e272bf17d73947",
+    "hashCanvas": "f6e465d62f6d50ca51678a430df37bff68018a39445869bfac052137489b596d",
     "random": 0
   },
   "I": {
-    "hashCanvas": "79fe7e07c9cc5b34a45a1155a6bb0fa19ca1cdabe191514c5e654899a1561631",
+    "hashCanvas": "d7ead33fced65483f7506e0e30d4b4ca737f806f0687a29a853223b9e554943b",
     "random": 0
   }
 };

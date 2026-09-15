@@ -184,6 +184,8 @@ src+='\n;globalThis.__t={'+
   'drawProjectileLegacyLine:(typeof drawProjectileLegacyLine==="function"?drawProjectileLegacyLine:undefined),'+
   'drawProjectile:(typeof drawProjectile==="function"?drawProjectile:undefined),'+
   /* PR15.5-E2 — identidade temporal (guardas typeof: ver nota acima). */
+  /* PR15.5-E5 — energia/massa (guardas typeof: ver nota acima). */
+  'drawProjectileEnergyMass:(typeof drawProjectileEnergyMass==="function"?drawProjectileEnergyMass:undefined),'+
   /* PR15.5-E10 — cinético/retorno (guardas typeof: ver nota acima). */
   'drawProjectileKinetic:(typeof drawProjectileKinetic==="function"?drawProjectileKinetic:undefined),'+
   /* PR15.5-E4 — enxame/múltiplo (guardas typeof: ver nota acima). */

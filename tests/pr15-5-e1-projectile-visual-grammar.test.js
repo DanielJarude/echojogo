@@ -153,17 +153,23 @@ const SWARM_E4=['smg','shotgun','homing','prism'];
    Quarto balde com prova POSITIVA (C01d). A varredura segue exigindo
    equivalência exata para tudo que ainda não foi redesenhado. */
 const KINETIC_E10=['ricochet','boomer','gatling','mine'];
+/* PR15.5-E5: a família ENERGIA/MASSA ganhou forma própria. `orb` NÃO entra
+   neste balde de propósito: o E5 delega o orb ao desenho histórico, então
+   ele tem de continuar BYTE-IDÊNTICO à base e permanece no balde C — uma
+   exigência mais forte. Prova positiva das outras três em C01e. */
+const ENERGY_E5=['plasma','void','cryo'];
 const TIPOS_C=RANGED.concat(['eorb','tipo_inexistente_xyz',undefined,null]);
 const CASOS=[];
 for(const [dist,maxDist] of [[0,0],[0,1000],[500,1000],[850,1000],[1000,1000]])
   for(const color of ['#46e0ff','#ff7a2f','#a8ff3d'])
     for(const [vx,vy] of [[300,-140],[0,0],[-980,0]])
       CASOS.push({dist,maxDist,color,vx,vy});
-let compC=0,divC=0,compSlug=0,divSlug=0,compSwarm=0,divSwarm=0,compKin=0,divKin=0;
+let compC=0,divC=0,compSlug=0,divSlug=0,compSwarm=0,divSwarm=0,compKin=0,divKin=0,compEner=0,divEner=0;
 for(const t of TIPOS_C){
   const isSlug=SLUG_E3.indexOf(t)>=0;
   const isSwarm=SWARM_E4.indexOf(t)>=0;
   const isKin=KINETIC_E10.indexOf(t)>=0;
+  const isEner=ENERGY_E5.indexOf(t)>=0;
   for(const c of CASOS){
     const r=comparaTracos({type:t,x:120.5,y:80.25,vx:c.vx,vy:c.vy,r:4.5,
       color:c.color,dist:c.dist,maxDist:c.maxDist});
@@ -171,6 +177,7 @@ for(const t of TIPOS_C){
     if(isSlug){compSlug++;if(diff)divSlug++;}
     else if(isSwarm){compSwarm++;if(diff)divSwarm++;}
     else if(isKin){compKin++;if(diff)divKin++;}
+    else if(isEner){compEner++;if(diff)divEner++;}
     else{compC++;if(diff)divC++;}
   }
 }
@@ -185,17 +192,29 @@ ok('C01c família ENXAME (E4) mudou em TODAS as '+compSwarm+' combinações',()=
 ok('C01d família CINÉTICO (E10) mudou em TODAS as '+compKin+' combinações',()=>{
   assert.strictEqual(divKin,compKin,
     'ricochet/boomer/gatling/mine deveriam ter forma própria: só '+divKin+' de '+compKin);});
+ok('C01e família ENERGIA/MASSA (E5) mudou em TODAS as '+compEner+' combinações',()=>{
+  assert.strictEqual(divEner,compEner,
+    'plasma/void/cryo deveriam ter forma própria: só '+divEner+' de '+compEner);});
+ok('C01f orb continua BYTE-IDÊNTICO à base (E5 delega ao desenho histórico)',()=>{
+  for(const c of CASOS){
+    const r=comparaTracos({type:'orb',x:120.5,y:80.25,vx:c.vx,vy:c.vy,r:4.5,
+      color:c.color,dist:c.dist,maxDist:c.maxDist});
+    assert.strictEqual(r.novo,r.velho,'orb divergiu da base');}});
 ok('C02 a cobertura da varredura é significativa',()=>{
-  const tot=compC+compSlug+compSwarm+compKin;
+  const tot=compC+compSlug+compSwarm+compKin+compEner;
   assert.ok(tot>=500,'apenas '+tot+' combinações');});
 ok('C03 plasma mantém o comprimento 10 (demais 5)',()=>{
   const L=t=>{const g=trace('drawProjectile(__pp)',
     {type:t,x:0,y:0,vx:100,vy:0,r:4,color:'#46e0ff',dist:0,maxDist:0});
     const lt=g.find(e=>e[0]==='lineTo');return lt&&Math.abs(lt[1][0]);};
-  assert.strictEqual(L('plasma'),10);
-  /* rail saiu do caminho legado no E3 e smg no E4; cryo e void seguem nele */
-  assert.strictEqual(L('cryo'),5);
-  assert.strictEqual(L('void'),5);});
+  /* PR15.5-E5: plasma/cryo/void saíram do caminho legado e não têm mais um
+     "comprimento de traço" único. A âncora do comprimento legado passa a ser
+     flamer (5); o assert positivo garante que as três NÃO usam mais a reta
+     legada de meio-comprimento. */
+  assert.strictEqual(L('flamer'),5);
+  assert.strictEqual(L('acid'),5);
+  for(const t of ['plasma','cryo','void'])
+    assert.notStrictEqual(L(t),5,t+' regrediu para a reta legada');});
 ok('C04 fade de alcance preservado (últimos 22%)',()=>{
   assert.strictEqual(T.projectileRangeFade({maxDist:0}),1);
   assert.strictEqual(T.projectileRangeFade({dist:0,maxDist:1000}),1);
@@ -226,10 +245,10 @@ ok('D04 orbe desenha círculo pulsante + anel (2 arcos)',()=>{
   assert.strictEqual(opsOf(g).filter(o=>o==='fill').length,1);
   assert.strictEqual(opsOf(g).filter(o=>o==='stroke').length,1);});
 ok('D05 linha legada desenha 1 moveTo + 1 lineTo + 1 stroke',()=>{
-  /* `cryo` no lugar de `rail`: o E3 deu forma própria à família SLUG,
-     cryo permanece representando o caminho legado. */
+  /* `flamer` no lugar de `cryo`: o E3 deu forma própria à família SLUG e o
+     E5 à ENERGIA/MASSA (cryo incluído); flamer representa o caminho legado. */
   const g=trace('drawProjectile(__pp)',
-    {type:'cryo',x:0,y:0,vx:100,vy:0,r:4,color:'#7fd8ff',dist:0,maxDist:0});
+    {type:'flamer',x:0,y:0,vx:100,vy:0,r:4,color:'#7fd8ff',dist:0,maxDist:0});
   const o=opsOf(g);
   assert.strictEqual(o.filter(x=>x==='moveTo').length,1);
   assert.strictEqual(o.filter(x=>x==='lineTo').length,1);
@@ -463,7 +482,10 @@ ok('J07 o número de comandos Canvas por projétil não aumentou',()=>{
      emitir nem um comando a mais que a implementação da base. */
   /* rail/sniper/nail saíram do caminho legado no E3 e têm custo próprio,
      coberto por tests/pr15-5-e3-slug-penetrator-identity.test.js §H05. */
-  for(const t of ['cryo','plasma','orb','eorb','desconhecido_xyz']){
+  /* PR15.5-E5: plasma/cryo saíram desta lista — ganharam forma própria e
+     por isso têm orçamento próprio, verificado em J07b logo abaixo. orb e
+     eorb seguem aqui porque continuam no desenho histórico. */
+  for(const t of ['flamer','acid','orb','eorb','desconhecido_xyz']){
     const p={type:t,x:0,y:0,vx:100,vy:0,r:4,color:'#8ff6ff',dist:0,maxDist:0};
     S.__pp=p;run('glowSprite(__pp.color)');
     S.__ctxLog=[];run('drawProjectile(__pp)');const novo=S.__ctxLog.length;
@@ -471,6 +493,16 @@ ok('J07 o número de comandos Canvas por projétil não aumentou',()=>{
     S.__ctxLog=null;
     assert.strictEqual(novo,velho,t+': '+novo+' ops vs '+velho+' na base');
   }});
+ok('J07b E5: o custo das 3 redesenhadas é limitado e dentro da faixa do E10',()=>{
+  /* teto 26 = o custo do `prism` (E10), a forma mais cara já aprovada.
+     Assert positivo: nenhuma das três pode ser MAIS cara que isso. */
+  const TETO=26;
+  for(const t of ['plasma','void','cryo']){
+    const p={type:t,x:0,y:0,vx:100,vy:0,r:4,color:'#8ff6ff',dist:0,maxDist:0};
+    S.__pp=p;run('glowSprite(__pp.color)');
+    S.__ctxLog=[];run('drawProjectile(__pp)');const n=S.__ctxLog.length;
+    S.__ctxLog=null;
+    assert.ok(n<=TETO,t+': '+n+' ops excede o teto '+TETO);}});
 
 /* ============ K · CULLING E INTEGRAÇÃO ============ */
 console.log('\n[K] integração no laço de render');
