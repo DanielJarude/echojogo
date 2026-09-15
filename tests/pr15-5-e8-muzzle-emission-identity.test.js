@@ -365,13 +365,21 @@ ok('H01 formas do E3 (rail/sniper/nail) inalteradas (§25)',()=>{
     'beginPath,moveTo,lineTo,lineTo,lineTo,lineTo,lineTo,closePath,fill');});
 ok('H02 as armas fora de SLUG/ENXAME seguem na linha legada (§2)',()=>{
   /* smg/shotgun/homing/prism ganharam forma própria no PR15.5-E4 */
-  const legacy=shapeOf('flamer');
+  const legacy=shapeOf('tesla');
   /* ricochet/boomer/gatling/mine ganharam forma própria no PR15.5-E10 */
   /* plasma/orb/void/cryo ganharam forma própria no PR15.5-E5 (ver H02d) */
-  for(const id of ['flamer','tesla','acid','plague'])
+  /* flamer/acid ganharam forma própria no PR15.5-E6 (ver H02e) */
+  for(const id of ['tesla','plague'])
     assert.strictEqual(shapeOf(id),legacy,id+' teve o projétil alterado');});
+ok('H02e E6: as 2 de FLUIDO/SPRAY têm forma própria e o muzzle não as tocou',()=>{
+  const legacy=shapeOf('tesla');
+  const s={};
+  for(const id of ['flamer','acid']){
+    s[id]=shapeOf(id);
+    assert.notStrictEqual(s[id],legacy,id+' regrediu para a linha legada');}
+  assert.strictEqual(new Set(Object.values(s)).size,2,'topologias devem ser distintas');});
 ok('H02d E5: as 4 de ENERGIA/MASSA têm forma própria e o muzzle não as tocou',()=>{
-  const legacy=shapeOf('flamer');
+  const legacy=shapeOf('tesla');
   const s={};
   for(const id of ['plasma','orb','void','cryo']){
     s[id]=shapeOf(id);

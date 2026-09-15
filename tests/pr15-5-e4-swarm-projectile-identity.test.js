@@ -200,11 +200,20 @@ ok('O02 E3 preservado: rail/sniper/nail inalterados (§16)',()=>{
 ok('O03 famílias fora do E4 seguem na linha legada (§35)',()=>{
   /* ricochet/boomer/gatling/mine ganharam forma própria no PR15.5-E10 */
   /* plasma/orb/void/cryo ganharam forma própria no PR15.5-E5 (ver O03c) */
-  const legado=topo({type:'flamer'});
-  for(const id of ['flamer','acid','tesla','plague'])
+  /* flamer/acid ganharam forma própria no PR15.5-E6 (ver O03d) */
+  const legado=topo({type:'tesla'});
+  for(const id of ['tesla','plague'])
     assert.strictEqual(topo({type:id}),legado,id+' foi alterado fora do escopo');});
+ok('O03d E6: as 2 de FLUIDO/SPRAY não copiam nenhuma forma do enxame',()=>{
+  const legado=topo({type:'tesla'});
+  for(const id of ['flamer','acid']){
+    assert.notStrictEqual(topo({type:id}),legado,id+' deveria ter forma própria');
+    for(const sw of SWARM)
+      assert.notStrictEqual(topo({type:id})+'|'+JSON.stringify(verts({type:id})),
+        topo({type:sw})+'|'+JSON.stringify(verts({type:sw})),
+        id+' colidiu com '+sw);}});
 ok('O03c E5: as 4 de ENERGIA/MASSA não copiam nenhuma forma do enxame',()=>{
-  const legado=topo({type:'flamer'});
+  const legado=topo({type:'tesla'});
   for(const id of ['plasma','orb','void','cryo']){
     assert.notStrictEqual(topo({type:id}),legado,id+' deveria ter forma própria');
     for(const sw of SWARM)

@@ -205,14 +205,15 @@ const mechanical={
      ricochet (vx invertido, bounce 3->2, dmg 12->13.8) e o ciclo da
      mine (desaceleração 300->22, armT 0.667) também conferem. Os 9
      cenários de Canvas acima seguem byte-idênticos e o RNG em 0. */
-  /* PR15.5-E5: re-baselineado. Uma linha ADICIONADA ao dispatch
-     (ramo PVF_ENERGY) + o desvio explícito do eorb para o caminho
-     histórico, de modo que o orb do JOGADOR passe pela família e o
-     eorb INIMIGO continue intocado. Mecânica idêntica a 81b0076:
-     0 divergências em plasma/orb/void/cryo (count, vx/vy, dmg, r,
-     color, type, life, maxDist, aoe, pierce, crit e recoil), com o
-     AoE do orb e o impacto único do void confirmados em runtime. */
-  "drawProjectile": "d4f2d106d4a78dc1fa8b537c2ab71a1b71ed25c8b48832ef05f5b37ede6f25d5",
+  /* PR15.5-E6: re-baselineado pelo mesmo motivo do E4/E10 — UMA linha
+     ADICIONADA ao dispatch, nada removido:
+       else if(visualFamilyForProjectile(p)===PVF_FLUID)drawProjectileFluidSpray(p);
+     Mecânica idêntica: count, vx/vy, dmg, r, color, type, life, maxDist,
+     aoe(0), pierce(0) e recoil de flamer/acid conferem na sonda do E6;
+     burn continua 3.2s/9 (12 ticks de 2.25) e corrode 4.5s/.12 sem DoT
+     (statusDmgMul ×1.12/×1.24). Os 9 cenários de Canvas acima seguem
+     byte-idênticos (nenhum usa flamer/acid) e o RNG continua em 0. */
+  "drawProjectile": "633c53d5d061227ab15e32fe3e94ee05edadb3fad9039c294cad7adc711ee925",
   /* PR15.5-D: drawSwings re-baselineado — ganhou o despacho para o trail
      por família (meleeDrawTrail, pinado abaixo). O fallback legado e o
      comportamento sem RNG permanecem; os goldens A–I comprovam que os

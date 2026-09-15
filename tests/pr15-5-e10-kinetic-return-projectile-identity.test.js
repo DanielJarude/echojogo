@@ -350,11 +350,19 @@ ok('AD01 beam e eorb fora da família (29.AD)',()=>{
   assert.ok(!/drawProjectileKinetic/.test(body('drawBeamFrom')));});
 ok('AD02 famílias ainda não implementadas seguem no legado',()=>{
   /* plasma/orb/void/cryo ganharam forma própria no PR15.5-E5 (ver AD02b) */
-  const leg=topo(P('flamer'));
-  for(const id of ['flamer','acid','tesla','plague'])
+  /* flamer/acid ganharam forma própria no PR15.5-E6 (ver AD02c) */
+  const leg=topo(P('tesla'));
+  for(const id of ['tesla','plague'])
     assert.strictEqual(topo(P(id)),leg,id+' foi alterado fora do escopo');});
+ok('AD02c E6: FLUIDO/SPRAY tem forma própria e não colide com a cinética',()=>{
+  const leg=topo(P('tesla'));
+  for(const id of ['flamer','acid']){
+    assert.notStrictEqual(topo(P(id)),leg,id+' regrediu para a linha legada');
+    for(const k of ['ricochet','boomer','gatling','mine'])
+      assert.notStrictEqual(topo(P(id))+'|'+JSON.stringify(verts(P(id))),
+        topo(P(k))+'|'+JSON.stringify(verts(P(k))),id+' colidiu com '+k);}});
 ok('AD02b E5: ENERGIA/MASSA tem forma própria e não colide com a cinética',()=>{
-  const leg=topo(P('flamer'));
+  const leg=topo(P('tesla'));
   for(const id of ['plasma','orb','void','cryo']){
     assert.notStrictEqual(topo(P(id)),leg,id+' regrediu para a linha legada');
     for(const k of ['ricochet','boomer','gatling','mine'])
