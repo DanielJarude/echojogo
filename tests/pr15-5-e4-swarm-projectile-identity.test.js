@@ -197,23 +197,35 @@ ok('O02 E3 preservado: rail/sniper/nail inalterados (§16)',()=>{
   assert.strictEqual(topo({type:'nail'}),
     'beginPath,moveTo,lineTo,lineTo,lineTo,lineTo,lineTo,closePath,fill');
   assert.strictEqual(run('SNIPER_FAR_DIST'),450);});
-ok('O03 famílias fora do E4 seguem na linha legada (§35)',()=>{
+ok('O03 famílias fora do E4 não copiam as formas do enxame (§35)',()=>{
   /* ricochet/boomer/gatling/mine ganharam forma própria no PR15.5-E10 */
   /* plasma/orb/void/cryo ganharam forma própria no PR15.5-E5 (ver O03c) */
   /* flamer/acid ganharam forma própria no PR15.5-E6 (ver O03d) */
-  const legado=topo({type:'tesla'});
+  /* tesla/plague ganharam forma própria no PR15.5-E7 (ver O03e) */
+  const legado=topo({type:'arma_do_futuro_2027'});
+  assert.strictEqual(legado,'beginPath,moveTo,lineTo,stroke',
+    'premissa: o fallback legado é o traço reto');
   for(const id of ['tesla','plague'])
-    assert.strictEqual(topo({type:id}),legado,id+' foi alterado fora do escopo');});
+    assert.notStrictEqual(topo({type:id}),legado,id+' regrediu para o fallback');});
 ok('O03d E6: as 2 de FLUIDO/SPRAY não copiam nenhuma forma do enxame',()=>{
-  const legado=topo({type:'tesla'});
+  const legado=topo({type:'arma_do_futuro_2027'});
   for(const id of ['flamer','acid']){
     assert.notStrictEqual(topo({type:id}),legado,id+' deveria ter forma própria');
     for(const sw of SWARM)
       assert.notStrictEqual(topo({type:id})+'|'+JSON.stringify(verts({type:id})),
         topo({type:sw})+'|'+JSON.stringify(verts({type:sw})),
         id+' colidiu com '+sw);}});
+ok('O03e E7: as 2 de CONDUÇÃO/STATUS não copiam nenhuma forma do enxame',()=>{
+  const legado=topo({type:'arma_do_futuro_2027'});
+  for(const id of ['tesla','plague']){
+    assert.notStrictEqual(topo({type:id}),legado,id+' deveria ter forma própria');
+    for(const sw of SWARM)
+      assert.notStrictEqual(topo({type:id})+'|'+JSON.stringify(verts({type:id})),
+        topo({type:sw})+'|'+JSON.stringify(verts({type:sw})),
+        id+' colidiu com '+sw);}});
 ok('O03c E5: as 4 de ENERGIA/MASSA não copiam nenhuma forma do enxame',()=>{
-  const legado=topo({type:'tesla'});
+  /* PR15.5-E7: âncora de legado = tipo desconhecido (tesla saiu no E7) */
+  const legado=topo({type:'arma_do_futuro_2027'});
   for(const id of ['plasma','orb','void','cryo']){
     assert.notStrictEqual(topo({type:id}),legado,id+' deveria ter forma própria');
     for(const sw of SWARM)

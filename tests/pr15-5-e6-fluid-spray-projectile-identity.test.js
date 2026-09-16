@@ -141,14 +141,19 @@ ok('C04 ignorando glow: a diferença permanece',()=>{
 
 /* ============ 7 · COLISÕES COM AS DEMAIS FAMÍLIAS ============ */
 console.log('\n[D] separação das outras famílias');
-ok('D01 Flamer/Acid != legado (tesla/plague: o traço reto)',()=>{
-  const legT=topo(P('tesla')), legP=topo(P('plague'));
+ok('D01 Flamer/Acid != legado (fallback: o traço reto)',()=>{
+  /* PR15.5-E7: tesla/plague saíram do legado — a âncora do traço reto é
+     agora um tipo DESCONHECIDO (único caminho real até o fallback), e as
+     duas armas do E7 não podem colidir com as formas do E6. */
+  const leg=topo(P('arma_do_futuro_2027'));
   for(const id of FS){
-    assert.notStrictEqual(topo(P(id)),legT,id+' virou traço reto');
+    assert.notStrictEqual(topo(P(id)),leg,id+' virou traço reto');
     assert.notStrictEqual(shape(P(id)),shape(P('plague')),id+' == plague');
-    assert.ok(legT.includes('stroke')&&legT.includes('lineTo')&&!legT.includes('fill'),
+    assert.notStrictEqual(shape(P(id)),shape(P('tesla')),id+' == tesla');
+    assert.ok(leg.includes('stroke')&&leg.includes('lineTo')&&!leg.includes('fill'),
       'premissa: o legado é traço');}
-  assert.strictEqual(legT,legP,'tesla/plague compartilham o legado (âncora)');});
+  assert.notStrictEqual(topo(P('tesla')),topo(P('plague')),
+    'tesla/plague têm formas próprias e distintas (E7)');});
 ok('D02 != ENERGIA/MASSA (E5: plasma/orb/void/cryo)',()=>{
   for(const id of FS)for(const o of ['plasma','orb','void','cryo'])
     assert.notStrictEqual(shape(P(id)),shape(P(o)),id+' == '+o);});
@@ -359,7 +364,8 @@ ok('J03 E10: ricochet/boomer/gatling/mine byte-idênticos',()=>{
     'beginPath,moveTo,lineTo,lineTo,lineTo,lineTo,lineTo,closePath,fill,beginPath,moveTo,lineTo,moveTo,lineTo,stroke');});
 ok('J04 E5: plasma/void/cryo mantêm forma própria; orb byte-idêntico',()=>{
   assert.strictEqual(topo(P('orb')),'beginPath,arc,fill,beginPath,arc,stroke');
-  const leg=topo(P('tesla'));
+  /* PR15.5-E7: âncora de legado = tipo desconhecido (tesla saiu no E7) */
+  const leg=topo(P('arma_do_futuro_2027'));
   for(const id of ['plasma','void','cryo'])
     assert.notStrictEqual(topo(P(id)),leg,id+' regrediu para o legado');
   assert.strictEqual(new Set(['plasma','void','cryo'].map(id=>shape(P(id)))).size,3,
@@ -372,11 +378,14 @@ ok('J06 E1: gramática intacta',()=>{
    'projectileRangeFade','drawProjectileGlow','drawProjectileLegacyLine']
     .forEach(n=>assert.ok(SRC.includes(n),n));
   assert.strictEqual(T.projectileRangeFade({maxDist:0}),1);});
-ok('J07 tesla/plague seguem no legado (âncora do E7)',()=>{
-  const leg=topo(P('tesla'));
-  for(const id of ['tesla','plague'])
-    assert.strictEqual(topo(P(id)),leg,id+' foi alterado fora do escopo');
-  assert.ok(leg.includes('stroke')&&!leg.includes('fill'),'legado é traço');});
+ok('J07 tesla/plague saíram do legado (E7 aplicado) e o fallback segue vivo',()=>{
+  const leg=topo(P('arma_do_futuro_2027'));
+  assert.ok(leg.includes('stroke')&&!leg.includes('fill'),'legado é traço');
+  for(const id of ['tesla','plague']){
+    assert.notStrictEqual(topo(P(id)),leg,id+' regrediu para o fallback');
+    for(const f of FS)
+      assert.notStrictEqual(shape(P(id)),shape(P(f)),id+' (E7) colidiu com '+f+' (E6)');}
+  assert.notStrictEqual(topo(P('tesla')),topo(P('plague')),'E7: formas iguais');});
 
 /* ============ 10/18 · MECÂNICA (auditoria empírica) ============ */
 console.log('\n[K] mecânica inalterada (auditoria da sonda)');
