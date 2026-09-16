@@ -211,6 +211,16 @@ src+='\n;globalThis.__t={'+
   'vSeedOf:(typeof vSeedOf==="function"?vSeedOf:undefined),'+
   'echoUnstableEmit:(typeof echoUnstableEmit==="function"?echoUnstableEmit:undefined),'+
   'ECHO_UNSTABLE_EMIT_HZ:(typeof ECHO_UNSTABLE_EMIT_HZ!=="undefined"?ECHO_UNSTABLE_EMIT_HZ:undefined),'+
+  /* PR15.5-F1 — fundação visual declarativa dos operadores (guardas
+     typeof OBRIGATÓRIAS: este harness também instancia fontes
+     HISTÓRICAS via `git show <ref>:index.html` — inclusive a base
+     pré-F1 747f55e — onde estes símbolos ainda não existem). */
+  'OPERATOR_VISUAL_IDS:(typeof OPERATOR_VISUAL_IDS!=="undefined"?OPERATOR_VISUAL_IDS:undefined),'+
+  'OPERATOR_VISUALS:(typeof OPERATOR_VISUALS!=="undefined"?OPERATOR_VISUALS:undefined),'+
+  'DEFAULT_OPERATOR_VISUAL:(typeof DEFAULT_OPERATOR_VISUAL!=="undefined"?DEFAULT_OPERATOR_VISUAL:undefined),'+
+  'operatorVisualProfile:(typeof operatorVisualProfile==="function"?operatorVisualProfile:undefined),'+
+  'getOperatorVisual:(typeof getOperatorVisual==="function"?getOperatorVisual:undefined),'+
+  'drawOperatorParts:(typeof drawOperatorParts==="function"?drawOperatorParts:undefined),'+
   'drawStatus,drawArcs,drawEchoEntity,drawWorldExtras,drawUnit,updateEcho,'+
   'getArcs:()=>arcs,setArcs:a=>{arcs=a;},updateArcs,'+
   'getBeacon:()=>beacon,setBeacon:b=>{beacon=b;},'+

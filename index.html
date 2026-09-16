@@ -19696,6 +19696,131 @@ function drawGrid(){
    SPRITES PROCEDURAIS — personagens top-down com ARMA VISÍVEL nas mãos
    Tudo desenhado em Canvas 2D puro, sem imagens externas.
    ===================================================================== */
+/* =====================================================================
+   PR15.5-F1 · FUNDAÇÃO VISUAL DECLARATIVA DOS OPERADORES
+   ---------------------------------------------------------------------
+   Infraestrutura SEM mudança visual. O corpo do operador continua
+   sendo o drawUnit compartilhado; F1 adiciona a camada declarativa que
+   F2/F3 usarão para dar identidade estrutural a cada operador SEM
+   transformar o renderer em cadeia de `if(operator...)` — o padrão já
+   consagrado por ENEMY_VISUAL_PROFILES (PR15.5-B) e MINIBOSS_VISUALS
+   (PR13.5-B5-A): perfil declarativo + renderer genérico.
+
+   Contrato (auditoria F0 §30 + brief F1):
+   · SOMENTE o player real resolve perfil: player.charId →
+     OPERATOR_VISUALS → opts.visual do drawUnit. Echo aliado, Eco
+     Sombrio, Presença Temporal e drawShip NÃO passam perfil — seguem
+     no visual compartilhado (identidade própria é escopo F4);
+   · perfil é configuração estática congelada: não entra em save, não
+     é mutado pelo render, não influencia stats/hitbox/gameplay;
+   · resolvedor puro: determinístico, sem RNG, sem alocação por frame;
+     id desconhecido → default seguro (protege saves antigos e testes);
+   · em F1 TODAS as entradas são vazias: os 8 operadores resolvem para
+     o default neutro e o stream de comandos Canvas do drawUnit é
+     exatamente o do estado pré-F1 (x*1===x e x+0 são identidades
+     exatas em IEEE754; transformações nulas não são emitidas).
+
+   Schema do perfil (mínimo p/ F2/F3 — TUDO relativo a r, nunca à
+   viewport; §38 do brief):
+     proportions : multiplicadores por região do corpo (1 = atual)
+                  {torso,head,legs,arms,pack}
+     parts       : peças estruturais por camada (F1: vazias)
+                  back  → atrás de tudo (capas/antenas);
+                  body  → sobre o torso (ombros/placas/vents);
+                  front → à frente de tudo (capacete/módulos);
+                  assimetria por peça: side −1|0|+1 espelha x/rot.
+     offset      : deslocamento visual do corpo em unidades de r
+                  (a sombra projetada NÃO acompanha — ela é a pegada
+                  da hitbox no chão);
+     pose        : integração com a pose/andação existente {swing};
+     weapon      : encaixe da arma relativo à montagem atual
+                  {x,y,rot,scale} — o sprite D/E permanece intacto;
+     palette     : slot de overrides de canal para F3 (F1: vazio — a
+                  paleta segue em CHARS, arquitetura consolidada);
+     effects     : slot de parâmetros p/ efeitos específicos (F1: vazio).
+   ===================================================================== */
+const OPERATOR_VISUAL_IDS=Object.freeze(
+  ['vector','wraith','bulwark','pyre','warden','nomad','echo0','revenant']);
+/* Constrói um perfil completo e congelado a partir de overrides parciais
+   sobre o default (herança simples, sem bibliotecas). Roda UMA vez no
+   load — nunca por frame. `over` é opcional e raso. */
+function operatorVisualProfile(id,over){
+  over=over||{};
+  const P=over.proportions||{},PT=over.parts||{},O=over.offset||{},
+        PS=over.pose||{},W=over.weapon||{};
+  const frozen=a=>{const o=[];if(Array.isArray(a))
+    for(let i=0;i<a.length;i++)o.push(Object.freeze(a[i]));
+    return Object.freeze(o);};
+  return Object.freeze({
+    id:typeof id==='string'?id:null,
+    proportions:Object.freeze({
+      torso:P.torso==null?1:P.torso, head:P.head==null?1:P.head,
+      legs :P.legs ==null?1:P.legs,  arms:P.arms ==null?1:P.arms,
+      pack :P.pack ==null?1:P.pack}),
+    parts:Object.freeze({back:frozen(PT.back),body:frozen(PT.body),front:frozen(PT.front)}),
+    offset:Object.freeze({x:O.x||0,y:O.y||0}),
+    pose:Object.freeze({swing:PS.swing==null?1:PS.swing}),
+    weapon:Object.freeze({x:W.x||0,y:W.y||0,rot:W.rot||0,scale:W.scale==null?1:W.scale}),
+    palette:Object.freeze(Object.assign({},over.palette)),
+    effects:Object.freeze(Object.assign({},over.effects))
+  });
+}
+/* Default compartilhado: equivalente exato ao renderer pré-F1. */
+const DEFAULT_OPERATOR_VISUAL=operatorVisualProfile(null);
+/* Tabela declarativa dos 8 operadores reais. ATENÇÃO: HARDEN usa o id
+   canônico `warden` (mesmo id do CHARS) — NÃO existe (nem existirá) id
+   `harden`. Prototype nulo: lookup de id herdado ('toString' etc.) cai
+   no default em vez de vazar Object.prototype. F1: nenhuma entrada
+   sobrescreve o default — F2/F3 preencherão as entradas. */
+const OPERATOR_VISUALS=Object.create(null);
+for(let i=0;i<OPERATOR_VISUAL_IDS.length;i++)
+  OPERATOR_VISUALS[OPERATOR_VISUAL_IDS[i]]=operatorVisualProfile(OPERATOR_VISUAL_IDS[i]);
+Object.freeze(OPERATOR_VISUALS);
+/* Resolvedor puro: id conhecido → perfil correspondente; id
+   desconhecido/ausente → default seguro. Sem RNG, sem mutation, sem
+   alocação (retorna sempre o mesmo objeto congelado). */
+function getOperatorVisual(id){
+  return (typeof id==='string'&&OPERATOR_VISUALS[id])||DEFAULT_OPERATOR_VISUAL;
+}
+/* Renderiza UMA lista de peças estruturais declarativas (camada back/
+   body/front do perfil). Genérico e orientado a dados — nenhuma peça
+   conhece operador; o perfil é imutável e nunca é escrito aqui.
+   Vocabulário mínimo por peça (TUDO em unidades de r):
+     k    : 'rect'|'round'|'circle'|'tri'|'line' (primitiva)
+     x,y  : posição no espaço do corpo (após rotate(aim))
+     w,h  : dimensões (circle/line usam w como extensão)
+     rot  : rotação em radianos (0 = nenhuma)
+     side : −1|0|+1 — assimetria: −1 espelha x/rot no eixo do corpo
+     pal  : canal da paleta ('body'|'dark'|'edge'|'glow'|'visor'|'head')
+     glow : shadowBlur opcional (orçamento PR15.5 §22 — usar com parcimônia)
+     a    : alpha (default 1)
+   F1: todas as listas estão vazias — esta função NÃO é chamada em jogo
+   e nenhum comando Canvas é emitido por ela. */
+function drawOperatorParts(list,r,pal){
+  for(let i=0;i<list.length;i++){
+    const q=list[i];
+    const m=q.side<0?-1:1;
+    ctx.save();
+    if(q.a!=null&&q.a<1)ctx.globalAlpha*=q.a;
+    ctx.translate(q.x*r*m,q.y*r);
+    if(q.rot)ctx.rotate(q.rot*m);
+    ctx.fillStyle=pal[q.pal]||pal.body;
+    if(q.glow){ctx.shadowColor=pal.glow;ctx.shadowBlur=q.glow;}
+    const w=q.w*r,h=q.h*r;
+    if(q.k==='circle'){ctx.beginPath();ctx.arc(0,0,w*.5,0,TAU);ctx.fill();}
+    else if(q.k==='round'){ctx.beginPath();
+      if(ctx.roundRect)ctx.roundRect(-w*.5,-h*.5,w,h,(q.r||.15)*r);
+      else ctx.rect(-w*.5,-h*.5,w,h);
+      ctx.fill();}
+    else if(q.k==='tri'){ctx.beginPath();ctx.moveTo(w*.5,0);
+      ctx.lineTo(-w*.5,-h*.5);ctx.lineTo(-w*.5,h*.5);ctx.closePath();ctx.fill();}
+    else if(q.k==='line'){ctx.strokeStyle=pal[q.pal]||pal.body;
+      ctx.lineWidth=Math.max(1,h);ctx.lineCap='round';
+      ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(w,0);ctx.stroke();ctx.lineCap='butt';}
+    else{ctx.beginPath();ctx.rect(-w*.5,-h*.5,w,h);ctx.fill();}
+    ctx.restore();
+  }
+}
 /* --- armas empunhadas (espaço local: origem na mão, +x aponta à frente) --- */
 function drawWeaponSprite(wi,s,accent,recoil){
   const rx=-(recoil||0)*3.2*s;
@@ -19960,7 +20085,16 @@ function drawWeaponSprite(wi,s,accent,recoil){
   }
   ctx.restore();
 }
-/* --- unidade humanoide completa: pernas, torso, braços, cabeça e arma --- */
+/* --- unidade humanoide completa: pernas, torso, braços, cabeça e arma ---
+   PR15.5-F1: interpreta genericamente o perfil declarativo em
+   opts.visual (ver OPERATOR_VISUALS). Sem perfil — Echo, Eco Sombrio,
+   Presença Temporal, drawShip e callers legados — usa o default neutro.
+   Todos os hooks são multiplicativos/adiativos com valores neutros
+   (proporções ×1, offset +0, peças vazias, montagem de arma neutra):
+   em F1 o comando-a-comando do Canvas é idêntico ao pré-F1, porque
+   x*1===x e x+0 são identidades exatas em IEEE754 e transformações
+   nulas não são emitidas. F2/F3 fornecerão perfis diferentes — este
+   renderer continua sendo o ÚNICO corpo, sem branch por operador. */
 function drawUnit(x,y,aim,r,pal,opts){
   opts=opts||{};
   const s=r/14, al=opts.alpha==null?1:opts.alpha;
@@ -19976,6 +20110,9 @@ function drawUnit(x,y,aim,r,pal,opts){
   const walk=opts.walk||0;
   const ph=(opts.phase||0)+runTime*(6+walk*7);
   const sw=Math.sin(ph)*walk;
+  /* PR15.5-F1: perfil visual declarativo do operador (ou default). */
+  const vp=opts.visual||DEFAULT_OPERATOR_VISUAL;
+  const PJ=vp.proportions,PS=vp.pose,WG=vp.weapon;
   ctx.save();
   ctx.globalAlpha=al;
   ctx.translate(x+ox,y+oy);
@@ -19986,77 +20123,88 @@ function drawUnit(x,y,aim,r,pal,opts){
     if(pose.scaleX!==1||pose.scaleY!==1)ctx.scale(pose.scaleX,pose.scaleY);
     if(pose.alpha!==1)ctx.globalAlpha*=pose.alpha;
   }
-  // sombra projetada
+  // sombra projetada — pegada da HITBOX no chão: não acompanha offset
+  // visual nem proporções do perfil (âncora PR15.5-F0 §18)
   ctx.save();ctx.globalAlpha=al*.34;ctx.fillStyle='#000';
   ctx.beginPath();ctx.ellipse(0,r*.42,r*.92,r*.5,0,0,TAU);ctx.fill();ctx.restore();
   ctx.rotate(aim);
+  // F1·E: offset visual do corpo (unidades de r; 0,0 = atual)
+  if(vp.offset.x||vp.offset.y)ctx.translate(vp.offset.x*r,vp.offset.y*r);
   ctx.lineJoin='round';
-  // PERNAS (alternam com o passo)
+  // F1·C: peças estruturais ATRÁS do corpo (capas/antenas; F1: vazio)
+  if(vp.parts.back.length)drawOperatorParts(vp.parts.back,r,pal);
+  // PERNAS (alternam com o passo; PJ.legs/PS.swing = 1 → idêntico)
   ctx.fillStyle=pal.dark;
-  ctx.save();ctx.translate(-r*.15,-r*.42);ctx.rotate(sw*.32);
-  ctx.fillRect(-r*.30,-r*.24,r*.72,r*.48);ctx.restore();
-  ctx.save();ctx.translate(-r*.15, r*.42);ctx.rotate(-sw*.32);
-  ctx.fillRect(-r*.30,-r*.24,r*.72,r*.48);ctx.restore();
+  ctx.save();ctx.translate(-r*.15,-r*.42*PJ.legs);ctx.rotate(sw*.32*PS.swing);
+  ctx.fillRect(-r*.30*PJ.legs,-r*.24*PJ.legs,r*.72*PJ.legs,r*.48*PJ.legs);ctx.restore();
+  ctx.save();ctx.translate(-r*.15, r*.42*PJ.legs);ctx.rotate(-sw*.32*PS.swing);
+  ctx.fillRect(-r*.30*PJ.legs,-r*.24*PJ.legs,r*.72*PJ.legs,r*.48*PJ.legs);ctx.restore();
   // MOCHILA / NÚCLEO DE ENERGIA nas costas
   ctx.fillStyle=pal.dark;
-  ctx.beginPath();ctx.roundRect?ctx.roundRect(-r*1.0,-r*.5,r*.55,r*1.0,r*.18):
-    ctx.rect(-r*1.0,-r*.5,r*.55,r*1.0);ctx.fill();
+  ctx.beginPath();ctx.roundRect?ctx.roundRect(-r*1.0*PJ.pack,-r*.5*PJ.pack,r*.55*PJ.pack,r*1.0*PJ.pack,r*.18):
+    ctx.rect(-r*1.0*PJ.pack,-r*.5*PJ.pack,r*.55*PJ.pack,r*1.0*PJ.pack);ctx.fill();
   ctx.shadowColor=pal.glow;ctx.shadowBlur=12;ctx.fillStyle=pal.glow;
-  ctx.beginPath();ctx.arc(-r*.74,0,r*.20,0,TAU);ctx.fill();
+  ctx.beginPath();ctx.arc(-r*.74*PJ.pack,0,r*.20*PJ.pack,0,TAU);ctx.fill();
   ctx.shadowBlur=0;
-  // TORSO
-  const grd=linGrad2('u|'+(r|0)+'|'+pal.body+'|'+pal.dark,
-    -r*.6,-r*.7,r*.5,r*.7,pal.body,pal.dark);
+  // TORSO (cache do gradiente carrega a proporção — chave estendida)
+  const grd=linGrad2('u|'+(r|0)+'|'+pal.body+'|'+pal.dark+'|'+PJ.torso,
+    -r*.6*PJ.torso,-r*.7*PJ.torso,r*.5*PJ.torso,r*.7*PJ.torso,pal.body,pal.dark);
   ctx.fillStyle=grd;ctx.strokeStyle=pal.edge;ctx.lineWidth=Math.max(1,s*.9);
   ctx.beginPath();
-  ctx.moveTo(r*.62,-r*.46);
-  ctx.quadraticCurveTo(r*.78,0,r*.62,r*.46);
-  ctx.lineTo(-r*.55,r*.62);
-  ctx.quadraticCurveTo(-r*.80,0,-r*.55,-r*.62);
+  ctx.moveTo(r*.62*PJ.torso,-r*.46*PJ.torso);
+  ctx.quadraticCurveTo(r*.78*PJ.torso,0,r*.62*PJ.torso,r*.46*PJ.torso);
+  ctx.lineTo(-r*.55*PJ.torso,r*.62*PJ.torso);
+  ctx.quadraticCurveTo(-r*.80*PJ.torso,0,-r*.55*PJ.torso,-r*.62*PJ.torso);
   ctx.closePath();ctx.fill();ctx.stroke();
   // faixa peitoral luminosa
   ctx.shadowColor=pal.glow;ctx.shadowBlur=9;
   ctx.strokeStyle=pal.glow;ctx.lineWidth=Math.max(1,s*1.1);
-  ctx.beginPath();ctx.moveTo(r*.10,-r*.42);ctx.lineTo(r*.10,r*.42);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(r*.10*PJ.torso,-r*.42*PJ.torso);ctx.lineTo(r*.10*PJ.torso,r*.42*PJ.torso);ctx.stroke();
   ctx.shadowBlur=0;
+  // F1·C: peças estruturais NO CORPO (ombros/placas/vents; F1: vazio)
+  if(vp.parts.body.length)drawOperatorParts(vp.parts.body,r,pal);
   // BRAÇOS empunhando a arma à frente
   // PR15.5-D: com golpe melee ativo, braços+mãos+arma giram como um
   // grupamento rígido em torno do peito (pose pré-computada em scratch).
   // Sem golpe (mp null) o caminho é exatamente o anterior.
+  // F1·G: WG (encaixe de arma) desloca/gira o grupamento sem tocar a
+  // pose do PR15.5-D — compatível com silhueta futura (F2).
   const mp=opts.melee;
-  ctx.strokeStyle=pal.body;ctx.lineWidth=r*.30;ctx.lineCap='round';
+  ctx.strokeStyle=pal.body;ctx.lineWidth=r*.30*PJ.arms;ctx.lineCap='round';
   if(mp){
-    ctx.beginPath();ctx.moveTo(r*.10,-r*.52);ctx.lineTo(mp.a1x,mp.a1y);ctx.stroke();
-    ctx.beginPath();ctx.moveTo(r*.10, r*.52);ctx.lineTo(mp.a2x,mp.a2y);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(r*.10,-r*.52);ctx.lineTo(mp.a1x+WG.x*r,mp.a1y+WG.y*r);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(r*.10, r*.52);ctx.lineTo(mp.a2x+WG.x*r,mp.a2y+WG.y*r);ctx.stroke();
   }else{
-    ctx.beginPath();ctx.moveTo(r*.10,-r*.52);ctx.lineTo(r*.92,-r*.20);ctx.stroke();
-    ctx.beginPath();ctx.moveTo(r*.10, r*.52);ctx.lineTo(r*.92, r*.14);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(r*.10,-r*.52);ctx.lineTo(r*.92*PJ.arms+WG.x*r,-r*.20+WG.y*r);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(r*.10, r*.52);ctx.lineTo(r*.92*PJ.arms+WG.x*r, r*.14+WG.y*r);ctx.stroke();
   }
   ctx.lineCap='butt';
-  // ARMA EMPUNHADA
+  // ARMA EMPUNHADA (WG.scale escala o sprite; WG.rot só quando ≠ 0)
   ctx.save();
   if(mp){
-    ctx.translate(mp.gx,mp.gy);ctx.rotate(mp.rot);
+    ctx.translate(mp.gx+WG.x*r,mp.gy+WG.y*r);ctx.rotate(mp.rot+WG.rot);
     if(mp.sx!==1||mp.sy!==1)ctx.scale(mp.sx,mp.sy);
-  }else ctx.translate(r*.86,-r*.04);
-  drawWeaponSprite(wi,s,pal.wep||pal.glow,opts.recoil||0);
+  }else ctx.translate(r*.86*PJ.arms+WG.x*r,-r*.04+WG.y*r);
+  drawWeaponSprite(wi,s*WG.scale,pal.wep||pal.glow,opts.recoil||0);
   ctx.restore();
   // mãos sobre a arma
   ctx.fillStyle=pal.edge;
   if(mp){
-    ctx.beginPath();ctx.arc(mp.a1x,mp.a1y,r*.17,0,TAU);ctx.fill();
-    ctx.beginPath();ctx.arc(mp.a2x,mp.a2y,r*.17,0,TAU);ctx.fill();
+    ctx.beginPath();ctx.arc(mp.a1x+WG.x*r,mp.a1y+WG.y*r,r*.17,0,TAU);ctx.fill();
+    ctx.beginPath();ctx.arc(mp.a2x+WG.x*r,mp.a2y+WG.y*r,r*.17,0,TAU);ctx.fill();
   }else{
-    ctx.beginPath();ctx.arc(r*.92,-r*.20,r*.17,0,TAU);ctx.fill();
-    ctx.beginPath();ctx.arc(r*.92, r*.14,r*.17,0,TAU);ctx.fill();
+    ctx.beginPath();ctx.arc(r*.92*PJ.arms+WG.x*r,-r*.20+WG.y*r,r*.17,0,TAU);ctx.fill();
+    ctx.beginPath();ctx.arc(r*.92*PJ.arms+WG.x*r, r*.14+WG.y*r,r*.17,0,TAU);ctx.fill();
   }
   // CABEÇA com visor
   ctx.fillStyle=pal.head||pal.body;ctx.strokeStyle=pal.edge;ctx.lineWidth=Math.max(1,s*.8);
-  ctx.beginPath();ctx.arc(r*.10,0,r*.40,0,TAU);ctx.fill();ctx.stroke();
+  ctx.beginPath();ctx.arc(r*.10,0,r*.40*PJ.head,0,TAU);ctx.fill();ctx.stroke();
   ctx.shadowColor=pal.glow;ctx.shadowBlur=13;
   ctx.fillStyle=pal.visor||pal.glow;
-  ctx.beginPath();ctx.arc(r*.20,0,r*.24,-1.05,1.05);ctx.closePath();ctx.fill();
+  ctx.beginPath();ctx.arc(r*.20*PJ.head,0,r*.24*PJ.head,-1.05,1.05);ctx.closePath();ctx.fill();
   ctx.shadowBlur=0;
+  // F1·C: peças estruturais À FRENTE do corpo (capacete/módulos; F1: vazio)
+  if(vp.parts.front.length)drawOperatorParts(vp.parts.front,r,pal);
   ctx.restore();
 }
 /* wrapper de compatibilidade usado por Ecos e Ecos Sombrios */
@@ -21578,7 +21726,12 @@ function drawPlayer(){
     /* PR15.5-D: composição determinística base(melee)+hurt e pose da arma.
        Sem golpe ativo ambas retornam null → caminho de desenho idêntico
        ao anterior (fast path, zero custo idle). */
-    pose:visualPlayerDrawPose(p),melee:visualMeleeWeaponPose(p),phase:0});
+    pose:visualPlayerDrawPose(p),melee:visualMeleeWeaponPose(p),phase:0,
+    /* PR15.5-F1: SOMENTE o player real resolve o perfil declarativo do
+       seu operador (charId → OPERATOR_VISUALS → drawUnit). Echo aliado,
+       Eco Sombrio e Presença Temporal seguem SEM perfil — visual
+       compartilhado preservado (identidade deles é escopo F4). */
+    visual:getOperatorVisual(p.charId)});
   // WRAITH: aura de surto pós-dash
   if(p.rushT>0){
     ctx.save();ctx.globalAlpha=.28*(p.rushT/2);
