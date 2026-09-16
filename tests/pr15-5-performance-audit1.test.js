@@ -213,7 +213,18 @@ const mechanical={
      burn continua 3.2s/9 (12 ticks de 2.25) e corrode 4.5s/.12 sem DoT
      (statusDmgMul ×1.12/×1.24). Os 9 cenários de Canvas acima seguem
      byte-idênticos (nenhum usa flamer/acid) e o RNG continua em 0. */
-  "drawProjectile": "633c53d5d061227ab15e32fe3e94ee05edadb3fad9039c294cad7adc711ee925",
+  /* PR15.5-E7: re-baselineado pelo mesmo motivo — UMA linha ADICIONADA ao
+     dispatch, nada removido:
+       else if(visualFamilyForProjectile(p)===PVF_CONDUCT)drawProjectileConductionStatus(p);
+     Mecânica idêntica: count, vx/vy, dmg, r, color, type, life, maxDist,
+     pierce(0) e recoil de tesla/plague conferem na suíte do E7; o chain
+     real do tesla segue 2 saltos ×0.78 (raio 230, arcos históricos), o
+     shock segue marcador sem DoT e o corrode da plague segue amplificador
+     ×1.10/stack sem DoT (aoe/contagion da plague são config morta, como
+     o implode do void no E5 — documentado, não corrigido). Os 9 cenários
+     de Canvas acima seguem byte-idênticos (nenhum usa tesla/plague) e o
+     RNG continua em 0. */
+  "drawProjectile": "9ffa21e48dcec7e566244f0b38cbd294bb9ea363ba3db36da8254beeff2df527",
   /* PR15.5-D: drawSwings re-baselineado — ganhou o despacho para o trail
      por família (meleeDrawTrail, pinado abaixo). O fallback legado e o
      comportamento sem RNG permanecem; os goldens A–I comprovam que os

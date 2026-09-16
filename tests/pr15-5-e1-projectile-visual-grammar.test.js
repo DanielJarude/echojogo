@@ -162,19 +162,25 @@ const ENERGY_E5=['plasma','void','cryo'];
    prova POSITIVA (C01g). A varredura segue exigindo equivalência exata para
    tudo que ainda não foi redesenhado (tesla/plague e os tipos de sistema). */
 const FLUID_E6=['flamer','acid'];
+/* PR15.5-E7: a família CONDUÇÃO/STATUS ganhou forma própria — tesla e
+   plague eram os ÚLTIMOS ocupantes do ramo legado. Sexto balde com prova
+   POSITIVA (C01h). A varredura segue exigindo equivalência exata para
+   todo o resto (orb histórico, eorb, desconhecidos e tipos de sistema). */
+const CONDUCT_E7=['tesla','plague'];
 const TIPOS_C=RANGED.concat(['eorb','tipo_inexistente_xyz',undefined,null]);
 const CASOS=[];
 for(const [dist,maxDist] of [[0,0],[0,1000],[500,1000],[850,1000],[1000,1000]])
   for(const color of ['#46e0ff','#ff7a2f','#a8ff3d'])
     for(const [vx,vy] of [[300,-140],[0,0],[-980,0]])
       CASOS.push({dist,maxDist,color,vx,vy});
-let compC=0,divC=0,compSlug=0,divSlug=0,compSwarm=0,divSwarm=0,compKin=0,divKin=0,compEner=0,divEner=0,compFluid=0,divFluid=0;
+let compC=0,divC=0,compSlug=0,divSlug=0,compSwarm=0,divSwarm=0,compKin=0,divKin=0,compEner=0,divEner=0,compFluid=0,divFluid=0,compCond=0,divCond=0;
 for(const t of TIPOS_C){
   const isSlug=SLUG_E3.indexOf(t)>=0;
   const isSwarm=SWARM_E4.indexOf(t)>=0;
   const isKin=KINETIC_E10.indexOf(t)>=0;
   const isEner=ENERGY_E5.indexOf(t)>=0;
   const isFluid=FLUID_E6.indexOf(t)>=0;
+  const isCond=CONDUCT_E7.indexOf(t)>=0;
   for(const c of CASOS){
     const r=comparaTracos({type:t,x:120.5,y:80.25,vx:c.vx,vy:c.vy,r:4.5,
       color:c.color,dist:c.dist,maxDist:c.maxDist});
@@ -184,6 +190,7 @@ for(const t of TIPOS_C){
     else if(isKin){compKin++;if(diff)divKin++;}
     else if(isEner){compEner++;if(diff)divEner++;}
     else if(isFluid){compFluid++;if(diff)divFluid++;}
+    else if(isCond){compCond++;if(diff)divCond++;}
     else{compC++;if(diff)divC++;}
   }
 }
@@ -204,6 +211,9 @@ ok('C01e família ENERGIA/MASSA (E5) mudou em TODAS as '+compEner+' combinaçõe
 ok('C01g família FLUIDO/SPRAY (E6) mudou em TODAS as '+compFluid+' combinações',()=>{
   assert.strictEqual(divFluid,compFluid,
     'flamer/acid deveriam ter forma própria: só '+divFluid+' de '+compFluid);});
+ok('C01h família CONDUÇÃO/STATUS (E7) mudou em TODAS as '+compCond+' combinações',()=>{
+  assert.strictEqual(divCond,compCond,
+    'tesla/plague deveriam ter forma própria: só '+divCond+' de '+compCond);});
 ok('C01f orb continua BYTE-IDÊNTICO à base (E5 delega ao desenho histórico)',()=>{
   for(const c of CASOS){
     const r=comparaTracos({type:'orb',x:120.5,y:80.25,vx:c.vx,vy:c.vy,r:4.5,
@@ -217,12 +227,15 @@ ok('C03 plasma mantém o comprimento 10 (demais 5)',()=>{
     {type:t,x:0,y:0,vx:100,vy:0,r:4,color:'#46e0ff',dist:0,maxDist:0});
     const lt=g.find(e=>e[0]==='lineTo');return lt&&Math.abs(lt[1][0]);};
   /* PR15.5-E5: plasma/cryo/void saíram do caminho legado. PR15.5-E6:
-     flamer/acid também (família FLUIDO/SPRAY) — a âncora do comprimento
-     legado de meio-comprimento (5) passou a ser tesla, ainda no ramo
-     final do dispatcher. O assert positivo garante que as redesenhadas
-     NÃO usam a reta legada (e que o ramo legado segue intacto em tesla). */
-  assert.strictEqual(L('tesla'),5);
-  for(const t of ['plasma','cryo','void','flamer','acid'])
+     flamer/acid também (família FLUIDO/SPRAY). PR15.5-E7: tesla/plague
+     também (família CONDUÇÃO/STATUS) — nenhuma arma conhecida do jogador
+     sobrou no ramo legado, e a âncora do comprimento legado de
+     meio-comprimento (5) passou a ser um tipo DESCONHECIDO, que é o
+     único caminho real até drawProjectileLegacyLine hoje. O assert
+     positivo garante que as redesenhadas NÃO usam a reta legada (e que
+     o ramo legado segue intacto para o fallback). */
+  assert.strictEqual(L('arma_desconhecida_2027'),5);
+  for(const t of ['plasma','cryo','void','flamer','acid','tesla','plague'])
     assert.notStrictEqual(L(t),5,t+' regrediu para a reta legada');});
 ok('C04 fade de alcance preservado (últimos 22%)',()=>{
   assert.strictEqual(T.projectileRangeFade({maxDist:0}),1);
@@ -254,16 +267,24 @@ ok('D04 orbe desenha círculo pulsante + anel (2 arcos)',()=>{
   assert.strictEqual(opsOf(g).filter(o=>o==='fill').length,1);
   assert.strictEqual(opsOf(g).filter(o=>o==='stroke').length,1);});
 ok('D05 linha legada desenha 1 moveTo + 1 lineTo + 1 stroke',()=>{
-  /* `tesla` no lugar de `flamer`: o E3 deu forma própria à família SLUG, o
-     E5 à ENERGIA/MASSA e o E6 à FLUIDO/SPRAY (flamer/acid inclusos); tesla
-     representa o caminho legado. */
+  /* PR15.5-E7: tesla/plague saíram do fallback (família
+     CONDUÇÃO/STATUS). A âncora do caminho legado passou a ser um tipo
+     DESCONHECIDO — hoje é o único entrada real no `else` final. */
   const g=trace('drawProjectile(__pp)',
-    {type:'tesla',x:0,y:0,vx:100,vy:0,r:4,color:'#7fd8ff',dist:0,maxDist:0});
+    {type:'arma_do_futuro_2027',x:0,y:0,vx:100,vy:0,r:4,color:'#7fd8ff',dist:0,maxDist:0});
   const o=opsOf(g);
   assert.strictEqual(o.filter(x=>x==='moveTo').length,1);
   assert.strictEqual(o.filter(x=>x==='lineTo').length,1);
   assert.strictEqual(o.filter(x=>x==='stroke').length,1);
   assert.strictEqual(o.filter(x=>x==='arc').length,0);});
+ok('D05b tesla/plague NÃO desenham mais a linha legada (E7)',()=>{
+  const leg=opsOf(trace('drawProjectile(__pp)',
+    {type:'arma_do_futuro_2027',x:0,y:0,vx:100,vy:0,r:4,color:'#7fd8ff',dist:0,maxDist:0}));
+  for(const t of ['tesla','plague']){
+    const o=opsOf(trace('drawProjectile(__pp)',
+      {type:t,x:0,y:0,vx:100,vy:0,r:4,color:'#7fd8ff',dist:0,maxDist:0}));
+    assert.notDeepStrictEqual(o,leg,t+' ainda cai no fallback');
+    assert.ok(o.length>leg.length,t+' deveria ter forma própria');}});
 ok('D06 tipo DESCONHECIDO cai em fallback seguro e desenha',()=>{
   const g=trace('drawProjectile(__pp)',
     {type:'arma_do_futuro_2027',x:0,y:0,vx:100,vy:0,r:4,color:'#fff',dist:0,maxDist:0});
@@ -459,9 +480,10 @@ ok('I06 a arquitetura permite ao E2 aplicar camada sem duplicar',()=>{
     !l.trim().startsWith('*')&&!l.trim().startsWith('//'));
   /* Teto ampliado de 14 → 22: o E2 somou a camada temporal (2 linhas) e
      o E3 somou o ramo da família SLUG (4 linhas). 22 → 23 no E6, que somou
-     UMA linha (ramo PVF_FLUID). Continua travando o crescimento
-     descontrolado do dispatch, que é o ponto do check. */
-  assert.ok(linhas.length<=23,'dispatch inchado: '+linhas.length+' linhas');
+     UMA linha (ramo PVF_FLUID). 23 → 24 no E7, que somou UMA linha (ramo
+     PVF_CONDUCT). Continua travando o crescimento descontrolado do
+     dispatch, que é o ponto do check. */
+  assert.ok(linhas.length<=24,'dispatch inchado: '+linhas.length+' linhas');
   assert.ok(b.includes('projectileUsesOrbShape'),'usa helper de forma');
   assert.ok(b.includes('drawProjectileGlow'),'usa helper de halo');});
 
@@ -495,9 +517,10 @@ ok('J07 o número de comandos Canvas por projétil não aumentou',()=>{
      coberto por tests/pr15-5-e3-slug-penetrator-identity.test.js §H05. */
   /* PR15.5-E5: plasma/cryo saíram desta lista — forma própria, orçamento
      em J07b. PR15.5-E6: flamer/acid saíram — forma própria, orçamento em
-     J07c. tesla/plague mantêm a cobertura do ramo legado; orb e eorb
-     seguem aqui porque continuam no desenho histórico. */
-  for(const t of ['tesla','plague','orb','eorb','desconhecido_xyz']){
+     J07c. PR15.5-E7: tesla/plague saíram — forma própria, orçamento em
+     J07d. orb e eorb seguem aqui porque continuam no desenho histórico,
+     e o tipo desconhecido porque é o único caminho real até o fallback. */
+  for(const t of ['orb','eorb','desconhecido_xyz']){
     const p={type:t,x:0,y:0,vx:100,vy:0,r:4,color:'#8ff6ff',dist:0,maxDist:0};
     S.__pp=p;run('glowSprite(__pp.color)');
     S.__ctxLog=[];run('drawProjectile(__pp)');const novo=S.__ctxLog.length;
@@ -528,6 +551,19 @@ ok('J07c E6: flamer/acid limitados, dentro da faixa — flamer mais barato',()=>
   assert.ok(cf<=TETO,'flamer: '+cf+' ops excede o teto '+TETO);
   assert.ok(ca<=TETO,'acid: '+ca+' ops excede o teto '+TETO);
   assert.ok(cf<=ca,'flamer ('+cf+') deveria ser <= acid ('+ca+')');});
+ok('J07d E7: tesla/plague limitados, dentro da faixa — tesla mais barato',()=>{
+  /* teto 26 (o `prism` do E10, já igualado pela plague) continua sendo o
+     limite aceito. O tesla tem ~2× a cadência da plague (interval .52 vs
+     .95): sua forma foi desenhada para ser a mais barata das duas. */
+  const TETO=26;
+  const custo=t=>{const p={type:t,x:0,y:0,vx:100,vy:0,r:5,color:'#8ff6ff',dist:0,maxDist:0};
+    S.__pp=p;run('glowSprite(__pp.color)');
+    S.__ctxLog=[];run('drawProjectile(__pp)');const n=S.__ctxLog.length;
+    S.__ctxLog=null;return n;};
+  const ct=custo('tesla'),cq=custo('plague');
+  assert.ok(ct<=TETO,'tesla: '+ct+' ops excede o teto '+TETO);
+  assert.ok(cq<=TETO,'plague: '+cq+' ops excede o teto '+TETO);
+  assert.ok(ct<=cq,'tesla ('+ct+') deveria ser <= plague ('+cq+')');});
 
 /* ============ K · CULLING E INTEGRAÇÃO ============ */
 console.log('\n[K] integração no laço de render');

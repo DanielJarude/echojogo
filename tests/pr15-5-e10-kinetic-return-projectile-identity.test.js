@@ -348,22 +348,33 @@ ok('AD01 beam e eorb fora da família (29.AD)',()=>{
   assert.strictEqual(T.visualFamilyForProjectile({type:'eorb'}),T.PVF.LEGACY);
   assert.strictEqual(topo(P('eorb')),topo(P('orb')));
   assert.ok(!/drawProjectileKinetic/.test(body('drawBeamFrom')));});
-ok('AD02 famílias ainda não implementadas seguem no legado',()=>{
+ok('AD02 as armas de fora têm forma própria e o fallback segue vivo',()=>{
   /* plasma/orb/void/cryo ganharam forma própria no PR15.5-E5 (ver AD02b) */
   /* flamer/acid ganharam forma própria no PR15.5-E6 (ver AD02c) */
-  const leg=topo(P('tesla'));
+  /* tesla/plague ganharam forma própria no PR15.5-E7 (ver AD02d); a
+     âncora do legado passou a ser um tipo DESCONHECIDO, único caminho
+     real até o fallback após o E7. */
+  const leg=topo(P('arma_do_futuro_2027'));
+  assert.strictEqual(leg,'beginPath,moveTo,lineTo,stroke','premissa: fallback é traço');
   for(const id of ['tesla','plague'])
-    assert.strictEqual(topo(P(id)),leg,id+' foi alterado fora do escopo');});
+    assert.notStrictEqual(topo(P(id)),leg,id+' regrediu para o fallback');});
 ok('AD02c E6: FLUIDO/SPRAY tem forma própria e não colide com a cinética',()=>{
-  const leg=topo(P('tesla'));
+  const leg=topo(P('arma_do_futuro_2027'));
   for(const id of ['flamer','acid']){
     assert.notStrictEqual(topo(P(id)),leg,id+' regrediu para a linha legada');
     for(const k of ['ricochet','boomer','gatling','mine'])
       assert.notStrictEqual(topo(P(id))+'|'+JSON.stringify(verts(P(id))),
         topo(P(k))+'|'+JSON.stringify(verts(P(k))),id+' colidiu com '+k);}});
 ok('AD02b E5: ENERGIA/MASSA tem forma própria e não colide com a cinética',()=>{
-  const leg=topo(P('tesla'));
+  const leg=topo(P('arma_do_futuro_2027'));
   for(const id of ['plasma','orb','void','cryo']){
+    assert.notStrictEqual(topo(P(id)),leg,id+' regrediu para a linha legada');
+    for(const k of ['ricochet','boomer','gatling','mine'])
+      assert.notStrictEqual(topo(P(id))+'|'+JSON.stringify(verts(P(id))),
+        topo(P(k))+'|'+JSON.stringify(verts(P(k))),id+' colidiu com '+k);}});
+ok('AD02d E7: CONDUÇÃO/STATUS tem forma própria e não colide com a cinética',()=>{
+  const leg=topo(P('arma_do_futuro_2027'));
+  for(const id of ['tesla','plague']){
     assert.notStrictEqual(topo(P(id)),leg,id+' regrediu para a linha legada');
     for(const k of ['ricochet','boomer','gatling','mine'])
       assert.notStrictEqual(topo(P(id))+'|'+JSON.stringify(verts(P(id))),

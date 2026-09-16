@@ -21323,6 +21323,104 @@ function drawProjectileFluidSpray(p){
   ctx.lineTo(p.x-nx*p.r*.55-px*wl, p.y-ny*p.r*.55-py*wl);             // asa esquerda
   ctx.closePath();ctx.fill();
 }
+/* =================== PR15.5-E7 · CONDUÇÃO / STATUS ===================
+   Tesla e Plague — os últimos ocupantes do ramo legado. A gramática da
+   família é EFEITO SOBRE O ALVO, mas o desenho é o OBJETO EM VOO: nada
+   de arcos de impacto (o raio da cadeia é o histórico do chainShock,
+   desenhado por drawArcs — preservado, fora daqui), nada de nuvem ou
+   splash. Cada silhueta nasce da mecânica REAL, auditada empiricamente
+   (sonda LCG sobre o HEAD — ver PR15_5_E7_*.md):
+
+     tesla  → interval .52, speed 820, pr 4.5, range 470, kick 38.
+              chain:2 é REAL: no impacto, chainShock salta para o alvo
+              mais próximo em até 230px com 78% do dano por salto
+              (medido: 14.00 → 10.92 → 8.5176, razão 0.78 exata) e o
+              arco visual histórico entre os dois. fx shock 2s/1 é um
+              MARCADOR: conta como "afflicted" na sinergia de itens e
+              pisca no drawStatus, mas NÃO é DoT (medido: 0 de dano em
+              3s de tick; shockP/shockSrc são gravados e nunca lidos).
+              A silhueta em voo é a DESCARGA: corpo em ZIGUE-ZAGUE
+              entre DOIS terminais de polaridade.
+     plague → interval .95, speed 480, pr 7, range 450, kick 30.
+              aoe:130 e contagion:true são CONFIG MORTA: p.aoe só é
+              lido por explodeOrb (exclusivo do orb) e o contágio só
+              roda dentro de detonateSpecial (exclusivo da mine).
+              Medido: 2º alvo a 80px Δhp=0; alvo morto NÃO infecta
+              vizinhos. O que existe é corrode 5s/.10 no alvo único
+              atingido — amplificador ×1.10/stack, teto ×1.60, sem
+              DoT. A silhueta é a CÁPSULA CONTAMINANTE: corpo lobulado
+              assimétrico + 3 espinhos curtos. Nenhuma forma promete
+              nuvem, área ou propagação que o código não executa.
+
+   Tesla é TRAÇO PARTIDO (2 strokes, ZERO fills, zigue-zague); plague
+   é MASSA ORGÂNICA (1 fill lobulado + 1 stroke de espinhos) — estrutu-
+   ras opostas, distinguíveis sem cor e sem raio. Vetores diretos
+   (nx/ny + perpendicular): sem arc, sem rotate/save/restore, sem
+   gradiente, sem Path2D, sem alocação, sem runTime e sem RNG. */
+function drawProjectileConductionStatus(p){
+  const sp=Math.hypot(p.vx,p.vy)||1;
+  const nx=p.vx/sp, ny=p.vy/sp;      // eixo do voo (orientação real)
+  const px=-ny, py=nx;               // perpendicular
+  const t=p.type;
+  if(t==='plague'){
+    /* CÁPSULA LOBULADA: UM corpo orgânico de 6 vértices, com lóbulos
+       de tamanhos DESIGUAIS nos dois lados (o superior é maior), nariz
+       rombo e cauda deslocada do eixo. Não é gota+satélite (acid, E6),
+       não é polígono usinado (E3/E10), não é círculo (orb): lê como
+       espora/célula — massa contaminante compacta e pesada. */
+    const r=p.r;
+    ctx.beginPath();
+    ctx.moveTo(p.x+nx*r*1.12, p.y+ny*r*1.12);                     // nariz
+    ctx.lineTo(p.x+nx*r*.32+px*r*1.02, p.y+ny*r*.32+py*r*1.02);   // lóbulo superior (grande)
+    ctx.lineTo(p.x-nx*r*.78+px*r*.56, p.y-ny*r*.78+py*r*.56);     // dorso superior
+    ctx.lineTo(p.x-nx*r*1.28-px*r*.10, p.y-ny*r*1.28-py*r*.10);   // cauda (fora do eixo)
+    ctx.lineTo(p.x-nx*r*.52-px*r*.80, p.y-ny*r*.52-py*r*.80);     // lóbulo inferior (médio)
+    ctx.lineTo(p.x+nx*r*.46-px*r*.44, p.y+ny*r*.46-py*r*.44);     // queixo inferior
+    ctx.closePath();ctx.fill();
+    /* ESPINHOS: 3 apêndices curtos, FIXOS e PRESOS ao corpo, em
+       posições e ângulos desiguais (lóbulo superior, cauda, queixo).
+       Leitura de espora armada — contaminação por CONTATO DIRETO, a
+       única mecânica comprovada. O tríplice é o que separa a topologia
+       da costura dupla da mine (E10) e das 2 aletas do homing (E4). */
+    ctx.strokeStyle=p.color;ctx.lineWidth=Math.max(1,p.r*.24);
+    ctx.beginPath();
+    ctx.moveTo(p.x-nx*r*.52+px*r*1.02, p.y-ny*r*.52+py*r*1.02);   // A: sai do lóbulo superior
+    ctx.lineTo(p.x-nx*r*.92+px*r*1.74, p.y-ny*r*.92+py*r*1.74);
+    ctx.moveTo(p.x-nx*r*1.28-px*r*.10, p.y-ny*r*1.28-py*r*.10);   // B: sai da cauda, para trás
+    ctx.lineTo(p.x-nx*r*2.02-px*r*.28, p.y-ny*r*2.02-py*r*.28);
+    ctx.moveTo(p.x+nx*r*.46-px*r*.44, p.y+ny*r*.46-py*r*.44);     // C: sai do queixo, para fora
+    ctx.lineTo(p.x+nx*r*1.08-px*r*.98, p.y+ny*r*1.08-py*r*.98);
+    ctx.stroke();
+    return;
+  }
+  /* TESLA — DESCARGA ENTRE TERMINAIS: corpo em ZIGUE-ZAGUE (3 segmen-
+     tos, kinks alternados e DESIGUAIS) atravessado entre dois traços
+     perpendiculares de polaridade, o dianteiro maior que o traseiro.
+     A quebra angular é FIXA e determinística — nada de flicker/RNG —
+     e lê como descarga condutora em voo: o único projétil do arsenal
+     100% traço multipartes com zigue-zague (slugs/E3, enxame/E4,
+     massas/E5 e cinéticos/E10 são retos ou preenchidos). Não é o raio
+     que liga inimigos: esse é o arco histórico do impacto (chainShock
+     → arcs), intocado e fora do escopo E9. */
+  const zz=Math.max(.9,p.r*.55);      // amplitude do zigue (assimétrica)
+  const f=p.r*1.55, b=p.r*1.40;       // extremos do corpo
+  ctx.strokeStyle=p.color;
+  ctx.lineWidth=Math.max(1.1,p.r*.34);
+  ctx.beginPath();                    // corpo em zigue-zague
+  ctx.moveTo(p.x+nx*f,p.y+ny*f);                          // ponta dianteira
+  ctx.lineTo(p.x+nx*f*.28+px*zz, p.y+ny*f*.28+py*zz);     // kink + (maior)
+  ctx.lineTo(p.x-nx*f*.26-px*zz*.72, p.y-ny*f*.26-py*zz*.72); // kink − (menor)
+  ctx.lineTo(p.x-nx*b,p.y-ny*b);                          // cauda
+  ctx.stroke();
+  ctx.lineWidth=Math.max(1,p.r*.26);
+  const tf=p.r*.62, tb=p.r*.48;       // terminais assimétricos (+/−)
+  ctx.beginPath();
+  ctx.moveTo(p.x+nx*f*1.28+px*tf, p.y+ny*f*1.28+py*tf);   // terminal dianteiro
+  ctx.lineTo(p.x+nx*f*1.28-px*tf, p.y+ny*f*1.28-py*tf);
+  ctx.moveTo(p.x-nx*b*1.22+px*tb, p.y-ny*b*1.22+py*tb);   // terminal traseiro
+  ctx.lineTo(p.x-nx*b*1.22-px*tb, p.y-ny*b*1.22-py*tb);
+  ctx.stroke();
+}
 function drawProjectile(p){
   const orb=projectileUsesOrbShape(p);
   const fade=projectileRangeFade(p);
@@ -21341,6 +21439,7 @@ function drawProjectile(p){
   }
   else if(visualFamilyForProjectile(p)===PVF_SWARM)drawProjectileSwarm(p);
   else if(visualFamilyForProjectile(p)===PVF_KINETIC)drawProjectileKinetic(p);
+  else if(visualFamilyForProjectile(p)===PVF_CONDUCT)drawProjectileConductionStatus(p);
   else drawProjectileLegacyLine(p);
   /* Camada temporal DEPOIS da forma base — a arma é desenhada primeiro e
      permanece dominante. Custo zero quando não é temporal. */

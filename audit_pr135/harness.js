@@ -188,6 +188,8 @@ src+='\n;globalThis.__t={'+
   'drawProjectileEnergyMass:(typeof drawProjectileEnergyMass==="function"?drawProjectileEnergyMass:undefined),'+
   /* PR15.5-E6 — fluido/spray (guardas typeof: ver nota acima). */
   'drawProjectileFluidSpray:(typeof drawProjectileFluidSpray==="function"?drawProjectileFluidSpray:undefined),'+
+  /* PR15.5-E7 — condução/status (guardas typeof: ver nota acima). */
+  'drawProjectileConductionStatus:(typeof drawProjectileConductionStatus==="function"?drawProjectileConductionStatus:undefined),'+
   /* PR15.5-E10 — cinético/retorno (guardas typeof: ver nota acima). */
   'drawProjectileKinetic:(typeof drawProjectileKinetic==="function"?drawProjectileKinetic:undefined),'+
   /* PR15.5-E4 — enxame/múltiplo (guardas typeof: ver nota acima). */

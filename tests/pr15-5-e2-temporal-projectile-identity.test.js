@@ -454,10 +454,11 @@ ok('J08 E1: drawProjectile não voltou a ser monolítico (§10)',()=>{
   const linhas=b.split('\n').filter(l=>l.trim()&&!l.trim().startsWith('/*')&&
     !l.trim().startsWith('*')&&!l.trim().startsWith('//'));
   /* teto elevado 18 -> 20 (E4, ramo PVF_SWARM) -> 21 (E5, ramo PVF_ENERGY)
-     -> 22 (E6, ramo PVF_FLUID). Continua sendo um encaminhador enxuto, não
-     um monólito: o assert abaixo exige que NENHUMA geometria seja desenhada
-     inline no dispatch — todo traço tem de sair de um helper drawProjectile*. */
-  assert.ok(linhas.length<=22,'dispatch inchado: '+linhas.length);
+     -> 22 (E6, ramo PVF_FLUID) -> 23 (E7, ramo PVF_CONDUCT). Continua sendo
+     um encaminhador enxuto, não um monólito: o assert abaixo exige que
+     NENHUMA geometria seja desenhada inline no dispatch — todo traço tem
+     de sair de um helper drawProjectile*. */
+  assert.ok(linhas.length<=23,'dispatch inchado: '+linhas.length);
   assert.ok(!/\b(?:ctx\.)?(?:moveTo|lineTo|arc|rect|bezierCurveTo|quadraticCurveTo)\s*\(/.test(b),
     'dispatch voltou a desenhar geometria inline');});
 ok('J09 E1: classificação por família intacta',()=>{
