@@ -96,7 +96,13 @@ ok('Gate e dt clamp permanecem intocados',()=>{assert.match(SRC,/const TARGET_FP
    cenas (todos os 9 asserts de RNG seguem passando sem rebaseline). */
 const mechanical={
   "updateEnemy": "dabbbf648ddb4b427a4570ddde4944dd530c9fb2531791a0ca28c6ff76b475ec",
-  "updateProjectiles": "a6b0ad8213a2bf6f8140777be9368965951e60ee958efdd9c7dd8d4d7a1abbda",
+  /* PR15.5-E9: re-baselineado. O diff no corpo de updateProjectiles é o despacho
+     de impacto direcional determinístico (emitWeaponImpactVisual) no acerto e no
+     quique de parede (substituindo o antigo spawnParticles isotrópico no pierce
+     e no bounce). É hash de TEXTO-FONTE, então a edição move o hash; a equivalência
+     mecânica foi comprovada: zero divergências de dano, velocidade, pierce,
+     bounce, split, vida, trajetória, alvos atingidos e RNG mecânico. */
+  "updateProjectiles": "16f6d32502aa213d2db88b8371f96313e2931642f75c63eeb54bcbf17c493659",
   "spawnEnemy": "a7d85058edb0491e7269f546f89d17c47ff7ff9faf705caa49f9dc632ad3a2af",
   "damageEnemy": "7e08463b4dbf4d11613cb12f1fd64c0342b8faaa3344c394e2eb2f2089686c43",
   "damagePlayer": "70fcbcf1be3a91c767a57a83f677a57b55cad5065465f3462b7e8ea2613f491b",
