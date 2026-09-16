@@ -17947,6 +17947,94 @@ function drawBeamFrom(src,def){
   ctx.lineCap='butt';
   ctx.restore();
 }
+/* Emissão de impacto direcional determinística (E9 — sem Math.random, sem
+   alocação). Reusa o pool de partículas, respeita cfg.parts e PARTS_MAX. */
+function impactShot(x,y,ang,color,n,spd,life,r,spread,mode){
+  if(!cfg.parts)n=Math.max(1,Math.round(n*.35));
+  for(let i=0;i<n;i++){
+    if(parts.length>=PARTS_MAX){trimParts();if(parts.length>=PARTS_MAX)break;}
+    const u=n>1?(i/(n-1))*2-1:0;
+    let a;
+    if(mode==='rebound'){
+      a=ang+Math.PI+u*spread;
+    }else if(mode==='cross'){
+      const side=u>=0?1:-1;
+      a=ang+side*(Math.PI*0.5)+u*spread;
+    }else if(mode==='radial'){
+      a=ang+(i/n)*TAU;
+    }else{
+      a=ang+u*spread;
+    }
+    const s=spd*(.55+.45*(1-Math.abs(u)));
+    const pt=partTake();
+    pt.x=x;pt.y=y;pt.vx=Math.cos(a)*s;pt.vy=Math.sin(a)*s;
+    pt.t=0;pt.life=life*(.72+.28*(1-Math.abs(u)));
+    pt.r=r*(.7+.3*(1-Math.abs(u)));pt.color=color;
+    pt.ring=false;pt.shard=false;
+    parts.push(pt);
+  }
+}
+/* Assinatura de impacto por família visual (PR15.5-E9). Reusa PROJ_FAMILY do E1.
+   Ponto único de despacho visual no acerto de projétil em alvo ou parede.
+   Custo por impacto controlado: armas de alta cadência usam 1 partícula. */
+function emitWeaponImpactVisual(p,e,eventKind){
+  if(!p||p.team==='enemy'||p.type==='eorb')return 0;
+  const x=p.x,y=p.y;
+  const ang=Math.atan2(p.vy,p.vx)||0;
+  const col=p.color||(p.def&&p.def.color)||'#ffffff';
+  const id=p.type||(p.def&&p.def.id);
+  const fam=visualFamilyForProjectile(p);
+
+  if(eventKind==='bounce'){
+    impactShot(x,y,ang,col,3,190,.14,2.0,.55,'rebound');
+    return 1;
+  }
+  if(fam===PVF_SLUG){
+    if(id==='rail'){
+      impactShot(x,y,ang,col,3,240,.12,2.0,.08);
+      impactShot(x,y,ang,col,1,140,.08,1.6,.10,'cross');
+    }else if(id==='sniper'){
+      impactShot(x,y,ang,col,2,220,.10,1.8,.06);
+    }else{
+      impactShot(x,y,ang,col,2,160,.09,1.6,.12);
+    }
+    return 1;
+  }
+  if(fam===PVF_ENERGY){
+    if(id==='plasma')     impactShot(x,y,ang,col,2,150,.11,2.2,.45,'rebound');
+    else if(id==='orb')   return 1;   // orbe detona via explodeOrb
+    else if(id==='void')  impactShot(x,y,ang,col,3,130,.14,2.6,.50,'cross');  // estritamente localizado
+    else                  impactShot(x,y,ang,col,2,140,.10,2.0,.60,'cross');  // cryo
+    return 1;
+  }
+  if(fam===PVF_FLUID){
+    if(id==='flamer')     impactShot(x,y,ang,col,1,110,.07,1.6,.20);
+    else                  impactShot(x,y,ang,col,1,120,.09,1.8,.35,'rebound'); // acid
+    return 1;
+  }
+  if(fam===PVF_SWARM){
+    if(id==='smg')        impactShot(x,y,ang,col,1,140,.06,1.5,.20,'rebound');
+    else if(id==='shotgun')impactShot(x,y,ang,col,1,160,.08,1.6,.30,'rebound');
+    else if(id==='homing')impactShot(x,y,ang,col,2,170,.11,2.2,.55,'rebound');
+    else                  impactShot(x,y,ang,col,2,150,.10,1.8,.40,'cross');   // prism
+    return 1;
+  }
+  if(fam===PVF_CONDUCT){
+    if(id==='tesla')      impactShot(x,y,ang,col,2,190,.09,1.8,.70,'cross');
+    else                  impactShot(x,y,ang,col,2,100,.13,2.4,.40,'rebound'); // plague: localizado
+    return 1;
+  }
+  if(fam===PVF_KINETIC){
+    if(id==='gatling')    impactShot(x,y,ang,col,1,180,.06,1.6,.20,'rebound');
+    else if(id==='mine')  return 1;   // mina detona via detonateSpecial
+    else if(id==='boomer')impactShot(x,y,ang,col,2,160,.08,1.8,.30,'cross');
+    else                  impactShot(x,y,ang,col,2,170,.10,1.8,.40,'rebound'); // ricochet
+    return 1;
+  }
+  /* fallback: projéteis legados/futuros do jogador */
+  impactShot(x,y,ang,col,2,140,.10,2.0,.40,'rebound');
+  return 1;
+}
 /* ---- efeitos aplicados quando um projétil acerta um inimigo ---- */
 function onProjectileHit(p,e,dmg){
   const d=p.def;if(!d)return;
@@ -18073,7 +18161,7 @@ function updateProjectiles(dt){
       else if(p.y>ARENA.h-p.r){p.y=ARENA.h-p.r;p.vy=-Math.abs(p.vy);bounced=true;}
       if(bounced){
         p.bounce--;p.dmg*=1.15;p.hits=null;
-        spawnParticles(p.x,p.y,p.color,5,190,.22,2.2);
+        emitWeaponImpactVisual(p,null,'bounce');
         AUDIO.tone(rand(700,900),.05,'square',.016,-300);
       }
     }
@@ -18116,12 +18204,12 @@ function updateProjectiles(dt){
               damageEnemy(e,dmgOut,p.x-p.vx*dt,p.y-p.vy*dt,p.crit);
               onProjectileHit(p,e,dmgOut);
             }
+            emitWeaponImpactVisual(p,e,p.pierce>0?'pierce':'hit');
             if(p.pierce>0){                       // perfuração
               /* Replay preserva a identidade perfurante, mas nunca consulta
                  Lente de Fase/build atual nem ganha dano ao atravessar. */
               p.pierce--;if(!p.hits)p.hits=[];p.hits.push(e);
               if(!p.temporalReplay)p.dmg*=lensChargeMul();
-              spawnParticles(p.x,p.y,p.color,3,150,.2,2);
             }else dead=true;
           }
           curAttacker=null;
