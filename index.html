@@ -23051,36 +23051,39 @@ function vPortSVG(q,S,ox,oy,pal,mat,K){
 function charPortraitBuild(C,S){
   const vp=getOperatorVisual(C.id),F=vp.face;
   if(!F)return null;
-  const key='face|'+C.id+'|'+S; const hit=_vPortC.get(key); if(hit!==undefined)return hit;
-  const P=C.pal, u=1, bg='#0a111a', edge=P.edge, body=P.body, dark=P.dark, glow=P.glow;
-  let g='<rect width="48" height="48" fill="'+bg+'"/>';
+  const key='face-r3|'+C.id+'|'+S,hit=_vPortC.get(key);if(hit!==undefined)return hit;
+  const P=C.pal,bg='#080d14',skin=P.head,shadow=P.dark,light=P.edge,eye=P.visor,accent=P.glow;
+  let g='<rect width="64" height="64" fill="'+bg+'"/>';
   const R=(x,y,w,h,c)=>{g+='<rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" fill="'+c+'"/>';};
-  // pixel-art head-and-shoulders: hard-edged clusters, no smooth painting
-  R(5,36,38,9,dark); R(9,31,30,10,body);
-  if(F.frame==='wall') {R(4,15,7,24,dark);R(37,15,7,24,dark);R(7,10,34,6,edge);}
-  if(F.frame==='tank') {R(2,25,10,15,dark);R(36,25,10,15,dark);R(5,19,7,5,edge);}
-  if(F.frame==='axis') {R(23,5,3,38,edge);}
-  if(F.frame==='fin') {R(5,12,7,20,dark);R(36,8,7,25,dark);}
-  if(F.frame==='grid') {R(4,12,5,27,edge);R(39,12,5,27,edge);R(8,8,5,5,glow);R(35,8,5,5,glow);}
-  if(F.frame==='cache') {R(1,21,12,20,dark);R(37,13,10,27,dark);R(4,17,8,4,edge);}
-  if(F.frame==='orbit') {R(2,8,6,8,glow);R(40,29,6,8,glow);R(5,28,5,5,edge);R(38,8,5,5,edge);}
-  if(F.frame==='spine') {R(5,8,6,32,dark);R(37,8,6,32,dark);R(21,3,6,7,edge);}
-  const hx=F.shape==='irregular'?25:24, hy=F.shape==='long'?8:11, hw=F.shape==='long'?18:24, hh=F.shape==='long'?28:24;
-  R(hx-hw/2,hy,hw,hh,body); R(hx-hw/2+2,hy+2,hw-4,3,edge);
-  if(F.shape==='angular'||F.shape==='wedge'){R(hx-hw/2,hy+6,5,hh-9,dark);R(hx+hw/2-5,hy+6,5,hh-9,dark);}
-  if(F.shape==='fragment'){R(10,14,10,13,body);R(28,11,10,16,body);R(19,29,9,7,dark);}
-  if(F.mask){R(hx-hw/2+3,hy+12,hw-6,10,dark);}
-  if(F.visor==='bar'||F.visor==='slit'||F.visor==='block'||F.visor==='scan'||F.visor==='goggle'){
-    const vw=F.visor==='slit'?16:22; R(hx-vw/2,hy+10,vw,F.visor==='block'?7:4,F.visor==='goggle'?glow:P.visor);
-  } else if(F.visor==='respirator'){R(16,23,16,8,dark);R(19,25,3,4,edge);R(26,25,3,4,edge);}
-  else if(F.visor==='core'){R(20,19,8,8,glow);R(22,21,4,4,'#fff');}
-  else if(F.visor==='dead'){R(19,18,10,5,dark);R(23,19,3,2,glow);}
-  if(F.eyes){R(17,hy+16,4,2,P.visor); if(F.eyes>1)R(27,hy+16,4,2,P.visor);}
-  if(F.expr==='predatory')R(14,hy+8,7,2,glow);
-  if(F.expr==='focused')R(15,hy+7,18,2,edge);
-  if(F.expr==='hollow')R(16,hy+22,15,2,dark);
-  const svg='<svg class="cicon faceportrait" style="width:'+S+'px;height:'+S+'px;color:'+C.color+';image-rendering:pixelated" viewBox="0 0 48 48" shape-rendering="crispEdges">'+g+'</svg>';
-  if(_vPortC.size>64)_vPortC.clear(); _vPortC.set(key,svg); return svg;
+  // shoulders and neck establish a real head-and-shoulders read
+  R(5,51,54,13,shadow);R(15,44,34,17,skin);R(26,42,12,12,skin);
+  const narrow=F.shape==='wedge'||F.shape==='long', wide=F.shape==='collar'||F.shape==='round';
+  const x=32, top=wide?10:narrow?7:8, w=wide?34:narrow?25:30;
+  // stepped skull: forehead, temples, cheeks, jaw and chin
+  R(x-w/2+4,top,w-8,4,light);R(x-w/2,top+4,w,22,skin);
+  R(x-w/2-2,top+10,w+4,17,skin);R(x-w/2+3,top+27,w-6,8,skin);R(x-8,top+35,16,4,skin);
+  if(F.shape==='fragment'){R(8,14,12,13,skin);R(43,11,13,17,skin);R(27,30,8,8,bg);}
+  // lore-driven framing, kept behind the face rather than replacing it
+  if(F.frame==='axis'){R(4,8,4,39,light);R(56,8,4,39,light);}
+  if(F.frame==='fin'){R(5,8,7,31,shadow);R(52,4,7,35,shadow);}
+  if(F.frame==='wall'){R(2,12,8,38,shadow);R(54,12,8,38,shadow);R(9,7,46,5,light);}
+  if(F.frame==='tank'){R(1,30,13,26,shadow);R(50,30,13,26,shadow);R(7,25,8,5,light);}
+  if(F.frame==='grid'){R(5,12,4,37,light);R(55,12,4,37,light);R(11,8,8,3,accent);R(45,8,8,3,accent);}
+  if(F.frame==='cache'){R(1,29,14,27,shadow);R(49,18,14,38,shadow);R(4,24,9,4,light);}
+  if(F.frame==='orbit'){R(3,8,7,9,accent);R(54,39,7,9,accent);R(7,41,5,5,light);R(52,9,5,5,light);}
+  if(F.frame==='spine'){R(5,6,7,45,shadow);R(52,6,7,45,shadow);R(28,2,8,8,light);}
+  // brows and eyes: every portrait has a facial reading, not a generic visor
+  const brow=F.expr==='predatory'||F.expr==='wary'?shadow:light;
+  R(x-12,top+13,9,3,brow);R(x+3,top+13,9,3,brow);
+  const eyeH=F.expr==='predatory'?2:3;R(x-10,top+17,7,eyeH,eye);R(x+3,top+17,7,eyeH,eye);
+  // nose bridge, mid-face / respirator and mouth or reconstructed jaw
+  if(F.visor==='respirator'){R(x-3,top+19,6,7,shadow);R(x-10,top+25,20,7,shadow);R(x-6,top+27,4,3,light);R(x+2,top+27,4,3,light);}
+  else if(F.visor==='core'){R(x-2,top+19,4,8,accent);R(x-10,top+26,20,3,bg);R(x-5,top+30,10,3,light);}
+  else if(F.visor==='dead'){R(x-7,top+20,14,8,shadow);R(x-2,top+22,4,2,accent);R(x-8,top+30,16,3,bg);}
+  else {R(x-2,top+20,4,7,shadow);R(x-7,top+27,14,2,F.expr==='predatory'?shadow:light);R(x-5,top+31,10,2,shadow);}
+  if(F.shape==='fragment'){R(17,top+18,5,3,eye);R(42,top+13,5,3,eye);R(27,top+24,10,4,bg);}
+  const svg='<svg class="cicon faceportrait" style="width:'+S+'px;height:'+S+'px;color:'+C.color+';image-rendering:pixelated" viewBox="0 0 64 64" shape-rendering="crispEdges">'+g+'</svg>';
+  if(_vPortC.size>64)_vPortC.clear();_vPortC.set(key,svg);return svg;
 }
 function charPortrait(C,size){
   // retrato procedural do operador desenhado em SVG (mesma paleta do jogo)

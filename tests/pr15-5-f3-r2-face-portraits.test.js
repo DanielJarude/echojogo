@@ -8,7 +8,7 @@ ok('R2 eight head signatures',()=>{const shapes=['angular','wedge','collar','rou
 ok('R2 equipment framing signatures',()=>{for(const x of ['axis','fin','wall','tank','grid','cache','orbit','spine'])assert(s.includes("frame:'"+x+"'"))});
 ok('R2 expression signatures',()=>{for(const x of ['calm','predatory','steady','severe','focused','wary','absent','hollow'])assert(s.includes("expr:'"+x+"'"))});
 ok('R2 ECHO-0 and REVENANT not generic human faces',()=>{assert(s.includes("shape:'fragment'"));assert(s.includes("shape:'long'"));assert(s.includes("visor:'core'"));assert(s.includes("visor:'dead'"))});
-ok('R2 deterministic cache',()=>assert(s.includes("const key='face|'+C.id+'|'+S")&&s.includes('_vPortC.set(key,svg)')));
+ok('R2 deterministic cache',()=>assert(s.includes("face-r3|'+C.id+'|'+S")&&s.includes('_vPortC.set(key,svg)')));
 ok('R2 mechanics anchors remain',()=>assert(s.includes('src.r+6')&&s.includes('src.r+10')));
 ok('R2 immutable visual profiles',()=>assert(s.includes('Object.freeze(OPERATOR_VISUALS)')));
 ok('R2 gameplay renderer preserved architecturally',()=>{assert(s.includes('function drawUnit'));assert(s.includes('function charPortraitBuild'));assert(!/drawUnit[\s\S]{0,2000}faceportrait/.test(s))});

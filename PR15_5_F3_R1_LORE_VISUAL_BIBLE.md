@@ -306,3 +306,9 @@ F3-R1 gameplay foi HUMAN APPROVED. A apresentação corporal anterior do Charact
 F3-R1 gameplay permanece aprovado e não foi redesenhado. O Character Select agora usa `face` declarativo dentro de cada `OPERATOR_VISUALS[id]` e `charPortraitBuild` gera um portrait facial/head-and-shoulders procedural em viewBox 48×48, com `shape-rendering:crispEdges` e apresentação `image-rendering:pixelated`. Os oito perfis receberam assinaturas faciais distintas: angular/calmo, wedge/predatório, collar/steady, round/respirator, square/focused, irregular/wary, fragment/core e long/dead.
 
 Fatos canônicos faciais específicos não foram encontrados para os oito operadores. As faces são interpretações visuais originais baseadas na lore existente: ECHO-0 permanece fragmentado/core e REVENANT permanece alongado/mortuário, sem rostos humanos genéricos. A implementação não altera gameplay, save, anchors, Echo, Shadow, Presença ou Repetição. `PR15_5_F3_R2_FACE_PORTRAITS_AUDIT.png` é artefato de auditoria fora do runtime; captura real do Select não foi produzida pelo ambiente.
+
+## F3-R3 IMPLEMENTATION RESULT
+
+O feedback humano do R2 foi registrado: os portraits pareciam ícones, não rostos. R3 substitui a composição de placas/visor por uma construção facial genérica de 64×64: ombros, pescoço, crânio escalonado, testa, têmporas, olhos, sobrancelhas, ponte nasal, região média, mandíbula e queixo. Equipamento e molduras agora enquadram a cabeça em vez de substituí-la. A expressão é derivada de `face.expr`; ECHO-0 usa face fragmentada/core e REVENANT usa face longa/máscara mortuária.
+
+R3 não altera `drawUnit` ou os sprites de gameplay R1. Não foi possível registrar uma captura real do browser neste ambiente; a aprovação humana deve verificar o Character Select real. A resolução 64×64 é apresentada com hard edges/pixelated e permanece cacheada.

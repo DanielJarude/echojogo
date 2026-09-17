@@ -184,7 +184,7 @@ for(const id of A){
         /#[0-9a-f]{6}/.test(svg),id+' retrato não usa canal '+c);}
     /* e precisa ter volume: extrusão + face por bloco ⇒ muitos paths */
     assert.ok((svg.match(/<rect/g)||[]).length>=8,id+' retrato sem blocos pixel');
-    assert.ok(svg.includes('viewBox="0 0 48 48"'),id+' viewBox alterado');});
+    assert.ok(svg.includes('viewBox="0 0 64 64"'),id+' viewBox alterado');});
 }
 ok('R F3 todos os oito portraits usam o renderer novo',()=>{for(const id of A.concat(B))assert.ok(portrait(id,46).includes('<svg'),id);});
 /* ================= S–V · ENTIDADES FORA DO ESCOPO ================= */
@@ -375,7 +375,7 @@ ok('AI3 UX do select preservada: mesma classe, mesmo viewBox, mesmos callers',()
   for(const id of A.concat(B)){
     const s=portrait(id,46);
     assert.ok(s.includes('class="cicon'),id+' classe alterada');
-    assert.ok(s.includes('viewBox="0 0 48 48"'),id+' viewBox alterado');}
+    assert.ok(s.includes('viewBox="0 0 64 64"'),id+' viewBox alterado');}
   /* os três pontos de uso continuam chamando charPortrait */
   assert.ok((SRC.match(/charPortrait\(/g)||[]).length>=4);});
 
