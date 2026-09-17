@@ -441,7 +441,7 @@ ok('M02 schema do perfil contém APENAS as chaves estruturais (sem r/hitbox/geom
   /* PR15.5-F2-R1: schema estendido genericamente com `build` (construção
      corporal) e `portrait` (enquadramento do busto). Ambos continuam
      PURAMENTE visuais — a proibição de chave mecânica segue valendo. */
-  const ALLOW=['build','effects','id','offset','palette','parts','portrait','pose','proportions','weapon'];
+  const ALLOW=['build','effects','face','id','offset','palette','parts','portrait','pose','proportions','weapon'];
   const ALLOW_P=['arms','head','legs','pack','torso'];
   for(const id of OP_IDS){
     const p=T.OPERATOR_VISUALS[id];

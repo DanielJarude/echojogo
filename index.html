@@ -19875,7 +19875,8 @@ function operatorVisualProfile(id,over){
       for(const k of ['torso','pack','head'])if(Array.isArray(b[k]))b[k].forEach(prep);
       if(b.leg)prep(b.leg);
       return b;})(over.build))||null,
-    portrait:vFreeze(over.portrait)||null
+    portrait:vFreeze(over.portrait)||null,
+    face:vFreeze(over.face)||null
   });
 }
 /* Default compartilhado: equivalente exato ao renderer pré-F1. */
@@ -19922,6 +19923,7 @@ const OPERATOR_VISUAL_OVERRIDES=Object.freeze({
         {k:'wedge',x:.17,w:.30,h:.33,z:0,pal:'visor',glow:9},
         {k:'wedge',x:-.02,w:.26,h:.20,pal:'edge',t:-.34}]
     },
+    face:{shape:'angular',visor:'bar',eyes:2,frame:'axis',expr:'calm',mask:0},
     portrait:{scale:1,tilt:.80},
     parts:{
       /* aletas temporais em V atrás dos ombros */
@@ -19968,6 +19970,7 @@ const OPERATOR_VISUAL_OVERRIDES=Object.freeze({
         /* crista recuada — leitura predatória sem par redundante */
         {k:'rect',x:-.22,y:0,w:.20,h:.16,pal:'edge',a:.9}]
     },
+    face:{shape:'wedge',visor:'slit',eyes:1,frame:'fin',expr:'predatory',mask:1},
     portrait:{scale:1,tilt:.80},
     parts:{
       /* lâminas dorsais direcionais — leitura de velocidade */
@@ -20015,6 +20018,7 @@ const OPERATOR_VISUAL_OVERRIDES=Object.freeze({
         {k:'round',x:.06,y:0,w:.46,h:.46,r:.16,z:.10,pal:'head',t:-.04},
         {k:'rect',x:.22,y:0,w:.16,h:.28,z:0,pal:'visor',glow:9}]
     },
+    face:{shape:'collar',visor:'block',eyes:2,frame:'wall',expr:'steady',mask:1},
     portrait:{scale:.92,tilt:.80},
     parts:{
       back:[{k:'round',x:.02,y:0,w:1.42,h:.34,r:.12,z:.26,pal:'body',t:.02},{k:'round',x:-.96,y:0,w:.30,h:.96,r:.10,pal:'dark'}],
@@ -20062,6 +20066,7 @@ const OPERATOR_VISUAL_OVERRIDES=Object.freeze({
         {k:'round',x:.26,y:.08,w:.30,h:.30,r:.09,z:.09,pal:'dark',t:.10,lit:0},
         {k:'rect',x:.12,y:-.14,w:.26,h:.14,z:0,pal:'visor',glow:8}]
     },
+    face:{shape:'round',visor:'respirator',eyes:2,frame:'tank',expr:'severe',mask:1},
     portrait:{scale:1,tilt:.80},
     parts:{
       /* conduítes grossos saindo do tanque */
@@ -20092,7 +20097,8 @@ const OPERATOR_VISUAL_OVERRIDES=Object.freeze({
         {k:'rect',x:.04,y:-.20,w:.28,h:.12,pal:'glow',z:.02},{k:'wedge',x:.08,y:.22,w:.34,h:.20,pal:'edge'}],
       head:[{k:'hull',z:.14,pal:'head',lit:.20,pts:[[.38,-.16],[.22,-.30],[-.22,-.24],[-.28,.24],[.20,.30],[.38,.16]]},
         {k:'rect',x:.25,y:0,w:.20,h:.18,pal:'visor',glow:6},{k:'rect',x:-.22,y:0,w:.08,h:.52,pal:'edge'}]},
-    parts:{back:[{k:'round',x:-.72,y:0,w:.22,h:1.55,r:.06,z:.20,pal:'edge'},{k:'round',x:.28,y:0,w:.22,h:1.55,r:.06,z:.20,pal:'edge'},{k:'rect',x:-.88,y:0,w:.12,h:1.1,pal:'edge'}],body:[{k:'round',x:-.02,y:-.52,w:.40,h:.18,r:.07,pal:'body'},{k:'round',x:-.02,y:.52,w:.40,h:.18,r:.07,pal:'body'}],front:[]},portrait:{scale:1.04,tilt:.78}
+    parts:{back:[{k:'round',x:-.72,y:0,w:.22,h:1.55,r:.06,z:.20,pal:'edge'},{k:'round',x:.28,y:0,w:.22,h:1.55,r:.06,z:.20,pal:'edge'},{k:'rect',x:-.88,y:0,w:.12,h:1.1,pal:'edge'}],body:[{k:'round',x:-.02,y:-.52,w:.40,h:.18,r:.07,pal:'body'},{k:'round',x:-.02,y:.52,w:.40,h:.18,r:.07,pal:'body'}],front:[]},face:{shape:'square',visor:'scan',eyes:2,frame:'grid',expr:'focused',mask:0},
+    portrait:{scale:1.04,tilt:.78}
   }),
   nomad:Object.freeze({
     proportions:{torso:.92,head:.98,legs:1.08,arms:1,pack:.92},pose:{swing:1.12},offset:{x:.04,y:.02},
@@ -20100,7 +20106,8 @@ const OPERATOR_VISUAL_OVERRIDES=Object.freeze({
       pack:[{k:'round',x:-.64,y:.34,w:.34,h:.58,r:.10,z:.12,pal:'dark'},{k:'round',x:-.58,y:-.40,w:.26,h:.38,r:.08,z:.08,pal:'edge'}],
       torso:[{k:'hull',z:.15,pal:'body',lit:.22,pts:[[.54,-.18],[.26,-.48],[-.42,-.38],[-.54,.20],[.12,.52],[.48,.34]]},{k:'wedge',x:.10,y:-.18,w:.36,h:.24,pal:'edge',t:.10},{k:'rect',x:.18,y:.22,w:.16,h:.12,pal:'glow'}],
       head:[{k:'hull',z:.12,pal:'head',lit:.18,pts:[[.42,-.12],[.20,-.28],[-.22,-.22],[-.30,.20],[.16,.30],[.42,.12]]},{k:'wedge',x:.22,y:-.02,w:.26,h:.14,pal:'visor',glow:7},{k:'tri',x:-.26,y:.18,w:.18,h:.20,pal:'edge'}]},
-    parts:{back:[{k:'round',x:-.95,y:.34,w:1.05,h:1.30,r:.18,z:.24,pal:'dark',t:.05},{k:'round',x:-.72,y:.30,w:.20,h:.52,r:.06,pal:'edge'}],body:[{k:'round',x:-.08,y:-.52,w:.34,h:.20,r:.08,pal:'body'},{k:'rect',x:.12,y:.50,w:.16,h:.26,pal:'dark'}],front:[]},portrait:{scale:1.02,tilt:.82}
+    parts:{back:[{k:'round',x:-.95,y:.34,w:1.05,h:1.30,r:.18,z:.24,pal:'dark',t:.05},{k:'round',x:-.72,y:.30,w:.20,h:.52,r:.06,pal:'edge'}],body:[{k:'round',x:-.08,y:-.52,w:.34,h:.20,r:.08,pal:'body'},{k:'rect',x:.12,y:.50,w:.16,h:.26,pal:'dark'}],front:[]},face:{shape:'irregular',visor:'goggle',eyes:2,frame:'cache',expr:'wary',mask:0},
+    portrait:{scale:1.02,tilt:.82}
   }),
   echo0:Object.freeze({
     proportions:{torso:1.02,head:.96,legs:1,arms:.88,pack:.82},pose:{swing:.8},
@@ -20108,7 +20115,8 @@ const OPERATOR_VISUAL_OVERRIDES=Object.freeze({
       pack:[{k:'circle',x:-.54,y:0,w:.30,z:.20,pal:'glow',glow:4},{k:'rect',x:-.70,y:-.28,w:.10,h:.38,pal:'edge'}],
       torso:[{k:'hull',z:.24,pal:'body',lit:.24,pts:[[.48,-.26],[.20,-.54],[-.16,-.34],[-.48,-.08],[-.16,.40],[.28,.54],[.52,.20]]},{k:'circle',x:.18,y:0,w:.30,z:.08,pal:'glow',glow:8},{k:'rect',x:-.18,y:-.12,w:.12,h:.30,pal:'edge',a:.72}],
       head:[{k:'hull',z:.18,pal:'head',lit:.28,pts:[[.34,-.20],[.16,-.34],[-.20,-.28],[-.34,.08],[-.10,.30],[.30,.26]]},{k:'circle',x:.18,y:0,w:.20,pal:'visor',glow:8},{k:'rect',x:-.18,y:-.12,w:.10,h:.24,pal:'glow',a:.75}]},
-    parts:{back:[{k:'circle',x:-.72,y:-.52,w:.46,z:.28,pal:'edge',glow:5},{k:'circle',x:-.72,y:.52,w:.46,z:.28,pal:'edge',glow:5},{k:'tri',x:-.70,y:-.42,w:.34,h:.18,rot:-.5,pal:'glow'},{k:'tri',x:-.66,y:.42,w:.34,h:.18,rot:.5,pal:'glow'}],body:[{k:'rect',x:-.06,y:-.58,w:.18,h:.16,pal:'edge'},{k:'rect',x:.02,y:.58,w:.18,h:.16,pal:'edge'}],front:[]},portrait:{scale:1.04,tilt:.74}
+    parts:{back:[{k:'circle',x:-.72,y:-.52,w:.46,z:.28,pal:'edge',glow:5},{k:'circle',x:-.72,y:.52,w:.46,z:.28,pal:'edge',glow:5},{k:'tri',x:-.70,y:-.42,w:.34,h:.18,rot:-.5,pal:'glow'},{k:'tri',x:-.66,y:.42,w:.34,h:.18,rot:.5,pal:'glow'}],body:[{k:'rect',x:-.06,y:-.58,w:.18,h:.16,pal:'edge'},{k:'rect',x:.02,y:.58,w:.18,h:.16,pal:'edge'}],front:[]},face:{shape:'fragment',visor:'core',eyes:0,frame:'orbit',expr:'absent',mask:1},
+    portrait:{scale:1.04,tilt:.74}
   }),
   revenant:Object.freeze({
     proportions:{torso:1.08,head:1.02,legs:1.14,arms:1,pack:.86},pose:{swing:.64},offset:{x:.02,y:0},
@@ -20116,7 +20124,8 @@ const OPERATOR_VISUAL_OVERRIDES=Object.freeze({
       pack:[{k:'round',x:-.62,y:0,w:.30,h:.92,r:.10,z:.14,pal:'dark'}],
       torso:[{k:'hull',z:.18,pal:'body',lit:.12,pts:[[.42,-.24],[.28,-.62],[-.34,-.54],[-.42,.42],[.18,.62],[.44,.30]]},{k:'wedge',x:.18,y:0,w:.30,h:.76,z:.08,pal:'dark',t:.08},{k:'rect',x:.28,y:0,w:.10,h:.48,pal:'glow',a:.8}],
       head:[{k:'hull',z:.16,pal:'head',lit:.14,pts:[[.36,-.18],[.20,-.34],[-.20,-.28],[-.26,.28],[.18,.34],[.38,.14]]},{k:'rect',x:.22,y:0,w:.18,h:.30,pal:'visor',glow:5},{k:'tri',x:-.18,y:0,w:.18,h:.38,pal:'edge'}]},
-    parts:{back:[{k:'round',x:-.72,y:0,w:.28,h:1.75,r:.08,z:.20,pal:'dark'},{k:'wedge',x:.55,y:0,w:.70,h:.62,z:.20,pal:'edge',t:.04},{k:'tri',x:-.76,y:-.34,w:.46,h:.34,rot:-.18,pal:'dark'},{k:'tri',x:-.76,y:.34,w:.46,h:.34,rot:.18,pal:'dark'}],body:[{k:'round',x:-.02,y:-.56,w:.42,h:.18,r:.06,pal:'body'},{k:'round',x:-.02,y:.56,w:.42,h:.18,r:.06,pal:'body'}],front:[]},portrait:{scale:1.06,tilt:.72}
+    parts:{back:[{k:'round',x:-.72,y:0,w:.28,h:1.75,r:.08,z:.20,pal:'dark'},{k:'wedge',x:.55,y:0,w:.70,h:.62,z:.20,pal:'edge',t:.04},{k:'tri',x:-.76,y:-.34,w:.46,h:.34,rot:-.18,pal:'dark'},{k:'tri',x:-.76,y:.34,w:.46,h:.34,rot:.18,pal:'dark'}],body:[{k:'round',x:-.02,y:-.56,w:.42,h:.18,r:.06,pal:'body'},{k:'round',x:-.02,y:.56,w:.42,h:.18,r:.06,pal:'body'}],front:[]},face:{shape:'long',visor:'dead',eyes:1,frame:'spine',expr:'hollow',mask:1},
+    portrait:{scale:1.06,tilt:.72}
   })
 });
 const OPERATOR_VISUALS=Object.create(null);
@@ -23040,48 +23049,38 @@ function vPortSVG(q,S,ox,oy,pal,mat,K){
   return out;
 }
 function charPortraitBuild(C,S){
-  const vp=getOperatorVisual(C.id), B=vp.build;
-  if(!B)return null;
-  const key=C.id+'|'+S;
-  const hit=_vPortC.get(key);
-  if(hit!==undefined)return hit;
-  const P=C.pal,mat=B.mat,PR=vp.portrait||{},K=PR.tilt==null?.8:PR.tilt;
-  /* unidade: r visual do busto. cx/cy centram o tronco no viewBox 40×40 */
-  const U=10.4*(PR.scale==null?1:PR.scale), cx=20, cy=22.5;
-  let g='<ellipse cx="20" cy="36" rx="10.5" ry="2.8" fill="#000" fill-opacity=".34"/>';
-  /* ordem de pintura = profundidade do busto: costas → corpo → frente */
-  const layer=(list,oy)=>{let s='';if(list)for(let i=0;i<list.length;i++)
-    s+=vPortSVG(list[i],U,cx,cy+oy,P,mat,K);return s;};
-  /* mochila/tanque primeiro (está atrás e mais baixo na projeção) */
-  g+=layer(vp.parts.back,0);
-  g+=layer(B.pack,0);
-  /* pernas: só o topo das coxas aparece no busto */
-  if(B.leg){
-    const L=B.leg;
-    for(let li=0;li<2;li++)
-      g+=vPortSVG({k:L.k,w:L.w,h:L.h*.9,z:L.z,pal:L.pal,t:L.t,lit:0,
-        x:-.15,y:(li?1:-1)*.42},U,cx,cy+U*.62,P,mat,K);
-  }
-  g+=layer(B.torso,0);
-  g+=layer(vp.parts.body,0);
-  /* braços do busto: dois blocos curtos descendo dos ombros */
-  if(B.arm){
-    const aw=(B.arm.w==null?.30:B.arm.w),ac=vTint(P[B.arm.pal||'body'],B.arm.t||0);
-    for(let li=0;li<2;li++){
-      const X=cx+(li?1:-1)*U*.60, Y=cy+U*.06;
-      g+='<rect x="'+(X-aw*U*.5).toFixed(2)+'" y="'+Y.toFixed(2)+'" width="'+
-        (aw*U).toFixed(2)+'" height="'+(U*.62).toFixed(2)+'" rx="'+(aw*U*.42).toFixed(2)+
-        '" fill="'+ac+'"/>';
-    }
-  }
-  /* cabeça: sobe no busto (eixo vertical real, não projeção top-down) */
-  g+=layer(B.head,-U*.92);
-  g+=layer(vp.parts.front,-U*.10);
-  const svg='<svg class="cicon" style="width:'+S+'px;height:'+S+'px;color:'+C.color+
-    '" viewBox="0 0 40 40" fill="none">'+g+'</svg>';
-  if(_vPortC.size>64)_vPortC.clear();
-  _vPortC.set(key,svg);
-  return svg;
+  const vp=getOperatorVisual(C.id),F=vp.face;
+  if(!F)return null;
+  const key='face|'+C.id+'|'+S; const hit=_vPortC.get(key); if(hit!==undefined)return hit;
+  const P=C.pal, u=1, bg='#0a111a', edge=P.edge, body=P.body, dark=P.dark, glow=P.glow;
+  let g='<rect width="48" height="48" fill="'+bg+'"/>';
+  const R=(x,y,w,h,c)=>{g+='<rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" fill="'+c+'"/>';};
+  // pixel-art head-and-shoulders: hard-edged clusters, no smooth painting
+  R(5,36,38,9,dark); R(9,31,30,10,body);
+  if(F.frame==='wall') {R(4,15,7,24,dark);R(37,15,7,24,dark);R(7,10,34,6,edge);}
+  if(F.frame==='tank') {R(2,25,10,15,dark);R(36,25,10,15,dark);R(5,19,7,5,edge);}
+  if(F.frame==='axis') {R(23,5,3,38,edge);}
+  if(F.frame==='fin') {R(5,12,7,20,dark);R(36,8,7,25,dark);}
+  if(F.frame==='grid') {R(4,12,5,27,edge);R(39,12,5,27,edge);R(8,8,5,5,glow);R(35,8,5,5,glow);}
+  if(F.frame==='cache') {R(1,21,12,20,dark);R(37,13,10,27,dark);R(4,17,8,4,edge);}
+  if(F.frame==='orbit') {R(2,8,6,8,glow);R(40,29,6,8,glow);R(5,28,5,5,edge);R(38,8,5,5,edge);}
+  if(F.frame==='spine') {R(5,8,6,32,dark);R(37,8,6,32,dark);R(21,3,6,7,edge);}
+  const hx=F.shape==='irregular'?25:24, hy=F.shape==='long'?8:11, hw=F.shape==='long'?18:24, hh=F.shape==='long'?28:24;
+  R(hx-hw/2,hy,hw,hh,body); R(hx-hw/2+2,hy+2,hw-4,3,edge);
+  if(F.shape==='angular'||F.shape==='wedge'){R(hx-hw/2,hy+6,5,hh-9,dark);R(hx+hw/2-5,hy+6,5,hh-9,dark);}
+  if(F.shape==='fragment'){R(10,14,10,13,body);R(28,11,10,16,body);R(19,29,9,7,dark);}
+  if(F.mask){R(hx-hw/2+3,hy+12,hw-6,10,dark);}
+  if(F.visor==='bar'||F.visor==='slit'||F.visor==='block'||F.visor==='scan'||F.visor==='goggle'){
+    const vw=F.visor==='slit'?16:22; R(hx-vw/2,hy+10,vw,F.visor==='block'?7:4,F.visor==='goggle'?glow:P.visor);
+  } else if(F.visor==='respirator'){R(16,23,16,8,dark);R(19,25,3,4,edge);R(26,25,3,4,edge);}
+  else if(F.visor==='core'){R(20,19,8,8,glow);R(22,21,4,4,'#fff');}
+  else if(F.visor==='dead'){R(19,18,10,5,dark);R(23,19,3,2,glow);}
+  if(F.eyes){R(17,hy+16,4,2,P.visor); if(F.eyes>1)R(27,hy+16,4,2,P.visor);}
+  if(F.expr==='predatory')R(14,hy+8,7,2,glow);
+  if(F.expr==='focused')R(15,hy+7,18,2,edge);
+  if(F.expr==='hollow')R(16,hy+22,15,2,dark);
+  const svg='<svg class="cicon faceportrait" style="width:'+S+'px;height:'+S+'px;color:'+C.color+';image-rendering:pixelated" viewBox="0 0 48 48" shape-rendering="crispEdges">'+g+'</svg>';
+  if(_vPortC.size>64)_vPortC.clear(); _vPortC.set(key,svg); return svg;
 }
 function charPortrait(C,size){
   // retrato procedural do operador desenhado em SVG (mesma paleta do jogo)

@@ -163,7 +163,7 @@ ok('L gameplay usa o perfil: drawPlayer resolve charId → OPERATOR_VISUALS',()=
 ok('M select usa a MESMA fonte estrutural (sem segundo design paralelo)',()=>{
   const b=fnBody('charPortraitBuild');
   assert.ok(/getOperatorVisual/.test(b),'portrait não lê a fundação');
-  assert.ok(/\.build/.test(b),'portrait não lê o build do gameplay');});
+  assert.ok(/\.face/.test(b),'portrait não lê o face declarativo do profile');});
 ok('M2 F3 todos os oito portraits derivam de build',()=>{for(const id of A.concat(B))assert.ok(!portrait(id,46).includes('M20 9c6 0'),id);});
 /* N–Q: coerência gameplay↔select por operador. A prova estrutural é que
    o retrato REAGE ao build: alterar o perfil mudaria o SVG. Como o perfil
@@ -183,8 +183,8 @@ for(const id of A){
       assert.ok(svg.toLowerCase().includes(p[c].toLowerCase())||
         /#[0-9a-f]{6}/.test(svg),id+' retrato não usa canal '+c);}
     /* e precisa ter volume: extrusão + face por bloco ⇒ muitos paths */
-    assert.ok((svg.match(/<path/g)||[]).length>=12,id+' retrato sem volume');
-    assert.ok(svg.includes('viewBox="0 0 40 40"'),id+' viewBox alterado');});
+    assert.ok((svg.match(/<rect/g)||[]).length>=8,id+' retrato sem blocos pixel');
+    assert.ok(svg.includes('viewBox="0 0 48 48"'),id+' viewBox alterado');});
 }
 ok('R F3 todos os oito portraits usam o renderer novo',()=>{for(const id of A.concat(B))assert.ok(portrait(id,46).includes('<svg'),id);});
 /* ================= S–V · ENTIDADES FORA DO ESCOPO ================= */
@@ -374,8 +374,8 @@ ok('AI2 portrait não muta o perfil nem vaza estado entre operadores',()=>{
 ok('AI3 UX do select preservada: mesma classe, mesmo viewBox, mesmos callers',()=>{
   for(const id of A.concat(B)){
     const s=portrait(id,46);
-    assert.ok(s.startsWith('<svg class="cicon"'),id+' classe alterada');
-    assert.ok(s.includes('viewBox="0 0 40 40"'),id+' viewBox alterado');}
+    assert.ok(s.includes('class="cicon'),id+' classe alterada');
+    assert.ok(s.includes('viewBox="0 0 48 48"'),id+' viewBox alterado');}
   /* os três pontos de uso continuam chamando charPortrait */
   assert.ok((SRC.match(/charPortrait\(/g)||[]).length>=4);});
 

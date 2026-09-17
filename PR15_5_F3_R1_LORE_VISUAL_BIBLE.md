@@ -296,3 +296,13 @@ As formas foram adicionadas através do vocabulário declarativo existente (`hul
 ## R1 audit artifacts
 
 `PR15_5_F3_R1_AUDIT.png` é um artefato local de auditoria, fora do runtime. A validação técnica final desta implementação passou com 76 suítes, 4905 checks e zero falhas. A folha não substitui a inspeção humana do Character Select real, especialmente a leitura das assinaturas em gameplay scale.
+
+## F3-R2 STATUS
+
+F3-R1 gameplay foi HUMAN APPROVED. A apresentação corporal anterior do Character Select foi superseded por F3-R2. Esta revisão substitui prioritariamente `charPortraitBuild` por portraits faciais pixel-art procedural, mantendo os oito profiles e o renderer de gameplay R1. As informações faciais específicas não estão definidas como fatos no cânone; as formas são interpretações visuais documentadas pela lore já auditada. ECHO-0 usa uma cabeça fragmentada/core e REVENANT usa uma máscara/estrutura alongada, sem convertê-los em rostos humanos genéricos.
+
+## F3-R2 IMPLEMENTATION RESULT
+
+F3-R1 gameplay permanece aprovado e não foi redesenhado. O Character Select agora usa `face` declarativo dentro de cada `OPERATOR_VISUALS[id]` e `charPortraitBuild` gera um portrait facial/head-and-shoulders procedural em viewBox 48×48, com `shape-rendering:crispEdges` e apresentação `image-rendering:pixelated`. Os oito perfis receberam assinaturas faciais distintas: angular/calmo, wedge/predatório, collar/steady, round/respirator, square/focused, irregular/wary, fragment/core e long/dead.
+
+Fatos canônicos faciais específicos não foram encontrados para os oito operadores. As faces são interpretações visuais originais baseadas na lore existente: ECHO-0 permanece fragmentado/core e REVENANT permanece alongado/mortuário, sem rostos humanos genéricos. A implementação não altera gameplay, save, anchors, Echo, Shadow, Presença ou Repetição. `PR15_5_F3_R2_FACE_PORTRAITS_AUDIT.png` é artefato de auditoria fora do runtime; captura real do Select não foi produzida pelo ambiente.
