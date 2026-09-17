@@ -118,8 +118,9 @@ ok('Estilo técnico sem efeitos ou animações',()=>{const css=SRC.slice(SRC.ind
 ok('Rótulos em pt-BR, sem truncamento deliberado',()=>{assert.match(SRC,/<dt>PROJÉTEIS<\/dt>/);assert.match(SRC,/<dt>ENTIDADES<\/dt>/);assert.match(SRC,/Exibe informações de desempenho durante a partida\./);});
 ok('Posição fora da coluna superior direita e acima do chip Sandbox',()=>{assert.match(SRC,/#metrics-overlay\{position:fixed;left:16px;bottom:178px;width:174px/);assert.match(SRC,/#sb-chip\{position:fixed;left:16px;bottom:132px/);});
 
-// Hashes dos blocos integrais (LF), extraídos de git show do commit obrigatório.
-// Não dependem de histórico Git disponível na máquina do jogador/CI.
+// Hashes dos blocos integrais (LF) — GOLDEN congelado (extraído uma única vez
+// da fonte canônica do commit 4667720). Não depende de histórico Git
+// disponível na máquina do jogador/CI (padrão AUDIT-FIX-A).
 const mechanical={
   WEAPONS:[/const WEAPONS=\[[\s\S]*?\n\];/,'cb92e03d4d36f390b41c70b8ab85e5ace7e183b779249dfa89295ff7bfabda03'],
   EDEFS:[/const EDEFS=\{[\s\S]*?\n\};/,'9a646757e52d8b6b69f1ac09df16441b6437e0fe1bcfb5f739c58eb8119a178b'],
@@ -127,6 +128,6 @@ const mechanical={
   MINIBOSS:[/const MINIBOSS=\[[\s\S]*?\n\];/,'6ce87e31b85d36526611d202d98473bc587e8fb241d9dae20ba2569fc107dc18'],
   spawnBoss:[/function spawnBoss\(\)\{[\s\S]*?\n\}/,'3872a65edcacad431d90d014d0741cad5c6b84767a5a02189f701c410fc7379e']
 };
-for(const [name,[pattern,hash]] of Object.entries(mechanical))ok(name+' idêntico a 4667720babece82b1c9bb1b92e8d47b7b1c5cc45',()=>{const b=SRC.match(pattern);assert.ok(b);assert.strictEqual(crypto.createHash('sha256').update(b[0]).digest('hex'),hash);});
+for(const [name,[pattern,hash]] of Object.entries(mechanical))ok(name+' idêntico ao golden canônico (base 4667720)',()=>{const b=SRC.match(pattern);assert.ok(b);assert.strictEqual(crypto.createHash('sha256').update(b[0]).digest('hex'),hash);});
 console.log(`\nResultado: ${pass} passaram · ${fail} falharam`);
 if(fail)process.exitCode=1;

@@ -1,0 +1,33 @@
+{
+ "_provenance": "Provenance: frozen golden fixture (AUDIT-FIX-A). Values extracted from the historical base commit cited per key, using the exact expressions the original test compared. Regeneration requires human review. Base: 747f55e2dcb38077920dd305cd8dc3eadd9092d7 (pré-PR15.5-F1). Hash = sha256 do JSON do stream de comandos Canvas do mundo-base (contrato original: byte-idêntico).",
+ "drawUnit": {
+  "idle r14 wi0": "1c0a3760e28415a6a3a713bb664ab4717015c4ce882c8696e1a49a55ba61f2ea",
+  "walk r13 wi2": "378a9721764257bd16d259791f69dd957c8962d26e60dc1cba45fd074458bc09",
+  "walk r16 wi1": "edce28817a17a72c13e4a1234c5a8d71dc30009869af8c79d4d8fb14c0df48a8",
+  "aim r15 wi4": "33b05b57f24dc5f7d22eefe0a42f67b9bdc2a46d2a2dcd6b782b1d2a48e0e042",
+  "glitch echo": "503081d6c770f4186c5fc8821bd98c7a9c4dd6f48c3091e46df532be7074bdbb",
+  "alpha eco": "b5b38598fec752547f40ba39e9432fb413fcf56ce906ff7e4f939fb26ea3ab65",
+  "recoil": "ec2c38e2feb58dc9c95825bc5ab189fe251b3142ab798d97e80841d6f23d2694",
+  "melee pose": "a58862893bb2f9afe361db53a3374ae74dab2b13ad691e1c3cb9fe3bb654190a",
+  "hurt pose": "9cae77475acde939cee31fb0daa8da9872b74ef84b6b26985e163af1f7fcdaee",
+  "shotgun r16": "a19471de45b036aa4ec23d5fcd2c7ad142f09cce33289a04c6d504ec539b0840",
+  "flamer walk": "640a956617f88fb90365413d1cc2a2472db735f6a7886a5de90915072679acb4",
+  "tesla glitch": "7edce3f64ed1975f10229aa008ca7245883d4484d2c1b463005bf19448098471"
+ },
+ "echo": {
+  "slot1": "a322f20e34d32c275be0f0112cbc4e9cc19cc4bd63fcdbe5ba56894370697d70",
+  "slot2": "0b55a1b59a40790fb9ec7a5d927a83e6e9b52219a7debe38f5644018b7536c1f",
+  "slot1:hostile": "d985d0b4d6b6256851cddc528af6f71fc45446d499ab1d723d6431506ccc71c4",
+  "slot1:fracturing": "c1befe37e047f5cdbd7f95de3f70103c41f14e182f5d76ab70e478d50c83c15d"
+ },
+ "shadow": "7ceff1881bae5b2afa82d98a2c0abde188c8c50c403959ebba8d1052d2be1de8",
+ "presence": "f96c0a941c0acaa481d2cc1925c6b57305b4504a2a8726bf44271317127e92a3",
+ "ship": {
+  "false": "0746439c0b3fb88941f889feda0cdec13cfe912825222e2b71ea2a5b958b2826",
+  "true": "9dc86e32725f65584eb67e1ac833623d4208c801d61fc1baded3c393288d323e"
+ },
+ "echoCounts": [
+  290,
+  8
+ ]
+}

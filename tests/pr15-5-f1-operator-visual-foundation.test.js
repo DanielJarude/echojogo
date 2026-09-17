@@ -7,9 +7,11 @@
    + player resolvendo o próprio perfil. NENHUM operador foi redesenhado.
 
    Esta suíte PROVA a promessa central do bloco — ZERO mudança visual —
-   comparando o stream de comandos Canvas do HEAD pós-F1 contra a BASE
-   pré-F1 (commit 747f55e, instanciada via `git show` no mesmo harness,
-   padrão já usado pelas suítes C/E9), e trava as invariantes que F2/F3
+   comparando o stream de comandos Canvas do HEAD pós-F1 contra o GOLDEN
+   da BASE pré-F1 (commit 747f55e, congelado como hashes sha256 em
+   tests/fixtures/pr15_5_f1_canvas_hashes.json — AUDIT-FIX-A: sem
+   dependência de histórico Git; padrão de golden congelado já usado
+   pela suíte de metrics-overlay), e trava as invariantes que F2/F3
    não poderão quebrar:
 
    A · 8 IDs canônicos (sem faltantes/duplicados/fantasma)
@@ -37,19 +39,14 @@
    ===================================================================== */
 const assert=require('assert');
 const crypto=require('crypto');
-const fs=require('fs');
-const path=require('path');
 const vm=require('vm');
-const Module=require('module');
 const {T,SRC,sandbox}=require('../audit_pr135/harness.js');
-const {readSource}=require('../audit_pr155/performance_benchmark.js');
+const GOLDEN=require('./fixtures/pr15_5_f1_canvas_hashes.json');
 let passed=0,failed=0;
 function ok(label,fn){try{fn();passed++;console.log('  ✔ '+label);}
   catch(e){failed++;console.log('  ✘ '+label+' → '+(e&&e.message||e));}}
 const run=c=>vm.runInContext(c,sandbox);
-const ROOT=path.resolve(__dirname,'..');
-/* BASE pré-F1: commit do PR15.5-F0 (auditoria canônica do estado inicial) */
-const BASE_REF='747f55e2dcb38077920dd305cd8dc3eadd9092d7';
+/* BASE pré-F1: commit do PR15.5-F0 — valores congelados na fixture (AUDIT-FIX-A) */
 const OP_IDS=['vector','wraith','bulwark','pyre','warden','nomad','echo0','revenant'];
 
 /* ---------------- helpers (padrão F0) ---------------- */
@@ -114,25 +111,12 @@ function withVisual(expr,vis){
   return out;
 }
 
-/* ---------------- mundo pré-F1 (base 747f55e) ---------------- */
-let _pre=null;
-function preWorld(){
-  if(_pre)return _pre;
-  const source=readSource(BASE_REF);
-  const filename=path.join(ROOT,'audit_pr135/harness.js');
-  let code=fs.readFileSync(filename,'utf8');
-  code=code.replace(/^const html=.*;$/m,()=>'const html='+JSON.stringify(source)+';');
-  const m=new Module(filename,module);m.filename=filename;m.paths=module.paths;m._compile(code,filename);
-  const h=m.exports;
-  h.sandbox.Math=Object.create(Math);
-  const {performance}=require('perf_hooks');
-  h.sandbox.performance.now=()=>performance.now();
-  let seed=1;
-  h.sandbox.Math.random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
-  h.run=c2=>vm.runInContext(c2,h.sandbox);
-  h.run('DEV_MODE=true;sandboxRun=true;');
-  _pre=h;return h;
-}
+/* ---------------- AUDIT-FIX-A: golden pré-F1 via fixture ----------------
+   O mundo-base (commit 747f55e) foi substituído por hashes sha256 dos
+   streams de Canvas congelados em tests/fixtures/pr15_5_f1_canvas_hashes.json.
+   O contrato original (byte-idêntico) é preservado: hash sha256 do JSON
+   do stream atual == hash do stream da base congelado. */
+const sha=s=>crypto.createHash('sha256').update(s).digest('hex');
 function opsIn(h,fn){h.sandbox.__ctxLog=[];try{fn();}finally{const l=h.sandbox.__ctxLog;h.sandbox.__ctxLog=null;return l;}}
 function seeded(sbx,seed,fn){let s=seed>>>0;const o=sbx.Math.random;
   sbx.Math.random=()=>{s=(Math.imul(s,1664525)+1013904223)>>>0;return s/4294967296;};
@@ -543,41 +527,45 @@ ok('T03 sessão de desenho não cria persistência adicional (smRoot limpo de pe
   const blob=JSON.stringify(T.getSmRoot());
   assert.ok(blob.indexOf('proportions')<0&&blob.indexOf('OperatorVisual')<0);});
 
-/* ============ U · CANVAS-OP EQUIVALENCE PRÉ/PÓS-F1 ============ */
-const pre=preWorld();
-ok('U00 sanidade: a base é mesmo pré-F1 (747f55e sem fundação)',()=>{
-  assert.strictEqual(pre.run('typeof OPERATOR_VISUALS'),'undefined');
-  assert.strictEqual(pre.run('typeof getOperatorVisual'),'undefined');});
-ok('U01 drawUnit direto: stream de Canvas idêntico pré×pós (12 cenários × 8 perfis)',()=>{
+/* ============ U · CANVAS-OP EQUIVALENCE PRÉ/PÓS-F1 (golden) ============ */
+ok('U00 sanidade: golden de canvas carregado (12 drawUnit + 4 echo + shadow + presença + 2 ship)',()=>{
+  assert.strictEqual(Object.keys(GOLDEN.drawUnit).length,12);
+  assert.strictEqual(Object.keys(GOLDEN.echo).length,4);
+  assert.match(GOLDEN.shadow,/^[0-9a-f]{64}$/);
+  assert.match(GOLDEN.presence,/^[0-9a-f]{64}$/);
+  assert.strictEqual(Object.keys(GOLDEN.ship).length,2);
+  assert.ok(Array.isArray(GOLDEN.echoCounts)&&GOLDEN.echoCounts.length===2);});
+ok('U01 drawUnit direto: stream de Canvas idêntico ao golden pré-F1 (12 cenários)',()=>{
   for(const [nm,expr] of DUSCEN){
-    const a=opsIn(pre,()=>pre.run(expr));
-    assert.ok(a.length>0,nm);
     const b=opsOf(()=>run(expr));
-    assert.strictEqual(JSON.stringify(a),JSON.stringify(b),nm+' (sem perfil)');
+    assert.ok(b.length>0,nm);
+    assert.strictEqual(sha(JSON.stringify(b)),GOLDEN.drawUnit[nm],nm+' (sem perfil)');
     /* F3 migrates Group B to intentional visual profiles. */
   }});
 ok('U02 F3 drawPlayer resolves the selected visual profile',()=>{assert.ok(/visual:getOperatorVisual\(p\.charId\)/.test(fnBody('drawPlayer')));});
-ok('U03 Echo aliado: stream idêntico pré×pós (estável, glitch slot2, dissonante)',()=>{
-  for(const [slot,dis] of [[1,null],[2,null],[1,"{st:'hostile',t:.5,integ:30,integMax:60}"],
-    [1,"{st:'fracturing',t:.3,integ:20,integMax:40}"]]){
-    const a=echoOps(pre,slot,dis),b=echoOps({run,T,sandbox},slot,dis);
-    assert.strictEqual(JSON.stringify(a),JSON.stringify(b),'echo slot'+slot+' '+String(dis));
+ok('U03 Echo aliado: stream idêntico ao golden pré-F1 (estável, glitch slot2, dissonante)',()=>{
+  for(const [slot,dis,key] of [[1,null,'slot1'],[2,null,'slot2'],
+    [1,"{st:'hostile',t:.5,integ:30,integMax:60}",'slot1:hostile'],
+    [1,"{st:'fracturing',t:.3,integ:20,integMax:40}",'slot1:fracturing']]){
+    const b=echoOps({run,T,sandbox},slot,dis);
+    assert.strictEqual(sha(JSON.stringify(b)),GOLDEN.echo[key],'echo '+key);
   }});
-ok('U04 Eco Sombrio: stream idêntico pré×pós',()=>{
-  const a=shadowOps(pre),b=shadowOps({run,T,sandbox});
-  assert.strictEqual(JSON.stringify(a),JSON.stringify(b));});
-ok('U05 Presença Temporal: stream idêntico pré×pós',()=>{
-  const a=presOps(pre),b=presOps({run,T,sandbox});
-  assert.strictEqual(JSON.stringify(a),JSON.stringify(b));});
-ok('U06 drawShip (wrapper legado): stream idêntico pré×pós (com e sem glitch)',()=>{
+ok('U04 Eco Sombrio: stream idêntico ao golden pré-F1',()=>{
+  const b=shadowOps({run,T,sandbox});
+  assert.strictEqual(sha(JSON.stringify(b)),GOLDEN.shadow);});
+ok('U05 Presença Temporal: stream idêntico ao golden pré-F1',()=>{
+  const b=presOps({run,T,sandbox});
+  assert.strictEqual(sha(JSON.stringify(b)),GOLDEN.presence);});
+ok('U06 drawShip (wrapper legado): stream idêntico ao golden pré-F1 (com e sem glitch)',()=>{
   for(const g of ['false','true']){
-    const a=shipOps(pre,g),b=shipOps({run,T,sandbox},g);
-    assert.strictEqual(JSON.stringify(a),JSON.stringify(b),'glitch='+g);
+    const b=shipOps({run,T,sandbox},g);
+    assert.strictEqual(sha(JSON.stringify(b)),GOLDEN.ship[g],'glitch='+g);
   }});
-ok('U07 custo do corpo neutro inalterado; Echo preservado pré==pós',()=>{
+ok('U07 custo do corpo neutro inalterado; Echo preservado vs golden',()=>{
   const cnt=l=>[l.length,l.filter(e=>e[0]==='set:shadowBlur'&&e[1][0]>0).length];
-  const c=cnt(echoOps(pre,2,null)),d=cnt(echoOps({run,T,sandbox},2,null));
-  assert.deepStrictEqual(d,c);});
+  const d=cnt(echoOps({run,T,sandbox},2,null));
+  assert.deepStrictEqual(d,GOLDEN.echoCounts);});
+
 
 /* ============ V · MODAIS / MENU SMOKE ============ */
 ok('V01 charPortrait dos 8 operadores não lança (retratos NÃO mudaram em F1)',()=>{
