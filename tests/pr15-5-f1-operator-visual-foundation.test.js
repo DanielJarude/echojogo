@@ -298,8 +298,9 @@ ok('F02 perfil imutável: script strict lança; script sloppy ignora; estado nun
   let threw=false;
   try{run('"use strict";OPERATOR_VISUALS.vector.proportions.torso=2');}catch(e){threw=true;}
   assert.ok(threw,'script strict: assignment em frozen deve lançar');
+  const original=T.OPERATOR_VISUALS.vector.proportions.torso;
   run('OPERATOR_VISUALS.vector.proportions.torso=2');   // sloppy: falha em silêncio
-  assert.strictEqual(T.OPERATOR_VISUALS.vector.proportions.torso,1);
+  assert.strictEqual(T.OPERATOR_VISUALS.vector.proportions.torso,original);
   let threw2=false;
   try{run('"use strict";OPERATOR_VISUALS.warden=null');}catch(e){threw2=true;}
   assert.ok(threw2);
@@ -329,12 +330,12 @@ ok('F05 assimetria: side −1 espelha a peça no eixo do corpo (translate invert
   assert.deepStrictEqual(tb,[-ta[0],ta[1]]);});
 
 /* ============ G · DRAWUNIT SEM PERFIL = LEGADO ============ */
-ok('G01 drawUnit: sem visual == visual:DEFAULT == cada um dos 8 perfis (stream idêntico)',()=>{
+ok('G01 drawUnit: sem visual == visual:DEFAULT == cada perfil neutro do Grupo B',()=>{
   for(const [nm,expr] of DUSCEN){
     const base=opsOf(()=>run(expr));
     const dflt=opsOf(()=>run(withVisual(expr,'DEFAULT_OPERATOR_VISUAL')));
     assert.strictEqual(JSON.stringify(base),JSON.stringify(dflt),nm+' default');
-    for(const id of OP_IDS){
+    for(const id of ['warden','nomad','echo0','revenant']){
       const w=opsOf(()=>run(withVisual(expr,"getOperatorVisual('"+id+"')")));
       assert.strictEqual(JSON.stringify(base),JSON.stringify(w),nm+' '+id);
     }
@@ -476,26 +477,20 @@ ok('P03 muzzle e impacto determinísticos (E8/E9 preservados)',()=>{
 ok('P04 drawWeaponSprite intocado pela fundação (não referencia F1)',()=>
   assert.ok(!F1_RE.test(fnBody('drawWeaponSprite'))));
 
-/* ============ Q · SILHUETA CONTINUA PRÉ-F2 (PROPOSITAL) ============ */
-ok('Q01 drawUnit: 8 operadores com mesma cor/raio/arma → assinatura IDÊNTICA (F1 não resolve a silhueta)',()=>{
+/* ============ Q · DEFAULT/GRUPO B CONTINUAM NEUTROS APÓS F2 ============ */
+ok('Q01 drawUnit: Grupo B com mesma cor/raio/arma mantém assinatura F1 idêntica',()=>{
   const s=new Set();
-  for(const id of OP_IDS){
+  for(const id of ['warden','nomad','echo0','revenant']){
     const l=opsOf(()=>run('drawUnit(500,400,0,14,'+PL_OP+',{wi:0,walk:0,phase:0,visual:getOperatorVisual("'+id+'")})'));
     s.add(hash(sig(l)));
   }
   assert.strictEqual(s.size,1);});
-ok('Q02 drawPlayer: exatamente 5 grupos estruturais entre os 8 (arma = único diferenciador)',()=>{
-  const g={};
-  for(let i=0;i<8;i++){
-    seeded(sandbox,1234+i,()=>run('setChar('+i+');startRun({noEchoes:true,freshMeta:true});'));
-    run('player.x=500;player.y=400;player.vx=0;player.vy=0;player.hurtT=0;'+
-        'player.invT=0;player.dashT=0;player.rushT=0;player.rangeFx=0;');
-    g[T.CHARS[i].nm]=hash(sig(opsOf(()=>run('drawPlayer()'))));
-  }
-  assert.strictEqual(new Set(Object.values(g)).size,5);
-  assert.strictEqual(g.VECTOR,g.WRAITH,'VECTOR×WRAITH');
-  assert.strictEqual(g.VECTOR,g['NÔMADE'],'VECTOR×NÔMADE');
-  assert.strictEqual(g.PYRE,g.HARDEN,'PYRE×HARDEN');});
+ok('Q02 Grupo B mantém perfis declarativos neutros para o futuro F3',()=>{
+  for(const id of ['warden','nomad','echo0','revenant']){
+    const p=T.OPERATOR_VISUALS[id];
+    assert.deepStrictEqual([p.parts.back.length,p.parts.body.length,p.parts.front.length],[0,0,0],id);
+    assert.ok(Object.values(p.proportions).every(v=>v===1),id);
+  }});
 
 /* ============ R · ZERO RNG NOVO ============ */
 ok('R01 funções da fundação F1 sem RNG/relógio de parede',()=>{
@@ -547,20 +542,20 @@ ok('U01 drawUnit direto: stream de Canvas idêntico pré×pós (12 cenários × 
     assert.ok(a.length>0,nm);
     const b=opsOf(()=>run(expr));
     assert.strictEqual(JSON.stringify(a),JSON.stringify(b),nm+' (sem perfil)');
-    for(const id of OP_IDS){
+    for(const id of ['warden','nomad','echo0','revenant']){
       const c=opsOf(()=>run(withVisual(expr,"getOperatorVisual('"+id+"')")));
       assert.strictEqual(JSON.stringify(a),JSON.stringify(c),nm+' '+id);
     }
   }});
-ok('U02 drawPlayer: stream idêntico pré×pós nos 8 operadores × 9 estados',()=>{
+ok('U02 drawPlayer: stream idêntico pré×pós no Grupo B × 9 estados',()=>{
   let n=0;
-  for(let i=0;i<8;i++)for(const k in PREPS){
+  for(let i=4;i<8;i++)for(const k in PREPS){
     const a=playerOps(pre,i,PREPS[k]);
     const b=playerOps({run,T,sandbox},i,PREPS[k]);
     assert.strictEqual(JSON.stringify(a),JSON.stringify(b),T.CHARS[i].id+' · '+k);
     n++;
   }
-  assert.strictEqual(n,72);});
+  assert.strictEqual(n,36);});
 ok('U03 Echo aliado: stream idêntico pré×pós (estável, glitch slot2, dissonante)',()=>{
   for(const [slot,dis] of [[1,null],[2,null],[1,"{st:'hostile',t:.5,integ:30,integMax:60}"],
     [1,"{st:'fracturing',t:.3,integ:20,integMax:40}"]]){
@@ -578,9 +573,9 @@ ok('U06 drawShip (wrapper legado): stream idêntico pré×pós (com e sem glitch
     const a=shipOps(pre,g),b=shipOps({run,T,sandbox},g);
     assert.strictEqual(JSON.stringify(a),JSON.stringify(b),'glitch='+g);
   }});
-ok('U07 custo por corpo inalterado: contagem de comandos e blur pré==pós',()=>{
+ok('U07 custo do corpo neutro inalterado; Echo preservado pré==pós',()=>{
   const cnt=l=>[l.length,l.filter(e=>e[0]==='set:shadowBlur'&&e[1][0]>0).length];
-  const a=cnt(playerOps(pre,0,PREPS.walk)),b=cnt(playerOps({run,T,sandbox},0,PREPS.walk));
+  const a=cnt(playerOps(pre,4,PREPS.walk)),b=cnt(playerOps({run,T,sandbox},4,PREPS.walk));
   assert.deepStrictEqual(b,a);
   const c=cnt(echoOps(pre,2,null)),d=cnt(echoOps({run,T,sandbox},2,null));
   assert.deepStrictEqual(d,c);});

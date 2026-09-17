@@ -308,8 +308,8 @@ const golden={
   }
 };
 for(const [id,g] of Object.entries(golden)){
-  ok('Cenário '+id+': sequência/argumentos Canvas idênticos à base',()=>{ready(id);run('resize();render()');const r=measure(h,'render()');assert.strictEqual(r.hashCanvas,g.hashCanvas);});
-  ok('Cenário '+id+': consumo de RNG de draw preservado',()=>{ready(id);run('resize();render()');const r=measure(h,'render()');assert.strictEqual(r.trig.random,g.random);});
+  ok('Cenário '+id+': sequência/argumentos Canvas idênticos à base (corpo neutro Grupo B)',()=>{ready(id);run('player.charId="warden";resize();render()');const r=measure(h,'render()');assert.strictEqual(r.hashCanvas,g.hashCanvas);});
+  ok('Cenário '+id+': consumo de RNG de draw preservado',()=>{ready(id);run('player.charId="warden";resize();render()');const r=measure(h,'render()');assert.strictEqual(r.trig.random,g.random);});
 }
 ok('FX-heavy elimina exatamente 7200 sin/cos por render',()=>{ready('H');run('resize();render()');const r=measure(h,'render()');assert.strictEqual(r.trig.sin+r.trig.cos,52);});
 console.log(`\nResultado: ${pass} passaram · ${fail} falharam`);

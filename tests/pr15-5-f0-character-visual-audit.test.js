@@ -162,14 +162,13 @@ function playerSigs(){
   }
   return g;
 }
-ok('C02 drawPlayer: exatamente 5 grupos estruturais entre os 8 operadores (arma = único diferenciador)',()=>{
+ok('C02 drawPlayer: F2 produz 8 assinaturas no conjunto (Grupo A estruturalmente distinto)',()=>{
   const g=playerSigs();
   const distinct=new Set(Object.values(g));
-  assert.strictEqual(distinct.size,5,'grupos='+distinct.size);
-  /* pares confundíveis em monocromático, travados como registro da auditoria */
-  assert.strictEqual(g.VECTOR,g.WRAITH,'VECTOR×WRAITH');
-  assert.strictEqual(g.VECTOR,g['NÔMADE'],'VECTOR×NÔMADE');
-  assert.strictEqual(g.PYRE,g.HARDEN,'PYRE×HARDEN');});
+  assert.strictEqual(distinct.size,8,'grupos='+distinct.size);
+  /* F2 muda deliberadamente os quatro primeiros; nenhuma dupla A colide. */
+  const a=['VECTOR','WRAITH','BULWARK','PYRE'];
+  assert.strictEqual(new Set(a.map(id=>g[id])).size,4);});
 ok('C03 mesma assinatura estrutural ⇒ mesma contagem de comandos (consistência intra-grupo)',()=>{
   const g=playerSigs();
   const byHash={};

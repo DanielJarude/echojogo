@@ -19772,9 +19772,74 @@ const DEFAULT_OPERATOR_VISUAL=operatorVisualProfile(null);
    `harden`. Prototype nulo: lookup de id herdado ('toString' etc.) cai
    no default em vez de vazar Object.prototype. F1: nenhuma entrada
    sobrescreve o default — F2/F3 preencherão as entradas. */
+/* PR15.5-F2 · GRUPO A
+   Silhuetas são descritas somente com o vocabulário genérico de peças.
+   Todas as medidas são frações de r VISUAL; r mecânico, sombra, colisão e
+   âncoras de disparo permanecem intocados. Poucas peças grandes mantêm a
+   leitura em escala de gameplay e o custo bem abaixo do orçamento.
+
+   VECTOR  — atlético, preciso e bilateral;
+   WRAITH  — estreito, afiado e assimétrico;
+   BULWARK — largo, baixo e blindado;
+   PYRE    — industrial, reservatório e conduítes assimétricos. */
+const OPERATOR_VISUAL_OVERRIDES=Object.freeze({
+  vector:Object.freeze({
+    proportions:{torso:.96,head:.94,legs:1.02,arms:1,pack:.72},
+    parts:{
+      back:[
+        {k:'tri',x:-.72,y:-.49,w:.42,h:.30,rot:0,pal:'dark'},
+        {k:'tri',x:-.72,y:.49,w:.42,h:.30,rot:0,pal:'dark'}],
+      body:[
+        {k:'round',x:-.02,y:-.58,w:.58,h:.22,r:.10,pal:'edge'},
+        {k:'round',x:-.02,y:.58,w:.58,h:.22,r:.10,pal:'edge'}],
+      front:[{k:'tri',x:.48,y:0,w:.44,h:.50,rot:0,pal:'head'}]
+    }
+  }),
+  wraith:Object.freeze({
+    proportions:{torso:.78,head:.78,legs:1.08,arms:.92,pack:.62},pose:{swing:1.18},
+    weapon:{x:-.03,y:0,rot:0,scale:.96},
+    parts:{
+      back:[
+        {k:'tri',x:-.92,y:-.27,w:1.18,h:.30,rot:-.12,pal:'dark'},
+        {k:'tri',x:-.72,y:.42,w:.78,h:.22,rot:.16,pal:'dark'}],
+      body:[{k:'tri',x:-.02,y:-.55,w:.72,h:.38,rot:-.18,pal:'body'}],
+      front:[{k:'tri',x:.43,y:.08,w:.58,h:.34,rot:.06,pal:'head'}]
+    }
+  }),
+  bulwark:Object.freeze({
+    proportions:{torso:1.18,head:.96,legs:1.06,arms:1.16,pack:1.12},pose:{swing:.78},
+    weapon:{x:.02,y:0,rot:0,scale:1.02},
+    parts:{
+      back:[{k:'round',x:-.88,y:0,w:.58,h:1.34,r:.18,pal:'dark'}],
+      body:[
+        {k:'round',x:-.02,y:-.72,w:.80,h:.44,r:.16,pal:'body'},
+        {k:'round',x:-.02,y:.72,w:.80,h:.44,r:.16,pal:'body'},
+        {k:'rect',x:-.18,y:0,w:.68,h:1.10,pal:'edge'}],
+      front:[{k:'round',x:.20,y:0,w:.72,h:.92,r:.20,pal:'head'}]
+    }
+  }),
+  pyre:Object.freeze({
+    proportions:{torso:1.02,head:.90,legs:1,arms:1.03,pack:1.06},
+    weapon:{x:0,y:.02,rot:0,scale:1},
+    parts:{
+      back:[
+        {k:'round',x:-.96,y:.30,w:.58,h:1.02,r:.24,pal:'dark'},
+        {k:'circle',x:-1.03,y:.30,w:.34,h:.34,pal:'edge'},
+        {k:'line',x:-.82,y:-.08,w:.62,h:.10,rot:-.48,pal:'edge'}],
+      body:[
+        {k:'rect',x:-.18,y:-.57,w:.54,h:.30,rot:-.10,pal:'body'},
+        {k:'line',x:-.30,y:.38,w:.62,h:.11,rot:.28,pal:'edge'}],
+      front:[
+        {k:'round',x:.30,y:0,w:.52,h:.72,r:.18,pal:'head'},
+        {k:'rect',x:.04,y:.58,w:.24,h:.42,rot:.08,pal:'dark'}]
+    }
+  })
+});
 const OPERATOR_VISUALS=Object.create(null);
-for(let i=0;i<OPERATOR_VISUAL_IDS.length;i++)
-  OPERATOR_VISUALS[OPERATOR_VISUAL_IDS[i]]=operatorVisualProfile(OPERATOR_VISUAL_IDS[i]);
+for(let i=0;i<OPERATOR_VISUAL_IDS.length;i++){
+  const id=OPERATOR_VISUAL_IDS[i];
+  OPERATOR_VISUALS[id]=operatorVisualProfile(id,OPERATOR_VISUAL_OVERRIDES[id]);
+}
 Object.freeze(OPERATOR_VISUALS);
 /* Resolvedor puro: id conhecido → perfil correspondente; id
    desconhecido/ausente → default seguro. Sem RNG, sem mutation, sem
