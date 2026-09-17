@@ -312,3 +312,9 @@ Fatos canônicos faciais específicos não foram encontrados para os oito operad
 O feedback humano do R2 foi registrado: os portraits pareciam ícones, não rostos. R3 substitui a composição de placas/visor por uma construção facial genérica de 64×64: ombros, pescoço, crânio escalonado, testa, têmporas, olhos, sobrancelhas, ponte nasal, região média, mandíbula e queixo. Equipamento e molduras agora enquadram a cabeça em vez de substituí-la. A expressão é derivada de `face.expr`; ECHO-0 usa face fragmentada/core e REVENANT usa face longa/máscara mortuária.
 
 R3 não altera `drawUnit` ou os sprites de gameplay R1. Não foi possível registrar uma captura real do browser neste ambiente; a aprovação humana deve verificar o Character Select real. A resolução 64×64 é apresentada com hard edges/pixelated e permanece cacheada.
+
+## F3-R4 IMPLEMENTATION RESULT
+
+O feedback do R3 foi preservado: a leitura facial continua sendo a base aprovada. R4 diferencia os oito personagens dentro dessa leitura através de largura/altura de cabeça, ângulo, centro facial, espaçamento ocular, tons de pele separados da paleta do operador, expressões, framing de ombros e assimetrias. VECTOR permanece clínico e simétrico; WRAITH estreito/inclinado; BULWARK largo e pesado; PYRE intenso com respirador; HARDEN vigilante; NÔMADE mais exposto e vivido; ECHO-0 fragmentado de forma impossível; REVENANT alongado e reconstruído.
+
+Essas características físicas são interpretações visuais, não fatos biográficos novos. O renderer continua declarativo, cacheado e genérico. Gameplay F3-R1 permanece congelado.
