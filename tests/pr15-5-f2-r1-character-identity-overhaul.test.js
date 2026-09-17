@@ -114,15 +114,8 @@ ok('B3 identidade NÃO vem de reescalar o mesmo corpo (formas próprias)',()=>{
   for(const h of hulls)assert.ok(h.length>10,'torso sem casco próprio');});
 
 /* ================= C/D/E/F/G · INVARIANTES MECÂNICAS ================= */
-ok('C Grupo B preservado: perfis neutros, sem build e sem portrait',()=>{
-  for(const id of B){const p=T.OPERATOR_VISUALS[id];
-    assert.ok(Object.values(p.proportions).every(v=>v===1),id);
-    assert.ok(Object.values(p.parts).every(x=>x.length===0),id);
-    assert.strictEqual(p.build,null,id+'.build');
-    assert.strictEqual(p.portrait,null,id+'.portrait');}});
-ok('C2 Grupo B renderiza byte-equivalente ao corpo default',()=>{
-  const base=hash(ops(`drawUnit(500,400,.3,14,${PAL},{wi:0,walk:.4,phase:0})`));
-  for(const id of B)assert.strictEqual(hash(unit(id,.3,14,false)),base,id);});
+ok('C F3 Grupo B possui build e portrait próprios',()=>{for(const id of B){const p=T.OPERATOR_VISUALS[id];assert.ok(p.build&&p.portrait,id);}});
+ok('C2 F3 Grupo B difere do default',()=>{const base=hash(ops(`drawUnit(500,400,.3,14,${PAL},{wi:0,walk:.4,phase:0})`));for(const id of B)assert.notStrictEqual(hash(unit(id,.3,14,false)),base,id);});
 ok('D CHARS mecânico intacto (stats dos oito operadores)',()=>{
   const exp={vector:[100,335,14,4],wraith:[72,410,13,2],bulwark:[185,262,16,5],
     pyre:[88,322,14,3],warden:[112,300,15,4]};
@@ -171,11 +164,7 @@ ok('M select usa a MESMA fonte estrutural (sem segundo design paralelo)',()=>{
   const b=fnBody('charPortraitBuild');
   assert.ok(/getOperatorVisual/.test(b),'portrait não lê a fundação');
   assert.ok(/\.build/.test(b),'portrait não lê o build do gameplay');});
-ok('M2 portrait deriva de build: sem build → retrato legado (Grupo B)',()=>{
-  for(const id of B){const svg=portrait(id,46);
-    assert.ok(svg.includes('M20 9c6 0'),id+' deveria usar o legado');}
-  for(const id of A){const svg=portrait(id,46);
-    assert.ok(!svg.includes('M20 9c6 0'),id+' ainda usa o legado');}});
+ok('M2 F3 todos os oito portraits derivam de build',()=>{for(const id of A.concat(B))assert.ok(!portrait(id,46).includes('M20 9c6 0'),id);});
 /* N–Q: coerência gameplay↔select por operador. A prova estrutural é que
    o retrato REAGE ao build: alterar o perfil mudaria o SVG. Como o perfil
    é congelado, verifica-se a dependência por conteúdo — cada retrato
@@ -197,12 +186,7 @@ for(const id of A){
     assert.ok((svg.match(/<path/g)||[]).length>=12,id+' retrato sem volume');
     assert.ok(svg.includes('viewBox="0 0 40 40"'),id+' viewBox alterado');});
 }
-ok('R Grupo B select permanece no portrait legado (documentado até F3)',()=>{
-  const legado=B.map(id=>portrait(id,46));
-  for(const s of legado){
-    assert.ok(s.includes('M20 9c6 0'));
-    assert.ok((s.match(/<path/g)||[]).length<=4,'legado não deveria ganhar volume');}});
-
+ok('R F3 todos os oito portraits usam o renderer novo',()=>{for(const id of A.concat(B))assert.ok(portrait(id,46).includes('<svg'),id);});
 /* ================= S–V · ENTIDADES FORA DO ESCOPO ================= */
 ok('S Echo aliado preservado: não passa perfil de operador',()=>
   assert.ok(!/visual\s*:/.test(fnBody('drawEchoEntity'))));

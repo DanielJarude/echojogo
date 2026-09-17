@@ -350,10 +350,7 @@ ok('G01 drawUnit: sem visual == visual:DEFAULT == cada perfil neutro do Grupo B'
     const base=opsOf(()=>run(expr));
     const dflt=opsOf(()=>run(withVisual(expr,'DEFAULT_OPERATOR_VISUAL')));
     assert.strictEqual(JSON.stringify(base),JSON.stringify(dflt),nm+' default');
-    for(const id of ['warden','nomad','echo0','revenant']){
-      const w=opsOf(()=>run(withVisual(expr,"getOperatorVisual('"+id+"')")));
-      assert.strictEqual(JSON.stringify(base),JSON.stringify(w),nm+' '+id);
-    }
+    /* F3: Grupo B possui identidade própria; somente o fallback sem perfil permanece legado. */
   }});
 
 /* ============ H · PLAYER RESOLVE PERFIL (E SÓ ELE) ============ */
@@ -496,19 +493,16 @@ ok('P04 drawWeaponSprite intocado pela fundação (não referencia F1)',()=>
   assert.ok(!F1_RE.test(fnBody('drawWeaponSprite'))));
 
 /* ============ Q · DEFAULT/GRUPO B CONTINUAM NEUTROS APÓS F2 ============ */
-ok('Q01 drawUnit: Grupo B com mesma cor/raio/arma mantém assinatura F1 idêntica',()=>{
+ok('Q01 F3: Grupo B possui assinaturas estruturais distintas',()=>{
   const s=new Set();
   for(const id of ['warden','nomad','echo0','revenant']){
-    const l=opsOf(()=>run('drawUnit(500,400,0,14,'+PL_OP+',{wi:0,walk:0,phase:0,visual:getOperatorVisual("'+id+'")})'));
+    const l=opsOf(()=>run('drawUnit(500,400,0,14,'+PL_OP+',\{wi:0,walk:0,phase:0,visual:getOperatorVisual(\"'+id+'\")\})'));
     s.add(hash(sig(l)));
   }
-  assert.strictEqual(s.size,1);});
-ok('Q02 Grupo B mantém perfis declarativos neutros para o futuro F3',()=>{
-  for(const id of ['warden','nomad','echo0','revenant']){
-    const p=T.OPERATOR_VISUALS[id];
-    assert.deepStrictEqual([p.parts.back.length,p.parts.body.length,p.parts.front.length],[0,0,0],id);
-    assert.ok(Object.values(p.proportions).every(v=>v===1),id);
-  }});
+  assert.strictEqual(s.size,4);});
+ok('Q02 F3: Grupo B possui builds e portraits derivados',()=>{
+  for(const id of ['warden','nomad','echo0','revenant']){const p=T.OPERATOR_VISUALS[id];assert.ok(p.build&&p.portrait,id);}
+});
 
 /* ============ R · ZERO RNG NOVO ============ */
 ok('R01 funções da fundação F1 sem RNG/relógio de parede',()=>{
@@ -560,20 +554,9 @@ ok('U01 drawUnit direto: stream de Canvas idêntico pré×pós (12 cenários × 
     assert.ok(a.length>0,nm);
     const b=opsOf(()=>run(expr));
     assert.strictEqual(JSON.stringify(a),JSON.stringify(b),nm+' (sem perfil)');
-    for(const id of ['warden','nomad','echo0','revenant']){
-      const c=opsOf(()=>run(withVisual(expr,"getOperatorVisual('"+id+"')")));
-      assert.strictEqual(JSON.stringify(a),JSON.stringify(c),nm+' '+id);
-    }
+    /* F3 migrates Group B to intentional visual profiles. */
   }});
-ok('U02 drawPlayer: stream idêntico pré×pós no Grupo B × 9 estados',()=>{
-  let n=0;
-  for(let i=4;i<8;i++)for(const k in PREPS){
-    const a=playerOps(pre,i,PREPS[k]);
-    const b=playerOps({run,T,sandbox},i,PREPS[k]);
-    assert.strictEqual(JSON.stringify(a),JSON.stringify(b),T.CHARS[i].id+' · '+k);
-    n++;
-  }
-  assert.strictEqual(n,36);});
+ok('U02 F3 drawPlayer resolves the selected visual profile',()=>{assert.ok(/visual:getOperatorVisual\(p\.charId\)/.test(fnBody('drawPlayer')));});
 ok('U03 Echo aliado: stream idêntico pré×pós (estável, glitch slot2, dissonante)',()=>{
   for(const [slot,dis] of [[1,null],[2,null],[1,"{st:'hostile',t:.5,integ:30,integMax:60}"],
     [1,"{st:'fracturing',t:.3,integ:20,integMax:40}"]]){
@@ -593,8 +576,6 @@ ok('U06 drawShip (wrapper legado): stream idêntico pré×pós (com e sem glitch
   }});
 ok('U07 custo do corpo neutro inalterado; Echo preservado pré==pós',()=>{
   const cnt=l=>[l.length,l.filter(e=>e[0]==='set:shadowBlur'&&e[1][0]>0).length];
-  const a=cnt(playerOps(pre,4,PREPS.walk)),b=cnt(playerOps({run,T,sandbox},4,PREPS.walk));
-  assert.deepStrictEqual(b,a);
   const c=cnt(echoOps(pre,2,null)),d=cnt(echoOps({run,T,sandbox},2,null));
   assert.deepStrictEqual(d,c);});
 
@@ -607,7 +588,7 @@ ok('V01 charPortrait dos 8 operadores não lança (retratos NÃO mudaram em F1)'
 ok('V02 charPortrait permanece UM template compartilhado (sem branch por operador)',()=>{
   const b=fnBody('charPortrait');
   for(const id of OP_IDS)assert.ok(!new RegExp("case '"+id+"'").test(b),id);
-  assert.ok(!F1_RE.test(b),'portrait não consome perfil ainda (F3)');});
+  assert.ok(/charPortraitBuild|getOperatorVisual/.test(b));});
 ok('V03 renderCodexBody (seletor de operador) não lança com a fundação ativa',()=>{
   run('codexMode="arsenal";codexTab="chars";renderCodexBody();');});
 ok('V04 refreshTitleChar não lança (menu inicial com operador selecionado)',()=>{

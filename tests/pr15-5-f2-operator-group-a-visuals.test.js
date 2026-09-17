@@ -31,7 +31,7 @@ ok('A base F1: oito IDs e resolvedor disponíveis',()=>{assert.strictEqual(T.OPE
    O invariante real continua garantido: todo operador do Grupo A tem
    estrutura própria declarada. */
 ok('B somente Grupo A possui construção estrutural própria',()=>{for(const id of A){const p=T.OPERATOR_VISUALS[id];assert.ok(p.build&&p.build.torso&&p.build.torso.length&&p.build.head.length,id);assert.ok(Object.values(p.parts).some(x=>x.length),id);}});
-ok('C Grupo B continua neutro',()=>{for(const id of B){const p=T.OPERATOR_VISUALS[id];assert.ok(Object.values(p.proportions).every(v=>v===1));assert.ok(Object.values(p.parts).every(x=>x.length===0));}});
+ok('C F3 Grupo B possui identidade declarativa',()=>{for(const id of B){const p=T.OPERATOR_VISUALS[id];assert.ok(p.build&&p.portrait,id);}});
 ok('D IDs corretos; harden não existe',()=>{assert.deepStrictEqual(Array.from(T.OPERATOR_VISUAL_IDS),A.concat(B));assert.strictEqual(T.OPERATOR_VISUALS.harden,undefined);});
 ok('E CHARS mecânico não é escrito pelo bloco F2',()=>{const b=SRC.slice(SRC.indexOf('PR15.5-F2 · GRUPO A'),SRC.indexOf('const OPERATOR_VISUALS=',SRC.indexOf('PR15.5-F2 · GRUPO A')));assert.ok(!/CHARS\s*\[|CHARS\./.test(b));});
 ok('F hitbox fora do schema e r dos oito operadores permanece positivo',()=>{for(const c of T.CHARS){assert.ok(c.r>0);assert.ok(!('r' in T.OPERATOR_VISUALS[c.id]));}});
@@ -57,7 +57,7 @@ ok('T silhueta monocromática com arma: quatro hashes únicos',()=>assert.strict
 ok('U silhueta monocromática SEM arma: quatro hashes únicos',()=>assert.strictEqual(new Set(A.map(id=>hash(bodyOps(id,0,14,true)))).size,4));
 ok('V oito octantes: quatro assinaturas únicas em cada ângulo',()=>{for(let i=0;i<8;i++)assert.strictEqual(new Set(A.map(id=>hash(bodyOps(id,i*Math.PI/4,14,true)))).size,4,'octante '+i);});
 ok('W escalas r=13/14/16 mantêm quatro assinaturas',()=>{for(const r of [13,14,16])assert.strictEqual(new Set(A.map(id=>hash(bodyOps(id,.8,r,true)))).size,4,'r='+r);});
-ok('X Grupo B renderiza byte-equivalente ao default',()=>{for(const id of B)assert.strictEqual(hash(bodyOps(id,.3,14,false)),hash(ops(`drawUnit(500,400,.3,14,${PAL},{wi:0,walk:.4,phase:0})`)),id);});
+ok('X F3 Grupo B não renderiza byte-equivalente ao default',()=>{for(const id of B)assert.notStrictEqual(hash(bodyOps(id,.3,14,false)),hash(ops(`drawUnit(500,400,.3,14,${PAL},{wi:0,walk:.4,phase:0})`)),id);});
 ok('Y callers não-operador continuam no default',()=>{for(const n of ['drawShip','drawEchoEntity','drawShadow','pr15PresDraw'])assert.ok(!/getOperatorVisual/.test(fnBody(n)),n);});
 ok('Z BULWARK operador difere do inimigo bulwark em monocromático',()=>{const a=hash(bodyOps('bulwark',0,14,true));const b=hash(ops(`drawEnemy({type:"bulwark",x:500,y:400,r:14,hp:10,maxHp:10,spawnT:0,flashT:0,aim:0,color:"#777",slowT:0})`));assert.notStrictEqual(a,b);});
 ok('AA tabela e perfis congelados em profundidade útil',()=>{assert.ok(Object.isFrozen(T.OPERATOR_VISUALS));for(const id of A){const p=T.OPERATOR_VISUALS[id];assert.ok(Object.isFrozen(p)&&Object.isFrozen(p.proportions)&&Object.isFrozen(p.parts));for(const l of Object.values(p.parts)){assert.ok(Object.isFrozen(l));for(const q of l)assert.ok(Object.isFrozen(q));}}});
