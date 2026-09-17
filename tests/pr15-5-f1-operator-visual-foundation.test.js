@@ -96,8 +96,17 @@ const F1A=SRC.indexOf('PR15.5-F1 · FUNDAÇÃO VISUAL DECLARATIVA');
 const F1B=SRC.indexOf('/* --- armas empunhadas');
 const DU=fnRange('drawUnit'),DP=fnRange('drawPlayer');
 DU[0]=SRC.indexOf('/* --- unidade humanoide completa');   // zona inclui o comentário próprio
+/* PR15.5-F2-R1 · AJUSTE DOCUMENTADO (§55)
+   O R1 adicionou UM consumidor autorizado da fundação: o retrato do
+   seletor. O brief §23 proíbe explicitamente manter um design no Canvas
+   e outro no SVG, então o portrait DEVE ler OPERATOR_VISUALS — é a
+   fonte de verdade compartilhada. A contenção continua valendo: a
+   fundação segue proibida em gameplay/save/entidades (L01/L02/L04). */
+const CP=fnRange('charPortraitBuild'),CP2=fnRange('charPortrait');
+CP[0]=SRC.indexOf('PR15.5-F2-R1 · RETRATO DERIVADO');  // zona inclui o comentário próprio
 const F1_RE=/OPERATOR_VISUALS|DEFAULT_OPERATOR_VISUAL|getOperatorVisual|drawOperatorParts|operatorVisualProfile|OPERATOR_VISUAL_IDS|opts\.visual/;
-function inF1Zone(i){return (i>=F1A&&i<F1B)||(i>=DU[0]&&i<DU[1])||(i>=DP[0]&&i<DP[1]);}
+function inF1Zone(i){return (i>=F1A&&i<F1B)||(i>=DU[0]&&i<DU[1])||(i>=DP[0]&&i<DP[1])||
+  (i>=CP[0]&&i<CP[1])||(i>=CP2[0]&&i<CP2[1]);}
 /* injeta opts.visual no cenário drawUnit(...) — verifica que injetou mesmo */
 function withVisual(expr,vis){
   const out=expr.replace(/\}\)$/,',visual:'+vis+'})');
@@ -326,8 +335,14 @@ ok('F05 assimetria: side −1 espelha a peça no eixo do corpo (translate invert
   const mk=s=>[{k:'rect',x:.5,y:0,w:.4,h:.2,rot:0,side:s,pal:'edge'}];
   const a=opsOf(()=>T.drawOperatorParts(mk(1),14,pal));
   const b=opsOf(()=>T.drawOperatorParts(mk(-1),14,pal));
-  const ta=a.find(e=>e[0]==='translate')[1],tb=b.find(e=>e[0]==='translate')[1];
-  assert.deepStrictEqual(tb,[-ta[0],ta[1]]);});
+  /* PR15.5-F2-R1 · AJUSTE DOCUMENTADO (§55 + §50)
+     A posição da peça passou a ser baked no path (economia de
+     save/translate/restore por peça, necessária para caber no orçamento
+     do §50). O invariante de assimetria é o MESMO — só é observado no
+     x do rect emitido em vez de no translate. */
+  const ra=a.find(e=>e[0]==='rect')[1],rb=b.find(e=>e[0]==='rect')[1];
+  assert.strictEqual(rb[0],-ra[0]-ra[2],'side −1 espelha a peça no eixo do corpo');
+  assert.strictEqual(rb[1],ra[1]);});
 
 /* ============ G · DRAWUNIT SEM PERFIL = LEGADO ============ */
 ok('G01 drawUnit: sem visual == visual:DEFAULT == cada perfil neutro do Grupo B',()=>{
@@ -426,7 +441,10 @@ ok('M01 player.r continua sendo o stat do operador (hitbox intocada)',()=>{
     seeded(sandbox,1234+i,()=>run('setChar('+i+');startRun({noEchoes:true,freshMeta:true});'));
     assert.strictEqual(T.getPlayer().r,T.CHARS[i].r,T.CHARS[i].id);}});
 ok('M02 schema do perfil contém APENAS as chaves estruturais (sem r/hitbox/geom mecânica)',()=>{
-  const ALLOW=['effects','id','offset','palette','parts','pose','proportions','weapon'];
+  /* PR15.5-F2-R1: schema estendido genericamente com `build` (construção
+     corporal) e `portrait` (enquadramento do busto). Ambos continuam
+     PURAMENTE visuais — a proibição de chave mecânica segue valendo. */
+  const ALLOW=['build','effects','id','offset','palette','parts','portrait','pose','proportions','weapon'];
   const ALLOW_P=['arms','head','legs','pack','torso'];
   for(const id of OP_IDS){
     const p=T.OPERATOR_VISUALS[id];
