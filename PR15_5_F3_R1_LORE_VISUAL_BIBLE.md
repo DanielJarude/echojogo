@@ -318,3 +318,7 @@ R3 não altera `drawUnit` ou os sprites de gameplay R1. Não foi possível regis
 O feedback do R3 foi preservado: a leitura facial continua sendo a base aprovada. R4 diferencia os oito personagens dentro dessa leitura através de largura/altura de cabeça, ângulo, centro facial, espaçamento ocular, tons de pele separados da paleta do operador, expressões, framing de ombros e assimetrias. VECTOR permanece clínico e simétrico; WRAITH estreito/inclinado; BULWARK largo e pesado; PYRE intenso com respirador; HARDEN vigilante; NÔMADE mais exposto e vivido; ECHO-0 fragmentado de forma impossível; REVENANT alongado e reconstruído.
 
 Essas características físicas são interpretações visuais, não fatos biográficos novos. O renderer continua declarativo, cacheado e genérico. Gameplay F3-R1 permanece congelado.
+
+## F3-R5 ART DIRECTION PROTOTYPE
+
+R4 foi HUMAN ART DIRECTION REJECTED por composição inclinada, quadrado interno e estética de avatar procedural. R5 não altera gameplay e testa uma nova direção somente para VECTOR, PYRE, NÔMADE e ECHO-0: portrait 2.5D ilustrado procedural, upright, centralizado, sem painel interno, com paths orgânicos, planos de sombra, skin/material separados e equipamento como framing. O protótipo não estende o novo tratamento aos outros quatro operadores. Não foi criado commit nem push nesta etapa.

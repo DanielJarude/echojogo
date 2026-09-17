@@ -183,7 +183,7 @@ for(const id of A){
       assert.ok(svg.toLowerCase().includes(p[c].toLowerCase())||
         /#[0-9a-f]{6}/.test(svg),id+' retrato não usa canal '+c);}
     /* e precisa ter volume: extrusão + face por bloco ⇒ muitos paths */
-    assert.ok((svg.match(/<rect/g)||[]).length>=8,id+' retrato sem blocos pixel');
+    assert.ok((svg.match(/<rect|<path/g)||[]).length>=8,id+' retrato sem blocos pixel');
     assert.ok(svg.includes('viewBox="0 0 64 64"'),id+' viewBox alterado');});
 }
 ok('R F3 todos os oito portraits usam o renderer novo',()=>{for(const id of A.concat(B))assert.ok(portrait(id,46).includes('<svg'),id);});

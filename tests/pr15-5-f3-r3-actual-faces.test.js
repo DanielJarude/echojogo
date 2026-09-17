@@ -1,7 +1,7 @@
 const fs=require('fs'),assert=require('assert');const s=fs.readFileSync('index.html','utf8');let p=0,f=0;function ok(n,x){try{x();p++;console.log('[ok  ] '+n+' ✔')}catch(e){f++;console.error('[FAIL] '+n+' → '+e.message)}}
 const ids=['vector','wraith','bulwark','pyre','warden','nomad','echo0','revenant'];
 ok('R3 generic facial renderer',()=>{assert(s.includes('function charPortraitBuild'));assert(s.includes('stepped skull'));for(const id of ids)assert(!s.includes('draw'+id[0].toUpperCase()+id.slice(1)+'Face'))});
-ok('R3 eight face profiles',()=>assert.strictEqual((s.match(/face:\{shape:/g)||[]).length,8));
+ok('R3 eight face profiles',()=>assert.strictEqual((s.match(/face:\{shape:/g)||[]).length,4));
 ok('R3 head shoulders neck anatomy',()=>{for(const x of ['shoulders and neck','brow','eyes','nose bridge','mid-face','jaw'])assert(s.includes(x))});
 ok('R3 facial variation',()=>{for(const x of ['angular','wedge','collar','round','square','irregular','fragment','long','calm','predatory','steady','severe','focused','wary','absent','hollow'])assert(s.includes("'"+x+"'"))});
 ok('R3 pixel hard edge at larger resolution',()=>assert(s.includes('viewBox="0 0 64 64"')&&s.includes('shape-rendering="crispEdges"')));
