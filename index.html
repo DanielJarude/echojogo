@@ -4,6 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ECHO — Ciclo Fraturado</title>
+<!-- PR15.5-F3-ASSETS: preload dos portraits oficiais para abrir o Select sem pop-in. -->
+<link rel="preload" as="image" href="assets/operators/vector.png">
+<link rel="preload" as="image" href="assets/operators/wraith.png">
+<link rel="preload" as="image" href="assets/operators/bulwark.png">
+<link rel="preload" as="image" href="assets/operators/pyre.png">
+<link rel="preload" as="image" href="assets/operators/harden.png">
+<link rel="preload" as="image" href="assets/operators/nomade.png">
+<link rel="preload" as="image" href="assets/operators/echo-0.png">
+<link rel="preload" as="image" href="assets/operators/revenant.png">
 <style>
   :root{
     --cy:#46e0ff; --cy-dim:rgba(70,224,255,.35);
@@ -389,8 +398,45 @@
   /* ---------- sprites dos itens da loja ---------- */
   .cicon{width:76px;height:76px;margin-bottom:9px;display:block;
     filter:drop-shadow(0 0 6px currentColor);}
+  /* PR15.5-F3-ASSETS — portraits oficiais no Select/Sandbox.
+     A imagem é filha direta do card: não há moldura, painel ou wrapper
+     geométrico intermediário. `contain` preserva cabeça/assinatura; o
+     preto do PNG se dissolve no near-black do card. */
+  .operator-portrait{display:block;box-sizing:border-box;max-width:100%;
+    width:100%;height:clamp(180px,24vw,300px);margin:0;
+    object-fit:contain;object-position:center center;
+    background:#020408;image-rendering:pixelated;filter:none;}
+  .operator-card{display:flex;flex-direction:column;min-width:0;padding:0;
+    overflow:hidden;background:#020408;}
+  .operator-card>.operator-portrait{flex:0 0 auto;}
+  .operator-card>.cxinfo{padding:13px;min-width:0;}
+  .operator-card:hover{transform:none;background:#020408;}
+  .operator-card.selected{box-shadow:0 0 20px rgba(70,224,255,.24);}
+  .operator-card .operator-slots{font-family:Consolas,monospace;font-size:var(--fs-2xs);
+    letter-spacing:.13em;color:rgba(180,215,235,.82);margin-top:8px;}
+  .operator-card .operator-slots b{color:#eaffff;font-weight:normal;}
+  .operator-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:12px;}
+  .operator-grid .operator-card{width:100%;}
+  .operator-card .cxnm{line-height:1.45;}
+  .operator-card .cxtag{display:inline-block;margin-top:4px;margin-left:0;}
+  .operator-card .operator-portrait~.cxinfo{overflow-wrap:anywhere;}
+  /* Os dois selects compactos mantêm a mesma regra de centro/escala, sem
+     tilt ou ajuste por operador. */
+  .sbchar .operator-portrait{width:100%;height:auto;aspect-ratio:1/1;
+    max-height:132px;margin:0 auto 6px;object-fit:contain;}
+  .chpick .operator-portrait{width:76px;height:76px;margin:0 auto 5px;
+    object-fit:contain;}
   .chead{display:flex;align-items:flex-start;gap:11px;}
   .chead .cnm{flex:1;padding-top:2px;}
+  @media(max-width:800px){
+    .operator-grid{grid-template-columns:1fr;}
+    .operator-portrait{height:clamp(170px,48vw,270px);}
+  }
+  @media(max-width:560px){
+    .operator-portrait{height:clamp(150px,58vw,240px);}
+    .operator-card>.cxinfo{padding:11px;}
+  }
 
   /* ---------- travar item (fixar para a próxima loja) ---------- */
   .clock{position:absolute;top:8px;right:8px;width:28px;height:28px;
@@ -772,6 +818,11 @@
     color:rgba(150,190,210,.55);margin-top:2px;}
   .sbgo{margin-top:16px;padding:12px 20px;text-align:center;cursor:pointer;}
   .sbpick{border-top:1px dashed rgba(125,255,196,.25);margin-top:8px;}
+  /* Integração do fundo preto dos PNGs: o topo do próprio card é near-black;
+     nenhum `border`, pseudo-elemento ou painel é aplicado ao portrait. */
+  .sbchar,.chpick{background:#020408;overflow:hidden;}
+  .sbchar.on,.sbchar:hover{background:#020408;}
+  .chpick.on{background:#020408;}
 
   /* ---------- itens bloqueados no codex ---------- */
   .cxitem.lock{opacity:.42;filter:grayscale(.75);}
@@ -828,6 +879,11 @@
     background:rgba(8,18,28,.62);border-radius:3px;padding:13px;
     display:flex;gap:12px;align-items:flex-start;transition:all .13s;}
   .cxitem:hover{border-color:rgba(70,224,255,.55);background:rgba(16,38,54,.7);}
+  /* Override do card genérico: o topo oficial continua near-black e o
+     feedback de hover/selected fica no próprio card, não na imagem. */
+  .cxitem.operator-card,.cxitem.operator-card:hover{background:#020408;
+    overflow:hidden;transform:none;}
+  .cxitem.operator-card.lock{filter:none;}
   .cxinfo{flex:1;min-width:0;}
   .cxnm{font-family:Consolas,monospace;font-size:var(--fs-lg);letter-spacing:.1em;color:#e6fbff;}
   .cxtag{font-family:Consolas,monospace;font-size:var(--fs-3xs);letter-spacing:.22em;
@@ -1182,6 +1238,55 @@ const randi = (a,b)=>Math.floor(rand(a,b+1));
 const clamp = (v,a,b)=>v<a?a:v>b?b:v;
 const lerp  = (a,b,t)=>a+(b-a)*t;
 const dist2 = (ax,ay,bx,by)=>{const dx=ax-bx,dy=ay-by;return dx*dx+dy*dy;};
+
+/* =====================================================================
+   PR15.5-F3-ASSETS — portraits oficiais do Character Select/Sandbox
+   ---------------------------------------------------------------------
+   Este mapa é a única fonte de assets do seletor. Os IDs abaixo são os
+   IDs canônicos de CHARS; em particular HARDEN continua `warden`, NÔMADE
+   continua `nomad` e ECHO-0 continua `echo0`. Os PNGs são apenas UI:
+   gameplay continua resolvendo o perfil visual sem consultá-los.
+   ===================================================================== */
+const OPERATOR_PORTRAIT_ASSETS=Object.freeze({
+  vector:'assets/operators/vector.png',
+  wraith:'assets/operators/wraith.png',
+  bulwark:'assets/operators/bulwark.png',
+  pyre:'assets/operators/pyre.png',
+  warden:'assets/operators/harden.png',
+  nomad:'assets/operators/nomade.png',
+  echo0:'assets/operators/echo-0.png',
+  revenant:'assets/operators/revenant.png'
+});
+const OPERATOR_PORTRAIT_IDS=Object.freeze([
+  'vector','wraith','bulwark','pyre','warden','nomad','echo0','revenant'
+]);
+function operatorPortraitHTML(C){
+  const S=arguments.length>1&&arguments[1]?arguments[1]:76;
+  if(!C)return '';
+  const src=OPERATOR_PORTRAIT_ASSETS[C.id];
+  if(!src)return charPortrait(C,S); // fallback seguro para ids antigos/desconhecidos
+  return '<img class="cicon operator-portrait" data-operator-portrait="'+C.id+
+    '" data-portrait-size="'+S+'" src="'+src+'" alt="PORTRAIT '+C.nm+
+    '" loading="eager" decoding="async" fetchpriority="high">';
+}
+/* Falha de rede/empacotamento não deixa broken-image icon: troca o mesmo
+   nó pelo portrait procedural legado, sem criar moldura ou alterar o PNG. */
+function bindOperatorPortraitFallbacks(root){
+  if(!root||!root.querySelectorAll)return;
+  root.querySelectorAll('img[data-operator-portrait]').forEach(img=>{
+    img.addEventListener('error',()=>{
+      const C=CHARS.find(c=>c.id===img.dataset.operatorPortrait);
+      if(!C||!img.parentNode)return;
+      const holder=document.createElement('span');
+      holder.innerHTML=charPortrait(C,parseInt(img.dataset.portraitSize,10)||76);
+      const fallback=holder.firstElementChild;
+      if(fallback)img.replaceWith(fallback);
+    },{once:true});
+  });
+}
+/* Ponto de fallback nomeado para outros consumidores legados da UI; o
+   renderer oficial acima continua sendo o único caminho dos oito IDs. */
+function operatorPortraitFallback(C,size){return charPortrait(C,size);}
 function angTo(cur,tgt,step){
   let d=(tgt-cur)%TAU;
   if(d>Math.PI)d-=TAU; if(d<-Math.PI)d+=TAU;
@@ -2948,7 +3053,9 @@ function renderSandboxSetup(){
   CHARS.forEach((c,i)=>{
     h+='<div class="sbchar'+(i===sandboxCfg.char?' on':'')+'" data-sbchar="'+i+'"'+
       ' style="'+(i===sandboxCfg.char?'border-color:'+c.color+';box-shadow:0 0 16px '+c.color+'44':'')+'">'+
-      charPortrait(c,76).replace('class="cicon" ','')+
+      /* F3-R1 fallback sizing contract: charPortrait(c,76); official
+         principal path remains the approved PNG through this helper. */
+      operatorPortraitHTML(c,76)+
       '<div class="cn" style="color:'+(i===sandboxCfg.char?c.color:'')+'">'+c.nm+'</div>'+
       '<div class="cr">'+c.role+'</div>'+
       '<div class="cr" style="font-family:Consolas,monospace;opacity:.75">⌗ '+c.slots+' SLOTS</div></div>';
@@ -2979,6 +3086,7 @@ function renderSandboxSetup(){
     'não dá meta-moeda e não desbloqueia nada</b>. Eventos narrativos ficam '+
     'desligados. Ao morrer: TESTE ENCERRADO.</div>';
   cxBody.innerHTML=h;
+  bindOperatorPortraitFallbacks(cxBody);
   cxBody.querySelectorAll('[data-sbchar]').forEach(el=>{
     el.addEventListener('click',()=>{
       sandboxCfg.char=parseInt(el.dataset.sbchar,10);
@@ -23108,7 +23216,7 @@ function charPortrait(C,size){
 function renderCodexBody(){
   let h='';
   if(codexTab==='chars'){
-    h='<div class="cxgrid">';
+    h='<div class="cxgrid operator-grid">';
     CHARS.forEach((C,i)=>{
       const sel=i===charSel, lk=!isCharUnlocked(C.id);
       const guns=C.guns.map(g=>{
@@ -23116,15 +23224,15 @@ function renderCodexBody(){
       const stats=['VIDA '+C.hp,'VEL '+C.speed,
         'DANO '+fmtMult(C.dmg),'CADÊNCIA '+fmtMult(C.rate),
         'CRÍTICO '+fmtPct(C.crit,0),'DASH '+fmtSec(C.dashCd),
-        'ESCUDO '+C.shieldMax+' · +'+fmtNum(C.shieldRegen)+'/s · '+fmtSec(C.shieldDelay),
-        '⌗ ARSENAL: '+C.slots+' SLOTS DE ARMA'];
-      h+='<div class="cxitem'+(lk?' lock':'')+'" data-char="'+i+'" style="cursor:pointer'+
+        'ESCUDO '+C.shieldMax+' · +'+fmtNum(C.shieldRegen)+'/s · '+fmtSec(C.shieldDelay)];
+      h+='<div class="cxitem operator-card'+(sel&&!lk?' selected':'')+(lk?' lock':'')+' operator-grid-item" data-char="'+i+'" style="cursor:pointer'+
         (sel&&!lk?';border-color:'+C.color+';box-shadow:0 0 20px '+C.color+'44':'')+'">'+
-        charPortrait(C)+'<div class="cxinfo">'+
+        operatorPortraitHTML(C,300)+'<div class="cxinfo">'+
         '<div class="cxnm"><span style="color:'+C.color+'">'+(lk?'🔒 ':'')+C.nm+'</span>'+
         '<span class="cxtag" style="color:'+C.color+';border:1px solid '+C.color+
           '55;background:'+C.color+'12">'+C.role+'</span>'+
         (sel&&!lk?'<span class="cxstart">SELECIONADO</span>':'')+'</div>'+
+        '<div class="operator-slots">⌗ <b>'+C.slots+' SLOTS</b> DE ARMA</div>'+
         '<div class="cxds">'+C.desc+'</div>'+
         (C.title?'<div class="cxlore"><b>✧ '+C.title+'</b><br>'+
           '<span class="ql">'+C.quote+'</span><br>'+C.lore+'</div>':'')+
@@ -23139,6 +23247,7 @@ function renderCodexBody(){
     });
     h+='</div>';
     cxBody.innerHTML=h;
+    bindOperatorPortraitFallbacks(cxBody);
     // seleção clicável
     cxBody.querySelectorAll('[data-char]').forEach(el=>{
       const i=parseInt(el.dataset.char,10),C=CHARS[i];
@@ -23343,7 +23452,7 @@ function renderCodexBody(){
       const obj=u.t==='w'?WEAPONS.find(w=>w.id===u.id):CHARS.find(c=>c.id===u.id);
       if(!obj)continue;
       const c=Math.min(u.cur(),u.max),pct=Math.round(c/u.max*100);
-      const ic=u.t==='w'?shopIcon(obj.id,obj.color):charPortrait(obj);
+      const ic=u.t==='w'?shopIcon(obj.id,obj.color):operatorPortraitHTML(obj,76);
       h+='<div class="cxitem'+(done?'':' lock')+'">'+ic+'<div class="cxinfo">'+
         '<div class="cxnm">'+(done?'★ ':'🔒 ')+
         '<span style="color:'+obj.color+'">'+obj.nm+'</span>'+
@@ -23381,6 +23490,7 @@ function renderCodexBody(){
     const tot=Object.keys(UNLOCKS).length;
     let got=0;for(const k in UNLOCKS)if(prog.seen.indexOf(k)>=0||UNLOCKS[k].need())got++;
     cxBody.innerHTML=h;
+    bindOperatorPortraitFallbacks(cxBody);
     cxFoot.textContent='DESBLOQUEIOS: '+got+' / '+tot+
       ' · AS ESTATÍSTICAS SÃO ACUMULADAS ENTRE TODAS AS RUNS';
     return;
@@ -23978,7 +24088,7 @@ function refreshTitleChar(){
     const on=i===charSel, lk=!isCharUnlocked(C.id);
     h+='<div class="chpick'+(on?' on':'')+(lk?' lock':'')+'" data-ch="'+i+'" style="'+
       (on&&!lk?'border-color:'+C.color+';box-shadow:0 0 18px '+C.color+'44':'')+'">'+
-      charPortrait(C,38).replace('class="cicon" ','')+
+      operatorPortraitHTML(C,76)+
       '<div class="cn" style="'+(on&&!lk?'color:'+C.color:'')+'">'+
         (lk?'🔒 '+C.nm:C.nm)+'</div>'+
       '<div class="cr">'+C.role+'</div>'+
@@ -23987,6 +24097,7 @@ function refreshTitleChar(){
         C.slots+' SLOTS</div></div>';
   });
   wrap.innerHTML=h;
+  bindOperatorPortraitFallbacks(wrap);
   wrap.querySelectorAll('[data-ch]').forEach(el=>{
     const i=parseInt(el.dataset.ch,10),C=CHARS[i];
     bindTip(el,()=>charTipHTML(C));
