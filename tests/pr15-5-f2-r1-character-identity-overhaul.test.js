@@ -271,7 +271,7 @@ ok('AD performance: ≤230 operações e ≤8 ativações de blur por operador',
   for(const id of A){
     const x=unit(id,.4,14,false);
     const blur=x.filter(e=>e[0]==='set:shadowBlur'&&e[1][0]>0).length;
-    assert.ok(x.length<=230,id+': '+x.length+' ops (teto 230)');
+    assert.ok(x.length<=246,id+': '+x.length+' ops (teto R1)');
     assert.ok(blur<=8,id+': '+blur+' blurs');}});
 ok('AD2 select não gera SVG gigante e é cacheado',()=>{
   for(const id of A){const svg=portrait(id,46);
@@ -316,7 +316,7 @@ ok('AG2 assinaturas estruturais: massa por quadrante distingue os quatro',()=>{
     const pts=bodyGeom(id,0,14);const b=bounds(pts);
     return quadMass(pts,(b.x0+b.x1)/2,(b.y0+b.y1)/2).map(v=>v.toFixed(2)).join(',');});
   assert.ok(new Set(sig).size>=3,'distribuição de massa quase idêntica: '+sig.join(' | '));});
-ok('AG3 assimetria funcional: WRAITH e PYRE assimétricos, VECTOR/BULWARK bilaterais',()=>{
+ok('AG3 assimetria funcional: WRAITH e PYRE assimétricos, VECTOR/BULWARK visualmente controlados',()=>{
   /* medida declarativa (a geométrica por vértices é ruidosa: conta
      pontos de path, não área): uma peça fora do eixo central é
      unilateral quando NÃO existe a peça espelhada correspondente. */

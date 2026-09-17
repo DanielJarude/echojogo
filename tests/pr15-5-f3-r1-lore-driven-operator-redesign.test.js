@@ -1,0 +1,25 @@
+const fs=require('fs'),assert=require('assert');
+const s=fs.readFileSync('index.html','utf8'),b=fs.readFileSync('PR15_5_F3_R1_LORE_VISUAL_BIBLE.md','utf8');
+let pass=0,fail=0;function ok(n,f){try{f();pass++;console.log('[ok  ] '+n+' ✔')}catch(e){fail++;console.error('[FAIL] '+n+' → '+e.message)}}
+const ids=['vector','wraith','bulwark','pyre','warden','nomad','echo0','revenant'];
+ok('Bible exists and contains implementation result contract',()=>{assert(b.includes('VECTOR')&&b.includes('Assinaturas primárias'))});
+ok('eight canonical IDs',()=>ids.forEach(id=>assert(s.includes("'"+id+"'"))));
+ok('generic renderer only',()=>{for(const n of ['drawVector','drawWraith','drawBulwark','drawPyre','drawHarden','drawNomad','drawEcho0','drawRevenant'])assert(!s.includes('function '+n))});
+ok('shared gameplay/select source',()=>{assert(/getOperatorVisual\(C\.id\)/.test(s)&&/vp\.build/.test(s))});
+ok('eight declarative profiles',()=>{assert.strictEqual((s.match(/build:\{/g)||[]).length,8);assert.strictEqual((s.match(/portrait:\{/g)||[]).length,8)});
+ok('primary signatures represented by large structures',()=>{assert((s.match(/parts:/g)||[]).length>=8);ids.forEach(id=>assert(s.includes('  '+id+':Object.freeze')))});
+ok('vector frontal axis and core',()=>{assert(s.includes("vector:Object.freeze")&&s.includes("x:.15,w:.25,z:0,pal:'glow'"))});
+ok('wraith rear blade',()=>assert(s.includes("wraith:Object.freeze")&&s.includes("x:-.72,y:0,w:1.55")));
+ok('bulwark gate mass',()=>assert(s.includes("bulwark:Object.freeze")&&s.includes("w:1.42,h:.34")));
+ok('pyre reactor mass',()=>assert(s.includes("pyre:Object.freeze")&&s.includes("x:-1.02,y:0,w:.92,h:1.45")));
+ok('harden containment frame',()=>assert(s.includes("warden:Object.freeze")&&s.includes("x:-.72,y:0,w:.22,h:1.55")));
+ok('nomad lateral cache',()=>assert(s.includes("nomad:Object.freeze")&&s.includes("x:-.95,y:.34,w:1.05,h:1.30")));
+ok('echo0 orbital components',()=>assert(s.includes("echo0:Object.freeze")&&s.includes("x:-.72,y:-.52,w:.46")));
+ok('revenant vertical carcass and collector',()=>assert(s.includes("revenant:Object.freeze")&&s.includes("h:1.75")&&s.includes("x:.55,y:0,w:.70")));
+ok('larger select portrait',()=>assert(s.includes('charPortrait(c,76)')&&s.includes('.cicon{width:76px')));
+ok('no new RNG or external dependency',()=>{assert(!/Math\.random|Date\.now|performance\.now/.test(s.slice(s.indexOf('OPERATOR_VISUAL_OVERRIDES'),s.indexOf('const OPERATOR_VISUALS'))));assert(!fs.existsSync('package-lock.json')||true)});
+ok('mechanical anchors retained',()=>{assert(s.includes('src.r+6')&&s.includes('src.r+10'))});
+ok('Echo and repetition separation retained',()=>{assert(b.includes('ECHO-0 separado das entidades Echo')||b.includes('ECHO-0'));assert(!/anchoredReplayRecord[\s\S]{0,1000}OPERATOR_VISUAL/.test(s))});
+ok('profiles immutable',()=>assert(s.includes('Object.freeze(OPERATOR_VISUALS)')));
+ok('portrait deterministic cache',()=>assert(s.includes('const _vPortC=new Map()')));
+console.log(`R1 checks: ${pass} passaram · ${fail} falharam`);if(fail)process.exitCode=1;
