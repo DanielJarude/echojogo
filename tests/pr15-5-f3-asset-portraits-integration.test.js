@@ -1,18 +1,19 @@
 'use strict';
 /* PR15.5-F3-ASSETS — contrato técnico do Character Select/Sandbox.
    A suíte prova integração e guardrails; alinhamento/legibilidade final
-   continuam dependentes do HUMAN PLAYTEST pedido pela PR. */
+   continuam dependentes do HUMAN PLAYTEST pedido pela PR.
+   AUDIT-FIX-A: o baseline mecânico de CHARS deixou de instanciar fontes
+   históricas via Git (quebrava clones shallow). Os valores da base
+   F3-R1 estão congelados em tests/fixtures/f3_chars_mechanical.json
+   (projeção semântica dos campos mecânicos — sem hash de bloco). */
 const assert=require('assert');
-const {execFileSync}=require('child_process');
 const fs=require('fs');
 const path=require('path');
 
 const ROOT=path.resolve(__dirname,'..');
 const SRC=fs.readFileSync(path.join(ROOT,'index.html'),'utf8');
 const PKG=JSON.parse(fs.readFileSync(path.join(ROOT,'package.json'),'utf8'));
-const BASE_REF='0251f072ff55fac3139da0e750d2ae1c8eb846f5';
-const BASE_SRC=execFileSync('git',['show',BASE_REF+':index.html'],{
-  cwd:ROOT,encoding:'utf8',maxBuffer:16*1024*1024});
+const GOLDEN=require('./fixtures/f3_chars_mechanical.json');
 const IDS=['vector','wraith','bulwark','pyre','warden','nomad','echo0','revenant'];
 const FILES=['vector.png','wraith.png','bulwark.png','pyre.png','harden.png',
   'nomade.png','echo-0.png','revenant.png'];
@@ -187,11 +188,10 @@ ok('18. Gameplay não consulta o mapa de portraits',()=>{
   assert.ok(!gameplay.includes('OPERATOR_PORTRAIT_ASSETS'));
   assert.ok(!gameplay.includes('operatorPortraitHTML'));
 });
-ok('19. CHARS mecânico permanece igual à base F3-R1/0251f07',()=>{
+ok('19. CHARS mecânico permanece igual ao golden da base F3-R1 (fixture)',()=>{
   const current=projectMechanicalChars(SRC);
-  const baseline=projectMechanicalChars(BASE_SRC);
   assert.deepStrictEqual(Object.keys(current.vector),MECHANICAL_FIELDS);
-  assert.deepStrictEqual(current,baseline);
+  assert.deepStrictEqual(current,GOLDEN.chars);
 });
 ok('20. r/hitbox dos 8 operadores permanece intocado',()=>{
   const vals=[14,13,16,14,15,14,14,13];

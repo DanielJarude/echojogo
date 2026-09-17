@@ -460,9 +460,13 @@ ok('Z01 1000 impactos simultâneos não ultrapassam PARTS_MAX (900)',()=>{
   run('parts.length=0');
 });
 
-/* ============ PROVA MECÂNICA BASE VS HEAD ============ */
-console.log('\n[MEC] prova mecânica base vs HEAD');
-const srcBase = readSource('6f532f72ed1680a68704e85f43b593e204081422');
+/* ============ PROVA MECÂNICA VS GOLDEN (AUDIT-FIX-A) ============
+   O baseline pré-E9 (commit 6f532f72) foi congelado em
+   tests/fixtures/pr15_5_e9_mechanical.json (projeção semântica por arma:
+   player + inimigos + contagem de projéteis após 60 frames, RNG semeado).
+   A suíte não depende mais de objetos do histórico Git. */
+console.log('\n[MEC] prova mecânica vs golden');
+const GOLDEN = require('./fixtures/pr15_5_e9_mechanical.json');
 function runSimCompare(source, weaponId) {
   const sim = world(source);
   sim.seed(98765);
@@ -484,10 +488,9 @@ function runSimCompare(source, weaponId) {
   };
 }
 for(const id of ALL_RANGED){
-  ok('MEC·'+id+' mecânica 100% idêntica à base',()=>{
-    const bRes = JSON.parse(JSON.stringify(runSimCompare(srcBase, id)));
+  ok('MEC·'+id+' mecânica 100% idêntica ao golden da base',()=>{
     const hRes = JSON.parse(JSON.stringify(runSimCompare(SRC, id)));
-    assert.deepStrictEqual(hRes, bRes, 'divergência mecânica em ' + id);
+    assert.deepStrictEqual(hRes, GOLDEN.mech[id], 'divergência mecânica em ' + id);
   });
 }
 

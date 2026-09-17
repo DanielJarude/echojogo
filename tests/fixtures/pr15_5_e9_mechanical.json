@@ -1,0 +1,613 @@
+{
+ "_provenance": "Provenance: frozen golden fixture (AUDIT-FIX-A). Values extracted from the historical base commit cited per key, using the exact expressions the original test compared. Regeneration requires human review. Base: 6f532f72ed1680a68704e85f43b593e204081422 (pré-PR15.5-E9). runSimCompare replicado do teste original (lado base).",
+ "mech": {
+  "plasma": {
+   "player": {
+    "hp": 100,
+    "vx": -55,
+    "vy": 0,
+    "xp": 0,
+    "coins": 0
+   },
+   "enemies": [
+    {
+     "type": "tank",
+     "hp": 489,
+     "dead": false,
+     "burn": 0,
+     "chill": 0,
+     "shock": 0,
+     "corr": 0,
+     "bleed": 0
+    },
+    {
+     "type": "chaser",
+     "hp": 500,
+     "dead": false,
+     "burn": 0,
+     "chill": 0,
+     "shock": 0,
+     "corr": 0,
+     "bleed": 0
+    }
+   ],
+   "projectilesCount": 0
+  },
+  "shotgun": {
+   "player": {
+    "hp": 100,
+    "vx": -210,
+    "vy": 0,
+    "xp": 0,
+    "coins": 0
+   },
+   "enemies": [
+    {
+     "type": "tank",
+     "hp": 479,
+     "dead": false,
+     "burn": 0,
+     "chill": 0,
+     "shock": 0,
+     "corr": 0,
+     "bleed": 0
+    },
+    {
+     "type": "chaser",
+     "hp": 500,
+     "dead": false,
+     "burn": 0,
+     "chill": 0,
+     "shock": 0,
+     "corr": 0,
+     "bleed": 0
+    }
+   ],
+   "projectilesCount": 0
+  },
+  "orb": {
+   "player": {
+    "hp": 100,
+    "vx": -40,
+    "vy": 0,
+    "xp": 0,
+    "coins": 0
+   },
+   "enemies": [
+    {
+     "type": "tank",
+     "hp": 476,
+     "dead": false,
+     "burn": 0,
+     "chill": 0,
+     "shock": 0,
+     "corr": 0,
+     "bleed": 0
+    },
+    {
+     "type": "chaser",
+     "hp": 476,
+     "dead": false,
+     "burn": 0,
+     "chill": 0,
+     "shock": 0,
+     "corr": 0,
+     "bleed": 0
+    }
+   ],
+   "projectilesCount": 0
+  },
+  "flamer": {
+   "player": {
+    "hp": 100,
+    "vx": -8,
+    "vy": 0,
+    "xp": 0,
+    "coins": 0
+   },
+   "enemies": [
+    {
+     "type": "tank",
+     "hp": 490.65,
+     "dead": false,
+     "burn": 2.400000000000003,
+     "chill": 0,
+     "shock": 0,
+     "corr": 0,
+     "bleed": 0
+    },
+    {
+     "type": "chaser",
+     "hp": 500,
+     "dead": false,
+     "burn": 0,
+     "chill": 0,
+     "shock": 0,
+     "corr": 0,
+     "bleed": 0
+    }
+   ],
+   "projectilesCount": 0
+  },
+  "rail": {
+   "player": {
+    "hp": 100,
+    "vx": -280,
+    "vy": 0,
+    "xp": 0,
+    "coins": 0
+   },
+   "enemies": [
+    {
+     "type": "tank",
+     "hp": 422,
+     "dead": false,
+     "burn": 0,
+     "chill": 0,
+     "shock": 0,
+     "corr": 0,
+     "bleed": 0
+    },
+    {
+     "type": "chaser",
+     "hp": 436.04,
+     "dead": false,
+     "burn": 0,
+     "chill": 0,
+     "shock": 0,
+     "corr": 0,
+     "bleed": 0
+    }
+   ],
+   "projectilesCount": 0
+  },
+  "smg": {
+   "player": {
+    "hp": 100,
+    "vx": -22,
+    "vy": 0,
+    "xp": 0,
+    "coins": 0
+   },
+   "enemies": [
+    {
+     "type": "tank",
+     "hp": 495.8,
+     "dead": false,
+     "burn": 0,
+     "chill": 0,
+     "shock": 0,
+     "corr": 0,
+     "bleed": 0
+    },
+    {
+     "type": "chaser",
+     "hp": 500,
+     "dead": false,
+     "burn": 0,
+     "chill": 0,
+     "shock": 0,
+     "corr": 0,
+     "bleed": 0
+    }
+   ],
+   "projectilesCount": 0
+  },
+  "cryo": {
+   "player": {
+    "hp": 100,
+    "vx": -60,
+    "vy": 0,
+    "xp": 0,
+    "coins": 0
+   },
+   "enemies": [
+    {
+     "type": "tank",
+     "hp": 487,
+     "dead": false,
+     "burn": 0,
+     "chill": 0.34,
+     "shock": 0,
+     "corr": 0,
+     "bleed": 0
+    },
+    {
+     "type": "chaser",
+     "hp": 500,
+     "dead": false,
+     "burn": 0,
+     "chill": 0,
+     "shock": 0,
+     "corr": 0,
+     "bleed": 0
+    }
+   ],
+   "projectilesCount": 0
+  },
+  "tesla": {
+   "player": {
+    "hp": 100,
+    "vx": -38,
+    "vy": 0,
+    "xp": 0,
+    "coins": 0
+   },
+   "enemies": [
+    {
+     "type": "tank",
+     "hp": 486,
+     "dead": false,
+     "burn": 0,
+     "chill": 0,
+     "shock": 1.1166666666666698,
+     "corr": 0,
+     "bleed": 0
+    },
+    {
+     "type": "chaser",
+     "hp": 489.08,
+     "dead": false,
+     "burn": 0,
+     "chill": 0,
+     "shock": 0,
+     "corr": 0,
+     "bleed": 0
+    }
+   ],
+   "projectilesCount": 0
+  },
+  "acid": {
+   "player": {
+    "hp": 100,
+    "vx": -26,
+    "vy": 0,
+    "xp": 0,
+    "coins": 0
+   },
+   "enemies": [
+    {
+     "type": "tank",
+     "hp": 485.16,
+     "dead": false,
+     "burn": 0,
+     "chill": 0,
+     "shock": 0,
+     "corr": 0.24,
+     "bleed": 0
+    },
+    {
+     "type": "chaser",
+     "hp": 500,
+     "dead": false,
+     "burn": 0,
+     "chill": 0,
+     "shock": 0,
+     "corr": 0,
+     "bleed": 0
+    }
+   ],
+   "projectilesCount": 0
+  },
+  "nail": {
+   "player": {
+    "hp": 100,
+    "vx": -30,
+    "vy": 0,
+    "xp": 0,
+    "coins": 0
+   },
+   "enemies": [
+    {
+     "type": "tank",
+     "hp": 491.15354957747354,
+     "dead": false,
+     "burn": 0,
+     "chill": 0,
+     "shock": 0,
+     "corr": 0,
+     "bleed": 3.0833333333333366
+    },
+    {
+     "type": "chaser",
+     "hp": 500,
+     "dead": false,
+     "burn": 0,
+     "chill": 0,
+     "shock": 0,
+     "corr": 0,
+     "bleed": 0
+    }
+   ],
+   "projectilesCount": 0
+  },
+  "boomer": {
+   "player": {
+    "hp": 100,
+    "vx": -20,
+    "vy": 0,
+    "xp": 0,
+    "coins": 0
+   },
+   "enemies": [
+    {
+     "type": "tank",
+     "hp": 478,
+     "dead": false,
+     "burn": 0,
+     "chill": 0,
+     "shock": 0,
+     "corr": 0,
+     "bleed": 0
+    },
+    {
+     "type": "chaser",
+     "hp": 481.96,
+     "dead": false,
+     "burn": 0,
+     "chill": 0,
+     "shock": 0,
+     "corr": 0,
+     "bleed": 0
+    }
+   ],
+   "projectilesCount": 0
+  },
+  "homing": {
+   "player": {
+    "hp": 100,
+    "vx": -34,
+    "vy": 0,
+    "xp": 0,
+    "coins": 0
+   },
+   "enemies": [
+    {
+     "type": "tank",
+     "hp": 449,
+     "dead": false,
+     "burn": 0,
+     "chill": 0,
+     "shock": 0,
+     "corr": 0,
+     "bleed": 0
+    },
+    {
+     "type": "chaser",
+     "hp": 500,
+     "dead": false,
+     "burn": 0,
+     "chill": 0,
+     "shock": 0,
+     "corr": 0,
+     "bleed": 0
+    }
+   ],
+   "projectilesCount": 0
+  },
+  "mine": {
+   "player": {
+    "hp": 100,
+    "vx": -18,
+    "vy": 0,
+    "xp": 0,
+    "coins": 0
+   },
+   "enemies": [
+    {
+     "type": "tank",
+     "hp": 456,
+     "dead": false,
+     "burn": 0,
+     "chill": 0,
+     "shock": 0,
+     "corr": 0,
+     "bleed": 0
+    },
+    {
+     "type": "chaser",
+     "hp": 456,
+     "dead": false,
+     "burn": 0,
+     "chill": 0,
+     "shock": 0,
+     "corr": 0,
+     "bleed": 0
+    }
+   ],
+   "projectilesCount": 0
+  },
+  "sniper": {
+   "player": {
+    "hp": 100,
+    "vx": -190,
+    "vy": 0,
+    "xp": 0,
+    "coins": 0
+   },
+   "enemies": [
+    {
+     "type": "tank",
+     "hp": 448,
+     "dead": false,
+     "burn": 0,
+     "chill": 0,
+     "shock": 0,
+     "corr": 0,
+     "bleed": 0
+    },
+    {
+     "type": "chaser",
+     "hp": 457.36,
+     "dead": false,
+     "burn": 0,
+     "chill": 0,
+     "shock": 0,
+     "corr": 0,
+     "bleed": 0
+    }
+   ],
+   "projectilesCount": 0
+  },
+  "void": {
+   "player": {
+    "hp": 100,
+    "vx": -50,
+    "vy": 0,
+    "xp": 0,
+    "coins": 0
+   },
+   "enemies": [
+    {
+     "type": "tank",
+     "hp": 470,
+     "dead": false,
+     "burn": 0,
+     "chill": 0,
+     "shock": 0,
+     "corr": 0,
+     "bleed": 0
+    },
+    {
+     "type": "chaser",
+     "hp": 500,
+     "dead": false,
+     "burn": 0,
+     "chill": 0,
+     "shock": 0,
+     "corr": 0,
+     "bleed": 0
+    }
+   ],
+   "projectilesCount": 0
+  },
+  "ricochet": {
+   "player": {
+    "hp": 100,
+    "vx": -40,
+    "vy": 0,
+    "xp": 0,
+    "coins": 0
+   },
+   "enemies": [
+    {
+     "type": "tank",
+     "hp": 488,
+     "dead": false,
+     "burn": 0,
+     "chill": 0,
+     "shock": 0,
+     "corr": 0,
+     "bleed": 0
+    },
+    {
+     "type": "chaser",
+     "hp": 500,
+     "dead": false,
+     "burn": 0,
+     "chill": 0,
+     "shock": 0,
+     "corr": 0,
+     "bleed": 0
+    }
+   ],
+   "projectilesCount": 0
+  },
+  "gatling": {
+   "player": {
+    "hp": 100,
+    "vx": -26,
+    "vy": 0,
+    "xp": 0,
+    "coins": 0
+   },
+   "enemies": [
+    {
+     "type": "tank",
+     "hp": 493.2,
+     "dead": false,
+     "burn": 0,
+     "chill": 0,
+     "shock": 0,
+     "corr": 0,
+     "bleed": 0
+    },
+    {
+     "type": "chaser",
+     "hp": 500,
+     "dead": false,
+     "burn": 0,
+     "chill": 0,
+     "shock": 0,
+     "corr": 0,
+     "bleed": 0
+    }
+   ],
+   "projectilesCount": 0
+  },
+  "prism": {
+   "player": {
+    "hp": 100,
+    "vx": -44,
+    "vy": 0,
+    "xp": 0,
+    "coins": 0
+   },
+   "enemies": [
+    {
+     "type": "tank",
+     "hp": 443.30000000000007,
+     "dead": false,
+     "burn": 0,
+     "chill": 0,
+     "shock": 0,
+     "corr": 0,
+     "bleed": 0
+    },
+    {
+     "type": "chaser",
+     "hp": 500,
+     "dead": false,
+     "burn": 0,
+     "chill": 0,
+     "shock": 0,
+     "corr": 0,
+     "bleed": 0
+    }
+   ],
+   "projectilesCount": 0
+  },
+  "plague": {
+   "player": {
+    "hp": 100,
+    "vx": -30,
+    "vy": 0,
+    "xp": 0,
+    "coins": 0
+   },
+   "enemies": [
+    {
+     "type": "tank",
+     "hp": 484,
+     "dead": false,
+     "burn": 0,
+     "chill": 0,
+     "shock": 0,
+     "corr": 0.1,
+     "bleed": 0
+    },
+    {
+     "type": "chaser",
+     "hp": 500,
+     "dead": false,
+     "burn": 0,
+     "chill": 0,
+     "shock": 0,
+     "corr": 0,
+     "bleed": 0
+    }
+   ],
+   "projectilesCount": 0
+  }
+ }
+}
