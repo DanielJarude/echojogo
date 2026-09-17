@@ -3,13 +3,16 @@
    A suíte prova integração e guardrails; alinhamento/legibilidade final
    continuam dependentes do HUMAN PLAYTEST pedido pela PR. */
 const assert=require('assert');
-const crypto=require('crypto');
+const {execFileSync}=require('child_process');
 const fs=require('fs');
 const path=require('path');
 
 const ROOT=path.resolve(__dirname,'..');
 const SRC=fs.readFileSync(path.join(ROOT,'index.html'),'utf8');
 const PKG=JSON.parse(fs.readFileSync(path.join(ROOT,'package.json'),'utf8'));
+const BASE_REF='0251f072ff55fac3139da0e750d2ae1c8eb846f5';
+const BASE_SRC=execFileSync('git',['show',BASE_REF+':index.html'],{
+  cwd:ROOT,encoding:'utf8',maxBuffer:16*1024*1024});
 const IDS=['vector','wraith','bulwark','pyre','warden','nomad','echo0','revenant'];
 const FILES=['vector.png','wraith.png','bulwark.png','pyre.png','harden.png',
   'nomade.png','echo-0.png','revenant.png'];
@@ -32,6 +35,61 @@ function body(name){
   throw new Error('corpo não fechado: '+name);
 }
 function assetPath(id){return path.join(ROOT,'assets','operators',MAP[id]);}
+
+/* Projeção mecânica deliberadamente exclui texto editorial/visual. O
+   snapshot é extraído da base direta 0251f07 (F3-R1), não do F2. */
+const MECHANICAL_FIELDS=['id','hp','speed','dmg','rate','crit','dashCd','r',
+  'shieldMax','shieldRegen','shieldDelay','shieldStart','slots','guns','sp','apply'];
+function operatorBlock(source,id){
+  const start=source.indexOf("{id:'"+id+"'");
+  assert.ok(start>=0,'operador ausente na base: '+id);
+  const next=source.indexOf("\n\n {id:'",start+1);
+  const end=next>=0?next:source.indexOf('\n];',start);
+  assert.ok(end>start,'bloco CHARS inválido: '+id);
+  return source.slice(start,end);
+}
+function numericField(block,key){
+  const m=block.match(new RegExp('(?:^|[,\\n])\\s*'+key+':\\s*(-?(?:\\d+\\.?\\d*|\\.\\d+))\\s*(?:,|\\n)'));
+  assert.ok(m,key+' ausente no operador');
+  return Number(m[1]);
+}
+function balancedArrowBody(block,label){
+  const start=block.indexOf(label);
+  assert.ok(start>=0,label+' ausente');
+  const open=block.indexOf('{',start);let depth=0,quote=null;
+  for(let i=open;i<block.length;i++){
+    const c=block[i];
+    if(quote){if(c==='\\')i++;else if(c===quote)quote=null;continue;}
+    if(c==='\''||c==='"'||c==='`'){quote=c;continue;}
+    if(c==='{')depth++;
+    else if(c==='}'&&--depth===0)return block.slice(start,i+1);
+  }
+  throw new Error(label+' não fechado');
+}
+function projectMechanicalChars(source){
+  const out={};
+  for(const id of IDS){
+    const block=operatorBlock(source,id);
+    const sp=block.match(/sp:\{id:'([^']+)'[\s\S]*?\bcd:([0-9.]+)/);
+    assert.ok(sp,id+' special ausente');
+    const guns=block.match(/\bguns:\[([^\]]+)\]/);
+    assert.ok(guns,id+' guns ausente');
+    out[id]={
+      id,
+      hp:numericField(block,'hp'),speed:numericField(block,'speed'),
+      dmg:numericField(block,'dmg'),rate:numericField(block,'rate'),
+      crit:numericField(block,'crit'),dashCd:numericField(block,'dashCd'),
+      r:numericField(block,'r'),shieldMax:numericField(block,'shieldMax'),
+      shieldRegen:numericField(block,'shieldRegen'),
+      shieldDelay:numericField(block,'shieldDelay'),
+      shieldStart:numericField(block,'shieldStart'),slots:numericField(block,'slots'),
+      guns:guns[1].match(/'[^']+'/g).map(x=>x.slice(1,-1)),
+      sp:{id:sp[1],cd:Number(sp[2])},
+      apply:balancedArrowBody(block,'apply:p=>')
+    };
+  }
+  return out;
+}
 
 console.log('\nECHO — PR15.5-F3-ASSETS · PORTRAITS OFICIAIS');
 
@@ -129,10 +187,11 @@ ok('18. Gameplay não consulta o mapa de portraits',()=>{
   assert.ok(!gameplay.includes('OPERATOR_PORTRAIT_ASSETS'));
   assert.ok(!gameplay.includes('operatorPortraitHTML'));
 });
-ok('19. CHARS mecânico permanece byte-a-byte igual ao baseline F2-R1',()=>{
-  const a=SRC.indexOf('const CHARS=['),b=SRC.indexOf('\n];',a)+3;
-  assert.strictEqual(crypto.createHash('sha256').update(SRC.slice(a,b)).digest('hex'),
-    '5e3e18db80bc0c023d2cda6f305a4b2fba8d9ee44efb6fa7b826f61f7c8e0207');
+ok('19. CHARS mecânico permanece igual à base F3-R1/0251f07',()=>{
+  const current=projectMechanicalChars(SRC);
+  const baseline=projectMechanicalChars(BASE_SRC);
+  assert.deepStrictEqual(Object.keys(current.vector),MECHANICAL_FIELDS);
+  assert.deepStrictEqual(current,baseline);
 });
 ok('20. r/hitbox dos 8 operadores permanece intocado',()=>{
   const vals=[14,13,16,14,15,14,14,13];
