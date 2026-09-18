@@ -27502,23 +27502,6 @@ function echoEqDynMul(e){
   }
   return Math.max(.2,m);
 }
-function echoEqRangeMul(e){
-  let m=(e&&e.eqFx)?e.eqFx.rangeMul:1;
-  for(const sl of ['n','p','r']){
-    const def=echoEqLiveDef(e,sl);
-    if(def&&def.beh&&def.beh.range)m*=def.beh.range;
-  }
-  return Math.max(.2,m);
-}
-function echoEqRateMul(e){return (e&&e.eqFx)?Math.max(.2,e.eqFx.rateMul):1;}
-function echoEqOrbitMul(e){
-  let m=1;
-  for(const sl of ['n','p','r']){
-    const def=echoEqLiveDef(e,sl);
-    if(def&&def.beh&&def.beh.rr)m*=def.beh.rr;
-  }
-  return Math.max(.3,m);
-}
 function echoEqBeh(e){
   const o={prio:null,guard:false};
   for(const sl of ['n','p','r']){
