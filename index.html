@@ -1284,9 +1284,6 @@ function bindOperatorPortraitFallbacks(root){
     },{once:true});
   });
 }
-/* Ponto de fallback nomeado para outros consumidores legados da UI; o
-   renderer oficial acima continua sendo o único caminho dos oito IDs. */
-function operatorPortraitFallback(C,size){return charPortrait(C,size);}
 function angTo(cur,tgt,step){
   let d=(tgt-cur)%TAU;
   if(d>Math.PI)d-=TAU; if(d<-Math.PI)d+=TAU;
@@ -8056,16 +8053,6 @@ function containEcho(e,dmg,sx,sy){
   return applied;
 }
 function isHostileEcho(o){return !!(o&&o.dis&&o.dis.st==='hostile'&&o.alive);}
-/* alvo de contenção mais próximo no alcance dado (nunca inimigo comum) */
-function nearestHostileEcho(x,y,rad){
-  let best=null,bd=rad*rad;
-  for(const e of echoes){
-    if(!isHostileEcho(e))continue;
-    const d=dist2(x,y,e.x,e.y);
-    if(d<bd){bd=d;best=e;}
-  }
-  return best;
-}
 /* ---- FORÇAR RECUPERAÇÃO (usado pela contenção, DEV e fim de duração) ---- */
 function forceEchoRecovery(e){
   if(!e||!e.dis)return false;
@@ -8953,9 +8940,6 @@ function itemCdReady(p,id,sec){
   if((st.cd||0)>0)return false;
   st.cd=sec||0;return true;
 }
-function itemStateFlags(p){
-  return (p&&p.itemState)||{};
-}
 /* avança timers/stacks/cooldowns e o estado Perfect Shield */
 function itemTick(p,dt){
   if(!p||!dt)return;
@@ -9550,8 +9534,6 @@ const repairCost=()=>Math.max(1,Math.round(22*Math.pow(1.5,player.repairs)*mEff.
 const _mk=()=>((player&&player.markedUp)||1)*((player&&player.shopPersonal)||1)*shopSurchargeMul(player)*moralMarketMul();   // marca do Croupiê · desconto de loja do NÔMADE
 const priceUpg=u=>Math.max(1,Math.round(u.price*mEff.shopMul*mEff.upgMul*_mk()*shopWaveMul()));
 const priceItem=i=>Math.max(1,Math.round(i.price*mEff.shopMul*_mk()*shopWaveMul()));
-/* multiplicador de potência aplicado a upgrades/itens conforme a raridade */
-function rarPower(o){return RARITY[o.rar||0].mul;}
 
 /* --------------- INFRAESTRUTURA DE MODAL --------------- */
 const modalEl=$('modal'),mTag=$('m-tag'),mTitle=$('m-title'),mDesc=$('m-desc'),
@@ -14970,11 +14952,6 @@ function tryDash(){
 }
 
 /* ---------------- combate ---------------- */
-function nearestTarget(x,y,list){
-  let best=null,bd=1e18;
-  for(const e of list){const d=dist2(x,y,e.x,e.y);if(d<bd){bd=d;best=e;}}
-  return best;
-}
 function nearestEnemy(x,y,range){
   let best=null,bd=range*range;
   for(const e of enemies){
@@ -18861,49 +18838,6 @@ function smCommit(){
   if(sandboxRun||sandboxMode)return false;
   try{localStorage.setItem(SM_KEY,JSON.stringify(smRoot));}catch(e){}
   return true;
-}
-/* ---- PR 10.5.2: GERÊNCIA DE DADOS DO SLOT (Configurações → Dados) ----
-   Duas ações destrutivas com confirmação obrigatória:
-   · smClearSlotEchoes — remove os Ecos armazenados no slot atual
-     (memória/registro que origina os aliados). Preserva meta, progresso,
-     unlocks, Codex e os outros slots. O checkpoint da run ativa (se houver)
-     perde os Ecos junto — nenhum estado ressuscita o que foi apagado.
-   · smClearSlotSave — zera COMPLETAMENTE o slot atual (meta, prog, Ecos,
-     run ativa, operador, Codex, unlocks, finais registrados, histórico de
-     eventos do checkpoint). Outros slots e as configurações globais (cfg)
-     não são tocados. */
-function smClearSlotEchoes(){
-  if(!smEnsureSlot())return false;
-  echoQueue=[];
-  saveEchoes();                       // grava slots[curSlot].echoes=[]
-  if(activeRun&&curSlot>=1&&smRoot&&smRoot.slots[curSlot]&&
-     smRoot.slots[curSlot].run===activeRun){
-    activeRun.echoes=[];              // o checkpoint não ressuscita Ecos
-    smCommit();
-  }
-  return true;
-}
-function smClearSlotSave(){
-  if(!smEnsureSlot()||curSlot<1)return false;
-  const i=curSlot;
-  smRoot.slots[i]=smDefaultSlot();    // meta/prog/char/echoes/run → zero
-  /* espelhos vivos voltam ao estado inicial coerente com o slot vazio */
-  activeRun=null;
-  meta={mem:0,spd:0,reroll:0,vault:0,wins:0,endings:[],evars:[]};
-  prog={kills:0,runs:0,waves:0,best:0,wins:0,bosses:0,minis:0,
-    elites:0,crits:0,dashes:0,coins:0,items:0,events:0,echoKills:0,
-    reso:0,melee:0,status:0,seen:[]};
-  echoQueue=[];
-  charSel=0;
-  saveProg();saveMeta();
-  smCommit();
-  return true;
-}
-/* após uma limpeza, qualquer tela de slot aberta atrás do painel é
-   redesenhada (sem exigir reinício); o painel em si é re-renderizado
-   pelo próprio cfgRow. */
-function refreshAfterSlotWipe(){
-  if(state==='slotMenu')showSlotMenu();
 }
 /* ---- PR 10.5.2: GERÊNCIA DE DADOS DO SLOT (Configurações → Dados) ----
    Duas ações destrutivas com confirmação obrigatória:
@@ -27263,8 +27197,6 @@ function fracRestoreEquipment(){
 const EQ_CAT={n:{lab:'NÚCLEO',col:'#8ff6ff'},p:{lab:'PROTOCOLO',col:'#c9a9ff'},
   r:{lab:'RELÍQUIA',col:'#ffd9a0'}};
 const EQ_SLOT_KEY={n:'n',p:'p',r:'r'};
-function eqCatName(c){return (EQ_CAT[c]||EQ_CAT.n).lab;}
-function eqOriginCol(id){const it=echoEqById(id);return it?it.col:'#cfe9f5';}
 /* ---------------- CATÁLOGO ---------------- */
 const ECHO_EQUIP=[
 /* ============ NEUTROS (6) ============ */
