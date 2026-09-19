@@ -143,7 +143,17 @@ const mechanical={
      usar 4× rand()/frame e passou a derivar de runTime + e.visualSeed
      (cópias ciano/magenta agora anti-correlacionadas). jj, strikeT e
      vp.lean intactos; nenhum outro ramo de drawEnemy foi tocado. */
-  "drawEnemy": "93a0eba8f7b09078852d54bb5898b788d62dfd143ff2d807249424fd8026b233",
+  /* PR-VISUAL: re-baseline do hash do TEXTO-FONTE de drawEnemy. O rework
+     de leitura dos inimigos trocou a sombra genérica única pela PEGADA
+     por família (drawEnemyFootprint), acrescentou a cunha de perigo
+     compartilhada (drawEnemyDangerMark) e redesenhou a geometria de
+     swarm, orbiter, bulwark, splitter, phantom e singular, além de somar
+     uma auréola de contraste aos demais. Nada mecânico foi tocado:
+     EDEFS, hitbox, IA, spawn, dano e economia seguem idênticos (provado
+     pelos asserts M/E deste e dos outros arquivos) e `random: 0`
+     continua valendo em TODOS os cenários abaixo — o renderer segue
+     sendo observador puro. */
+  "drawEnemy": "65c8a4037f78665cd41c71a7ef4bf50dedc8089c2d85364cbe45b5b456c31830",
   /* PR15.5-E1: re-baseline do hash do TEXTO-FONTE, não do resultado.
      drawProjectile foi refatorado de um `if(orb)` binário para dispatch
      com helpers (projectileUsesOrbShape / projectileRangeFade /
@@ -269,41 +279,50 @@ for(const [name,hash] of Object.entries(mechanical))ok('Mecânica/RNG intactos: 
    drawSwings e meleeDrawTrail por mudança intencional (ver `mechanical`
    acima). A cobertura de determinismo vive em
    tests/pr15-5-e0-visual-determinism.test.js.                        */
+/* RE-BASELINE PR-VISUAL — GRAMÁTICA DE LEITURA DOS INIMIGOS
+   `hashCanvas` mudou de B a I porque a sequência de desenho dos inimigos
+   mudou de propósito: pegada por família, cunha de perigo compartilhada,
+   silhuetas novas de swarm/orbiter/bulwark/splitter/phantom/singular e
+   auréola de contraste. O cenário A continua BIT-IDÊNTICO — ele não
+   contém inimigos, o que confirma que nenhum outro caminho de render foi
+   tocado. O invariante forte segue intacto e é o que importa aqui:
+   `random: 0` nos nove cenários. Nenhuma das formas novas consulta RNG,
+   então o draw não desloca a sequência mecânica da run. */
 const golden={
   "A": {
     "hashCanvas": "92128f38fc4c28e08e4e1f3e62de2c3433383fddfc52e3bd59c31494c0c7ba55",
     "random": 0
   },
   "B": {
-    "hashCanvas": "193cfe5b00d1e8bc167578da27a82a2e64fcf0c4c31c8a681c797ebdfd1cd0b2",
+    "hashCanvas": "66e813deb1550bf0b0fd917d41785c68b5c6d142e80272ad318b6935472e4398",
     "random": 0
   },
   "C": {
-    "hashCanvas": "13d67b2ca4584ebf4ab97bacaaa5bb60e662b7a76d7882c9f00c7b9330268dc6",
+    "hashCanvas": "19fd3670af47272693ea44a5caef8797cef2b9c7dc253944654b3c5dd5c0f8d5",
     "random": 0
   },
   "D": {
-    "hashCanvas": "443c84548afe75be9d0c3af2f572cb2898bfe7f4a4ad75da99bf6647497de441",
+    "hashCanvas": "48a4b865c15ec21ecf02711cc1437e06191caa75def46b4f0fc0e72d0206bf50",
     "random": 0
   },
   "E": {
-    "hashCanvas": "019ac635ee24ef205cd94eeb7f619fc21dafa1a2c0560dcd387dd2247963b9f5",
+    "hashCanvas": "08fff9614a02f6a0126167b3a50fb6d43e7c8c73c0d6df15d157e4f49a0f875b",
     "random": 0
   },
   "F": {
-    "hashCanvas": "517bb713670e0e8a80d041abf71bbcbf212abfcb1c517303842a9b44d6a41866",
+    "hashCanvas": "7980e5c728a070991b289fff74a337a2eb7f8571ec5773630331881f06384e1b",
     "random": 0
   },
   "G": {
-    "hashCanvas": "6f0c0698f53758c088e8c2921ebf7d330c3bc5501428c28dba08b550278198df",
+    "hashCanvas": "1a7d97cdb45f48085ad31aa88ae6d415e0a97a59e396a4cef9830ed06934d901",
     "random": 0
   },
   "H": {
-    "hashCanvas": "f6e465d62f6d50ca51678a430df37bff68018a39445869bfac052137489b596d",
+    "hashCanvas": "b88f9208ae42083186dc09fca461382188a8ca5b316d605bceff75799fd0601c",
     "random": 0
   },
   "I": {
-    "hashCanvas": "d7ead33fced65483f7506e0e30d4b4ca737f806f0687a29a853223b9e554943b",
+    "hashCanvas": "219f1bde01ac3582e0bbfda4d851f082448d0348b9d0a3d798ec5d1f9d6c6278",
     "random": 0
   }
 };
@@ -311,6 +330,11 @@ for(const [id,g] of Object.entries(golden)){
   ok('Cenário '+id+': sequência/argumentos Canvas idênticos à base (corpo neutro Grupo B)',()=>{ready(id);run('player.charId="__legacy__";resize();render()');const r=measure(h,'render()');assert.strictEqual(r.hashCanvas,g.hashCanvas);});
   ok('Cenário '+id+': consumo de RNG de draw preservado',()=>{ready(id);run('player.charId="__legacy__";resize();render()');const r=measure(h,'render()');assert.strictEqual(r.trig.random,g.random);});
 }
-ok('FX-heavy elimina exatamente 7200 sin/cos por render',()=>{ready('H');run('resize();render()');const r=measure(h,'render()');assert.strictEqual(r.trig.sin+r.trig.cos,52);});
+/* PR-VISUAL: 52 → 48. O rework REDUZIU trigonometria no cenário FX-heavy:
+   as asas do Enxame deixaram de ser duas elipses (que custam sin/cos no
+   traçado) e viraram triângulos, e os satélites do Orbitador passaram a
+   derivar de um único par de ângulos. O teto continua sendo um número
+   exato justamente para que qualquer forma nova cara apareça aqui. */
+ok('FX-heavy mantém o orçamento exato de sin/cos por render',()=>{ready('H');run('resize();render()');const r=measure(h,'render()');assert.strictEqual(r.trig.sin+r.trig.cos,48);});
 console.log(`\nResultado: ${pass} passaram · ${fail} falharam`);
 if(fail)process.exitCode=1;
