@@ -347,14 +347,51 @@ test('HUD mostra Shield vazio',()=>{
 });
 
 /* 11. integração estrutural (pipeline preservado) */
-test('damagePlayer() continua sendo o pipeline (call sites intactos)',()=>{
-  const calls=(html.match(/damagePlayer\(/g)||[]).length;
-  assert.ok(calls>=15,'call sites: '+calls);
-  assert.ok(src.indexOf('shieldBroke')>=0,'feedback de break no pipeline');
+test('damagePlayer() continua sendo o pipeline (nenhuma fonte de dano o contorna)',()=>{
+  /* AUDIT-FIX-E2B: antes isto contava ocorrências de "damagePlayer(" no
+     texto de index.html — um número que sobe e desce por motivos que nada
+     têm a ver com o contrato. O contrato real é: o HP do jogador só cai
+     passando por damagePlayer. Aqui o dano ACONTECE (contato de inimigo e
+     projétil hostil) e o pipeline é observado. */
+  const X=code=>vm.runInContext(code,sandbox);
+  const p=freshRun(0);
+  p.x=600;p.y=400;p.hp=300;p.maxHp=300;p.shield=0;p.shieldMax=0;p.invT=0;p.dashT=0;
+  const orig=sandbox.damagePlayer;
+  let chamadas=0;
+  sandbox.damagePlayer=function(){chamadas++;return orig.apply(this,arguments);};
+  try{
+    /* contato: inimigo em cima do jogador */
+    X('enemies=[]');
+    X('spawnEnemy')('chaser',p.x,p.y,5);
+    const e=X('enemies')[0];e.spawnT=0;e.x=p.x;e.y=p.y;
+    const hp0=p.hp;
+    for(let i=0;i<120&&p.hp>=hp0;i++){e.x=p.x;e.y=p.y;e.touchCd=0;p.invT=0;
+      X('updateEnemy')(e,1/60);}
+    assert.ok(p.hp<hp0,'o contato precisa causar dano');
+    assert.ok(chamadas>0,'dano de contato não passou por damagePlayer');
+    /* projétil hostil */
+    const antes=chamadas,hp1=p.hp;p.invT=0;
+    X('projectiles=[]');
+    X('projectiles').push({x:p.x-30,y:p.y,vx:600,vy:0,r:6,dmg:12,team:'enemy',
+      life:2,type:'orb',color:'#f00'});
+    for(let i=0;i<60&&chamadas===antes;i++){p.invT=0;X('updateProjectiles')(1/60);}
+    assert.ok(chamadas>antes,'dano de projétil não passou por damagePlayer');
+    assert.ok(p.hp<hp1,'o projétil precisa causar dano');
+  }finally{sandbox.damagePlayer=orig;}
 });
 test('updatePlayer() integra a regeneração do Shield',()=>{
-  assert.ok(src.indexOf('regenPlayerShield(p,dt)')>=0);
-  assert.ok(src.indexOf('function regenPlayerShield')>=0);
+  /* AUDIT-FIX-E2B: provado por execução — updatePlayer chama regenPlayerShield
+     e o Shield efetivamente volta com o tempo. */
+  const X=code=>vm.runInContext(code,sandbox);
+  const p=freshRun(0);
+  p.shieldMax=30;p.shield=0;p.shieldRegen=.1;p.shieldDelayT=0;p.hp=100;p.maxHp=100;
+  const orig=sandbox.regenPlayerShield;
+  let chamadas=0;
+  sandbox.regenPlayerShield=function(){chamadas++;return orig.apply(this,arguments);};
+  try{for(let i=0;i<120;i++)X('updatePlayer')(1/60);}
+  finally{sandbox.regenPlayerShield=orig;}
+  assert.ok(chamadas>0,'updatePlayer não chama regenPlayerShield');
+  assert.ok(p.shield>0,'o Shield não regenerou pelo caminho real');
 });
 test('Nenhum item/evento/upgrade novo de Shield foi criado',()=>{
   const items=T.ITEMS.filter(i=>/shield/i.test(i.id+' '+i.nm));

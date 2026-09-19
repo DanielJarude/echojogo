@@ -9,7 +9,9 @@
    ===================================================================== */
 const assert=require('assert');
 const fs=require('fs'),path=require('path'),vm=require('vm');
-const {sandbox,T,SRC,normalizeSource}=require('../audit_pr135/harness.js');   // SRC já normalizado para LF (portável LF/CRLF)
+const {sandbox,T,SRC,normalizeSource}=require('../audit_pr135/harness.js');
+const {readGameHtml}=require('./harness/load-game');
+const RAW_HTML=readGameHtml();   // AUDIT-FIX-E2B: markup de #bossnm (único fato de markup ainda checado aqui)   // SRC já normalizado para LF (portável LF/CRLF)
 const X=code=>vm.runInContext(code,sandbox);
 let passed=0,failed=0;
 function ok(label,fn){try{fn();passed++;console.log('  ✔ '+label);}catch(e){failed++;console.log('  ✘ '+label+' → '+(e&&e.message||e));}}
@@ -327,13 +329,77 @@ ok('B5B-22: Fracture Director — pickMiniBoss/fracturePickMiniBoss/miniEligible
   fresh();const seq=()=>{const r=sandbox.Math.random;sandbox.Math.random=seed(7);const out=[];for(let w=5;w<=15;w+=5)out.push(T.pickMiniBoss(w).id);sandbox.Math.random=r;return out.join(',');};assert.strictEqual(seq(),seq());
   assert.ok(/try\{fractureOnMiniSpawn\(def,n\);\}catch\(e\)\{\}/.test(SRC)&&/fractureOnMiniKill\(e\.mb,wave\|0\)/.test(SRC));
 });
-ok('B5B-23: O PARADOXO intacto — updateBoss/drawBoss byte-a-byte iguais ao B5-A (sem referência a MB_*/hazards); HUD padrão preservado',()=>{
-  const prev=fs.existsSync('/tmp/pre_b5b_index.html')?fs.readFileSync('/tmp/pre_b5b_index.html','utf8'):null;
-  const cut=(src,a,b)=>src.slice(src.indexOf(a),src.indexOf(b));
-  const ub=cut(SRC,'function updateBoss(','function drawBoss('),db=SRC.slice(SRC.indexOf('function drawBoss('),SRC.indexOf('function drawBoss(')+12000);
-  assert.ok(!/MB_UPDATERS|mbHazard|MINIBOSS_RENDERERS|drawMinibossHazards/.test(ub+db));
-  if(prev){assert.strictEqual(ub,cut(prev,'function updateBoss(','function drawBoss('),'updateBoss idêntico');}
-  assert.ok(SRC.includes('<div id="bossnm">O   P A R A D O X O</div>'));
+/* B5B-23 (AUDIT-FIX-E2B) — antes este teste comparava `updateBoss` byte-a-byte
+   com /tmp/pre_b5b_index.html. Em checkout limpo o arquivo não existe e o
+   check passava sem verificar nada; numa máquina com o arquivo antigo em
+   /tmp ele falhava. Era um baseline histórico fora do repositório — o mesmo
+   anti-padrão que o AUDIT-FIX-A eliminou.
+   Agora o contrato real (“o PARADOXO não passa por nenhum subsistema de
+   mini-chefe”) é verificado EXECUTANDO o chefe com tripwire em toda a API de
+   mini-chefe, e o “HUD padrão” é verificado pelo DOM, não pelo texto-fonte. */
+const MB_API=['updateMiniBoss','drawMiniBoss','drawMinibossHazards','mbHazardsTick',
+  'mbHazardAdd','mbInitState','miniBossHUD','mbCharge','mbBurst','mbSummon',
+  'mbPlayerIn','mbFireTick','spawnMiniBoss','pickMiniBoss',
+  'updateHerald','updateFurnace','updateSentinel','updateBrood','updateDuelist',
+  'updateColossus','updateOracle','updateLeech',
+  'drawHerald','drawFurnace','drawSentinel','drawBrood','drawDuelist',
+  'drawColossus','drawOracle','drawLeech'];
+/* Cada nome acima é `function` de topo, logo vive como propriedade do global
+   do vm: dá para espionar sem tocar em produção. MB_UPDATERS/MINIBOSS_RENDERERS
+   são `const` e não dão, mas só despacham para os updaters/renderers acima —
+   que estão cobertos um a um, inclusive por chamada direta. */
+function mbTripwire(fn){
+  const orig={},hit=[];
+  for(const n of MB_API){const f=sandbox[n];orig[n]=f;
+    sandbox[n]=function(){hit.push(n);return f.apply(this,arguments);};}
+  try{fn();}finally{for(const n of MB_API)sandbox[n]=orig[n];}
+  return [...new Set(hit)];
+}
+const EL=id=>X('document').getElementById(id);
+const BOSSNM_DEFAULT=(/<div\s+id="bossnm"[^>]*>([\s\S]*?)<\/div>/.exec(RAW_HTML)||[])[1];
+
+ok('B5B-23: O PARADOXO não passa por nenhum subsistema de mini-chefe — 40 s de run real (F1→F2) sem tocar MB_*/hazards',()=>{
+  fresh(20);
+  const p=T.getPlayer();
+  X('spawnBoss')();
+  const b=T.getBoss();
+  assert.ok(b&&b.type==='boss','spawnBoss produziu o chefe');
+  const hits=mbTripwire(()=>{
+    b.spawnT=0;b.intro=0;
+    for(let i=0;i<60*40;i++){
+      if(i===60*10)b.hp=b.maxHp*.49;                 // força a transição de fase
+      p.x=600+Math.sin(i*DT*.7)*160;p.y=400+Math.cos(i*DT*.9)*110;
+      X('updateEnemy')(b,DT);
+      if(i%37===0)T.drawBoss(b);
+    }
+  });
+  assert.deepStrictEqual(hits,[],'chefe chamou API de mini-chefe: '+hits.join(','));
+  assert.strictEqual(b.phase,2,'as duas fases foram exercitadas');
+  assert.strictEqual(b.ms,undefined,'chefe não ganha estado mecânico de mini-chefe');
+  assert.strictEqual(b.hazards,undefined,'chefe não ganha hazards');
+  assert.strictEqual(T.getMiniBoss(),null,'nenhum mini-chefe foi criado pelo caminho do chefe');
+});
+ok('B5B-23b: HUD padrão — markup e runtime concordam no rótulo do PARADOXO, e o teardown do mini-chefe não clobbera o chefe vivo',()=>{
+  assert.strictEqual(BOSSNM_DEFAULT,'O   P A R A D O X O','markup de #bossnm');
+  fresh(10);T.setBoss(null);
+  const def=T.MINIBOSS.find(m=>m.id==='furnace');
+  T.spawnMiniBoss(10,def);
+  assert.notStrictEqual(EL('bossnm').textContent,BOSSNM_DEFAULT,'mini-chefe assume o HUD');
+  assert.ok(EL('bosswrap').classList.contains('on'));
+  T.clearMiniBossHUD();
+  assert.strictEqual(EL('bossnm').textContent,BOSSNM_DEFAULT,'runtime restaura o rótulo do markup');
+  assert.strictEqual(EL('bossnm').style.color,'','cor volta ao padrão');
+  assert.ok(!EL('bosswrap').classList.contains('on'));
+  assert.strictEqual(T.getMiniBoss(),null);
+  /* com o PARADOXO vivo, o teardown do mini-chefe não pode mexer no HUD dele */
+  fresh(20);X('spawnBoss')();
+  EL('bossnm').textContent='PARADOXO-HUD';
+  T.setMiniBoss(T.spawnMiniBoss(10,def));
+  EL('bossnm').textContent='PARADOXO-HUD';
+  T.clearMiniBossHUD();
+  assert.strictEqual(EL('bossnm').textContent,'PARADOXO-HUD','HUD do chefe preservado');
+});
+ok('B5B-23c: drawBoss é puro sobre o estado do chefe — não altera hp',()=>{
   fresh();const boss={type:'boss',x:600,y:400,r:70,hp:1000,maxHp:1000,spawnT:0,phase:1,gravs:[],shocks:[],t:1,aim:0,flashT:0,core:0,ring:0,spinAng:0,orbs:[],beams:[],vx:0,vy:0,dmg:10};
   T.drawBoss(boss);assert.strictEqual(boss.hp,1000);
 });

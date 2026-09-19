@@ -127,26 +127,51 @@ ok('5. Sair do DEV (echo:dev-mode false) fecha o DevTools aberto', () => {
    6. Ctrl+Shift+D (renderer) — preservado
    =================================================================== */
 ok('6. Ctrl+Shift+D continua sendo o gatilho do DEV MODE (renderer)', () => {
-  assert(/ctrl&&e\.shiftKey&&c==='KeyD'/.test(rawSrc), 'atalho Ctrl+Shift+D presente');
-  assert(/devToggle/.test(rawSrc), 'devToggle referenciado');
+  /* AUDIT-FIX-E2B: antes eram duas regexes sobre a fonte. Agora a tecla é
+     DISPARADA no listener real e o efeito é observado — e as variações sem
+     o modificador certo provam que o gatilho é exatamente esse. */
+  const t = bootRenderer();
+  assert.strictEqual(t.isDevMode(), false, 'começa desligado');
+  t._press('KeyD', { ctrlKey: true, shiftKey: true });
+  assert.strictEqual(t.isDevMode(), true, 'Ctrl+Shift+D não ligou o DEV MODE');
+  t._press('KeyD', { ctrlKey: true, shiftKey: true });
+  assert.strictEqual(t.isDevMode(), false, 'Ctrl+Shift+D não desliga (toggle)');
+  for (const mods of [{ ctrlKey: true }, { shiftKey: true }, {}])
+    { t._press('KeyD', mods); assert.strictEqual(t.isDevMode(), false, 'atalho disparou sem Ctrl+Shift'); }
+  t._press('KeyE', { ctrlKey: true, shiftKey: true });
+  assert.strictEqual(t.isDevMode(), false, 'outra tecla não pode ligar o DEV MODE');
 });
 
 /* ===================================================================
    7–9. PAINEL DEV / HELPERS / B5 — intactos
    =================================================================== */
 ok('7. Painel DEV e seus comandos continuam presentes', () => {
-  assert(/function devOpenPanel\(/.test(rawSrc));
-  assert(/function devCommand\(/.test(rawSrc));
-  assert(/fp:force:anchor/.test(rawSrc), 'botões de presença física B3 intactos');
+  /* AUDIT-FIX-E2B: os símbolos são consultados no GLOBAL do jogo em vez de
+     procurados no texto — um comentário citando o nome deixa de contar como
+     "presente", e uma função renomeada deixa de passar despercebida. */
+  const t = bootRenderer();
+  const X = code => vm.runInContext(code, t._ctx);
+  for (const fn of ['devOpenPanel', 'devCommand'])
+    assert.strictEqual(X('typeof ' + fn), 'function', fn + ' ausente');
+  /* o comando de presença física B3 continua sendo aceito pelo painel */
+  t.devEnable();
+  assert.doesNotThrow(() => X('devCommand')('fp:force:anchor'),
+    'devCommand recusou fp:force:anchor');
+  t.devDisable();
 });
 ok('8. Helpers DEV continuam presentes (namespace DEV)', () => {
-  assert(/const DEV=\{/.test(rawSrc));
-  assert(/forceFactionPresence\(/.test(rawSrc));
+  const t = bootRenderer();
+  const DEV = vm.runInContext('DEV', t._ctx);
+  assert.ok(DEV && typeof DEV === 'object', 'namespace DEV ausente');
+  assert.strictEqual(typeof DEV.forceFactionPresence, 'function',
+    'DEV.forceFactionPresence ausente');
 });
 ok('9. Helpers de diplomacia B5 continuam presentes', () => {
+  const t = bootRenderer();
+  const DEV = vm.runInContext('DEV', t._ctx);
   for (const h of ['diploScenario', 'factionDiplomacy', 'setFactionAffinity',
     'forceFactionAlliance', 'breakFactionAlliance'])
-    assert(new RegExp(h + '\\(').test(rawSrc), 'helper ' + h + ' presente');
+    assert.strictEqual(typeof DEV[h], 'function', 'helper DEV.' + h + ' ausente');
 });
 
 /* ===================================================================
@@ -222,11 +247,17 @@ function makeEl(id) {
   el.setAttribute = (k, v) => { el.dataset[k] = v; }; el.getAttribute = k => el.dataset[k]; el.getContext = () => ctx2d();
   return el;
 }
-function bootRenderer() {
+/* AUDIT-FIX-E2B: `opts.semDesktop` boota sem window.echoDesktop (para provar
+   que a ponte é tolerante) e os listeners de teclado passam a ser CAPTURADOS,
+   para que o atalho possa ser disparado de verdade em vez de procurado no
+   texto da fonte. */
+function bootRenderer(opts) {
+  opts = opts || {};
   const elements = new Map();
-  const document = { hidden: false, title: '', body: makeEl('body'), documentElement: makeEl('html'), fullscreenElement: null, webkitFullscreenElement: null, createElement: () => makeEl(''), getElementById: id => { if (!elements.has(id)) elements.set(id, makeEl(id)); return elements.get(id); }, querySelectorAll: () => [], addEventListener: () => {}, removeEventListener: () => {}, hasFocus: () => true, exitFullscreen: () => Promise.resolve() };
+  const keyHandlers = [];
+  const document = { hidden: false, title: '', body: makeEl('body'), documentElement: makeEl('html'), fullscreenElement: null, webkitFullscreenElement: null, createElement: () => makeEl(''), getElementById: id => { if (!elements.has(id)) elements.set(id, makeEl(id)); return elements.get(id); }, querySelectorAll: () => [], addEventListener: (ev, fn) => { if (ev === 'keydown' && typeof fn === 'function') keyHandlers.push(fn); }, removeEventListener: () => {}, hasFocus: () => true, exitFullscreen: () => Promise.resolve() };
   const sent = [];   // captura echoDesktop.setDevMode
-  const window = { innerWidth: 1280, innerHeight: 720, devicePixelRatio: 1, screen: { availWidth: 1280, availHeight: 720 }, addEventListener: () => {}, removeEventListener: () => {}, matchMedia: () => ({ addEventListener: () => {}, addListener: () => {} }), AudioContext: undefined, webkitAudioContext: undefined, open: () => ({ close() {} }), getGamepads: () => [], location: { search: '', hash: '' }, echoDesktop: { isElectron: true, channel: 'dev', isDev: true, platform: 'linux', on: () => () => {}, setDevMode: (v) => { sent.push(!!v); } } };
+  const window = { innerWidth: 1280, innerHeight: 720, devicePixelRatio: 1, screen: { availWidth: 1280, availHeight: 720 }, addEventListener: (ev, fn) => { if (ev === 'keydown' && typeof fn === 'function') keyHandlers.push(fn); }, removeEventListener: () => {}, matchMedia: () => ({ addEventListener: () => {}, addListener: () => {} }), AudioContext: undefined, webkitAudioContext: undefined, open: () => ({ close() {} }), getGamepads: () => [], location: { search: '', hash: '' }, echoDesktop: opts.semDesktop ? undefined : { isElectron: true, channel: 'dev', isDev: true, platform: 'linux', on: () => () => {}, setDevMode: (v) => { sent.push(!!v); } } };
   const localStorage = { _d: {}, getItem(k) { return this._d[k] || null; }, setItem(k, v) { this._d[k] = String(v); }, removeItem(k) { delete this._d[k]; } };
   const navigator = { getGamepads: () => [] };
   const EXP = ';globalThis.__t={devEnable,devDisable,devToggle,' +
@@ -236,6 +267,14 @@ function bootRenderer() {
   runGameSource(rawSrc + EXP, ctx, { timeout: 20000 });
   const t = vm.runInContext('__t', ctx);
   t._sent = sent;
+  t._ctx = ctx;
+  t._press = (code, mods) => {
+    const ev = Object.assign({ code, key: '', ctrlKey: false, shiftKey: false, altKey: false,
+      metaKey: false, repeat: false, target: document.body,
+      preventDefault() {}, stopPropagation() {} }, mods || {});
+    for (const fn of keyHandlers.slice()) fn(ev);
+    return ev;
+  };
   return t;
 }
 
@@ -252,16 +291,36 @@ ok('18. Renderer: devDisable() notifica o desktop (setDevMode(false))', () => {
   assert.deepStrictEqual(t._sent, [true, false]);
 });
 ok('19. Renderer: função de ponte é tolerante (sem echoDesktop = no-op)', () => {
-  assert(/function devNotifyDesktopDevMode\(/.test(rawSrc), 'ponte existe');
-  assert(/typeof D\.setDevMode==='function'/.test(rawSrc), 'checa a API antes de chamar');
+  /* AUDIT-FIX-E2B: em vez de procurar a guarda no texto, o jogo é bootado SEM
+     window.echoDesktop e o DEV é ligado/desligado de verdade. */
+  const t = bootRenderer({ semDesktop: true });
+  assert.strictEqual(vm.runInContext('typeof devNotifyDesktopDevMode', t._ctx), 'function',
+    'ponte ausente');
+  assert.doesNotThrow(() => { t.devEnable(); t.devDisable(); },
+    'sem echoDesktop a ponte precisa ser no-op, não exceção');
+  assert.strictEqual(t.isDevMode(), false);
+  assert.deepStrictEqual(t._sent, [], 'nada foi enviado ao desktop inexistente');
+  /* e com um echoDesktop SEM setDevMode também não pode quebrar */
+  const t2 = bootRenderer();
+  delete vm.runInContext('window', t2._ctx).echoDesktop.setDevMode;
+  assert.doesNotThrow(() => { t2.devEnable(); t2.devDisable(); },
+    'API incompleta precisa ser tolerada');
 });
 ok('20. Versões e save intactos (nenhuma alteração de versão/save)', () => {
-  assert(/const ECHO_VERSION='0\.9\.0-alpha'/.test(rawSrc), 'ECHO_VERSION 0.9.0-alpha');
-  assert(/SM_VERSION\s*=\s*3/.test(rawSrc), 'SM_VERSION=3');
-  assert(/FRACTURE_STATE_VERSION\s*=\s*1/.test(rawSrc), 'FRACTURE_STATE_VERSION=1');
-  /* devTainted continua começando desligado e NÃO é lavado ao sair do DEV */
-  assert(/let devTainted=false;/.test(rawSrc));
-  assert(/devTainted NÃO é limpo de propósito/.test(rawSrc), 'sair do DEV não lava a run');
+  /* AUDIT-FIX-E2B: as versões são LIDAS do jogo em vez de casadas por regex
+     na fonte, e "sair do DEV não lava a run" deixa de ser a presença de um
+     comentário para virar o comportamento observado da flag. */
+  const t = bootRenderer();
+  const X = code => vm.runInContext(code, t._ctx);
+  assert.strictEqual(X('ECHO_VERSION'), '0.9.0-alpha', 'ECHO_VERSION');
+  assert.strictEqual(X('SM_VERSION'), 3, 'SM_VERSION');
+  assert.strictEqual(X('FRACTURE_STATE_VERSION'), 1, 'FRACTURE_STATE_VERSION');
+  assert.strictEqual(t.isTainted(), false, 'devTainted nasce desligado');
+  X('state="play"');                       // ligar o DEV no MEIO da run contamina
+  t.devEnable();
+  assert.strictEqual(t.isTainted(), true, 'entrar no DEV no meio da run contamina');
+  t.devDisable();
+  assert.strictEqual(t.isTainted(), true, 'sair do DEV não pode lavar a run');
 });
 
 console.log('\n---------------------------------------------');

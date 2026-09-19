@@ -328,9 +328,10 @@ ok('B4-25: DEV.attunement() inerte fora do DEV; em DEV lista módulo/afinidade/m
   const one=X('DEV.attunement("usura")');assert.strictEqual(one.active,false);assert.strictEqual(one.economic,true);
   assert.strictEqual(X('DEV.attunement("nao-existe")'),null);
   assert.strictEqual(JSON.stringify([p.sm,T.getMoral()]),before,'inspector puro');
+  /* AUDIT-FIX-E2B: a guarda !DEV_MODE deixa de ser uma regex sobre a fonte e
+     passa a ser observada — com o DEV desligado, o inspector devolve null. */
   X('DEV_MODE=false');
-  const html=readGameHtml();
-  assert.ok(/attunement\(id\)\{\s*if\(!DEV_MODE\)return null;/.test(html),'guarda DEV na fonte');
+  assert.strictEqual(X('DEV.attunement("usura")'),null,'guarda DEV: sem DEV_MODE devolve null');
 });
 
 /* ================= DISTRIBUIÇÃO / UI ================= */

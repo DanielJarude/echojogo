@@ -96,6 +96,9 @@ sandbox.window.requestAnimationFrame=sandbox.requestAnimationFrame;
 vm.createContext(sandbox);
 runGameSource(src,sandbox);
 const T=sandbox.__t;
+/* AUDIT-FIX-E2B: acesso ao escopo do jogo (const/let de topo não viram
+   propriedade do global, mas seguem visíveis para scripts do mesmo contexto). */
+const X=code=>vm.runInContext(code,sandbox);
 T.unlockAll();   // libera todos os operadores para os testes de identidade
 
 /* ---------------- helpers ---------------- */
@@ -218,14 +221,54 @@ test('REVENANT: apply dá COLHEITA MACABRA (cura + stack + decay)',()=>{
 });
 
 /* 5. mecânicas exclusivas integradas ao código moderno */
-test('sp: casos turret/cache/harvest presentes no switch de habilidades',()=>{
-  assert.ok(src.indexOf("case 'turret':")>=0);
-  assert.ok(src.indexOf("case 'cache':")>=0);
-  assert.ok(src.indexOf("case 'harvest':")>=0);
+test('sp: turret/cache/harvest são habilidades REAIS (efeito observável)',()=>{
+  /* AUDIT-FIX-E2B: antes procurava "case 'turret':" no texto. Agora cada
+     habilidade é ATIVADA pelo caminho real (trySpecial) e o efeito é
+     observado — um `case` presente mas quebrado deixa de passar. */
+  const alvo=id=>T.CHARS.findIndex(c=>c.sp&&c.sp.id===id);
+  for(const id of ['turret','cache','harvest']){
+    const idx=alvo(id);
+    assert.ok(idx>=0,'nenhum operador tem a habilidade '+id);
+    const p=freshRun(idx);
+    p.x=600;p.y=400;p.aim=0;p.spCd=0;p.hp=Math.max(1,p.maxHp-40);
+    X('state="play"');X('allies=[]');X('enemies=[]');
+    const hpAntes=p.hp,aliadosAntes=X('allies').length;
+    X('trySpecial')();
+    assert.ok(p.spCd>0,id+': a habilidade não entrou em cooldown (não executou)');
+    if(id==='turret')
+      assert.ok(X('allies').some(a=>a.turret),'turret não implantou torre');
+    if(id==='cache')
+      assert.ok(X('allies').length>aliadosAntes||X('pickups').length>0,
+        'cache não produziu nada no mundo');
+    if(id==='harvest')
+      assert.ok(p.hp>=hpAntes,'harvest não pode custar vida');
+  }
 });
-test('HARDEN: updateAllies trata torre fixa com fogo autônomo',()=>{
-  assert.ok(src.indexOf('a.turret')>=0);
-  assert.ok(src.indexOf("dmg:11+wave*1.4")>=0);
+test('HARDEN: a torre atira sozinha, com dano que escala com a onda',()=>{
+  /* AUDIT-FIX-E2B: antes eram dois indexOf ('a.turret' e 'dmg:11+wave*1.4').
+     Agora a torre é implantada, um inimigo entra no alcance e o projétil
+     produzido é inspecionado — inclusive a fórmula do dano, em duas ondas. */
+  const idx=T.CHARS.findIndex(c=>c.sp&&c.sp.id==='turret');
+  const disparo=onda=>{
+    const p=freshRun(idx);
+    p.x=600;p.y=400;p.aim=0;p.spCd=0;
+    X('state="play"');X('allies=[]');X('enemies=[]');X('projectiles=[]');
+    X('wave='+onda);
+    X('trySpecial')();
+    const torre=X('allies').find(a=>a.turret);
+    assert.ok(torre,'torre não implantada');
+    X('spawnEnemy')('chaser',torre.x+80,torre.y,onda);
+    const alvo=X('enemies')[0];alvo.spawnT=0;
+    for(let i=0;i<180&&!X('projectiles').some(q=>q.team==='ally');i++){
+      alvo.x=torre.x+80;alvo.y=torre.y;
+      X('updateAllies')(1/60);
+    }
+    const proj=X('projectiles').find(q=>q.team==='ally');
+    assert.ok(proj,'a torre não atirou na onda '+onda);
+    return proj.dmg;
+  };
+  assert.ok(Math.abs(disparo(5)-(11+5*1.4))<1e-9,'dano da torre na onda 5');
+  assert.ok(Math.abs(disparo(12)-(11+12*1.4))<1e-9,'dano da torre na onda 12');
 });
 test('REVENANT: abate cura 3 HP e acumula +1.5% de dano por onda',()=>{
   assert.ok(src.indexOf('player.harvestHeal')>=0);
@@ -321,18 +364,50 @@ test('ITEMS: nenhum id duplicado',()=>{
 
 /* 9. sistemas modernos preservados (PRs #1–#4) */
 test('PR #3: ECHO_SHIELD dos Ecos intacto',()=>{
-  assert.ok(src.indexOf('const ECHO_SHIELD=[0,30,20]')>=0);
-  assert.ok(src.indexOf('const ECHO_SHIELD_REGEN=[0,.06,.05]')>=0);
-  assert.ok(src.indexOf('const ECHO_SHIELD_DELAY=[0,2.5,3]')>=0);
+  /* AUDIT-FIX-E2B: valores lidos do jogo, não casados no texto da fonte. */
+  const arr=n=>Array.from(X(n));        // o array vem de outro realm do vm
+  assert.deepStrictEqual(arr('ECHO_SHIELD'),[0,30,20]);
+  assert.deepStrictEqual(arr('ECHO_SHIELD_REGEN'),[0,.06,.05]);
+  assert.deepStrictEqual(arr('ECHO_SHIELD_DELAY'),[0,2.5,3]);
 });
 test('PR #4: regenPlayerShield() integrado no updatePlayer()',()=>{
-  assert.ok(src.indexOf('function regenPlayerShield')>=0);
-  assert.ok(src.indexOf('regenPlayerShield(p,dt)')>=0);
+  /* AUDIT-FIX-E2B: provado por execução — updatePlayer chama o regen e o
+     Shield realmente volta. */
+  const p=freshRun(0);
+  p.shieldMax=30;p.shield=0;p.shieldRegen=.1;p.shieldDelayT=0;
+  const orig=sandbox.regenPlayerShield;let chamadas=0;
+  sandbox.regenPlayerShield=function(){chamadas++;return orig.apply(this,arguments);};
+  try{for(let i=0;i<120;i++)X('updatePlayer')(1/60);}
+  finally{sandbox.regenPlayerShield=orig;}
+  assert.ok(chamadas>0,'updatePlayer não chama regenPlayerShield');
+  assert.ok(p.shield>0,'Shield não regenerou pelo caminho real');
 });
-test('PR #1: analyzeEchoData() presente (classificação por arma real)',()=>{
-  assert.ok(src.indexOf('function analyzeEchoData')>=0);
-  assert.ok(/melee|range/.test(src.match(/function analyzeEchoData[\s\S]{0,600}/)[0]),
-    'usa as propriedades reais da arma');
+test('PR #1: analyzeEchoData() classifica por arma real (melee vs ranged)',()=>{
+  /* AUDIT-FIX-E2B: antes verificava o nome da função e procurava 'melee|range'
+     nos primeiros 600 caracteres do corpo. Agora a função é EXECUTADA sobre
+     filas de Echo opostas e a classificação é comparada. */
+  const W=X('WEAPONS');
+  let iPerto=-1,iLonge=-1;
+  for(let i=0;i<W.length;i++){
+    const d=W[i];
+    if(d&&(d.melee||d.range<300)){if(iPerto<0)iPerto=i;}
+    else if(iLonge<0)iLonge=i;
+  }
+  assert.ok(iPerto>=0&&iLonge>=0,'faltam armas de perto/longe no catálogo');
+  const N=40;
+  const trilha=wi=>({dur:20,trail:Array.from({length:N},(_,i)=>[i*.5,100+i,100,0,0,wi]),
+    items:[],upg:[],owned:[0],moral:{comp:0,greed:0,viol:0},dom:'neutro'});
+  const classificar=wi=>{X('echoQueue='+JSON.stringify([trilha(wi),trilha(wi)]));
+    return X('analyzeEchoData')();};
+  const a=classificar(iPerto),b=classificar(iLonge);
+  for(const r of [a,b]){
+    assert.ok(r&&typeof r==='object','analyzeEchoData não devolveu leitura');
+    assert.ok(['melee','ranged'].indexOf(r.mode)>=0,'modo inesperado: '+r.mode);
+    assert.strictEqual(r.total,2*N,'conta os checkpoints das trilhas');
+  }
+  assert.strictEqual(a.mode,'melee','arma de perto deveria ler como melee');
+  assert.strictEqual(b.mode,'ranged','arma de longe deveria ler como ranged');
+  X('echoQueue=[]');
 });
 test('Grade de seleção 4 × 2 (8 cards, sem corte)',()=>{
   // a largura da célula acompanha a escala tipográfica (PR 6.5) e, desde a
@@ -343,9 +418,22 @@ test('Grade de seleção 4 × 2 (8 cards, sem corte)',()=>{
   assert.ok(src.indexOf('#ov-char')>=0,'contêiner do seletor');
 });
 test('Migração de save v1 → v2 preserva a escolha (ECHO-0: 4 → 6)',()=>{
-  assert.ok(src.indexOf("const CHAR_KEY='echoChar.v2'")>=0);
-  assert.ok(src.indexOf('const CHAR_KEY_OLD')>=0);
-  assert.ok(src.indexOf('CHAR_LEGACY_IDX')>=0);
+  /* AUDIT-FIX-E2B: antes eram três indexOf em nomes de constantes — provavam
+     que os símbolos existiam, nada sobre a migração. Agora a TABELA é lida do
+     jogo e o mapeamento é conferido contra os IDs canônicos dos operadores. */
+  assert.strictEqual(X('CHAR_KEY'),'echoChar.v2');
+  assert.strictEqual(X('CHAR_KEY_OLD'),'echoChar.v1');
+  const MAP=X('CHAR_LEGACY_IDX');
+  assert.ok(Array.isArray(MAP)&&MAP.length===5,'tabela de migração v1→v2');
+  /* o save v1 tinha 5 operadores, nesta ordem; ECHO-0 era o índice 4 */
+  const ORDEM_V1=['vector','wraith','bulwark','pyre','echo0'];
+  MAP.forEach((novo,antigo)=>{
+    assert.ok(novo>=0&&novo<T.CHARS.length,'índice v2 fora da faixa: '+novo);
+    assert.strictEqual(T.CHARS[novo].id,ORDEM_V1[antigo],
+      'save v1 idx '+antigo+' deveria migrar para '+ORDEM_V1[antigo]);
+  });
+  assert.strictEqual(MAP[4],6,'ECHO-0 migra de 4 para 6');
+  assert.strictEqual(new Set(MAP).size,MAP.length,'migração não pode colidir');
 });
 
 console.log('\n---------------------------------------------');
