@@ -122,7 +122,8 @@ function makeSandbox(ls){
     requestAnimationFrame:()=>0,
     Uint8ClampedArray,Array,Object,Number,String,Boolean,RegExp,Error,Map,Set,
     Promise,Proxy,Reflect,JSON,Symbol,
-    document,window,localStorage:ls,navigator,
+    document,window,localStorage:ls,
+    navigator:{getGamepads:()=>[],userAgent:'node'},
     performance:{now:()=>Date.now()}
   };
   return sandbox;
