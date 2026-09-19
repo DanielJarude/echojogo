@@ -1363,6 +1363,9 @@ ok('R3§15/§16: Sandbox → sair → run NORMAL fica 100% limpa',()=>{
 function forge3(b){
   b.activateSlot(1);
   unlock(b,['c_pyre']);
+  b.saveProg();                    // AUDIT-FIX-C: o unlock forjado precisa ser
+                                   // GRAVADO no slot — prog.seen deixou de ser
+                                   // o mesmo array de smRoot (alias corrigido).
   b.setChar(3);
   const r=b.getSmRoot();
   r.slots[1].prog.kills=400;

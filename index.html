@@ -4437,15 +4437,19 @@ function loadProg(){
     if(p&&typeof p==='object')for(const k in prog)
       if(p[k]!==undefined)prog[k]=p[k];
   }catch(e){}
-  if(!Array.isArray(prog.seen))prog.seen=[];
+  /* AUDIT-FIX-C (bug): mesma correção de referência compartilhada aplicada a
+     seen — checkUnlocks() faz push e furaria o guard DEV sem a cópia. */
+  prog.seen=Array.isArray(prog.seen)?prog.seen.slice():[];
 }
 let _progDirty=false;
 function saveProg(){
   if(sandboxRun||sandboxMode)return false; // PROTEÇÃO SANDBOX (R5 §11): nada registra
   if(devTainted)return false;      // PROTEÇÃO DEV: progressão permanente intocada
   if(!smEnsureSlot())return false;
-  try{smRoot.slots[curSlot].prog=JSON.parse(JSON.stringify(prog));smCommit();}catch(e){}
-  return true;
+  /* AUDIT-FIX-C (bug): devolve o resultado REAL da gravação. */
+  try{smRoot.slots[curSlot].prog=JSON.parse(JSON.stringify(prog));
+    return smCommit();}catch(e){}
+  return false;
 }
 function bumpProg(k,n){
   /* PROTEÇÃO SANDBOX (R5 §11): spawns/abates/vitórias do laboratório não
@@ -18842,7 +18846,7 @@ function levelUpReward(){
    META-PROGRESSO PERSISTENTE + FINAIS PROCEDURAIS
    ===================================================================== */
 const META_KEY='echoMeta.v1';
-let meta={mem:0,spd:0,reroll:0,vault:0,wins:0,endings:[],evars:[]};
+let meta=metaDefaults();
 /* PR 7.5: a meta-progresso (Pontos de Memória, melhorias, finais) vive
    dentro do slot ativo (echoSave.v3 → slots[n].meta). Cada memória tem
    seus próprios pontos — nada é compartilhado entre SAVE 1/2/3. */
@@ -18853,23 +18857,41 @@ let meta={mem:0,spd:0,reroll:0,vault:0,wins:0,endings:[],evars:[]};
 function metaVictoryDecay(){
   return Math.max(.5,Math.pow(.75,meta.wins|0));
 }
+/* AUDIT-FIX-C: forma canônica do meta zerado. Sempre um objeto NOVO com
+   arrays NOVOS — nenhum slot pode herdar o array de outro. */
+function metaDefaults(){
+  return {mem:0,spd:0,reroll:0,vault:0,wins:0,endings:[],evars:[]};
+}
+/* AUDIT-FIX-C: conversão/coerção de um meta PERSISTIDO para o meta vivo.
+   Função pura: não lê/escreve storage, não toca globais, não seleciona
+   slot e não faz commit — as POLÍTICAS (o que fazer com meta ausente ou
+   inválido) continuam em quem chama. Meta inválido → default integral. */
+function metaFromObject(m){
+  if(!m||typeof m!=='object')return metaDefaults();
+  return {mem:m.mem|0,spd:m.spd|0,reroll:m.reroll|0,vault:m.vault|0,
+    wins:m.wins|0,
+    /* AUDIT-FIX-C (bug): arrays são COPIADOS. Compartilhar a referência com
+       smRoot.slots[n].meta fazia meta.endings.push()/meta.evars.push() gravar
+       direto no objeto persistido — o próximo smCommit() legítimo publicava
+       finais de run Sandbox/DEV mesmo com saveMeta() bloqueado. */
+    endings:Array.isArray(m.endings)?m.endings.slice():[],
+    evars:Array.isArray(m.evars)?m.evars.slice():[]};
+}
 function loadMeta(){
   if(!smEnsureSlot())return;
-  try{
-    const m=smRoot.slots[curSlot].meta;
-    if(m&&typeof m==='object'){
-      meta={mem:m.mem|0,spd:m.spd|0,reroll:m.reroll|0,vault:m.vault|0,
-        wins:m.wins|0,endings:Array.isArray(m.endings)?m.endings:[],
-        evars:Array.isArray(m.evars)?m.evars:[]};
-    }
-  }catch(e){}
+  /* AUDIT-FIX-C (bug): meta ausente/inválida no slot ativo agora volta ao
+     DEFAULT, como em activateSlot(). Antes o meta do slot anterior ficava
+     em RAM e podia ser gravado no slot errado pelo saveMeta() seguinte. */
+  try{meta=metaFromObject(smRoot.slots[curSlot].meta);}catch(e){}
 }
 function saveMeta(){
   if(sandboxRun||sandboxMode)return false; // PROTEÇÃO SANDBOX (R5 §11): meta intocada
   if(devTainted)return false;      // PROTEÇÃO DEV: meta-progresso intocado
   if(!smEnsureSlot())return false;
-  try{smRoot.slots[curSlot].meta=JSON.parse(JSON.stringify(meta));smCommit();}catch(e){}
-  return true;
+  /* AUDIT-FIX-C (bug): devolve o resultado REAL da gravação. */
+  try{smRoot.slots[curSlot].meta=JSON.parse(JSON.stringify(meta));
+    return smCommit();}catch(e){}
+  return false;
 }
 const META_SHOP=[
   {id:'spd',nm:'CALIBRAGEM MOTORA',desc:'+5% DE VELOCIDADE BASE POR NÍVEL',cost:60,max:5,
@@ -19289,7 +19311,9 @@ function smCommit(){
      futuro esquecer o guard próprio. Todos os caminhos de persistência
      (prog, meta, echoes, checkpoint, slot) passam por aqui. */
   if(sandboxRun||sandboxMode)return false;
-  try{localStorage.setItem(SM_KEY,JSON.stringify(smRoot));}catch(e){}
+  /* AUDIT-FIX-C (bug): falha de escrita (cota/storage indisponível) agora é
+     reportada. Antes smCommit() devolvia true mesmo sem ter gravado nada. */
+  try{localStorage.setItem(SM_KEY,JSON.stringify(smRoot));}catch(e){return false;}
   return true;
 }
 /* ---- PR 10.5.2: GERÊNCIA DE DADOS DO SLOT (Configurações → Dados) ----
@@ -19319,7 +19343,7 @@ function smClearSlotSave(){
   smRoot.slots[i]=smDefaultSlot();    // meta/prog/char/echoes/run → zero
   /* espelhos vivos voltam ao estado inicial coerente com o slot vazio */
   activeRun=null;
-  meta={mem:0,spd:0,reroll:0,vault:0,wins:0,endings:[],evars:[]};
+  meta=metaDefaults();
   prog={kills:0,runs:0,waves:0,best:0,wins:0,bosses:0,minis:0,
     elites:0,crits:0,dashes:0,coins:0,items:0,events:0,echoKills:0,
     reso:0,melee:0,status:0,seen:[]};
@@ -19400,10 +19424,8 @@ function smMigrateLegacy(){
     try{
       const r=localStorage.getItem(META_KEY);
       if(r){const m=JSON.parse(r);
-        if(m&&typeof m==='object')
-          slot.meta={mem:m.mem|0,spd:m.spd|0,reroll:m.reroll|0,vault:m.vault|0,
-            wins:m.wins|0,endings:Array.isArray(m.endings)?m.endings:[],
-        evars:Array.isArray(m.evars)?m.evars:[]};
+        /* política da migração preservada: legado ilegível → slot.meta null */
+        if(m&&typeof m==='object')slot.meta=metaFromObject(m);
       }
     }catch(e){}
     /* progressão + unlocks */
@@ -19482,21 +19504,16 @@ function activateSlot(i){
   if(!smRoot)smLoadRoot();
   if(i<1||i>3)i=clamp(smRoot.lastSlot|0||1,1,3);
   const b=smRoot.slots[i];
-  /* meta */
-  meta={mem:0,spd:0,reroll:0,vault:0,wins:0,endings:[],evars:[]};
-  if(b.meta&&typeof b.meta==='object'){
-    meta={mem:b.meta.mem|0,spd:b.meta.spd|0,reroll:b.meta.reroll|0,
-      vault:b.meta.vault|0,wins:b.meta.wins|0,
-      endings:Array.isArray(b.meta.endings)?b.meta.endings:[],
-      evars:Array.isArray(b.meta.evars)?b.meta.evars:[]};
-  }
+  /* meta — política do slot: ausente/inválido volta ao default */
+  meta=metaFromObject(b.meta);
   /* progressão + unlocks */
   prog={kills:0,runs:0,waves:0,best:0,wins:0,bosses:0,minis:0,
     elites:0,crits:0,dashes:0,coins:0,items:0,events:0,echoKills:0,
     reso:0,melee:0,status:0,seen:[]};
   if(b.prog&&typeof b.prog==='object')
     for(const k in prog)if(b.prog[k]!==undefined)prog[k]=b.prog[k];
-  if(!Array.isArray(prog.seen))prog.seen=[];
+  /* AUDIT-FIX-C (bug): seen COPIADO — ver loadProg/metaFromObject. */
+  prog.seen=Array.isArray(prog.seen)?prog.seen.slice():[];
   /* operador do slot (se bloqueado, curChar() recai no inicial) */
   charSel=clamp(b.char|0,0,CHARS.length-1);
   if(!isCharUnlocked(CHARS[charSel].id))charSel=0;
