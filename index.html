@@ -15,8 +15,53 @@
 <link rel="preload" as="image" href="assets/operators/revenant.png">
 <style>
   :root{
-    --cy:#46e0ff; --cy-dim:rgba(70,224,255,.35);
-    --mg:#ff4df0; --bg:#04070d; --warn:#ff4d6d; --gold:#ffd166;
+    /* ==================================================================
+       ECHO 2.0 — SISTEMA VISUAL "CONTENÇÃO TEMPORAL"
+       A interface é um instrumento construído para observar e conter uma
+       linha temporal em colapso. Cor é PAPEL, nunca decoração: os neutros
+       constroem quase tudo, e o acento aparece pouco — por isso significa.
+       ================================================================== */
+    /* -- papéis cromáticos -- */
+    --cy:#46e0ff; --cy-dim:rgba(70,224,255,.35);  /* presente alinhado   */
+    --mg:#ff4df0;                                  /* fratura/desloc.    */
+    --bg:#04070d; --warn:#ff4d6d;                  /* ruptura crítica    */
+    --gold:#ffd166;                                /* custo / economia   */
+    --ok:#7dffc4;                                  /* seguro / sandbox   */
+    /* -- estrutura neutra: 90% da interface vive aqui -- */
+    --n-900:#03060b; --n-800:#070c14; --n-700:#0a111c;
+    --n-600:#0f1826; --n-500:#182333; --n-400:#26344a;
+    --ink:#dbe9f2;   /* texto primário                                   */
+    --ink-2:#93aec0; /* texto secundário                                 */
+    --ink-3:#61798c; /* rótulos, telemetria de apoio                     */
+    /* -- hairlines: a régua, não a moldura -- */
+    --rule:rgba(122,162,190,.15);
+    --rule-2:rgba(122,162,190,.075);
+    --rule-cy:rgba(70,224,255,.26);
+    /* -- ritmo espacial (base 4) -- */
+    --s1:4px; --s2:8px; --s3:12px; --s4:18px; --s5:26px; --s6:38px; --s7:56px;
+    /* -- geometria clínica: quina viva, quase sem raio -- */
+    --r0:0px; --r1:2px;
+    /* -- movimento com intenção -- */
+    --t-fast:.12s; --t-mid:.22s; --t-slow:.44s;
+    --e-out:cubic-bezier(.16,.84,.34,1);
+    --e-in:cubic-bezier(.5,0,.84,.3);
+    /* -- deslocamento do eco: a assinatura da casa -- */
+    --slip:3px;
+    /* ------------------------------------------------------------------
+       TIPOGRAFIA — DOIS PAPÉIS, NUNCA UM SÓ
+       O visual antigo aplicava Consolas + letter-spacing largo em TUDO,
+       o que achata a hierarquia e é o maior responsável pela aparência de
+       template. Aqui título e dado são coisas diferentes:
+         DISPLAY  -> editorial, peso alto, tracking APERTADO
+         MONO     -> telemetria, corpo pequeno, tracking LARGO
+       ------------------------------------------------------------------ */
+    --f-ui:"Segoe UI Variable Text","Segoe UI",system-ui,Roboto,sans-serif;
+    --f-disp:"Segoe UI Variable Display","Segoe UI Semibold","Segoe UI",system-ui,sans-serif;
+    --f-mono:"Cascadia Mono",Consolas,"SF Mono",ui-monospace,monospace;
+    --tr-t:.015em;  /* títulos                                           */
+    --tr-s:.10em;   /* subtítulos editoriais                             */
+    --tr-l:.26em;   /* rótulos de dado                                   */
+    --tr-d:.08em;   /* números                                           */
     /* ---------- ESCALA TIPOGRÁFICA (PR 6.5 · legibilidade) ----------
        Um único lugar para calibrar o tamanho de TODO texto da interface.
        Os valores foram elevados ~15–20% em relação ao PR 6 para leitura
@@ -52,33 +97,83 @@
   }
   *{margin:0;padding:0;box-sizing:border-box;}
   html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);
-    font-family:"Segoe UI",system-ui,Roboto,sans-serif;cursor:crosshair;
+    font-family:var(--f-ui);color:var(--ink);cursor:crosshair;
     -webkit-user-select:none;user-select:none;}
   canvas{position:fixed;inset:0;display:block;}
 
-  /* ---------- overlays visuais ---------- */
+  /* ==================================================================
+     CAMADA DE AMBIENTE — a moldura do instrumento
+     Três planos, cada um com uma função declarada. A vinheta passou a ser
+     assimétrica (peso no canto inferior direito, onde o Kit exige foco);
+     a scanline virou grão largo e lento em vez do chuveiro de linhas de
+     1px que lê como "UI de hacker"; e a moldura deixou de ser um retângulo
+     fechado — agora são MARCAS DE REGISTRO nos cantos, como um instrumento
+     de medição alinhando a imagem.
+     ================================================================== */
   #vignette{position:fixed;inset:0;pointer-events:none;z-index:5;
-    background:radial-gradient(ellipse at center,transparent 55%,rgba(0,0,10,.55) 100%);}
-  #scan{position:fixed;inset:0;pointer-events:none;z-index:6;opacity:.35;
-    background:repeating-linear-gradient(0deg,transparent 0 2px,rgba(0,0,0,.12) 2px 4px);}
+    background:
+      radial-gradient(130% 100% at 22% 8%,transparent 42%,rgba(3,6,14,.62) 100%),
+      linear-gradient(200deg,transparent 58%,rgba(2,4,10,.5) 100%);}
+  /* grão temporal: textura, não listra. Varre devagar para sugerir uma
+     leitura contínua do sinal sem virar efeito de vídeo quebrado. */
+  #scan{position:fixed;inset:-40px;pointer-events:none;z-index:6;opacity:.5;
+    background:
+      repeating-linear-gradient(0deg,transparent 0 3px,rgba(0,0,0,.10) 3px 6px),
+      linear-gradient(180deg,transparent 0%,rgba(70,224,255,.028) 48%,transparent 52%);
+    background-size:auto,100% 240px;
+    animation:sigSweep 9s linear infinite;}
+  @keyframes sigSweep{from{background-position:0 0,0 -240px;}
+                        to{background-position:0 0,0 100vh;}}
+  /* marcas de registro — o enquadramento é sugerido, não desenhado */
   #frame{position:fixed;inset:10px;pointer-events:none;z-index:7;
-    border:1px solid rgba(70,224,255,.10);}
+    background:
+      linear-gradient(var(--rule-cy),var(--rule-cy)) left  top   /1px 22px no-repeat,
+      linear-gradient(var(--rule-cy),var(--rule-cy)) left  top   /22px 1px no-repeat,
+      linear-gradient(var(--rule-cy),var(--rule-cy)) right top   /1px 22px no-repeat,
+      linear-gradient(var(--rule-cy),var(--rule-cy)) right top   /22px 1px no-repeat,
+      linear-gradient(var(--rule-cy),var(--rule-cy)) left  bottom/1px 22px no-repeat,
+      linear-gradient(var(--rule-cy),var(--rule-cy)) left  bottom/22px 1px no-repeat,
+      linear-gradient(var(--rule-cy),var(--rule-cy)) right bottom/1px 22px no-repeat,
+      linear-gradient(var(--rule-cy),var(--rule-cy)) right bottom/22px 1px no-repeat;
+    opacity:.6;}
 
   /* ---------- HUD ---------- */
   #hud{position:fixed;inset:0;pointer-events:none;z-index:10;color:#cfeffc;}
-  .panel{background:rgba(4,12,20,.55);border:1px solid rgba(70,224,255,.18);
-    backdrop-filter:blur(2px);padding:8px 12px;border-radius:3px;}
-  .lbl{font-size:var(--fs-xs);letter-spacing:.28em;color:rgba(160,220,240,.6);
-    font-family:Consolas,"Cascadia Code",monospace;}
-  #topbar{position:absolute;top:14px;left:16px;right:16px;display:flex;
-    justify-content:space-between;align-items:flex-start;gap:12px;}
-  #hpwrap{width:300px;}
-  #hpbar{height:10px;margin-top:5px;background:rgba(70,224,255,.08);
-    border:1px solid rgba(70,224,255,.25);position:relative;overflow:hidden;}
+  /* ------------------------------------------------------------------
+     PAINEL — contenção sem caixa
+     O HUD antigo desenhava uma borda fechada em volta de cada bloco, o que
+     produz "caixas dentro de caixas" e dá a todos os elementos o mesmo peso.
+     Aqui o painel é definido por um TRILHO à esquerda (a barra de status do
+     instrumento) e uma base escura; a borda completa desapareceu.
+     ------------------------------------------------------------------ */
+  .panel{position:relative;padding:var(--s2) var(--s3) var(--s2) calc(var(--s3) - 2px);
+    background:linear-gradient(90deg,rgba(7,13,22,.80),rgba(7,13,22,.48));
+    border:0;border-left:2px solid var(--rule-cy);border-radius:var(--r0);
+    backdrop-filter:blur(3px) saturate(.9);}
+  /* tique de registro no topo do trilho: alinha o bloco à régua do HUD */
+  .panel::before{content:"";position:absolute;left:-2px;top:0;width:2px;height:9px;
+    background:var(--cy);box-shadow:0 0 8px var(--cy-dim);}
+  .lbl{display:block;font-family:var(--f-mono);font-size:var(--fs-xs);
+    letter-spacing:var(--tr-l);color:var(--ink-3);text-transform:uppercase;}
+  /* ==================================================================
+     HUD — TRÊS GRUPOS FUNCIONAIS, NÃO DEZ BLOCOS SOLTOS
+       VITAIS   (esq.)  integridade e escudo — prioridade absoluta
+       OBJETIVO (centro) onda e tempo — contexto, deliberadamente leve
+       ESTADO   (dir.)  economia, temporal e ecos — consulta, não leitura
+     A hierarquia é feita por ESCALA e PESO, não por moldura: o número da
+     integridade é o maior dado do HUD; a onda, que antes brilhava no topo
+     com o mesmo peso, recuou para texto de apoio.
+     ================================================================== */
+  #topbar{position:absolute;top:var(--s4);left:var(--s4);right:var(--s4);display:flex;
+    justify-content:space-between;align-items:flex-start;gap:var(--s4);}
+  #hpwrap{width:312px;}
+  #hpbar{height:7px;margin-top:var(--s2);background:rgba(70,224,255,.07);
+    border:0;border-bottom:1px solid var(--rule-2);position:relative;overflow:hidden;}
   #hpfill{height:100%;width:100%;background:linear-gradient(90deg,#1fc8ec,#9ff3ff);
-    box-shadow:0 0 12px var(--cy-dim);transition:width .15s ease-out;}
-  #hpnum{font-family:Consolas,monospace;font-size:var(--fs-md);color:#aeeaff;margin-top:3px;
-    letter-spacing:.12em;}
+    box-shadow:0 0 14px var(--cy-dim);transition:width .15s var(--e-out);}
+  /* o dado mais importante da tela ganha corpo de número, não de rótulo */
+  #hpnum{font-family:var(--f-mono);font-size:var(--fs-2xl);color:#d8f4ff;
+    margin-top:var(--s1);letter-spacing:var(--tr-d);font-variant-numeric:tabular-nums;}
   /* ---------- ESCUDO DO OPERADOR (camada independente da Integridade) ---------- */
   #shwrap{margin-top:9px;padding-top:8px;
     border-top:1px solid rgba(255,209,102,.10);}
@@ -110,21 +205,30 @@
   #shbar.regen{animation:shRegen 1.2s ease-in-out infinite;}
   #shbar.regen:after{content:'REGEN';position:absolute;right:2px;top:-13px;
     font-size:9px;letter-spacing:.14em;color:rgba(255,233,168,.8);}
-  #midtop{text-align:center;}
-  #wave{font-family:Consolas,monospace;font-size:var(--fs-wave);letter-spacing:.35em;
-    color:#eaffff;text-shadow:0 0 14px var(--cy);}
-  #timer{font-family:Consolas,monospace;font-size:var(--fs-sm);letter-spacing:.3em;
-    color:rgba(160,220,240,.55);margin-top:2px;}
-  #slots{display:flex;flex-direction:column;gap:10px;align-items:flex-end;}
+  /* OBJETIVO — contexto. Recuou de "farol brilhante" para dado sóbrio,
+     porque competia com integridade e escudo durante o combate. */
+  #midtop{text-align:center;padding-top:2px;}
+  #wave{font-family:var(--f-disp);font-weight:600;font-size:var(--fs-wave);
+    letter-spacing:var(--tr-s);color:var(--ink);text-shadow:none;line-height:1;}
+  #timer{font-family:var(--f-mono);font-size:var(--fs-xs);letter-spacing:var(--tr-l);
+    color:var(--ink-3);margin-top:var(--s1);font-variant-numeric:tabular-nums;}
+  /* ESTADO — coluna única costurada por hairlines em vez de N caixas */
+  #slots{display:flex;flex-direction:column;gap:var(--s3);align-items:flex-end;}
   /* B3-FIX §7: grupos hierárquicos do HUD (economia / temporal / echos).
      Cada grupo empilha seus itens com um respiro pequeno; grupos separados
      por um espaço maior — leitura rápida em combate, sem overlap. */
-  .hudgrp{display:flex;flex-direction:column;gap:5px;align-items:flex-end;}
+  .hudgrp{display:flex;flex-direction:column;gap:1px;align-items:flex-end;
+    background:rgba(5,10,18,.5);backdrop-filter:blur(3px);}
   .hudgrp:empty{display:none;}
-  .chip{font-family:Consolas,monospace;font-size:var(--fs-sm);letter-spacing:.14em;
-    padding:6px 11px;border:1px solid rgba(120,140,160,.25);border-radius:2px;
-    color:rgba(140,160,175,.55);background:rgba(4,12,20,.55);min-width:206px;
+  /* Um grupo é UM objeto: os chips internos viram linhas de uma mesma
+     leitura, separadas por hairline. Some a borda por chip — e com ela o
+     efeito de "caixa dentro de caixa" que dominava o canto direito. */
+  .chip{font-family:var(--f-mono);font-size:var(--fs-sm);letter-spacing:var(--tr-d);
+    padding:var(--s2) var(--s3);border:0;border-radius:var(--r0);
+    color:var(--ink-3);background:transparent;min-width:212px;
     text-align:left;white-space:nowrap;box-sizing:border-box;}
+  .hudgrp>.chip+.chip{border-top:1px solid var(--rule-2);}
+  .hudgrp>.panel{width:100%;background:transparent;backdrop-filter:none;}
   /* chips dinâmicos (Resíduos/Fractura) alinham à mesma coluna dos demais */
   #frac-hud-res,#frac-hud-theme{min-width:206px;box-sizing:border-box;}
   .chip.on1{color:#bffbff;border-color:rgba(70,224,255,.6);
@@ -291,53 +395,126 @@
     88%{opacity:1;}100%{opacity:0;transform:translateY(-12px);}}
 
   /* ---------- telas ---------- */
+  /* ==================================================================
+     TELA-TÍTULO — o primeiro contato precisa ser uma peça, não um menu
+     A composição saiu do eixo: o conteúdo vive numa coluna deslocada para
+     a esquerda, com um TRILHO DE SINCRONIA vertical marcando a borda. O
+     fundo deixou de ser um gradiente radial genérico e passou a ser um
+     campo de estratos temporais — faixas horizontais densas embaixo, uma
+     banda magenta deslocada atravessando: a linha do tempo vista de lado.
+     ================================================================== */
+  /* ------------------------------------------------------------------
+     RITMO VERTICAL RESPONSIVO — correção 1440×900 (sem scroll)
+     A composição aprovada não muda: coluna à esquerda, trilho de
+     sincronia, logo dominante, ação primária em barra. O que muda é a
+     MEDIDA. Todo o respiro vertical da tela passa a derivar de --ovr,
+     ancorado na altura da viewport, em vez das constantes --s4/--s5/--s6,
+     que foram calibradas para 1080p e, em 900px de altura, somavam mais
+     que a área útil — era isso que empurrava o logo para fora do topo.
+     O logo NÃO encolhe proporcionalmente ao resto: ele continua sendo o
+     maior elemento da tela. Quem cede é o bloco dentro dele: a lista de
+     comandos é texto de APOIO e estava ocupando ~54% da altura com
+     line-height 2.3, o que invertia a hierarquia.
+     ------------------------------------------------------------------ */
   #overlay{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;
-    align-items:center;justify-content:center;text-align:center;
-    overflow-y:auto;padding:20px 14px;
-    background:radial-gradient(ellipse at center,rgba(5,10,22,.82),rgba(2,4,10,.96));
-    transition:opacity .4s;cursor:pointer;}
+    --ovr:clamp(9px,1.75vh,26px);          /* passo vertical da composição */
+    align-items:flex-start;justify-content:center;text-align:left;
+    overflow-y:auto;padding:clamp(16px,3.4vh,58px) clamp(28px,9vw,132px);
+    background:
+      linear-gradient(90deg,rgba(2,4,10,.97) 0%,rgba(4,8,18,.90) 46%,rgba(3,6,14,.97) 100%),
+      repeating-linear-gradient(0deg,transparent 0 46px,rgba(70,224,255,.030) 46px 47px),
+      linear-gradient(180deg,transparent 52%,rgba(255,77,240,.045) 66%,transparent 67%),
+      radial-gradient(90% 70% at 18% 42%,rgba(12,28,48,.55),transparent 70%);
+    transition:opacity var(--t-slow) var(--e-out);cursor:pointer;}
+  /* trilho de sincronia: a régua contra a qual a composição se alinha */
+  #overlay::before{content:"";position:fixed;left:clamp(14px,4.5vw,66px);top:14%;bottom:14%;
+    width:1px;pointer-events:none;
+    background:linear-gradient(180deg,transparent,var(--rule-cy) 12%,var(--rule-cy) 88%,transparent);}
   #overlay.hidden{opacity:0;pointer-events:none;}
-  #ov-title{font-family:Consolas,monospace;font-size:64px;letter-spacing:.6em;
-    color:#eefcff;text-shadow:0 0 30px var(--cy),0 0 80px rgba(70,224,255,.4);
-    margin-left:.6em;}
-  #ov-sub{font-family:Consolas,monospace;font-size:var(--fs-md);letter-spacing:.42em;
-    color:rgba(160,220,240,.6);margin-top:10px;}
-  #ov-body{margin-top:34px;font-family:Consolas,monospace;font-size:var(--fs-lg);
-    line-height:2.1;letter-spacing:.18em;color:#9cc6da;}
-  #ov-body b{color:#e8fbff;font-weight:normal;}
-  .k{display:inline-block;border:1px solid rgba(120,180,210,.4);border-radius:3px;
-    padding:1px 7px;margin:0 3px;color:#d8f4ff;background:rgba(70,224,255,.06);font-size:var(--fs-md);}
-  #ov-go{margin-top:38px;font-family:Consolas,monospace;font-size:var(--fs-xl);
-    letter-spacing:.5em;color:#bffbff;border:1px solid rgba(70,224,255,.5);
-    padding:12px 34px 12px calc(34px + .5em);animation:pulse 1.6s infinite;
-    background:rgba(70,224,255,.05);}
-  #ov-echos{margin-top:26px;font-family:Consolas,monospace;font-size:var(--fs-sm);
-    letter-spacing:.3em;color:rgba(150,180,200,.55);line-height:2;}
+  /* O WORDMARK. Peso alto, tracking contido, e um deslocamento de eco no
+     lugar do brilho neon. O texto continua sendo "E C H O". */
+  #ov-title{position:relative;font-family:var(--f-disp);font-weight:700;
+    font-size:64px;letter-spacing:.04em;line-height:.94;color:#f2fbff;
+    margin-left:0;text-shadow:0 0 34px rgba(70,224,255,.28);}
+  #ov-sub{font-family:var(--f-mono);font-size:var(--fs-md);letter-spacing:var(--tr-l);
+    color:var(--ink-3);margin-top:var(--ovr);padding-left:2px;
+    border-left:0;position:relative;}
+  /* régua curta sob o subtítulo — separa identidade de instrução */
+  #ov-sub::after{content:"";display:block;width:132px;height:1px;margin-top:var(--ovr);
+    background:linear-gradient(90deg,var(--cy),transparent);opacity:.7;}
+  /* Corpo de apoio. Duas correções, ambas de MEDIDA:
+     · entrelinha absoluta e responsiva — com o fator 2.3 as linhas de
+       comando somavam ~490px em qualquer altura de tela;
+     · medida horizontal — a coluna estava travada em 62ch (~390px) com
+       1.2k px de tela livre à direita, então quase toda linha quebrava em
+       duas e o bloco dobrava de altura. Esta lista não é prosa: são
+       entradas curtas de telemetria, e a medida larga é a leitura certa
+       para elas. O corpo do texto não muda: a hierarquia é preservada. */
+  #ov-body{margin-top:calc(var(--ovr) * 1.35);font-family:var(--f-mono);font-size:var(--fs-sm);
+    line-height:clamp(19px,2.62vh,31px);letter-spacing:.1em;color:var(--ink-3);
+    max-width:min(98ch,64vw);}
+  #ov-body:empty{display:none;}
+  #ov-body b{color:var(--ink);font-weight:normal;}
+  /* a tecla é inline-block: sem entrelinha própria ela impõe a altura da
+     linha inteira e anula a compressão acima */
+  .k{display:inline-block;border:1px solid var(--rule);border-radius:var(--r1);
+    padding:1px 6px;margin:0 2px;color:var(--ink-2);background:rgba(70,224,255,.045);
+    font-size:var(--fs-2xs);letter-spacing:.06em;line-height:1.25;}
+  /* ação primária: uma barra, não um botão de template. A seta é o convite. */
+  #ov-go{position:relative;margin-top:calc(var(--ovr) * 1.9);display:inline-flex;align-items:center;gap:var(--s3);
+    font-family:var(--f-disp);font-weight:600;font-size:var(--fs-xl);letter-spacing:var(--tr-s);
+    color:#eafdff;border:0;border-left:3px solid var(--cy);border-radius:var(--r0);
+    padding:var(--s3) var(--s6) var(--s3) var(--s4);
+    background:linear-gradient(90deg,rgba(70,224,255,.16),rgba(70,224,255,.02) 72%);
+    transition:background var(--t-mid) var(--e-out),padding var(--t-mid) var(--e-out);}
+  #ov-go::after{content:"→";font-family:var(--f-mono);color:var(--cy);
+    transition:transform var(--t-mid) var(--e-out);}
+  #ov-go:hover{background:linear-gradient(90deg,rgba(70,224,255,.26),rgba(70,224,255,.04) 72%);
+    padding-right:var(--s7);}
+  #ov-go:hover::after{transform:translateX(5px);}
+  #ov-echos{margin-top:calc(var(--ovr) * 1.2);font-family:var(--f-mono);font-size:var(--fs-sm);
+    letter-spacing:.16em;color:var(--ink-3);line-height:1.85;}
+  #ov-echos:empty{display:none;}
+  /* ------------------------------------------------------------------
+     ECO DESLOCADO (.glitch)
+     Reinterpretação do efeito: em vez de tremor aleatório em steps — que é
+     o clichê de glitch — são DUAS CÓPIAS da mesma palavra em tempos
+     diferentes. A magenta está atrasada, a ciano adiantada, e as duas
+     respiram lentamente em torno do original. Leitura: o mesmo objeto
+     visto em três instantes que não coincidem.
+     ------------------------------------------------------------------ */
   .glitch{position:relative;}
   .glitch::before,.glitch::after{content:attr(data-t);position:absolute;inset:0;
-    margin-left:.6em;}
-  .glitch::before{color:var(--mg);clip-path:inset(20% 0 40% 0);
-    animation:gl1 .5s infinite steps(2);opacity:.8;}
-  .glitch::after{color:var(--cy);clip-path:inset(60% 0 10% 0);
-    animation:gl2 .43s infinite steps(2);opacity:.8;}
-  @keyframes gl1{0%,100%{transform:none;}25%{transform:translate(-5px,2px);}
-    50%{transform:translate(4px,-1px);}75%{transform:translate(-2px,-2px);}}
-  @keyframes gl2{0%,100%{transform:none;}33%{transform:translate(5px,-2px);}
-    66%{transform:translate(-4px,1px);}}
-  #ov-frac-lines{font-family:Consolas,monospace;font-size:var(--fs-lg);line-height:2.4;
-    letter-spacing:.25em;margin-top:26px;color:#b9dcea;}
+    margin-left:0;pointer-events:none;mix-blend-mode:screen;}
+  .glitch::before{color:var(--mg);opacity:.5;
+    animation:echoLag 5.2s var(--e-out) infinite;}
+  .glitch::after{color:var(--cy);opacity:.42;
+    animation:echoLead 5.2s var(--e-out) infinite;}
+  @keyframes echoLag{0%,100%{transform:translate(calc(var(--slip) * -1),1px);opacity:.42;}
+    44%{transform:translate(calc(var(--slip) * -2.4),2px);opacity:.62;}
+    47%{transform:translate(calc(var(--slip) * -.4),0);opacity:.24;}
+    62%{transform:translate(calc(var(--slip) * -1.6),1px);opacity:.5;}}
+  @keyframes echoLead{0%,100%{transform:translate(var(--slip),-1px);opacity:.34;}
+    44%{transform:translate(calc(var(--slip) * 2),-2px);opacity:.54;}
+    47%{transform:translate(calc(var(--slip) * .3),0);opacity:.2;}
+    62%{transform:translate(calc(var(--slip) * 1.4),-1px);opacity:.42;}}
+  #ov-frac-lines{font-family:var(--f-mono);font-size:var(--fs-md);line-height:2.15;
+    letter-spacing:.14em;margin-top:calc(var(--ovr) * 1.2);color:var(--ink-2);
+    padding-left:var(--s4);border-left:1px solid var(--rule);}
+  /* na tela-título o bloco está vazio: sem isto, sobra a régua de 1px */
+  #ov-frac-lines:empty{display:none;}
   #ov-frac-lines .good{color:#8ff6ff;}
   #ov-frac-lines .bad{color:#ff8095;text-decoration:line-through;}
   #ov-frac-lines .mid{color:#e0a9f5;}
 
   /* ---------- PR 7.5 — SAVE SLOTS / morte com decisão ---------- */
   #ov-go:empty{display:none;}
-  #ov-actions{margin-top:16px;display:none;gap:12px;align-items:center;
+  #ov-actions{margin-top:calc(var(--ovr) * .9);display:none;gap:12px;align-items:center;
     justify-content:center;flex-wrap:wrap;}
   #ov-actions.on{display:flex;}
   #ov-actions .hint{font-family:Consolas,monospace;font-size:var(--fs-2xs);
     letter-spacing:.28em;color:rgba(150,180,200,.5);width:100%;margin-top:6px;}
-  #ov-slots{margin-top:26px;display:flex;flex-direction:column;gap:12px;
+  #ov-slots{margin-top:calc(var(--ovr) * 1.2);display:flex;flex-direction:column;gap:12px;
     align-items:center;width:100%;}
   .savecard{width:min(600px,92vw);border:1px solid rgba(70,224,255,.32);
     background:rgba(8,18,28,.74);padding:14px 22px;cursor:pointer;text-align:left;
@@ -354,8 +531,8 @@
   .savecard .sc-run.none{color:rgba(120,160,185,.55);}
   .savecard.empty{border-style:dashed;opacity:.72;}
   .savecard.sel{border-color:#9ff3ff;box-shadow:0 0 24px rgba(70,224,255,.35);}
-  #ov-slotacts{margin-top:24px;display:flex;flex-direction:column;gap:10px;
-    align-items:center;width:100%;}
+  #ov-slotacts{margin-top:calc(var(--ovr) * 1.1);display:flex;flex-direction:column;
+    gap:calc(var(--ovr) * .5);align-items:center;width:100%;}
   .slotact{min-width:min(420px,86vw);text-align:center;}
   .slotact small{display:block;margin-top:3px;font-size:var(--fs-2xs);
     letter-spacing:.22em;color:rgba(140,180,205,.6);}
@@ -365,17 +542,39 @@
 
 
   /* ---------- modais: evento de decisão & loja ---------- */
+  /* ==================================================================
+     DECISÃO — uma escolha não deve parecer um diálogo de sistema
+     O modal era uma caixa centrada com borda ciano fechada: o mesmo
+     invólucro para comprar um item e para decidir o destino de um Eco.
+     Agora ele é uma FOLHA: sem moldura, ancorada por uma barra vertical
+     à esquerda, título em display com peso real e a etiqueta de contexto
+     acima em telemetria. A borda sobrou só onde separa conteúdo.
+     ================================================================== */
   #modal{position:fixed;inset:0;z-index:24;display:none;align-items:center;justify-content:center;
-    background:radial-gradient(ellipse at center,rgba(6,10,20,.70),rgba(2,4,10,.93));}
-  #modal.on{display:flex;}
-  .mbox{width:min(980px,94vw);max-height:92vh;overflow:auto;
-    border:1px solid rgba(70,224,255,.35);
-    background:linear-gradient(180deg,rgba(6,14,24,.97),rgba(4,8,16,.98));
-    box-shadow:0 0 70px rgba(0,0,0,.85),inset 0 0 46px rgba(70,224,255,.05);
-    padding:26px 30px;border-radius:4px;}
-  .mtag{font-family:Consolas,monospace;font-size:var(--fs-xs);letter-spacing:.4em;color:rgba(160,220,240,.55);}
-  .mtitle{font-family:Consolas,monospace;font-size:var(--fs-head);letter-spacing:.2em;color:#eaffff;
-    margin-top:6px;text-shadow:0 0 18px rgba(70,224,255,.5);}
+    padding:var(--s5) var(--s4);
+    background:
+      linear-gradient(180deg,rgba(2,4,10,.90),rgba(2,4,10,.96)),
+      repeating-linear-gradient(0deg,transparent 0 52px,rgba(70,224,255,.022) 52px 53px);
+    backdrop-filter:blur(2px);}
+  #modal.on{display:flex;animation:sheetRaise var(--t-mid) var(--e-out);}
+  @keyframes sheetRaise{from{opacity:0;}to{opacity:1;}}
+  .mbox{position:relative;width:min(1000px,94vw);max-height:92vh;overflow:auto;
+    border:0;border-left:2px solid var(--rule-cy);border-radius:var(--r0);
+    background:linear-gradient(120deg,rgba(8,16,27,.985),rgba(4,8,16,.985));
+    box-shadow:0 34px 90px rgba(0,0,0,.72);
+    padding:var(--s6) clamp(var(--s5),4.5vw,52px) var(--s5);}
+  /* tique de registro: marca o canto de ancoragem da folha */
+  .mbox::before{content:"";position:absolute;left:-2px;top:0;width:2px;height:34px;
+    background:var(--cy);box-shadow:0 0 14px var(--cy-dim);}
+  .mtag{display:block;font-family:var(--f-mono);font-size:var(--fs-xs);
+    letter-spacing:var(--tr-l);color:var(--ink-3);text-transform:uppercase;}
+  /* o título carrega o peso editorial — tracking apertado, corpo grande */
+  .mtitle{font-family:var(--f-disp);font-weight:700;font-size:var(--fs-head);
+    letter-spacing:var(--tr-t);color:#f0fbff;margin-top:var(--s2);line-height:1.1;
+    text-shadow:none;}
+  /* régua sob o título: fecha o cabeçalho e abre o corpo */
+  .mtitle::after{content:"";display:block;width:90px;height:1px;margin-top:var(--s4);
+    background:linear-gradient(90deg,var(--cy),transparent);}
   .mtabs{display:flex;gap:6px;margin:2px 0 6px;flex-wrap:wrap}
   .mtab{font-family:Consolas,monospace;font-size:var(--fs-3xs);letter-spacing:.22em;
     padding:7px 14px;color:rgba(160,220,240,.6);border:1px solid rgba(70,224,255,.18);
@@ -383,14 +582,24 @@
   .mtab:hover{border-color:rgba(70,224,255,.55);color:#dff6ff}
   .mtab.on{border-color:#8fd6ff;color:#eaffff;background:rgba(70,224,255,.12);
     box-shadow:0 0 12px rgba(70,224,255,.18)}
-  .mdesc{font-family:Consolas,monospace;font-size:var(--fs-md);line-height:1.95;letter-spacing:.06em;
-    color:#9cc6da;margin-top:12px;}
-  .mdesc b{color:#e8fbff;font-weight:normal;}
-  .mrow{display:flex;gap:13px;margin-top:18px;flex-wrap:wrap;}
-  .card{position:relative;flex:1 1 215px;min-width:215px;border:1px solid rgba(120,150,170,.28);
-    background:rgba(8,18,28,.7);padding:14px;border-radius:3px;cursor:pointer;transition:all .14s;}
-  .card:hover{border-color:var(--cy);background:rgba(18,46,64,.7);transform:translateY(-3px);
-    box-shadow:0 6px 26px rgba(70,224,255,.18);}
+  /* corpo da decisão: medida de leitura curta, respiro alto — o texto de
+     um evento moral precisa ser lido, não varrido */
+  .mdesc{font-family:var(--f-ui);font-size:var(--fs-lg);line-height:1.75;letter-spacing:0;
+    color:var(--ink-2);margin-top:var(--s4);max-width:78ch;}
+  .mdesc b{color:var(--ink);font-weight:600;}
+  .mrow{display:flex;gap:var(--s2);margin-top:var(--s5);flex-wrap:wrap;}
+  /* OPÇÃO — a consequência precisa pesar mais que a moldura.
+     Sem borda em volta: um trilho lateral que acende na intenção. */
+  .card{position:relative;flex:1 1 236px;min-width:236px;border:0;
+    border-left:2px solid var(--rule);border-radius:var(--r0);
+    background:linear-gradient(100deg,rgba(11,20,32,.85),rgba(7,13,22,.6));
+    padding:var(--s4) var(--s4) var(--s4) var(--s3);cursor:pointer;
+    transition:border-color var(--t-fast) var(--e-out),
+               background var(--t-fast) var(--e-out),
+               transform var(--t-fast) var(--e-out);}
+  .card:hover{border-left-color:var(--cy);transform:translateX(3px);
+    background:linear-gradient(100deg,rgba(18,38,56,.9),rgba(8,16,26,.7));
+    box-shadow:-10px 0 30px -14px rgba(70,224,255,.5);}
   .card.dis{opacity:.32;cursor:not-allowed;filter:grayscale(1);}
   .card.dis:hover{transform:none;border-color:rgba(120,150,170,.28);
     background:rgba(8,18,28,.7);box-shadow:none;}
@@ -425,8 +634,9 @@
      tilt ou ajuste por operador. */
   .sbchar .operator-portrait{width:100%;height:auto;aspect-ratio:1/1;
     max-height:132px;margin:0 auto 6px;object-fit:contain;}
-  .chpick .operator-portrait{width:76px;height:76px;margin:0 auto 5px;
+  .chpick .operator-portrait{width:var(--chp,76px);height:var(--chp,76px);margin:0 auto 4px;
     object-fit:contain;}
+  /* o dominante ignora --chp: ele preenche a própria célula (regra abaixo) */
   .chead{display:flex;align-items:flex-start;gap:11px;}
   .chead .cnm{flex:1;padding-top:2px;}
   @media(max-width:800px){
@@ -618,22 +828,77 @@
 
   /* ---------- seletor de operador na tela-título ---------- */
   /* grade 4 × 2 para os 8 operadores (VECTOR…PYRE / HARDEN…REVENANT) */
-  #ov-char{display:grid;grid-template-columns:repeat(4,110px);gap:9px;
-    margin-top:26px;justify-content:center;align-items:stretch;}
-  .chpick{width:110px;padding:9px 6px;border:1px solid rgba(120,150,170,.24);
-    background:rgba(6,14,24,.6);border-radius:3px;cursor:pointer;text-align:center;
-    transition:all .14s;}
-  .chpick:hover{transform:translateY(-3px);background:rgba(16,38,54,.7);}
+  /* ==================================================================
+     CHARACTER SELECT — editorial, não uma bandeja de 8 quadrados iguais
+     O problema do layout anterior era a ISONOMIA: oito cards idênticos não
+     comunicam escolha, comunicam catálogo. Aqui a grade é intencionalmente
+     desigual — o operador selecionado ocupa um bloco 2x2 e domina a
+     composição, enquanto os outros sete permanecem como alternativas
+     secundárias, menores e dessaturadas. A contagem de cards no DOM não
+     muda (8 nós [data-ch]); quem muda de peso é a composição.
+     ================================================================== */
+  /* A grade tem três linhas (o dominante ocupa 2x2), então a altura da
+     CÉLULA multiplica por três qualquer excesso. Coluna, linha e retrato
+     passam a escalar com a altura da viewport: em 1080p a grade fica como
+     foi aprovada e em 768p ela fecha sem empurrar o título para fora. */
+  #ov-char{--chp:clamp(42px,5.6vh,72px);      /* corpo do retrato pequeno */
+    display:grid;grid-template-columns:repeat(4,clamp(96px,11.5vh,128px));
+    grid-auto-rows:minmax(clamp(64px,8vh,104px),auto);grid-auto-flow:row dense;gap:var(--s1);
+    margin-top:calc(var(--ovr) * 1.35);justify-content:start;align-items:stretch;
+    width:min(560px,100%);}
+  /* na tela-título a grade está vazia (o elenco vive no menu do SAVE):
+     sem isto ela ainda cobra a própria margem */
+  #ov-char:empty{display:none;}
+  /* -- as alternativas: pequenas, frias, sem moldura; a cor do operador
+     (--op, vinda do JS) só acende no hover e na seleção -- */
+  .chpick{position:relative;width:auto;padding:var(--s1) var(--s2) var(--s2);
+    border:0;border-top:1px solid var(--rule-2);border-radius:var(--r0);
+    background:rgba(6,12,21,.5);cursor:pointer;text-align:left;overflow:hidden;
+    transition:background var(--t-fast) var(--e-out),
+               border-color var(--t-fast) var(--e-out);}
+  .chpick:hover{transform:none;background:rgba(14,30,46,.72);
+    border-top-color:var(--op,var(--cy));}
   .chpick svg{width:38px;height:38px;display:block;margin:0 auto;}
-  .chpick .cn{font-family:Consolas,monospace;font-size:var(--fs-xs);letter-spacing:.14em;
-    margin-top:5px;color:#9db8c8;}
-  .chpick .cr{font-family:Consolas,monospace;font-size:var(--fs-3xs);letter-spacing:.14em;
-    color:rgba(150,180,200,.5);margin-top:2px;}
-  .chpick.on{background:rgba(20,46,64,.8);}
-  .chpick.on .cn{color:#eaffff;}
-  .chpick.lock{opacity:.34;filter:grayscale(.85);cursor:help;}
-  .chpick.lock:hover{transform:none;}
-  @media(max-width:560px){#ov-char{grid-template-columns:repeat(2,110px);}}
+  /* índice editorial — numera o elenco e ancora a leitura da grade */
+  .chpick .cidx{position:absolute;right:var(--s2);top:var(--s1);z-index:3;
+    font-family:var(--f-mono);font-size:var(--fs-3xs);letter-spacing:var(--tr-d);
+    color:var(--ink-3);opacity:.7;}
+  .chpick .cn{font-family:var(--f-mono);font-size:var(--fs-2xs);
+    letter-spacing:var(--tr-d);margin-top:var(--s1);color:var(--ink-2);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .chpick .cr{font-family:var(--f-mono);font-size:var(--fs-3xs);
+    letter-spacing:var(--tr-d);color:var(--ink-3);margin-top:1px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .chpick .cslots{opacity:.72;}
+  .chpick.on{background:rgba(8,18,30,.9);border-top-color:transparent;}
+  .chpick.on .cn{color:#f2fbff;}
+  .chpick.on .cidx{color:var(--op,var(--cy));opacity:1;}
+  /* o dominante herda a cor do operador nas marcas de registro */
+  .chpick.on::before{border-color:var(--op,var(--cy));}
+  .chpick.lock{opacity:.3;filter:grayscale(.9);cursor:help;}
+  .chpick.lock:hover{transform:none;background:rgba(6,12,21,.5);}
+  /* -- o dominante: bloco 2x2, retrato em escala, nome em display -- */
+  .chpick.on{grid-column:span 2;grid-row:span 2;padding:0;
+    background:linear-gradient(180deg,rgba(6,12,22,0),rgba(3,6,12,.92) 68%);
+    display:flex;flex-direction:column;justify-content:flex-end;
+    border-color:transparent;overflow:hidden;}
+  .chpick.on .operator-portrait{position:absolute;inset:0;width:100%;height:100%;
+    margin:0;object-fit:cover;opacity:.96;}
+  /* véu inferior: garante leitura do nome sobre qualquer retrato */
+  .chpick.on::after{content:"";position:absolute;inset:auto 0 0 0;height:62%;
+    background:linear-gradient(180deg,transparent,rgba(2,4,9,.93));pointer-events:none;}
+  .chpick.on>.cn,.chpick.on>.cr{position:relative;z-index:2;}
+  .chpick.on .cn{font-family:var(--f-disp);font-weight:700;font-size:var(--fs-head);
+    letter-spacing:var(--tr-t);line-height:1.05;text-align:left;
+    padding:0 var(--s3);margin-top:var(--s2);}
+  .chpick.on .cr{text-align:left;padding:0 var(--s3);letter-spacing:var(--tr-l);}
+  .chpick.on .cr:last-child{padding-bottom:var(--s3);}
+  /* marca de registro no canto do dominante */
+  .chpick.on::before{content:"";position:absolute;left:0;top:0;z-index:2;
+    width:18px;height:18px;border-left:2px solid var(--cy);border-top:2px solid var(--cy);}
+  @media(max-width:560px){
+    #ov-char{grid-template-columns:repeat(2,minmax(92px,128px));}
+  }
 
   /* ---------- TOOLTIP ---------- */
   #tip{position:fixed;z-index:60;pointer-events:none;display:none;
@@ -833,9 +1098,10 @@
     color:#ffd166;margin-top:6px;}
 
   /* ---------- botões do menu inicial ---------- */
-  #ov-menu{display:flex;gap:11px;margin-top:18px;flex-wrap:wrap;justify-content:center;}
-  .ovbtn{font-family:Consolas,monospace;font-size:var(--fs-md);letter-spacing:.3em;color:#9fd4e8;
-    border:1px solid rgba(70,224,255,.32);padding:11px 24px;cursor:pointer;
+  /* menu secundário: lista alinhada ao trilho, não uma fileira de botões */
+  #ov-menu{display:flex;gap:var(--s2);margin-top:calc(var(--ovr) * 1.1);flex-wrap:wrap;justify-content:flex-start;}
+  .ovbtn{font-family:var(--f-mono);font-size:var(--fs-md);letter-spacing:var(--tr-s);color:var(--ink-2);
+    border:1px solid rgba(70,224,255,.32);padding:clamp(7px,1.15vh,11px) 24px;cursor:pointer;
     background:rgba(70,224,255,.04);transition:all .14s;}
   .ovbtn:hover{color:#e8fbff;border-color:var(--cy);background:rgba(70,224,255,.16);
     box-shadow:0 0 18px rgba(70,224,255,.22);transform:translateY(-2px);}
@@ -1009,7 +1275,142 @@
     border:1px solid rgba(255,209,102,.3);white-space:pre;pointer-events:none;}
   #devinfo.on{display:block;}
   #ov-ver{font-family:Consolas,monospace;font-size:var(--fs-2xs);
-    letter-spacing:.34em;color:rgba(150,185,205,.5);margin-top:20px;}
+    letter-spacing:.34em;color:rgba(150,185,205,.5);margin-top:calc(var(--ovr) * .9);}
+
+  /* ####################################################################
+     CAMADA DE ASSINATURA — ECHO 2.0
+     Tudo abaixo é linguagem transversal: vale para qualquer tela e existe
+     para que o jogo tenha uma MÃO reconhecível, não só componentes certos.
+     Vem no fim da folha de propósito — é a camada que harmoniza o que as
+     seções anteriores definiram isoladamente.
+     #################################################################### */
+
+  /* ====================================================================
+     1. TIPOGRAFIA EDITORIAL
+     O maior responsável pela aparência de template era um só: TODO texto
+     usava Consolas com tracking largo. Título e dado ficavam com a mesma
+     voz. Aqui os títulos de tela passam para a família display, com peso
+     alto e tracking apertado; a mono fica reservada à telemetria.
+     ==================================================================== */
+  #p-title,#e-title,.s-tag,.cxtitle,#bossnm,.mtitle,.cnm,.onm,
+  .savecard .sc-name,#ov-title,.chpick.on .cn{
+    font-family:var(--f-disp);font-weight:700;letter-spacing:var(--tr-t);}
+  #p-title{font-size:var(--fs-head);color:#f0fbff;text-shadow:none;line-height:1.1;}
+  #e-title{letter-spacing:.01em;text-shadow:none;line-height:1.02;}
+  .s-tag,.cxtitle{font-size:var(--fs-head);letter-spacing:var(--tr-s);
+    color:#f0fbff;text-shadow:none;}
+  #bossnm{font-size:var(--fs-2xl);letter-spacing:var(--tr-s);color:#ffe4f9;}
+  /* rótulos e subtítulos continuam em mono, e ficam MENORES de propósito:
+     o contraste de escala é o que cria hierarquia sem precisar de borda. */
+  #p-tag,#e-tag,.s-sub,.cxsub,#bosssub,.mtag,.cxtag,.lockinfo,.ashint{
+    font-family:var(--f-mono);letter-spacing:var(--tr-l);color:var(--ink-3);
+    text-transform:uppercase;}
+  .cds,.cxds,.mdesc,#p-stats{font-family:var(--f-ui);letter-spacing:0;}
+  .cds,.cxds{font-size:var(--fs-sm);line-height:1.65;color:var(--ink-2);}
+  /* números são dados: tabulares, sempre alinhados na vertical */
+  #hpnum,#shnum,#timer,#lvl,.coinT,#e-mem,#metrics-overlay dd,.srow .v{
+    font-variant-numeric:tabular-nums;}
+
+  /* ====================================================================
+     2. SUPERFÍCIES — MENOS MOLDURA, MAIS ANCORAGEM
+     As telas grandes eram todas o mesmo retângulo com borda ciano. Passam
+     a ser folhas ancoradas por um trilho, como o modal de decisão.
+     ==================================================================== */
+  .ebox,.pbox,.cxbox,#sheet,#sandboxp{
+    border:0;border-left:2px solid var(--rule-cy);border-radius:var(--r0);
+    box-shadow:0 34px 90px rgba(0,0,0,.72);}
+  #sandboxp{border-left-color:rgba(125,255,196,.42);}
+  .ebox::before,.pbox::before,.cxbox::before{content:"";position:absolute;
+    left:-2px;top:0;width:2px;height:34px;background:var(--cy);
+    box-shadow:0 0 14px var(--cy-dim);}
+  .ebox,.pbox,.cxbox{position:relative;}
+
+  /* ====================================================================
+     3. GRAMÁTICA TEMPORAL
+     Deslocamento temporal NÃO é glitch. Glitch é sinal corrompido; aqui o
+     sinal está íntegro e FORA DE FASE. As três classes abaixo são o
+     vocabulário: atraso, dessincronia e rastro.
+     ==================================================================== */
+  /* .tmp-slip — o elemento arrasta uma cópia magenta atrás de si */
+  .tmp-slip{position:relative;}
+  .tmp-slip::after{content:"";position:absolute;inset:0;pointer-events:none;
+    border-left:2px solid var(--mg);opacity:.42;
+    transform:translate(calc(var(--slip) * -1.6),2px);
+    animation:slipDrift 6.4s var(--e-out) infinite;}
+  @keyframes slipDrift{0%,100%{transform:translate(calc(var(--slip) * -1.6),2px);opacity:.4;}
+    46%{transform:translate(calc(var(--slip) * -3),3px);opacity:.6;}
+    50%{transform:translate(0,0);opacity:.12;}}
+  /* .tmp-desync — duas leituras do mesmo bloco que não coincidem */
+  .tmp-desync{position:relative;isolation:isolate;}
+  .tmp-desync::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:-1;
+    background:linear-gradient(90deg,rgba(255,77,240,.10),transparent 42%);
+    transform:translateX(calc(var(--slip) * -1));
+    animation:desyncPhase 7.8s steps(1,end) infinite;}
+  @keyframes desyncPhase{0%,72%{transform:translateX(calc(var(--slip) * -1));opacity:.85;}
+    74%{transform:translateX(calc(var(--slip) * 2));opacity:.4;}
+    76%,100%{transform:translateX(calc(var(--slip) * -1));opacity:.85;}}
+  /* .tmp-ghost — rastro: o elemento já passou, a imagem ainda está aqui */
+  .tmp-ghost{position:relative;}
+  .tmp-ghost::after{content:"";position:absolute;inset:0;pointer-events:none;
+    box-shadow:inset 0 0 0 1px rgba(255,77,240,.22);opacity:0;
+    animation:ghostTrail 4.2s var(--e-out) infinite;}
+  @keyframes ghostTrail{0%{opacity:.55;transform:none;}
+    38%{opacity:0;transform:translate(6px,-3px);}100%{opacity:0;}}
+  /* a UI de Fractura herda a gramática em vez de "ficar magenta" */
+  #frac-hud-theme{color:#ffc7fb;}
+  #temporalwrap.armed{border-left:2px solid var(--temporal-replay-color,var(--mg));}
+  #ov-frac-lines .bad{text-decoration-color:rgba(255,128,149,.55);}
+
+  /* ====================================================================
+     4. ASSINATURA DE FACÇÃO — FORMA, NÃO SÓ COR
+     Cada facção recebe uma LINGUAGEM DE FORMAS própria. O pedido era
+     explícito: mudar a cor não basta. A cor continua vindo de --fp-col
+     (definida pelo jogo); o que muda aqui é estrutura, ritmo e borda.
+     ==================================================================== */
+  #fpind,.toast.fp{border-radius:var(--r0);}
+  /* ÂNCORA ⬡ — ortogonal, dupla régua, imóvel. Estabilidade é rigidez. */
+  #fpind[data-fac="anchor"],.toast.fp[data-fac="anchor"]{
+    border:0;border-top:1px solid var(--fp-col,#8fd6ff);
+    border-bottom:3px double var(--fp-col,#8fd6ff);
+    box-shadow:none;animation:none;}
+  /* REMANESCENTES ◉ — concêntrico, macio, respira. Preservar é insistir. */
+  #fpind[data-fac="remnants"],.toast.fp[data-fac="remnants"]{
+    border:1px solid color-mix(in srgb,var(--fp-col,#7dffc4) 45%,transparent);
+    border-radius:14px;
+    box-shadow:0 0 0 4px color-mix(in srgb,var(--fp-col,#7dffc4) 9%,transparent),
+               0 0 0 9px color-mix(in srgb,var(--fp-col,#7dffc4) 4%,transparent);}
+  /* CONSÓRCIO ◈ — cisalhado, grade de razão, ângulo de contrato. */
+  #fpind[data-fac="consortium"],.toast.fp[data-fac="consortium"]{
+    border:0;border-left:3px solid var(--fp-col,#ffd166);
+    background-image:repeating-linear-gradient(135deg,
+      color-mix(in srgb,var(--fp-col,#ffd166) 8%,transparent) 0 2px,
+      transparent 2px 7px);
+    clip-path:polygon(0 0,100% 0,calc(100% - 11px) 100%,0 100%);
+    padding-right:var(--s5);}
+  /* DESVIADOS ◬ — rasgado, assimétrico, com eco fora de fase. */
+  #fpind[data-fac="deviants"],.toast.fp[data-fac="deviants"]{
+    border:0;border-left:2px solid var(--fp-col,#ff4df0);
+    border-top:1px solid color-mix(in srgb,var(--fp-col,#ff4df0) 40%,transparent);
+    clip-path:polygon(0 0,100% 0,100% 72%,calc(100% - 15px) 100%,0 100%);}
+  #fpind[data-fac="deviants"]::after{content:"";position:absolute;inset:0;
+    pointer-events:none;border-left:2px solid var(--fp-col,#ff4df0);opacity:.4;
+    transform:translateX(calc(var(--slip) * -1.4));}
+  #fpind{position:fixed;}
+
+  /* ====================================================================
+     5. MOVIMENTO
+     Acessibilidade e sobriedade: em prefers-reduced-motion nada pulsa,
+     varre ou desloca. A informação permanece idêntica — só o movimento sai.
+     ==================================================================== */
+  @media(prefers-reduced-motion:reduce){
+    *,*::before,*::after{
+      animation-duration:.001ms !important;animation-iteration-count:1 !important;
+      transition-duration:.001ms !important;scroll-behavior:auto !important;}
+    #scan{animation:none;}
+    .glitch::before,.glitch::after{opacity:.3;transform:none;}
+    .tmp-slip::after,.tmp-desync::before,.tmp-ghost::after{animation:none;}
+  }
+
 </style>
 </head>
 <body>
@@ -6071,6 +6472,10 @@ function fpImportantToast(faction,head,eff,sub){
   const d=document.createElement('div');
   d.className='toast fp';
   d.style.setProperty('--fp-col',lab.col);
+  /* PR-VISUAL: a facção passa a existir como DADO no DOM, para que o CSS
+     aplique a LINGUAGEM DE FORMAS dela (ver camada de assinatura §4).
+     Sem isso, facção seria só cor — que era exatamente a crítica. */
+  d.dataset.fac=String(faction||'');
   const mk=(cls,txt)=>{const s=document.createElement('div');s.className=cls;s.textContent=txt;return s;};
   d.appendChild(mk('fp-head',lab.sym+' '+(head==null?'':String(head))));
   d.appendChild(mk('fp-eff',eff==null?'':String(eff)));
@@ -6092,6 +6497,7 @@ function fpIndicatorTick(dt){
   if(_fpindAcc>=.25||!fpindEl.style.display){
     _fpindAcc=0;
     fpindEl.style.setProperty('--fp-col',lab.col);
+    fpindEl.dataset.fac=String(e.faction||'');
     fpindEl.textContent=lab.sym+' PRESENÇA ATIVA · '+lab.nm+' · '+
       Math.max(1,Math.ceil(e.ttl))+'s'+(e.pactOffer?' · ◆ PACTO DISPONÍVEL':'');
     fpindEl.style.display='block';
@@ -16412,10 +16818,57 @@ function mbCore(R,color,pl,alpha){
 }
 /* base compartilhada: sombra (elíptica pela silhueta) + aro de surgimento
    com a assinatura de cada um. Devolve o perfil visual. */
+/* POSTO — o que separa um mini-chefe de um inimigo comum ANTES de olhar
+   para o corpo. Os oito renderers já eram distintos entre si, mas nada
+   dizia "este é de outra categoria": no meio de uma onda, o Duelista tem
+   silhueta fina e o Arauto é escuro — ambos podiam passar por elite.
+   A camada abaixo é COMUM aos oito e existe só para marcar hierarquia:
+
+     · base pesada — laje + dois aros no chão, muito maior que a pegada de
+       qualquer comum (que é uma mancha de ~1R). Massa institucional.
+     · marcas de registro — quatro colchetes enquadrando a criatura, na
+       mesma linguagem do instrumento na interface: o sistema está
+       RASTREANDO esta entidade. Nenhum inimigo comum recebe moldura.
+     · selo — o símbolo do perfil, fixo acima do corpo.
+
+   Nada aqui lê ou altera mecânica: é geometria derivada de e.r, e.phase,
+   runTime e do perfil declarativo. */
+function drawMinibossRank(e,V,intro){
+  const R=e.r,hot=e.phase===2;
+  ctx.save();
+  // base pesada no chão
+  ctx.globalAlpha=.40*intro;ctx.fillStyle='#000';
+  ctx.beginPath();ctx.ellipse(e.x,e.y+R*.40,R*1.36*V.scaleX,R*.62*V.scaleY,0,0,TAU);ctx.fill();
+  ctx.globalAlpha=.30*intro;ctx.strokeStyle=V.primary;ctx.lineWidth=Math.max(2,R*.05);
+  ctx.beginPath();ctx.ellipse(e.x,e.y+R*.40,R*1.64,R*.74,0,0,TAU);ctx.stroke();
+  ctx.globalAlpha=.16*intro;
+  ctx.beginPath();ctx.ellipse(e.x,e.y+R*.40,R*2.04,R*.92,0,0,TAU);ctx.stroke();
+  // marcas de registro — enquadramento, não moldura fechada
+  const d=R*1.58,arm=R*.46;
+  ctx.globalAlpha=(hot?.85:.58)*intro;
+  ctx.strokeStyle=hot?V.accent:V.primary;ctx.lineWidth=Math.max(2,R*.055);
+  ctx.lineCap='square';
+  for(let i=0;i<4;i++){
+    const sx=i<2?-1:1, sy=(i%2)?1:-1;
+    ctx.beginPath();
+    ctx.moveTo(e.x+sx*d,e.y+sy*d-sy*arm);
+    ctx.lineTo(e.x+sx*d,e.y+sy*d);
+    ctx.lineTo(e.x+sx*d-sx*arm,e.y+sy*d);
+    ctx.stroke();
+  }
+  ctx.lineCap='butt';
+  // selo do perfil
+  ctx.globalAlpha=(hot?.95:.72)*intro;
+  ctx.fillStyle=hot?V.accent:V.primary;
+  ctx.font='600 '+Math.max(11,Math.round(R*.46))+'px Consolas,monospace';
+  ctx.textAlign='center';ctx.textBaseline='alphabetic';
+  ctx.fillText(V.symbol,e.x,e.y-d-R*.22);
+  ctx.textAlign='left';
+  ctx.restore();
+}
 function drawMinibossBase(e){
   const V=minibossVisual(e.mb&&e.mb.id),R=e.r,intro=e.spawnT>0?1-e.spawnT/1.6:1;
-  ctx.save();ctx.globalAlpha=.34*intro;ctx.fillStyle='#000';
-  ctx.beginPath();ctx.ellipse(e.x,e.y+R*.4,R*.95*V.scaleX,R*.5*V.scaleY,0,0,TAU);ctx.fill();ctx.restore();
+  drawMinibossRank(e,V,intro);
   if(e.spawnT>0)drawMinibossSpawn(e,V);
   return V;
 }
@@ -21024,6 +21477,153 @@ function visualEnemyAttackPose(e,out){
   else if(st==='recover'){out.offsetX=-1.2*(1-p);out.scaleX=.98+.02*p;out.scaleY=1.02-.02*p;}
   return out;
 }
+/* =====================================================================
+   PR-VISUAL · GRAMÁTICA DE LEITURA DOS INIMIGOS
+   ---------------------------------------------------------------------
+   PROBLEMA: com 20+ inimigos em tela o jogador não lia CLASSE, lia COR.
+   Onze tipos, e três pares compartilhavam matiz (chaser/tank vermelhos,
+   orbiter/phantom ciano, anomaly/bulwark roxo) — a única coisa que os
+   separava era o desenho do corpo, que some assim que o alvo fica
+   pequeno, encoberto ou em movimento.
+
+   SOLUÇÃO: três canais de leitura, do mais grosso ao mais fino, para que
+   a identidade sobreviva mesmo quando o corpo não é legível.
+
+     1. PEGADA (família + massa) — o contato com o chão. É a marca mais
+        grossa, sempre visível por baixo de qualquer amontoado, e nunca é
+        ocluída por outro inimigo porque vive no plano do chão.
+          slab   massa que pisa       (tank, bulwark)
+          anchor cravado, não anda    (spawner)
+          pad    máquina que flutua   (shooter, orbiter)
+          claw   carne que corre      (chaser, splitter)
+          none   não toca o chão      (swarm)
+          slip   sombra fora de fase  (anomaly, phantom)
+          well   poço gravitacional   (singular)
+
+     2. AURÉOLA (contraste com a arena) — um fio claro no contorno do
+        corpo, na matiz da família. Garante recorte contra qualquer fundo
+        sem depender do glow, que se dissolve quando há muitos emissores.
+
+     3. PERIGO (telegraph compartilhado) — UMA linguagem para todos: o
+        que vai te machucar abre uma cunha branca na direção do golpe. O
+        jogador aprende o sinal uma vez e passa a lê-lo nos onze tipos.
+
+   REGRAS HERDADAS (intocadas): camada estritamente visual — nada aqui lê
+   ou escreve HP, dano, velocidade, IA, spawn, hitbox, economia ou
+   balanceamento; o desenho é OBSERVADOR (jamais muta a entidade) e
+   determinístico: deriva apenas de runTime, e.visualSeed e campos já
+   existentes, sem sorteio algum.
+   ===================================================================== */
+const ENEMY_READ_GRAMMAR={
+  chaser  :{family:'flesh',   footprint:'claw',   rim:'#ffb3c1'},
+  splitter:{family:'flesh',   footprint:'claw',   rim:'#ffd9a8'},
+  swarm   :{family:'flesh',   footprint:'none',   rim:'#ffd0fb'},
+  shooter :{family:'machine', footprint:'pad',    rim:'#fff0c0'},
+  orbiter :{family:'machine', footprint:'pad',    rim:'#d8ffff'},
+  bulwark :{family:'machine', footprint:'slab',   rim:'#e9d8ff'},
+  tank    :{family:'machine', footprint:'slab',   rim:'#ffc2ce'},
+  spawner :{family:'machine', footprint:'anchor', rim:'#c8ffe4'},
+  anomaly :{family:'temporal',footprint:'slip',   rim:'#efd6ff'},
+  phantom :{family:'temporal',footprint:'slip',   rim:'#d6ffff'},
+  singular:{family:'temporal',footprint:'well',   rim:'#ffc8f5'}
+};
+const ENEMY_READ_FALLBACK={family:'machine',footprint:'pad',rim:'#dbe9f2'};
+function enemyReadGrammar(type){return ENEMY_READ_GRAMMAR[type]||ENEMY_READ_FALLBACK;}
+
+/* PEGADA — desenhada em espaço de mundo, antes do corpo e sem rotação.
+   Substitui a elipse única que os onze tipos dividiam: a sombra deixa de
+   ser acabamento e passa a ser informação de classe.
+   A arena é quase preta, então uma sombra PRETA não comunica nada — some.
+   Por isso a pegada é desenhada na MATIZ DA FAMÍLIA em alpha baixo, e o
+   preto entra só onde o objetivo é realmente afundar o chão (massa). */
+function drawEnemyFootprint(e,a,G){
+  const R=e.r,col=G.rim;
+  ctx.save();
+  if(G.footprint==='slab'){
+    /* MASSA — laje de borda dura, mais larga que o corpo. O chão afunda
+       e a aresta de ataque acende: peso que PISA. */
+    ctx.globalAlpha=a*.55;ctx.fillStyle='#000';
+    ctx.fillRect(e.x-R*1.06,e.y+R*.18,R*2.12,R*.58);
+    ctx.globalAlpha=a*.42;ctx.fillStyle=col;
+    ctx.fillRect(e.x-R*1.06,e.y+R*.18,R*2.12,Math.max(1,R*.11));
+    ctx.globalAlpha=a*.14;
+    ctx.fillRect(e.x-R*1.38,e.y+R*.84,R*2.76,Math.max(1,R*.08));
+  }else if(G.footprint==='anchor'){
+    /* CRAVADO — não anda. Aro no chão e duas estacas: está preso ali. */
+    ctx.globalAlpha=a*.42;ctx.fillStyle='#000';
+    ctx.beginPath();ctx.ellipse(e.x,e.y+R*.36,R*1.10,R*.42,0,0,TAU);ctx.fill();
+    ctx.globalAlpha=a*.40;ctx.strokeStyle=col;ctx.lineWidth=Math.max(1,R*.07);
+    ctx.beginPath();ctx.ellipse(e.x,e.y+R*.36,R*1.24,R*.48,0,0,TAU);ctx.stroke();
+    ctx.globalAlpha=a*.30;ctx.lineWidth=Math.max(1,R*.10);ctx.lineCap='round';
+    ctx.beginPath();
+    ctx.moveTo(e.x-R*1.46,e.y+R*.24);ctx.lineTo(e.x-R*1.10,e.y+R*.48);
+    ctx.moveTo(e.x+R*1.46,e.y+R*.24);ctx.lineTo(e.x+R*1.10,e.y+R*.48);
+    ctx.stroke();ctx.lineCap='butt';
+  }else if(G.footprint==='slip'){
+    /* FORA DE FASE — a marca está onde o corpo ESTAVA. Não é
+       transparência: é atraso. O deslocamento respira e nunca coincide. */
+    const sl=Math.sin(runTime*1.7+(e.visualSeed==null?0:e.visualSeed)*TAU);
+    ctx.globalAlpha=a*.30;ctx.strokeStyle=col;ctx.lineWidth=Math.max(1,R*.07);
+    ctx.beginPath();
+    ctx.ellipse(e.x-R*(.55+.22*sl),e.y+R*(.42+.10*sl),R*.74,R*.32,0,0,TAU);
+    ctx.stroke();
+  }else if(G.footprint==='well'){
+    /* POÇO — o chão não recebe sombra, ele AFUNDA. Dois aros achatados. */
+    ctx.globalAlpha=a*.46;ctx.fillStyle='#000';
+    ctx.beginPath();ctx.ellipse(e.x,e.y+R*.26,R*1.00,R*.48,0,0,TAU);ctx.fill();
+    ctx.globalAlpha=a*.34;ctx.strokeStyle=col;ctx.lineWidth=Math.max(1,R*.07);
+    ctx.beginPath();ctx.ellipse(e.x,e.y+R*.26,R*1.30,R*.60,0,0,TAU);ctx.stroke();
+    ctx.globalAlpha=a*.18;
+    ctx.beginPath();ctx.ellipse(e.x,e.y+R*.26,R*1.78,R*.84,0,0,TAU);ctx.stroke();
+  }else if(G.footprint==='none'){
+    /* ENXAME — não pisa. Marca mínima e alta, deliberadamente fraca: o
+       enxame lê como MASSA COLETIVA, e pegadas fortes por indivíduo
+       destroem exatamente essa leitura. */
+    ctx.globalAlpha=a*.26;ctx.fillStyle=col;
+    ctx.beginPath();ctx.ellipse(e.x,e.y+R*.70,R*.44,R*.18,0,0,TAU);ctx.fill();
+  }else if(G.footprint==='claw'){
+    /* CARNE QUE CORRE — duas garras curtas no eixo do movimento. */
+    ctx.globalAlpha=a*.34;ctx.strokeStyle=col;
+    ctx.lineWidth=Math.max(1,R*.10);ctx.lineCap='round';
+    ctx.save();ctx.translate(e.x,e.y+R*.46);ctx.rotate(e.aim||0);
+    ctx.beginPath();
+    ctx.moveTo(-R*.92,-R*.20);ctx.lineTo(R*.34,-R*.10);
+    ctx.moveTo(-R*.92, R*.20);ctx.lineTo(R*.34, R*.10);
+    ctx.stroke();ctx.restore();ctx.lineCap='butt';
+  }else{
+    /* MÁQUINA QUE FLUTUA — aro vazado, separado do corpo: não toca. */
+    ctx.globalAlpha=a*.34;ctx.strokeStyle=col;ctx.lineWidth=Math.max(1,R*.08);
+    ctx.beginPath();ctx.ellipse(e.x,e.y+R*.62,R*.62,R*.26,0,0,TAU);ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/* PERIGO — cunha branca na direção do golpe, igual para os onze tipos.
+   Só aparece durante a ANTECIPAÇÃO (windup): é aviso, não efeito. Fica
+   colada no corpo, nunca no alcance da arma, para não virar mira falsa.
+   Desenhada em espaço de mundo para não herdar squash/rotação da pose. */
+function drawEnemyDangerMark(e,a){
+  /* O ENXAME é a exceção deliberada: ele não avisa individualmente. Vinte
+     cunhas piscando ao mesmo tempo viram ruído e destroem justamente a
+     leitura de massa coletiva que o tipo depende. O perigo do enxame é o
+     enxame. (Coerente com o update, que também não cria cue por indivíduo.) */
+  if(e.type==='swarm')return;
+  const v=visualPeek(e);
+  if(!v||v.attackState!=='windup')return;
+  const p=visualClamp01(v.attackP),R=e.r;
+  const dir=isFinite(v.attackDir)?v.attackDir:(e.aim||0);
+  const rr=R*(1.20+.42*p);
+  ctx.save();
+  ctx.translate(e.x,e.y);ctx.rotate(dir);
+  ctx.globalAlpha=a*(.30+.60*p);
+  ctx.strokeStyle='#ffffff';ctx.lineWidth=Math.max(1.4,R*(.10+.07*p));
+  ctx.lineCap='round';
+  ctx.beginPath();
+  ctx.moveTo(rr*.52,-rr*.74);ctx.lineTo(rr,0);ctx.lineTo(rr*.52,rr*.74);
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawEnemy(e){
   if(e.type==='boss'){drawBoss(e);return;}
   if(e.type==='miniboss'){drawMiniBoss(e);return;}
@@ -21048,9 +21648,9 @@ function drawEnemy(e){
     ctx.globalAlpha=.12*k;ctx.fillStyle='#8ff6ff';ctx.fill();
     ctx.restore();
   }
-  // sombra projetada
-  ctx.save();ctx.globalAlpha=a*.32;ctx.fillStyle='#000';
-  ctx.beginPath();ctx.ellipse(e.x,e.y+e.r*.42,e.r*.95,e.r*.52,0,0,TAU);ctx.fill();ctx.restore();
+  // PEGADA — sombra como informação de classe (ver gramática de leitura)
+  const G=enemyReadGrammar(e.type);
+  drawEnemyFootprint(e,a,G);
 
   ctx.save();ctx.globalAlpha=a;
   const flash=e.flashT>0;
@@ -21097,6 +21697,8 @@ function drawEnemy(e){
     ctx.quadraticCurveTo(R*.35,R*.85,R*.95,0);
     ctx.closePath();ctx.fill();
     ctx.shadowBlur=0;
+    ctx.strokeStyle=flash?'#fff':G.rim;ctx.lineWidth=Math.max(1,R*.08);
+    ctx.stroke();                                  // AURÉOLA da carapaça
     // olho
     ctx.fillStyle=flash?'#fff':'#ffe0e6';
     ctx.beginPath();ctx.ellipse(R*.34,0,R*.26,R*.16,0,0,TAU);ctx.fill();
@@ -21131,8 +21733,8 @@ function drawEnemy(e){
     // corpo
     const g=radGrad2('shr|'+(R|0)+'|'+(flash?1:0),
       -R*.1,-R*.1,R*.1,0,0,R,flash?'#fff':'#ffe9a8',flash?'#fff':'#8a6a14');
-    ctx.fillStyle=g;ctx.strokeStyle=flash?'#fff':'#ffd166';ctx.lineWidth=R*.10;
-    ctx.beginPath();ctx.arc(0,0,R*.86,0,TAU);ctx.fill();ctx.stroke();
+    ctx.fillStyle=g;ctx.strokeStyle=flash?'#fff':G.rim;ctx.lineWidth=R*.11;
+    ctx.beginPath();ctx.arc(0,0,R*.86,0,TAU);ctx.fill();ctx.stroke();  // AURÉOLA
     // visor sensor
     ctx.fillStyle='#1a1405';
     ctx.beginPath();ctx.arc(0,0,R*.52,0,TAU);ctx.fill();
@@ -21165,11 +21767,11 @@ function drawEnemy(e){
     ctx.shadowColor=e.color;ctx.shadowBlur=flash?22:12;
     const g=linGrad2('spn|'+(R|0)+'|'+(flash?1:0),-R,-R,R,R,
       flash?'#fff':'#39d98a',flash?'#fff':'#0d4a30');
-    ctx.fillStyle=g;ctx.strokeStyle=flash?'#fff':'#7dffc4';ctx.lineWidth=R*.09;
+    ctx.fillStyle=g;ctx.strokeStyle=flash?'#fff':G.rim;ctx.lineWidth=R*.10;
     ctx.beginPath();
     for(let i=0;i<6;i++){const an=i/6*TAU+rp*.25;
       ctx[i?'lineTo':'moveTo'](Math.cos(an)*R*.82,Math.sin(an)*R*.82);}
-    ctx.closePath();ctx.fill();ctx.stroke();
+    ctx.closePath();ctx.fill();ctx.stroke();       // AURÉOLA
     ctx.shadowBlur=0;
     // fenda central (olho dimensional)
     ctx.fillStyle='#04170f';
@@ -21205,6 +21807,11 @@ function drawEnemy(e){
     ctx.shadowColor=e.color;ctx.shadowBlur=flash?26:16;
     tri(0,0,flash?'#ffffff':'#c56bff',1);
     ctx.shadowBlur=0;
+    // AURÉOLA: recorta o estilhaço contra o fundo sem apagar a aberração
+    ctx.globalAlpha=a;ctx.strokeStyle=flash?'#fff':G.rim;ctx.lineWidth=Math.max(1,R*.08);
+    ctx.beginPath();
+    ctx.moveTo(R*1.28,0);ctx.lineTo(-R*.72,R*.98);ctx.lineTo(-R*.30,-R*.62);
+    ctx.closePath();ctx.stroke();
     // núcleo instável
     ctx.fillStyle=flash?'#fff':'#f0d9ff';
     ctx.beginPath();ctx.arc(R*.18,R*.10,R*.19,0,TAU);ctx.fill();
@@ -21223,89 +21830,213 @@ function drawEnemy(e){
       ctx.beginPath();ctx.arc(0,0,R*1.5,0,TAU);ctx.stroke();
     }
   }else if(e.type==='swarm'){
-    /* ENXAME — inseto veloz e frágil, asas vibrando */
+    /* ENXAME — a unidade não importa, o BANDO importa.
+       `group` deriva da POSIÇÃO, então vizinhos batem asa em fase: o que
+       se lê em tela é uma massa pulsando em uníssono, não vinte bichos
+       soltos. Duas trocas de forma sustentam isso com R=9, onde qualquer
+       borrão vira mancha: as asas deixam de ser elipses moles e viram
+       triângulos que DOBRAM, e o corpo vira um dardo de quinas duras com
+       ponta longa — a direção do bando fica legível mesmo empilhado. */
     const group=Math.floor((e.x+e.y)/180)*.72,ind=(e.visualSeed==null?phase0/TAU:e.visualSeed)*1.7;
-    const fl=Math.sin(runTime*26+group+ind);
-    ctx.shadowColor=e.color;ctx.shadowBlur=flash?18:9;
-    ctx.fillStyle=flash?'#fff':'rgba(255,141,245,.45)';
-    ctx.beginPath();
-    ctx.ellipse(-R*.1,-R*.75,R*.62,R*.30,fl*.65,0,TAU);ctx.fill();
-    ctx.beginPath();
-    ctx.ellipse(-R*.1, R*.75,R*.62,R*.30,-fl*.65,0,TAU);ctx.fill();
+    const fl=Math.sin(runTime*26+group+ind);            // batida individual
+    const swell=Math.sin(runTime*5.1+group)*.5+.5;      // respiração do bando
+    /* rastro coletivo: uma cunha atrás do dardo. É o canal que transforma
+       muitos pontos em uma CORRENTE com direção. */
+    ctx.globalAlpha=a*(.16+.24*swell);
     ctx.fillStyle=flash?'#fff':e.color;
     ctx.beginPath();
-    ctx.moveTo(R*1.15,0);ctx.lineTo(-R*.55,R*.52);
-    ctx.lineTo(-R*.25,0);ctx.lineTo(-R*.55,-R*.52);
+    ctx.moveTo(-R*.45,-R*.28);ctx.lineTo(-R*(1.95+.65*swell),0);ctx.lineTo(-R*.45,R*.28);
     ctx.closePath();ctx.fill();
+    ctx.globalAlpha=a;
+    // asas angulares — dobram no eixo em vez de desfocar
+    ctx.shadowColor=e.color;ctx.shadowBlur=flash?18:9;
+    ctx.fillStyle=flash?'#fff':'rgba(255,141,245,.52)';
+    for(let k=-1;k<=1;k+=2){
+      const sp=.34+.60*Math.abs(fl);
+      ctx.beginPath();
+      ctx.moveTo(-R*.10,k*R*.16);
+      ctx.lineTo(-R*.92,k*R*(.30+sp*1.02));
+      ctx.lineTo( R*.30,k*R*(.18+sp*.48));
+      ctx.closePath();ctx.fill();
+    }
+    // dardo
+    ctx.fillStyle=flash?'#fff':e.color;
+    ctx.beginPath();
+    ctx.moveTo(R*1.42,0);ctx.lineTo(-R*.20,R*.46);
+    ctx.lineTo(-R*.62,0);ctx.lineTo(-R*.20,-R*.46);
+    ctx.closePath();ctx.fill();
+    // AURÉOLA: o fio claro é o que recorta o indivíduo dentro do amontoado
     ctx.shadowBlur=0;
+    ctx.strokeStyle=flash?'#fff':G.rim;ctx.lineWidth=Math.max(.8,R*.12);
+    ctx.stroke();
     ctx.fillStyle=flash?'#fff':'#ffe0fb';
-    ctx.beginPath();ctx.arc(R*.42,0,R*.17,0,TAU);ctx.fill();
+    ctx.beginPath();ctx.arc(R*.46,0,R*.18,0,TAU);ctx.fill();
   }else if(e.type==='orbiter'){
-    /* ORBITADOR — anel giratório com núcleo suspenso */
+    /* ORBITADOR — o que precisa ser lido é a TRAJETÓRIA, não o casco.
+       Antes a casca era um círculo tracejado e os satélites deslizavam
+       numa reta vertical: geometria orbital só no nome. Agora o plano da
+       órbita é uma ELIPSE INCLINADA (uma órbita vista de canto) e os dois
+       satélites correm sobre ela, cada um com um rastro curto que mostra
+       de onde vieram — dá para antecipar onde vão estar.
+       O alinhamento antes do tiro ENDIREITA a elipse até virar círculo: a
+       órbita passa a encarar o jogador. Esse é o aviso, e ele é estrutural
+       (a forma muda), não uma mudança de brilho. */
     const ov=visualPeek(e),orbP=ov&&ov.attackState==='windup'&&ov.attackStyle==='satellite-align'?ov.attackP:0;
     const sp=runTime*(3.2-2.4*orbP);
+    const tilt=.42+.58*orbP;                  // achatamento do plano orbital
+    const lean=vp?vp.lean:0;
+    // plano orbital
     ctx.shadowColor=e.color;ctx.shadowBlur=flash?20:11;
-    ctx.strokeStyle=flash?'#fff':e.color;ctx.lineWidth=R*(.16+.16*orbP);
-    ctx.setLineDash([R*.7,R*.5]);ctx.lineDashOffset=-sp*R+(vp?vp.lean*R*.4:0);  // PR15.5-C: shell fora de fase
-    ctx.beginPath();ctx.arc(0,0,R*.92,0,TAU);ctx.stroke();
+    ctx.strokeStyle=flash?'#fff':e.color;ctx.lineWidth=R*(.14+.16*orbP);
+    ctx.setLineDash([R*.7,R*.5]);ctx.lineDashOffset=-sp*R+lean*R*.4;  // PR15.5-C: shell fora de fase
+    ctx.beginPath();ctx.ellipse(0,0,R*1.18,R*1.18*tilt,0,0,TAU);ctx.stroke();
     ctx.setLineDash([]);
     ctx.shadowBlur=0;
+    // rastro dos satélites: o arco que acabou de ser percorrido
+    ctx.globalAlpha=a*.34;
+    ctx.lineWidth=R*.10;ctx.strokeStyle=flash?'#fff':'#dffdff';
+    for(let i=0;i<2;i++){
+      const sa=sp+i*Math.PI;
+      ctx.beginPath();ctx.ellipse(0,0,R*1.18,R*1.18*tilt,0,sa-1.05,sa);ctx.stroke();
+    }
+    ctx.globalAlpha=a;
+    // núcleo suspenso
     const og=radGrad2('orb|'+(R|0)+'|'+(flash?1:0),0,0,1,0,0,R*.6,
       flash?'#fff':'#eaffff',flash?'#fff':'#2b6b7d');
     ctx.fillStyle=og;
-    ctx.beginPath();ctx.arc(0,0,R*.5*(1-(vp?vp.lean*.2:0)),0,TAU);ctx.fill();  // PR15.5-C: core perde coesão
+    ctx.beginPath();ctx.arc(0,0,R*.46*(1-lean*.2),0,TAU);ctx.fill();  // PR15.5-C: core perde coesão
+    ctx.strokeStyle=flash?'#fff':G.rim;ctx.lineWidth=Math.max(1,R*.09);
+    ctx.stroke();                                  // AURÉOLA no núcleo
     ctx.fillStyle=flash?'#fff':e.color;
-    ctx.fillRect(R*.4,-R*.13,R*.8,R*.26);
+    ctx.fillRect(R*.4,-R*.12,R*.78,R*.24);
+    // satélites sobre a elipse
     ctx.fillStyle=flash?'#fff':'#dffdff';
     for(let i=0;i<2;i++){
-      const sa=sp+i*Math.PI,sy=Math.sin(sa)*R*.92*(1-orbP),sx=(.55+.50*orbP)*R;
-      ctx.beginPath();
-      ctx.arc(sx,sy,R*(.15+.18*orbP),0,TAU);ctx.fill();
+      const sa=sp+i*Math.PI;
+      const sx=Math.cos(sa)*R*1.18,sy=Math.sin(sa)*R*1.18*tilt;
+      ctx.beginPath();ctx.arc(sx,sy,R*(.15+.18*orbP),0,TAU);ctx.fill();
     }
   }else if(e.type==='bulwark'){
-    /* BLINDADO — escudo frontal em placa, corpo compacto */
+    /* BLINDADO — PESO, BLOQUEIO, MASSA.
+       O corpo era um pentágono compacto com um arco fino na frente: lia
+       como "robô pequeno com escudinho". Agora a proporção faz o trabalho:
+       o casco é BAIXO E LARGO no eixo transversal (achatado na direção do
+       avanço, alargado nos ombros), e a placa deixou de ser um arco para
+       virar uma LAJE com espessura real, quinas chanfradas e duas travas
+       de fixação. Silhueta = muro que anda. A leitura de bloqueio existe
+       antes de qualquer cor, e a placa continua apontando para shieldAng
+       (o mesmo ângulo que a mecânica de 28% usa). */
+    const pl=vp?vp.lean*R*.09:0;  // PR15.5-C: a placa cede para o corpo no hit
+    // casco baixo e largo
     ctx.shadowColor=e.color;ctx.shadowBlur=flash?18:9;
     const bg=linGrad2('bw|'+(R|0)+'|'+(flash?1:0),-R,-R,R,R,
       flash?'#fff':'#7a5ba8',flash?'#fff':'#2e1c47');
     ctx.fillStyle=bg;
     ctx.beginPath();
-    for(let i=0;i<5;i++){const an=i/5*TAU+.6;
-      ctx[i?'lineTo':'moveTo'](Math.cos(an)*R*.78,Math.sin(an)*R*.78);}
+    ctx.moveTo(-R*.62,-R*.92);ctx.lineTo( R*.30,-R*1.00);
+    ctx.lineTo( R*.58,-R*.46);ctx.lineTo( R*.58, R*.46);
+    ctx.lineTo( R*.30, R*1.00);ctx.lineTo(-R*.62, R*.92);
+    ctx.lineTo(-R*.86,0);
     ctx.closePath();ctx.fill();
     ctx.shadowBlur=0;
+    ctx.strokeStyle=flash?'#fff':G.rim;ctx.lineWidth=Math.max(1,R*.10);
+    ctx.stroke();                                  // AURÉOLA do casco
+    // olho fundo, recuado — a massa está na frente, não nele
     ctx.fillStyle=flash?'#fff':'#f2e0ff';
-    ctx.beginPath();ctx.arc(-R*.12,0,R*.24,0,TAU);ctx.fill();
+    ctx.beginPath();ctx.arc(-R*.22,0,R*.20,0,TAU);ctx.fill();
+    // LAJE frontal com espessura: a face, o corpo da placa e o chanfro
     ctx.save();
-    const pl=vp?vp.lean*R*.09:0;  // PR15.5-C: a placa cede para o corpo no hit
-    ctx.shadowColor='#c9a9ff';ctx.shadowBlur=14;
-    ctx.strokeStyle=flash?'#fff':'#dcc4ff';ctx.lineWidth=R*.34;
-    ctx.beginPath();ctx.arc(R*.08-pl,0,R*1.22,-1.08,1.08);ctx.stroke();
-    ctx.globalAlpha=.28;ctx.strokeStyle='#c9a9ff';ctx.lineWidth=R*.68;
-    ctx.beginPath();ctx.arc(R*.08-pl,0,R*1.22,-1.08,1.08);ctx.stroke();
-    ctx.restore();
-    ctx.strokeStyle=flash?'#fff':'#8f6fc4';ctx.lineWidth=R*.11;
+    ctx.translate(R*(.74-pl/R),0);
+    ctx.fillStyle=flash?'#fff':'#3a2a58';
     ctx.beginPath();
-    ctx.moveTo(R*.3,-R*.5);ctx.lineTo(R*.85,-R*.62);
-    ctx.moveTo(R*.3, R*.5);ctx.lineTo(R*.85, R*.62);
-    ctx.stroke();
+    ctx.moveTo(-R*.30,-R*1.30);ctx.lineTo(R*.26,-R*1.06);
+    ctx.lineTo(R*.26, R*1.06);ctx.lineTo(-R*.30, R*1.30);
+    ctx.closePath();ctx.fill();
+    ctx.fillStyle=flash?'#fff':'#dcc4ff';
+    ctx.beginPath();
+    ctx.moveTo(R*.26,-R*1.06);ctx.lineTo(R*.52,-R*.80);
+    ctx.lineTo(R*.52, R*.80);ctx.lineTo(R*.26, R*1.06);
+    ctx.closePath();ctx.fill();
+    // travas: a placa está PARAFUSADA, não flutuando
+    ctx.strokeStyle=flash?'#fff':'#8f6fc4';ctx.lineWidth=R*.16;ctx.lineCap='round';
+    ctx.beginPath();
+    ctx.moveTo(-R*.30,-R*.72);ctx.lineTo(-R*.92,-R*.52);
+    ctx.moveTo(-R*.30, R*.72);ctx.lineTo(-R*.92, R*.52);
+    ctx.stroke();ctx.lineCap='butt';
+    ctx.restore();
   }else if(e.type==='splitter'){
     const xv=visualPeek(e),splitP=xv&&xv.attackStyle==='contact'?1-xv.attackP:0;
-    /* CISÃO — casca rachada que se parte ao morrer */
+    /* CISÃO — o jogador precisa SABER que isto vai virar dois antes de
+       atirar. A casca era um polígono único com um risco por cima: a
+       divisão só existia na hora da morte, tarde demais para decidir.
+       Agora a silhueta JÁ É DUPLA: dois lobos espelhados, desenhados como
+       corpos separados, presos por uma sutura quente que pulsa sozinha.
+       A fenda respira o tempo todo (instabilidade), abre no contato e
+       abre mais ainda no dano — a forma antecipa a consequência.
+       Fragmento (isShard) não tem sutura: ele já É a metade. */
+    const breathe=(Math.sin(runTime*3.3+phase0)*.5+.5);
+    const splitGap=.18*splitP*R+(vp?vp.lean*R*.16:0);  // PR15.5-C: microfissura abre no hit
+    const gap=e.isShard?0:R*(.10+.13*breathe)+splitGap;
     ctx.shadowColor=e.color;ctx.shadowBlur=flash?18:9;
     ctx.fillStyle=flash?'#fff':e.color;
-    ctx.beginPath();
-    const splitGap=.18*splitP*R+(vp?vp.lean*R*.16:0);  // PR15.5-C: microfissura abre no hit
-    ctx.moveTo(R,0);ctx.lineTo(R*.2,R*.9+splitGap);ctx.lineTo(-R*.8,R*.5+splitGap);
-    ctx.lineTo(-R*.8,-R*.5-splitGap);ctx.lineTo(R*.2,-R*.9-splitGap);
-    ctx.closePath();ctx.fill();
+    // dois lobos espelhados no eixo de avanço
+    for(let k=-1;k<=1;k+=2){
+      ctx.beginPath();
+      ctx.moveTo( R*1.00, k*gap*.55);
+      ctx.lineTo( R*.18,  k*(R*.92+gap));
+      ctx.lineTo(-R*.78,  k*(R*.50+gap));
+      ctx.lineTo(-R*.62,  k*gap);
+      ctx.closePath();ctx.fill();
+      ctx.shadowBlur=0;
+      ctx.strokeStyle=flash?'#fff':G.rim;ctx.lineWidth=Math.max(1,R*.09);
+      ctx.stroke();                                // AURÉOLA por lobo
+      ctx.shadowColor=e.color;ctx.shadowBlur=flash?18:9;
+    }
     ctx.shadowBlur=0;
-    ctx.strokeStyle=flash?'#fff':'#3d2205';ctx.lineWidth=R*.14;
-    ctx.beginPath();
-    ctx.moveTo(R*.7,-R*.3);ctx.lineTo(-R*.2,R*.15);ctx.lineTo(R*.3,R*.6);
-    ctx.stroke();
+    if(!e.isShard){
+      // SUTURA — o que está prestes a ceder. Brilha quando a fenda abre.
+      ctx.strokeStyle=flash?'#fff':'#ffd8a0';
+      ctx.lineWidth=Math.max(1,R*(.16-.07*breathe));
+      ctx.globalAlpha=a*(.55+.45*breathe);
+      ctx.beginPath();ctx.moveTo(-R*.70,0);ctx.lineTo(R*.98,0);ctx.stroke();
+      // fissuras curtas saindo da sutura: a tensão já está no material
+      ctx.lineWidth=Math.max(.8,R*.07);ctx.globalAlpha=a*(.30+.35*breathe);
+      ctx.beginPath();
+      ctx.moveTo(R*.10,0);ctx.lineTo(-R*.16,-R*(.34+.16*breathe));
+      ctx.moveTo(R*.52,0);ctx.lineTo( R*.30, R*(.38+.18*breathe));
+      ctx.stroke();
+      ctx.globalAlpha=a;
+    }
   }else if(e.type==='phantom'){
-    /* LEVIANO — silhueta translúcida que oscila entre fases */
+    /* LEVIANO — DESLOCAMENTO TEMPORAL, não transparência.
+       O tratamento antigo resolvia "fantasma" baixando o alpha, o que em
+       combate significa DESAPARECER: o jogador perdia o alvo em vez de
+       lê-lo. A ideia certa é outra — o corpo está íntegro, só não está
+       neste instante. Então o Leviano passa a ser TRÊS LEITURAS da mesma
+       silhueta: uma cópia ATRASADA atrás, o corpo agora, e uma cópia
+       ADIANTADA à frente do movimento. Elas não coincidem nunca, e é essa
+       discordância — não a opacidade — que diz "temporal".
+       Intangível (ghostT>0) afasta as cópias e esvazia o centro: continua
+       claríssimo ONDE ele está, e continua óbvio que não dá para acertar.
+       A regra mecânica (ghostT>0 = intangível) não é tocada. */
     const gh=(e.ghostT||0)>0,pv=visualPeek(e),matP=pv&&pv.attackStyle==='materialize'?pv.attackP:0;
+    // as cópias fora de fase: rastro atrás, prenúncio à frente
+    {
+      const drift=R*(gh?(1.25-.85*matP):.66);
+      const wob=Math.sin(runTime*2.6+(e.visualSeed==null?phase0:e.visualSeed*TAU));
+      const echo=(dx,dy,al)=>{
+        ctx.globalAlpha=a*al;
+        ctx.beginPath();
+        ctx.moveTo(R*.55+dx,dy);ctx.lineTo(-R*.5+dx,R*.45+dy);
+        ctx.quadraticCurveTo(-R*.55+dx,dy,-R*.5+dx,-R*.45+dy);
+        ctx.closePath();ctx.stroke();
+      };
+      ctx.strokeStyle=flash?'#fff':e.color;ctx.lineWidth=Math.max(1,R*.11);
+      echo(-drift, wob*R*.14, gh?.58:.44);               // atrasada
+      ctx.strokeStyle=flash?'#fff':G.rim;
+      echo( drift*.72,-wob*R*.11, gh?.40:.30);           // adiantada
+      ctx.globalAlpha=a;
+    }
     ctx.globalAlpha=a*(gh?(.16+.54*matP):.95);
     ctx.shadowColor=e.color;ctx.shadowBlur=gh?24:12;
     ctx.strokeStyle=flash?'#fff':e.color;ctx.lineWidth=R*(.16+.22*matP);
@@ -21341,6 +22072,34 @@ function drawEnemy(e){
       ctx.globalAlpha=a*(rr/(R*1.7))*.8;
       ctx.beginPath();ctx.arc(0,0,Math.max(2,rr),0,TAU);ctx.stroke();
     }
+    /* LENTE — a presença incomum não vem do corpo, vem do que ele faz com
+       o espaço em volta. Quatro arcos CURTOS e excêntricos, cada um com o
+       centro deslocado do outro: lidos juntos, o fundo parece entortar ao
+       redor do poço em vez de simplesmente estar escuro. É o único inimigo
+       cuja silhueta é formada por aquilo que ele distorce. */
+    for(let i=0;i<4;i++){
+      const an=pa*.22+i*(TAU/4);
+      const off=R*(1.05+.16*Math.sin(pa*.6+i));
+      ctx.globalAlpha=a*.30;
+      ctx.lineWidth=Math.max(1,R*.08);
+      ctx.beginPath();
+      ctx.arc(Math.cos(an)*off,Math.sin(an)*off,R*(.72+.10*Math.cos(pa*.5+i)),
+        an+2.25,an+4.03);
+      ctx.stroke();
+    }
+    /* QUEDA — quatro cunhas caindo para dentro. Dão direção ao poço: a
+       matéria entra, não orbita. A fase é a mesma dos anéis. */
+    ctx.globalAlpha=a*.55;ctx.lineWidth=Math.max(1,R*.10);ctx.lineCap='round';
+    for(let i=0;i<4;i++){
+      const an=i*(TAU/4)-pa*.45;
+      const f=1-((pa*.5+i*.25)%1);                  // 1 = longe, 0 = engolido
+      const r0=R*(.45+1.25*f),r1=r0-R*.34;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(an)*r0,Math.sin(an)*r0);
+      ctx.lineTo(Math.cos(an)*r1,Math.sin(an)*r1);
+      ctx.stroke();
+    }
+    ctx.lineCap='butt';
     ctx.globalAlpha=a;
     ctx.shadowColor=e.color;ctx.shadowBlur=flash?26:18;
     const sg=radGrad2('sing|'+(R|0)+'|'+(flash?1:0),0,0,1,0,0,R,
@@ -21380,11 +22139,11 @@ function drawEnemy(e){
     ctx.shadowColor=e.color;ctx.shadowBlur=flash?24:13;
     const g=linGrad2('tk|'+(R|0)+'|'+(flash?1:0),-R,-R,R,R,
       flash?'#fff':'#ff2f5e',flash?'#fff':'#66091a');
-    ctx.fillStyle=g;ctx.strokeStyle=flash?'#fff':'#ff8095';ctx.lineWidth=R*.09;
+    ctx.fillStyle=g;ctx.strokeStyle=flash?'#fff':G.rim;ctx.lineWidth=R*.10;
     ctx.beginPath();
     for(let i=0;i<6;i++){const an=i/6*TAU;
       ctx[i?'lineTo':'moveTo'](Math.cos(an)*R,Math.sin(an)*R);}
-    ctx.closePath();ctx.fill();ctx.stroke();
+    ctx.closePath();ctx.fill();ctx.stroke();       // AURÉOLA
     ctx.shadowBlur=0;
     // núcleo reator
     ctx.fillStyle='#14060c';
@@ -21399,6 +22158,7 @@ function drawEnemy(e){
     ctx.shadowBlur=0;
   }
   ctx.restore();
+  drawEnemyDangerMark(e,a);   // telegraph compartilhado, fora da pose
   if(e.slowT>0){
     ctx.strokeStyle='rgba(157,123,255,.7)';ctx.lineWidth=1.5;
     ctx.beginPath();ctx.arc(e.x,e.y,e.r+5,runTime*2,runTime*2+4);ctx.stroke();
@@ -24020,15 +24780,17 @@ function refreshTitleChar(){
   let h='';
   CHARS.forEach((C,i)=>{
     const on=i===charSel, lk=!isCharUnlocked(C.id);
-    h+='<div class="chpick'+(on?' on':'')+(lk?' lock':'')+'" data-ch="'+i+'" style="'+
-      (on&&!lk?'border-color:'+C.color+';box-shadow:0 0 18px '+C.color+'44':'')+'">'+
+    /* PR-VISUAL: o card não carrega mais cor/sombra inline. A identidade do
+       operador entra como --op e QUEM decide o tratamento é o CSS — é o que
+       permite o selecionado virar bloco dominante 2x2 sem tocar no JS.
+       O DOM continua com exatamente um nó [data-ch] por operador. */
+    h+='<div class="chpick'+(on?' on':'')+(lk?' lock':'')+'" data-ch="'+i+'"'+
+      ' style="--op:'+C.color+'">'+
+      '<span class="cidx">'+('0'+(i+1)).slice(-2)+'</span>'+
       operatorPortraitHTML(C,76)+
-      '<div class="cn" style="'+(on&&!lk?'color:'+C.color:'')+'">'+
-        (lk?'🔒 '+C.nm:C.nm)+'</div>'+
+      '<div class="cn">'+(lk?'🔒 '+C.nm:C.nm)+'</div>'+
       '<div class="cr">'+C.role+'</div>'+
-      '<div class="cr" style="font-family:Consolas,monospace;letter-spacing:.14em;'+
-        'color:'+(on&&!lk?'rgba(159,243,255,.9)':'rgba(150,180,200,.55)')+'">⌗ '+
-        C.slots+' SLOTS</div></div>';
+      '<div class="cr cslots">⌗ '+C.slots+' SLOTS</div></div>';
   });
   wrap.innerHTML=h;
   bindOperatorPortraitFallbacks(wrap);
@@ -24060,7 +24822,12 @@ function showTitle(){
   loadCfg();                    // configurações globais (APP SETTINGS)
   checkUnlocks(true);           // sincroniza unlocks silenciosamente
   ovTitle.textContent='E C H O';ovTitle.setAttribute('data-t','E C H O');
-  ovTitle.style.fontSize='64px';ovTitle.classList.add('glitch');
+  /* PR-VISUAL/FIX: o corpo do wordmark era função só da LARGURA (8.5vw),
+     então em 1440×900 e 1600×900 ele chegava a 124px numa tela de 900px de
+     altura e estourava o topo. Agora a altura da viewport entra no cálculo
+     e passa a ser o limite real; a largura continua mandando em telas
+     estreitas. O logo segue dominante em todas as resoluções-alvo. */
+  ovTitle.style.fontSize='clamp(44px,min(8.6vw,10.6vh),124px)';ovTitle.classList.add('glitch');
   ovSub.textContent='PROTOCOLO DE RESSONÂNCIA TEMPORAL';
   ovBody.innerHTML=
     '<span class="k">W</span><span class="k">A</span><span class="k">S</span><span class="k">D</span> MOVER · '+

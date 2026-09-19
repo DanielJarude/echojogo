@@ -335,9 +335,10 @@ test('PR #1: analyzeEchoData() presente (classificação por arma real)',()=>{
     'usa as propriedades reais da arma');
 });
 test('Grade de seleção 4 × 2 (8 cards, sem corte)',()=>{
-  // a largura da célula acompanha a escala tipográfica (PR 6.5); o que
-  // importa é a grade continuar com 4 colunas → 8 operadores em 4 × 2
-  assert.ok(/grid-template-columns:repeat\(4,\s*[0-9.]+px\)/.test(html),
+  // a largura da célula acompanha a escala tipográfica (PR 6.5) e, desde a
+  // correção de responsividade, também a ALTURA da viewport (clamp) — o
+  // que importa continua sendo a grade ter 4 colunas → 8 operadores
+  assert.ok(/grid-template-columns:repeat\(4,\s*(?:[0-9.]+px|clamp\([^)]*\))\)/.test(html),
     'CSS com grade 4 colunas');
   assert.ok(src.indexOf('#ov-char')>=0,'contêiner do seletor');
 });
