@@ -148,9 +148,11 @@ ok('B3-01: o módulo existe — bloco PR15·b3, config centralizada, boot após 
     'pr15PresOnWave','pr15PresPack','pr15PresUnpack','pr15PresRebuild','pr15PresSnapshot',
     'pr15PresPos','pr15PresVisualState','pr15PresenceKitBoot','pr15PresReset','pr15PresLeave'])
     assert.strictEqual(typeof T[fn],'function',fn+' ausente');
-  const i2=SRCN.indexOf('pr15MemoryKitBoot();');
-  const i3=SRCN.indexOf('pr15PresenceKitBoot();');
-  assert.ok(i2>0&&i3>i2,'pr15PresenceKitBoot() vem depois de pr15MemoryKitBoot()');
+  /* AUDIT-FIX-D: ordem de boot lida do registro de patches, não do texto
+     das chamadas (que viraram a tabela LIFECYCLE_KITS). */
+  const kits=JSON.parse(X('JSON.stringify(lcPatchReport().kits)'));
+  const i2=kits.indexOf('memory'),i3=kits.indexOf('presence');
+  assert.ok(i2>=0&&i3>i2,'o kit do B3 boota depois do kit do B2');
   /* durações dentro das faixas do brief §5 */
   assert.ok(C.entryTime>=0.8&&C.entryTime<=1.2,'entryTime em 0,8–1,2s');
   assert.ok(C.activeTime>=20&&C.activeTime<=30,'activeTime em 20–30s');

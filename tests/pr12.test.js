@@ -2464,7 +2464,11 @@ ok('B6: catálogo — 43 IDs únicos com distribuição Âncora 9 · Remanescent
   }
 });
 ok('B6: economia — nenhuma recompensa GENÉRICA de Resíduos por inimigo comum (fontes sempre específicas)',()=>{
-  const src=m[1];
+  /* AUDIT-FIX-D: `lcPatch('id',['fn',…],…)` cita nomes de funções (entre
+     elas 'killEnemy') só para registrar QUEM o bloco embrulha — não é
+     fonte de ⧗. A declaração sai do recorte para a varredura continuar
+     valendo apenas para o código de economia. */
+  const src=m[1].replace(/lcPatch\('[^']*',\[[^\]]*\],/g,'lcPatch(');
   const forbidden=[
     "addResidues(1,'kill'","addResidues(2,'kill'","addResidues(1,'enemy'",
     "addResidues(n,'kill'","src:'kill'","'killEnemy'","src:'enemy'"];
