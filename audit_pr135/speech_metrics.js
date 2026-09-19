@@ -1,8 +1,7 @@
 'use strict';
 const {sandbox,T}=require('./harness');
-const fs=require('fs'),path=require('path');
-const html=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
-const src=html.match(/<script>([\s\S]*?)<\/script>/)[1];
+const {readGameSource}=require('../tests/harness/load-game');
+const src=readGameSource();
 const lines=[];
 function addDict(d,label){
   for(const k in d){

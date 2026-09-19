@@ -26,10 +26,10 @@
 const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert');
 
 const ROOT=path.join(__dirname,'..');
-const html=fs.readFileSync(path.join(ROOT,'index.html'),'utf8');
-const m=html.match(/<script>([\s\S]*?)<\/script>/);
-if(!m)throw new Error('script não encontrado em index.html');
-let src=m[1];
+const {readGameHtml,readGameSource,runGameSource}=require('./harness/load-game');
+const html=readGameHtml();
+const GAME_SRC=readGameSource();
+let src=GAME_SRC;
 
 src+=';globalThis.__t={'+
   'sandboxActive,sandboxOpenSetup,sandboxCloseSetup,sandboxStart,sandboxExit,'+
@@ -228,7 +228,7 @@ function bootGame(){
   sandbox.globalThis=sandbox;
   sandbox.window.requestAnimationFrame=sandbox.requestAnimationFrame;
   vm.createContext(sandbox);
-  vm.runInContext(src,sandbox,{filename:'index.html',timeout:20000});
+  runGameSource(src,sandbox,{timeout:20000});
   const t=vm.runInContext('__t',sandbox);
   t._ls=ls;t._store=store;
   return t;
@@ -270,7 +270,7 @@ console.log('---------------------------------------------');
 
 /* 1. sintaxe */
 ok('index.html: script passa em verificação sintática (vm.Script)',()=>{
-  new vm.Script(m[1]);
+  new vm.Script(GAME_SRC);
 });
 
 /* ============ AUDITORIA ESTRUTURAL ============ */

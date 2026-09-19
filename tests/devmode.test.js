@@ -14,13 +14,13 @@
 const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert');
 
 const ROOT=path.join(__dirname,'..');
-const html=fs.readFileSync(path.join(ROOT,'index.html'),'utf8');
+const {readGameHtml,readGameSource,runGameSource}=require('./harness/load-game');
+const html=readGameHtml();
 const pkg=JSON.parse(fs.readFileSync(path.join(ROOT,'package.json'),'utf8'));
 const mainJs=fs.readFileSync(path.join(ROOT,'main.js'),'utf8');
 const preloadJs=fs.readFileSync(path.join(ROOT,'preload.js'),'utf8');
-const m=html.match(/<script>([\s\S]*?)<\/script>/);
-if(!m)throw new Error('script não encontrado em index.html');
-const rawSrc=m[1];
+const GAME_SRC=readGameSource();
+const rawSrc=GAME_SRC;
 
 const EXPORTS='\n;globalThis.__t={'+
   'DEV,devEnable,devDisable,devToggle,devOpenPanel,devClosePanel,devRender,'+
@@ -123,7 +123,7 @@ function boot(devBuild){
     performance:{now:()=>Date.now()}
   };
   const ctx=vm.createContext(sandbox);
-  vm.runInContext(rawSrc+EXPORTS,ctx,{timeout:20000});
+  runGameSource(rawSrc+EXPORTS,ctx,{timeout:20000});
   const api=vm.runInContext('__t',ctx);
   api._ls=localStorage;
   return api;

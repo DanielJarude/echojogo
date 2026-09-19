@@ -10,8 +10,9 @@ const assert=require('assert');
 const fs=require('fs');
 const path=require('path');
 
+const {readGameHtml}=require('./harness/load-game');
 const ROOT=path.resolve(__dirname,'..');
-const SRC=fs.readFileSync(path.join(ROOT,'index.html'),'utf8');
+const SRC=readGameHtml();
 const PKG=JSON.parse(fs.readFileSync(path.join(ROOT,'package.json'),'utf8'));
 const GOLDEN=require('./fixtures/f3_chars_mechanical.json');
 const IDS=['vector','wraith','bulwark','pyre','warden','nomad','echo0','revenant'];

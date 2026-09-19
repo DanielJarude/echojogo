@@ -7,10 +7,10 @@
 const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert');
 
 const ROOT=path.join(__dirname,'..');
-const html=fs.readFileSync(path.join(ROOT,'index.html'),'utf8');
-const m=html.match(/<script>([\s\S]*?)<\/script>/);
-if(!m)throw new Error('script não encontrado em index.html');
-let src=m[1];
+const {readGameHtml,readGameSource,runGameSource}=require('./harness/load-game');
+const html=readGameHtml();
+const GAME_SRC=readGameSource();
+let src=GAME_SRC;
 
 /* expõe os símbolos top-level (const/let não viram propriedades do global) */
 src+='\n;globalThis.__t={CHARS,ITEMS,UPGRADES,UNLOCKS,makePlayer,damagePlayer,'+
@@ -94,7 +94,7 @@ const sandbox={
 sandbox.globalThis=sandbox;
 sandbox.window.requestAnimationFrame=sandbox.requestAnimationFrame;
 vm.createContext(sandbox);
-vm.runInContext(src,sandbox,{filename:'index.html'});
+runGameSource(src,sandbox);
 const T=sandbox.__t;
 T.unlockAll();   // libera todos os operadores para os testes de identidade
 

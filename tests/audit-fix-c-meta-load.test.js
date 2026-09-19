@@ -16,10 +16,9 @@
 const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert');
 
 const ROOT=path.join(__dirname,'..');
-const html=fs.readFileSync(path.join(ROOT,'index.html'),'utf8');
-const m=html.match(/<script>([\s\S]*?)<\/script>/);
-if(!m)throw new Error('script não encontrado em index.html');
-const src=m[1];
+const {readGameSource,runGameSource}=require('./harness/load-game');
+const GAME_SRC=readGameSource();
+const src=GAME_SRC;
 
 /* ---------------- DOM mínimo ---------------- */
 function makeStyle(){
@@ -101,7 +100,7 @@ function makeSandbox(ls){
 function bootGame(seed){
   const ls=makeLocalStorage(seed);
   const ctx=vm.createContext(makeSandbox(ls));
-  vm.runInContext(src,ctx,{timeout:20000});
+  runGameSource(src,ctx,{timeout:20000});
   const X=code=>vm.runInContext(code,ctx);
   return {X,ls,stored:()=>JSON.parse(ls.getItem('echoSave.v3')||'null')};
 }

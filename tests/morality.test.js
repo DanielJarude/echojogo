@@ -14,11 +14,10 @@
 const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert');
 
 const ROOT=path.join(__dirname,'..');
-const html=fs.readFileSync(path.join(ROOT,'index.html'),'utf8');
-const m=html.match(/<script>([\s\S]*?)<\/script>/);
-if(!m)throw new Error('script não encontrado em index.html');
-let src=m[1];
-const RAWSRC=m[1];   // fonte crua para auditorias estáticas
+const {readGameSource,runGameSource}=require('./harness/load-game');
+const GAME_SRC=readGameSource();
+let src=GAME_SRC;
+const RAWSRC=GAME_SRC;   // fonte crua para auditorias estáticas
 
 src+=';globalThis.__t={'+
   'MORAL_BALANCE,MORAL_AFFINITY,MORAL_AXES,MORAL_AXIS_LABEL,MORAL_STATE_LABEL,ATTUNE_STATES,'+
@@ -120,7 +119,7 @@ const sandbox={console,Math:MathF,Date,parseInt,parseFloat,isNaN,setTimeout,clea
   performance:{now:()=>Date.now()}
 };
 const ctx=vm.createContext(sandbox);
-vm.runInContext(src,ctx,{timeout:15000});
+runGameSource(src,ctx,{timeout:15000});
 const t=vm.runInContext('__t',ctx);
 MathF._rng=()=>0.4242;
 

@@ -1,13 +1,16 @@
 'use strict';
 const fs=require('fs'),path=require('path'),vm=require('vm');
+const {readGameHtml,extractGameSource}=require('../tests/harness/load-game');
 const ROOT=path.join(__dirname,'..');
 /* B5-B-FIX.1: fonte normalizada para LF — checkouts Windows (autocrlf) trazem
    CRLF e quebravam buscas textuais com '\n' literal nas suítes. Toda
-   auditoria textual deve usar `SRC` daqui, nunca reler o arquivo cru. */
-const html=fs.readFileSync(path.join(ROOT,'index.html'),'utf8').replace(/\r\n?/g,'\n');
-const m=html.match(/<script>([\s\S]*?)<\/script>/);
-if(!m)throw new Error('script não encontrado em index.html');
-let src=m[1];
+   auditoria textual deve usar `SRC` daqui, nunca reler o arquivo cru.
+   AUDIT-FIX-E2-a: leitura e extração vivem em tests/harness/load-game.js.
+   A linha `const html=...;` abaixo PRECISA continuar sendo uma única linha
+   iniciada por `const html=` — `audit_pr155/performance_benchmark.js`
+   reescreve exatamente essa linha para injetar uma fonte alternativa. */
+const html=readGameHtml();
+let src=extractGameSource(html);
 src+='\n;globalThis.__t={'+
   'VISUAL_STATES,VISUAL_EASING,ENEMY_VISUAL_PROFILES,VISUAL_NEUTRAL_POSE,EDEFS,'+
   'visualFinite,visualClamp01,visualPeek,visualState,visualReset,visualTimelineStart,visualTimelineCancel,visualTimelineProgress,visualTimelineTick,visualAttackObserve,visualAttackTrigger,visualAttackIdle,visualAttackCancel,visualNotify,visualNotifyHurt,visualNotifyWeaponFire,visualPose,visualPoseCompose,enemyVisualProfile,weaponVisualProfile,weaponVisualProfileBuild,WEAPON_VISUAL_PROFILE_CACHE,visualHurtPose,visualEnemyAttackPose,visualWeaponRecoil,'+

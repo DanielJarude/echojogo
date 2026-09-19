@@ -7,11 +7,19 @@ const {execFileSync}=require('child_process');
 const {performance}=require('perf_hooks');
 const crypto=require('crypto');
 const ROOT=path.resolve(__dirname,'..');
-function readSource(ref){return (ref?execFileSync('git',['show',ref+':index.html'],{cwd:ROOT,encoding:'utf8',maxBuffer:8e6}):fs.readFileSync(path.join(ROOT,'index.html'),'utf8')).replace(/\r\n?/g,'\n');}
+const {readGameHtml}=require('../tests/harness/load-game');
+/* sem `ref` a fonte vem do harness compartilhado (AUDIT-FIX-E2-a); com
+   `ref` continua sendo uma leitura de histórico — uso exclusivo de CLI,
+   nunca de suíte (ver tests/shallow-clone-safety.test.js, S05). */
+function readSource(ref){return ref?execFileSync('git',['show',ref+':index.html'],{cwd:ROOT,encoding:'utf8',maxBuffer:8e6}).replace(/\r\n?/g,'\n'):readGameHtml();}
 function world(source){
   const filename=path.join(ROOT,'audit_pr135/harness.js');
   let code=fs.readFileSync(filename,'utf8');
+  const antes=code;
   code=code.replace(/^const html=.*;$/m,()=> 'const html='+JSON.stringify(source)+';');
+  /* falha alta: sem essa injeção o harness releria index.html do disco e o
+     benchmark compararia a fonte errada em silêncio. */
+  if(code===antes)throw new Error('harness.js: linha `const html=...;` não encontrada para injeção');
   const m=new Module(filename,module);m.filename=filename;m.paths=module.paths;m._compile(code,filename);
   const h=m.exports;
   h.sandbox.Math=Object.create(Math);h.sandbox.performance.now=()=>performance.now();

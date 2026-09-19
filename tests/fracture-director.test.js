@@ -21,10 +21,9 @@ const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('ass
 const REG=require('./suite-registry');
 
 const ROOT=path.join(__dirname,'..');
-const html=fs.readFileSync(path.join(ROOT,'index.html'),'utf8');
-const m=html.match(/<script>([\s\S]*?)<\/script>/);
-if(!m)throw new Error('script não encontrado em index.html');
-let src=m[1];
+const {readGameSource,runGameSource}=require('./harness/load-game');
+const GAME_SRC=readGameSource();
+let src=GAME_SRC;
 /* exporta globais do jogo + API PR 13 para o teste */
 src+=';globalThis.__t={'+
   /* catálogo/contrato */
@@ -220,7 +219,7 @@ function runGame(env,noTimers){
     document:env.document,window:env.window,localStorage:env.localStorage,
     navigator:env.navigator,performance:{now:()=>Date.now()}};
   const ctx=vm.createContext(sandbox);
-  vm.runInContext(src,ctx,{timeout:30000});
+  runGameSource(src,ctx,{timeout:30000});
   const t=vm.runInContext('__t',ctx);
   t._ls=env.localStorage;
   t._env=env;
@@ -259,7 +258,7 @@ const J=x=>JSON.stringify(x);
 const PR13_INI='/* ==================== PR13·bloco fx1.js ==================== */';
 const PR13_FIM='/* ==================== PR13·fim fx1.js ==================== */';
 function blocoPR13(){
-  const jogo=m[1];
+  const jogo=GAME_SRC;
   const ini=jogo.indexOf(PR13_INI);
   assert.ok(ini>=0,'marcador de início do bloco PR13 ausente do index.html');
   const fim=jogo.indexOf(PR13_FIM,ini);
@@ -310,14 +309,14 @@ console.log('---------------------------------------------');
 /* ============ [0] INTEGRIDADE DO BLOCO ============ */
 console.log('\n[0] INTEGRIDADE DO BLOCO PR13');
 ok('index.html: script passa em verificação sintática (vm.Script)',()=>{
-  new vm.Script(m[1]);
+  new vm.Script(GAME_SRC);
 });
 ok('fonte: não há mutação direta de Intensidade espalhada pelo jogo',()=>{
   /* a regra de arquitetura da PR13: fora do bloco do Diretor, ninguém
      escreve em fractureRun. Isso é o que impede a volta do padrão
      `fractureIntensity += 5` em dezenas de funções. Verificação por
      OCORRÊNCIA (índice real), não pela primeira aparição do texto. */
-  /* inspeção sobre o script ORIGINAL (m[1]) — a variável src desta suíte
+  /* inspeção sobre o script ORIGINAL (GAME_SRC) — a variável src desta suíte
      tem o bloco de exports anexado no fim, que menciona fractureRun.
      Delimitação por marcadores semânticos do próprio PR13 (ver blocoPR13). */
   const {jogo,dentro,linha}=blocoPR13();
@@ -1602,7 +1601,7 @@ ok('updateEnemy NÃO depende de tags: nenhum if gigante Tema→inimigo',()=>{
   assert.ok(!/fractureGetTheme|fractureRun|fractureThemeById/.test(corpo),
     'updateEnemy não consulta o Diretor');
   /* e o jogo inteiro não tem switch de Tema decidindo inimigo */
-  const jogo=m[1];
+  const jogo=GAME_SRC;
   assert.ok(!/switch\s*\(\s*fracture(GetTheme|Run)/.test(jogo),
     'nenhum switch sobre o Tema');
 });
@@ -1622,7 +1621,7 @@ ok('tags dos MINIBOSS são metadado; AI/stats continuam intactos',()=>{
     assert.ok(Number.isFinite(mb.plates)&&mb.plates>0,mb.id+'.plates intacto');
     assert.ok(mb.sk&&typeof mb.sk==='object',mb.id+'.sk intacto');
   }
-  const jogo=m[1];
+  const jogo=GAME_SRC;
   const i=jogo.indexOf('function spawnMiniBoss(');
   const corpo=jogo.slice(i,jogo.indexOf('\nfunction ',i+10));
   assert.ok(!/fractureMiniWeight|fractureEventBiasMul/.test(corpo),
@@ -1901,7 +1900,7 @@ ok('stage não vira fonte própria de intensidade (sobe só junto com ela)',()=>
   assert.ok(/fractureStageOf|ctx\.stage/.test(corpo),'lê o stage');
   assert.ok(!/Math\.random/.test(corpo),'sem aleatoriedade');
   /* intensidade nunca é calculada A PARTIR do stage (o inverso é o certo) */
-  const jogo=m[1];
+  const jogo=GAME_SRC;
   assert.ok(!/intensity\s*=[^;=]*fractureStageOf/.test(jogo),
     'intensidade nunca é derivada do stage');
   assert.ok(!/intensity\s*\+=/.test(jogo.slice(
@@ -1961,7 +1960,7 @@ ok('eliteChance e makeElite preservados (B2.12): elite sai da base, sem tema',()
   assert.ok(!/makeElite/.test(corpo),'shaping não chama makeElite');
 });
 ok('nenhum Tema aumenta eliteChance',()=>{
-  const jogo=m[1];
+  const jogo=GAME_SRC;
   const i=jogo.indexOf('function eliteChance(');
   const corpo=jogo.slice(i,jogo.indexOf('\n',i+10));
   assert.ok(!/fracture/.test(corpo),'eliteChance não referencia o Diretor');
@@ -2013,7 +2012,7 @@ ok('jitter determinístico: mesma (seed,wave) repete; seeds distintas variam',()
   }
 });
 ok('NENHUM Math.random solto no caminho de composição',()=>{
-  const jogo=m[1];
+  const jogo=GAME_SRC;
   const ini=jogo.indexOf('BLOCO 2 — SHAPING DE COMPOSIÇÃO');
   const fim=jogo.indexOf('/* ---------------- ciclo de vida da run');
   assert.ok(ini>0&&fim>ini,'bloco de shaping delimitado');
@@ -2456,7 +2455,7 @@ ok('composições extremas: nenhuma onda fica vazia ou sem tipo nenhum',()=>{
 /* ============ [24] REGRESSÕES DO BLOCO 2 ============ */
 console.log('\n[24] REGRESSÕES · O BLOCO 2 NÃO PODE TER TOCADO EM NADA ALÉM DISSO');
 ok('HP/dano/velocidade de inimigo NÃO mudam por Tema',()=>{
-  const jogo=m[1];
+  const jogo=GAME_SRC;
   for(const fn of ['diffHp','diffDmg','diffSpd']){
     const i=jogo.indexOf('function '+fn+'(');
     /* corpo inteiro, não janela fixa (ver B4-60) */
@@ -2507,7 +2506,7 @@ ok('pool de eventos cresceu só com os 12 novos e as réguas antigas continuam n
   /* scoreEvent agora tem o termo do Diretor (B3.2) — o que não pode mudar
      é que ele NÃO decide elegibilidade: bloqueios continuam exclusivos de
      eventBlockReason. */
-  const jogo=m[1];
+  const jogo=GAME_SRC;
   const i=jogo.indexOf('function eventBlockReason(');
   const corpo=jogo.slice(i,jogo.indexOf('\nfunction ',i+10));
   assert.ok(!/fracture/.test(corpo),
@@ -2890,7 +2889,7 @@ ok('B3-25: RESSONÂNCIA nunca ESCREVE no Echo (trust/rel/dis imutáveis)',()=>{
     'nada do Diretor alterou o Eco');
 });
 ok('B3-26: fonte — o bloco de RESSONÂNCIA não chama mutador de Echo',()=>{
-  const jogo=m[1];
+  const jogo=GAME_SRC;
   const ini=jogo.indexOf('BLOCO 3 — RESSONÂNCIA');
   const fim=jogo.indexOf('BLOCO 3 — EVENTOS');
   assert.ok(ini>0&&fim>ini,'bloco localizado');
@@ -2989,7 +2988,7 @@ ok('B3-33: custo nunca vira desconto (valor negativo passa intacto)',()=>{
     'NaN não vaza como número estranho');
 });
 ok('B3-34: Resíduos só pela API da PR12 — fonte não escreve em fracRes',()=>{
-  const jogo=m[1];
+  const jogo=GAME_SRC;
   const ini=jogo.indexOf('BLOCO 3 — RESSONÂNCIA');
   const fim=jogo.indexOf('BLOCO 3 — EVENTOS');
   const seg=jogo.slice(ini,fim);
@@ -3030,7 +3029,7 @@ ok('B3-36: magnitude vem da raridade, nunca de intensity += direto',()=>{
   assert.strictEqual(R.common,0,'common = 0 (anti-farm)');
   assert.ok(R.uncommon<R.rare&&R.rare<R.anomalous,
     'magnitude cresce com a raridade');
-  const jogo=m[1];
+  const jogo=GAME_SRC;
   const ini=jogo.indexOf('BLOCO 3 — MINIBOSSES');
   const fim=jogo.indexOf('BLOCO 3 — EVENTOS');
   const seg=jogo.slice(ini,fim);
@@ -3129,7 +3128,7 @@ ok('B3-46: Sandbox recusa gravar checkpoint',()=>{
   A.sandboxExit();
 });
 ok('B3-47: a seção de Sandbox do Bloco 3 existe e só lê',()=>{
-  const jogo=m[1];
+  const jogo=GAME_SRC;
   const i=jogo.indexOf('function fractureSandboxSection(');
   const seg=jogo.slice(i,jogo.indexOf('\nfunction ',i+10));
   assert.ok(seg.indexOf('fractureB3InspectorLines')>=0,
@@ -3140,13 +3139,13 @@ ok('B3-47: a seção de Sandbox do Bloco 3 existe e só lê',()=>{
 
 console.log('\n[31] B3 · REGRESSÃO (48-51)');
 ok('B3-48: eventBlockReason continua sendo a única porta de bloqueio',()=>{
-  const jogo=m[1];
+  const jogo=GAME_SRC;
   const i=jogo.indexOf('function eventBlockReason(');
   const seg=jogo.slice(i,jogo.indexOf('\nfunction ',i+10));
   assert.ok(!/fracture/.test(seg),'eventBlockReason não conhece o Diretor');
 });
 ok('B3-49: o Diretor é influência — nenhum "if theme === X return" no Bloco 3',()=>{
-  const jogo=m[1];
+  const jogo=GAME_SRC;
   const ini=jogo.indexOf('BLOCO 3 — MINIBOSSES');
   const fim=jogo.indexOf('ciclo de vida da run');
   const seg=jogo.slice(ini,fim);
@@ -3294,7 +3293,7 @@ ok('B4-06: fora de ESCASSEZ a oportunidade não paga resíduo (B3 preservado)',(
   }
 });
 ok('B4-07: o texto de fx_esc_tempo não chama função com efeito colateral',()=>{
-  const jogo=m[1];
+  const jogo=GAME_SRC;
   const i=jogo.indexOf("id:'fx_esc_tempo'");
   assert.ok(i>0,'evento localizado');
   const j=jogo.indexOf('\n{id:',i+10);
@@ -3621,7 +3620,7 @@ ok('B4-27: oportunidade rara NÃO toca evento comum — só rare/anomalous',()=>
   assert.strictEqual(A.fractureRareOppMul(null),1,'null é neutro');
 });
 ok('B4-28: gate não altera HP nem dano — só pesos e frequência',()=>{
-  const jogo=m[1];
+  const jogo=GAME_SRC;
   const i=jogo.indexOf('const FRACTURE_STAGE_GATES=');
   assert.ok(i>0,'tabela localizada');
   const bloco=jogo.slice(i,jogo.indexOf('};',i)+2);
@@ -3720,7 +3719,7 @@ ok('B4-36: o HUD nunca expõe número de Intensidade nem id cru',()=>{
 });
 ok('B4-37: os cinco motivos de revelação têm texto narrativo',()=>{
   const A=bootFx({});
-  const jogo=m[1];
+  const jogo=GAME_SRC;
   const i=jogo.indexOf('const FRACTURE_REVEAL_TEXT=');
   assert.ok(i>0,'tabela localizada');
   const bloco=jogo.slice(i,jogo.indexOf('};',i)+2);
@@ -3872,7 +3871,7 @@ ok('B4-49: o Codex guarda só descoberta — nunca estado mecânico da run',()=>
 });
 ok('B4-50: a aba do Diretor existe no Codex e o corpo renderiza',()=>{
   const A=bootFx({});beginRun(A,1);
-  const jogo=m[1];
+  const jogo=GAME_SRC;
   assert.ok(jogo.indexOf("id:'fracture'")>=0,"aba 'fracture' registrada");
   /* fractureCodexBody renderiza em #cx-body (mesmo contrato das outras abas
      do Codex), então o corpo é lido do DOM do stub, não do retorno. */
@@ -3914,7 +3913,7 @@ ok('B4-50: a aba do Diretor existe no Codex e o corpo renderiza',()=>{
 /* ---------------- ECHO E FACÇÕES (B4.13 / B4.14) ---------------- */
 ok('B4-51: reações de facção são narrativas — nunca chamam factionEmit',()=>{
   const A=bootFx({});beginRun(A,1);
-  const jogo=m[1];
+  const jogo=GAME_SRC;
   const i=jogo.indexOf('function fractureFactionRemark(');
   assert.ok(i>0,'função localizada');
   const corpo=jogo.slice(i,jogo.indexOf('\nfunction ',i+10));
@@ -3928,7 +3927,7 @@ ok('B4-51: reações de facção são narrativas — nunca chamam factionEmit',(
   assert.ok(r&&typeof r.text==='string'&&r.text.length>0,'reação narrativa');
 });
 ok('B4-52: proibido Tema determinar afinidade de facção',()=>{
-  const jogo=m[1];
+  const jogo=GAME_SRC;
   /* o padrão vetado pelo escopo: theme === 'x' → facção +N */
   const proibido=/theme\s*===?\s*['"][a-z]+['"][^;]{0,80}factionEmit/;
   assert.ok(!proibido.test(jogo),'nenhum atalho Tema → factionEmit');
@@ -4088,7 +4087,7 @@ ok('B4-58: Sandbox byte-a-byte e comandos DEV do B4 taintam a run',()=>{
 console.log('\n[34] HARDENING · DETECTORES ESTRUTURAIS SOBREVIVEM A MERGES (59-66)');
 
 ok('B4-59: os marcadores do bloco PR13 existem, são únicos e estão em ordem',()=>{
-  const jogo=m[1];
+  const jogo=GAME_SRC;
   assert.strictEqual(jogo.split(PR13_INI).length-1,1,
     'exatamente um marcador de início');
   assert.strictEqual(jogo.split(PR13_FIM).length-1,1,
@@ -4127,7 +4126,7 @@ ok('B4-61: detector de Intensidade sobrevive a código inserido no jogo',()=>{
   /* REGRESSÃO REAL, simulada: injeta linhas antes de spawnWave (o que um merge
      faz o tempo todo) e confirma que o detector continua achando os mesmos
      limites e as mesmas escritas. A versão antiga dependia do banner BOOT. */
-  const jogo=m[1];
+  const jogo=GAME_SRC;
   const ini=jogo.indexOf(PR13_INI),fim=jogo.indexOf(PR13_FIM);
   const injecao='/* codigo novo de um merge qualquer */\n'.repeat(40)+
     'function funcaoNovaDeUmMerge(){return 1;}\n';
@@ -4145,7 +4144,7 @@ ok('B4-61: detector de Intensidade sobrevive a código inserido no jogo',()=>{
 });
 
 ok('B4-62: detector de waveProfile sobrevive a código inserido no bloco',()=>{
-  const jogo=m[1];
+  const jogo=GAME_SRC;
   /* injeção DENTRO do bloco PR13, antes da primeira escrita de waveProfile */
   const primeira=/waveProfile\s*\.\s*bias\s*\[[^\]]*\]\s*=[^=]/.exec(jogo);
   assert.ok(primeira,'escrita de waveProfile localizada');
@@ -4165,7 +4164,7 @@ ok('B4-63: marcador ausente produz erro EXPLÍCITO, nunca falso positivo',()=>{
   /* O modo de falha antigo era silencioso: sem o delimitador de fim, tudo
      passava a ser "fora do bloco" e o teste acusava a primeira escrita
      legítima do próprio Diretor. blocoPR13() agora falha no marcador. */
-  const jogo=m[1];
+  const jogo=GAME_SRC;
   const semFim=jogo.replace(PR13_FIM,'/* marcador removido por um merge */');
   assert.strictEqual(semFim.indexOf(PR13_FIM),-1,'marcador de fim removido');
   /* sem o fim, a delimitação precisa ser impossível de montar */
@@ -4228,7 +4227,7 @@ ok('B4-65: waveComp da onda final é imune a Tema, Intensidade e assinatura',()=
 ok('B4-66: PR10.5.2 continua íntegra após a correção',()=>{
   /* A correção pós-merge não pode ter tocado na PR10.5.2. As funções de
      gerência de dados do slot precisam existir e funcionar. */
-  const jogo=m[1];
+  const jogo=GAME_SRC;
   for(const fn of ['function smClearSlotEchoes(','function smClearSlotSave(',
     'function refreshAfterSlotWipe('])
     assert.ok(jogo.indexOf(fn)>=0,fn+' presente');
@@ -4244,7 +4243,7 @@ ok('B4-66: PR10.5.2 continua íntegra após a correção',()=>{
   assert.strictEqual(t.smClearSlotSave(),true,'smClearSlotSave executa');
   assert.strictEqual(t.getActiveRun(),null,'run ativa descartada');
   /* o Diretor não escreve em nada disso */
-  const bloco=m[1].slice(m[1].indexOf(PR13_INI),m[1].indexOf(PR13_FIM));
+  const bloco=GAME_SRC.slice(GAME_SRC.indexOf(PR13_INI),GAME_SRC.indexOf(PR13_FIM));
   for(const proibido of ['smClearSlotEchoes','smClearSlotSave'])
     assert.ok(bloco.indexOf(proibido+'(')<0,
       'bloco PR13 não chama '+proibido);
@@ -4432,7 +4431,7 @@ ok('B5-08: nenhum comando DEV desbloqueia progresso permanente',()=>{
 });
 
 ok('B5-09: os quatro invocadores respeitam o teto de entidades',()=>{
-  const jogo=m[1];
+  const jogo=GAME_SRC;
   /* cisão do splitter, convocação do mini-chefe e fenda do spawner. O
      spawner era o único sem teto — e COLAPSO favorece spawner de propósito
      (média 1,58/onda contra 0,95–1,16 dos outros Temas), chegando a 4 na
