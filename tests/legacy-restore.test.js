@@ -26,6 +26,25 @@ src+=';globalThis.__t={'+
   'pickMiniBoss,spawnMiniBoss,'+
   'enterDissonance,dissolveEcho,'+
   'diffHp,diffDmg,diffSpd,'+
+  /* AUDIT-FIX-E: superfície observável para os contratos que antes eram
+     verificados lendo o texto-fonte do index.html. Nada aqui muda o jogo —
+     são apenas referências às funções/estados reais para o harness. */
+  'ECHO_SHIELD,ECHO_SPEAK_INTERVAL,CX_TABS,DEV,'+
+  'damageEnemy,applyStatus,makeEcho,echoRoleTick,drawEchoRole,updateEcho,'+
+  'trustTier,echoAllied,updatePlayer,renderCodexBody,mbHazardsTick,smGet,'+
+  'updateHerald,updateFurnace,updateSentinel,updateBrood,updateDuelist,'+
+  'updateColossus,updateOracle,updateLeech,spawnBoss,updateBoss,'+
+  'updateResonance,'+
+  'getEchoes:()=>echoes,setEchoes:a=>{echoes=a;},'+
+  'getProjectiles:()=>projectiles,setProjectiles:a=>{projectiles=a;},'+
+  'setEnemies:a=>{enemies=a;},'+
+  'getRunTime:()=>runTime,setRunTime:v=>{runTime=v;},'+
+  'getCurAttacker:()=>curAttacker,setCurAttacker:v=>{curAttacker=v;},'+
+  'getSpeakCd:()=>_echoSpeakCd,speechClear,speechTick,'+
+  'getBossIntel:()=>bossIntel,setBossIntel:v=>{bossIntel=v;},'+
+  'getBoss:()=>boss,getMiniBoss:()=>miniBoss,'+
+  'setCodexTab:v=>{codexTab=v;},getCodexHtml:()=>cxBody.innerHTML,'+
+  'globalRef:n=>{try{return eval(n);}catch(e){return undefined;}},'+
   'unlockAll:()=>{for(const k in UNLOCKS)if(prog.seen.indexOf(k)<0)prog.seen.push(k);}};';
 
 /* ---------------- DOM mínimo ---------------- */
@@ -116,6 +135,52 @@ function freshRun(){
   t.startRun();
 }
 
+/* ---------------------------------------------------------------------
+   AUDIT-FIX-E — utilitários de observação
+   ---------------------------------------------------------------------
+   Estes testes deixaram de auditar o TEXTO do index.html e passaram a
+   exercitar as funções reais no sandbox, observando efeito (dano, estado,
+   spawn, HUD). `withRandom` torna determinístico tudo que depende de
+   Math.random; `fresh*` monta cenários mínimos e isolados. */
+function withRandom(seq,fn){
+  const real=Math.random;
+  let i=0;
+  const list=Array.isArray(seq)?seq:[seq];
+  Math.random=()=>list[Math.min(i++,list.length-1)];
+  try{return fn();}finally{Math.random=real;}
+}
+/* cria um inimigo isolado do tipo pedido, já "nascido" (sem spawnT) */
+function loneEnemy(type,x,y){
+  t.setEnemies([]);
+  const e=t.spawnEnemy(type,x===undefined?400:x,y===undefined?400:y,1);
+  e.spawnT=0;e.hp=e.maxHp=10000;
+  return e;
+}
+/* mini-chefe determinístico: sempre a definição pedida, sem spawnT */
+function loneMini(id){
+  t.setEnemies([]);
+  const def=t.MINIBOSS.find(d=>d.id===id);
+  assert(def,'MINIBOSS sem definição '+id);
+  const b=t.spawnMiniBoss(10,def);
+  b.spawnT=0;
+  return b;
+}
+/* Eco aliado pronto para o tick de papel (Guardião slot 1 / Disruptor 2) */
+function loneEcho(slot){
+  const e=t.makeEcho({dur:60,trail:[[0,0,1,0,0,0]],wave:5,level:3,
+    items:[],upg:[],owned:[],moral:{comp:1,greed:0,viol:0},dom:'comp',
+    kills:5,mh:100,st:{}},slot);
+  e.alive=true;e.hostile=false;e.trust=80;e.x=400;e.y=400;
+  t.setEchoes([e]);
+  return e;
+}
+/* dano observado sobre um alvo com vida "infinita" */
+function dealt(e,d,sx,sy,crit,isDot){
+  const before=e.hp;
+  t.damageEnemy(e,d,sx,sy,crit,isDot);
+  return before-e.hp;
+}
+
 console.log('\nECHO — Restauração de conteúdo histórico (PR 6)');
 console.log('---------------------------------------------');
 
@@ -137,11 +202,21 @@ ok('IDs únicos entre todos os inimigos',()=>{
   assert.strictEqual(set.size,all.length,'IDs duplicados em EDEFS');
 });
 
-ok('Nenhum novo inimigo depende do sistema Threat removido',()=>{
-  // não existe addThreat, threat, THREAT_NAME no código atual
-  assert(!src.match(/\baddThreat\b/),'addThreat ainda existe');
-  assert(!src.match(/\blet threat\b/),'variável threat ainda existe');
-  assert(!src.match(/\bTHREAT_NAME\b/),'THREAT_NAME ainda existe');
+ok('Sistema Threat continua removido (nenhum símbolo vivo no runtime)',()=>{
+  /* AUDIT-FIX-E: antes isto era regex no texto do index.html. O contrato
+     real é "o símbolo não existe no escopo do jogo", e isso é observável. */
+  for(const n of ['addThreat','threat','THREAT_NAME','threatHp'])
+    assert.strictEqual(t.globalRef(n),undefined,n+' voltou a existir no runtime');
+});
+
+ok('Os 6 novos inimigos nascem e recebem dano sem o pipeline Threat',()=>{
+  freshRun();
+  for(const id of NEW_IDS){
+    const e=loneEnemy(id);
+    assert.strictEqual(e.type,id,'spawnEnemy devolveu tipo errado para '+id);
+    assert(e.hp>0,id+' nasceu sem vida');
+    assert.strictEqual(e.threat,undefined,id+' carrega campo threat');
+  }
 });
 
 for(const id of NEW_IDS){
@@ -371,8 +446,11 @@ ok('Shield absorve dano antes do HP',()=>{
   assert(p.shield<shBefore||p.hp<hpBefore,'algo deve ter mudado');
 });
 
-ok('Shield dos Echos intacto (ECHO_SHIELD presente)',()=>{
-  assert(src.match(/ECHO_SHIELD\s*=\s*\[/),'ECHO_SHIELD deve existir');
+ok('Shield dos Echos intacto (ECHO_SHIELD com capacidade por slot)',()=>{
+  const S=t.ECHO_SHIELD;
+  assert(Array.isArray(S),'ECHO_SHIELD deve ser um array');
+  assert.strictEqual(S.length,3,'um valor por slot (índice 0 não usado)');
+  assert(S[1]>0&&S[2]>0,'ambos os slots têm capacidade de escudo');
 });
 
 /* ====================== ECHOS INTACTOS ====================== */
@@ -412,13 +490,12 @@ ok('localStorage não contém dados corrompidos após startRun',()=>{
 });
 
 /* ====================== CÓDIGO NÃO TEM REFERÊNCIAS A THREAT ====================== */
-ok('Nenhuma referência obrigatória ao sistema Threat',()=>{
-  // O código pode conter a palavra "threat" em comentários, mas não deve
-  // ter dependência funcional do sistema de ameaça antigo
-  const codeNoComments=src.replace(/\/\/.*$/gm,'').replace(/\/\*[\s\S]*?\*\//g,'');
-  assert(!codeNoComments.match(/\bthreat>=\d/),'não deve ter check threat>=N');
-  assert(!codeNoComments.match(/\bthreat\s*=\s*clamp/),'não deve ter threat=clamp(...)');
-  assert(!codeNoComments.match(/\bthreatHp\(\)/),'não deve chamar threatHp()');
+ok('Escalada de onda não depende de Threat (waveComp responde só à onda)',()=>{
+  /* Substitui a auditoria textual por um contrato de comportamento: a
+     composição da onda é função da onda, não de um contador de ameaça. */
+  const a=t.waveComp(3),b=t.waveComp(3);
+  assert.deepStrictEqual(a,b,'waveComp deixou de ser determinística por onda');
+  assert(t.waveComp(12),'waveComp precisa responder em ondas altas');
 });
 
 /* ====================== MINIBOSS SPAWN INTEGRADO ====================== */
@@ -435,51 +512,106 @@ ok('spawnMiniBoss funciona sem erro',()=>{
 });
 
 /* ====================== CODICE INCLUDE NOVOS INIMIGOS ====================== */
-ok('Codex inimigos inclui novos tipos (verificação por string)',()=>{
-  assert(src.includes("'swarm','ENXAME'"),'codex deve ter swarm');
-  assert(src.includes("'orbiter','ORBITADOR'"),'codex deve ter orbiter');
-  assert(src.includes("'bulwark','BLINDADO'"),'codex deve ter bulwark');
-  assert(src.includes("'splitter','CISÃO'"),'codex deve ter splitter');
-  assert(src.includes("'phantom','LEVIANO'"),'codex deve ter phantom');
-  assert(src.includes("'singular','SINGULAR'"),'codex deve ter singular');
+ok('Codex INIMIGOS renderiza os 6 novos tipos',()=>{
+  /* AUDIT-FIX-E: renderiza a aba de verdade e lê o HTML produzido, em vez
+     de procurar o literal ['swarm','ENXAME'] dentro do index.html. */
+  t.setCodexTab('enemies');
+  t.renderCodexBody();
+  const h=t.getCodexHtml();
+  for(const nm of ['ENXAME','ORBITADOR','BLINDADO','CISÃO','LEVIANO','SINGULAR'])
+    assert(h.indexOf(nm)>=0,'Codex de inimigos sem '+nm);
 });
 
 /* ====================== BULWARK: ESCUDO FRONTAL ====================== */
-ok('bulwark tem lógica de escudo frontal no código',()=>{
-  assert(src.includes("e.type==='bulwark'&&e.shieldAng"),'deve ter verificação de bulwark+shieldAng em damageEnemy');
+ok('BLINDADO: golpe contra a placa sofre muito menos que pelas costas',()=>{
+  freshRun();
+  t.setCurAttacker(null);
+  const e=loneEnemy('bulwark',400,400);
+  e.shieldAng=0;                       // placa apontada para +x
+  const frente=withRandom(.99,()=>dealt(e,100,e.x+120,e.y));
+  const costas=withRandom(.99,()=>dealt(e,100,e.x-120,e.y));
+  assert(frente>0&&costas>0,'ambos os lados devem causar algum dano');
+  assert(frente<costas*.5,
+    'a placa frontal não reduziu o dano: frente='+frente+' costas='+costas);
 });
 
 /* ====================== PHANTOM: INTANGIBILIDADE ====================== */
-ok('phantom tem lógica de intangibilidade no código',()=>{
-  assert(src.includes("e.type==='phantom'&&e.ghostT>0"),'deve ter verificação phantom+ghostT em damageEnemy');
+ok('LEVIANO: imune a dano enquanto está em fase fantasma',()=>{
+  freshRun();
+  t.setCurAttacker(null);
+  const e=loneEnemy('phantom',400,400);
+  e.ghostT=1.3;
+  assert.strictEqual(withRandom(.99,()=>dealt(e,250,e.x-60,e.y)),0,
+    'fantasma levou dano durante a intangibilidade');
+  e.ghostT=0;
+  assert(withRandom(.99,()=>dealt(e,250,e.x-60,e.y))>0,
+    'fantasma materializado continuou imune');
 });
 
 /* ====================== SINGULAR: REFLEXÃO ====================== */
-ok('singular tem lógica de reflexão de dano',()=>{
-  assert(src.includes("e.type==='singular'&&curAttacker===player"),'deve ter verificação de singular+reflection');
+ok('SINGULAR: reflete parte do dano direto de volta ao jogador',()=>{
+  freshRun();
+  const pl=t.getPlayer();
+  pl.shield=0;pl.dashT=0;pl.invT=0;pl.hp=pl.maxHp=1000;
+  const e=loneEnemy('singular',pl.x+150,pl.y);
+  t.setCurAttacker(pl);
+  withRandom([.01,.99,.99,.99],()=>t.damageEnemy(e,200,pl.x,pl.y,false,false));
+  t.setCurAttacker(null);
+  assert(pl.hp<1000,'reflexão não atingiu o jogador');
+  pl.hp=1000;
+  const e2=loneEnemy('singular',pl.x+150,pl.y);
+  t.setCurAttacker(pl);
+  withRandom(.99,()=>t.damageEnemy(e2,200,pl.x,pl.y,false,false));
+  t.setCurAttacker(null);
+  assert.strictEqual(pl.hp,1000,'reflexão disparou fora da sua chance');
 });
 
 /* ====================== SPLITTER: CISÃO NA MORTE ====================== */
-ok('splitter tem lógica de cisão na morte',()=>{
-  assert(src.includes("e.type==='splitter'&&!e.isShard"),'deve ter verificação de splitter+isShard em killEnemy');
+ok('CISÃO: ao morrer gera dois fragmentos; fragmento não se divide',()=>{
+  freshRun();
+  t.setCurAttacker(null);
+  const e=loneEnemy('splitter',400,400);
+  t.killEnemy(e);
+  const shards=t.getEnemies().filter(x=>x.type==='splitter'&&x.isShard);
+  assert.strictEqual(shards.length,2,'esperados 2 fragmentos, vi '+shards.length);
+  assert(shards[0].r<e.r,'fragmento deve ser menor que o original');
+  const antes=t.getEnemies().length;
+  t.killEnemy(shards[0]);
+  assert.strictEqual(t.getEnemies().length,antes,'fragmento se dividiu de novo');
 });
 
 /* ====================== CURSE (ORÁCULO) ====================== */
-ok('curseT é decrementado no updatePlayer',()=>{
-  assert(src.includes('p.curseT'),'deve ter campo curseT no player');
-});
-
-ok('curseT reduz dano do jogador',()=>{
-  /* PR 7: a maldição agora é um MODIFICADOR TEMPORÁRIO do pipeline
-     (id status.oracle_curse.damage) com multiplicador ×0.70 (−30%). */
-  assert(src.includes('status.oracle_curse.damage'),'curse deve registrar modificador de dano');
-  assert(src.includes(',.70)'),'curse deve reduzir dano em 30% (×0.70)');
+ok('MALDIÇÃO DO ORÁCULO: aplica −30% de dano e expira pelo updatePlayer',()=>{
+  freshRun();
+  const pl=t.getPlayer();
+  const base=t.smGet(pl,'damage');
+  const b=loneMini('oracle');
+  b.ms.curseCd=0;b.ms.predCd=99;         // só a maldição neste tick
+  t.updateOracle(b,.016,pl);
+  assert(pl.curseT>0,'maldição não marcou duração no jogador');
+  const sob=t.smGet(pl,'damage');
+  assert(sob<base,'dano não caiu sob a maldição: '+sob+' vs '+base);
+  assert(Math.abs(sob/base-0.70)<1e-6,
+    'a redução deixou de ser −30%: razão '+(sob/base));
+  /* a expiração é responsabilidade do updatePlayer */
+  const dur=pl.curseT;
+  for(let i=0;i<Math.ceil(dur/0.1)+2;i++)t.updatePlayer(.1);
+  assert.strictEqual(pl.curseT,0,'curseT não zerou no updatePlayer');
+  assert(Math.abs(t.smGet(pl,'damage')-base)<1e-6,
+    'modificador da maldição sobreviveu à expiração');
 });
 
 /* ====================== ECO SPEAK COOLDOWN ====================== */
-ok('Sistema de fala tem cooldown implementado',()=>{
-  assert(src.includes('_echoSpeakCd'),'deve ter variável de cooldown');
-  assert(src.includes('ECHO_SPEAK_INTERVAL'),'deve ter constante de intervalo');
+ok('Fala do Eco arma o cooldown legado e ele escoa no tick',()=>{
+  freshRun();
+  const e=loneEcho(1);
+  t.speechClear();
+  assert.strictEqual(t.getSpeakCd(),0,'speechClear deve zerar o cooldown');
+  assert(t.echoSpeak(e,'TESTE DE COBERTURA.','#8ff6ff'),'fala recusada');
+  assert.strictEqual(t.getSpeakCd(),t.ECHO_SPEAK_INTERVAL,
+    'cooldown não foi armado no intervalo padrão');
+  t.speechTick(1);
+  assert(t.getSpeakCd()<t.ECHO_SPEAK_INTERVAL,'cooldown não escoa no tick');
 });
 
 /* ====================== PAPÉIS TÁTICOS DOS ECOS ====================== */
@@ -490,125 +622,269 @@ ok('ECHO_ROLE existe com Guardião e Disruptor',()=>{
   assert.strictEqual(t.ECHO_ROLE[2].id,'disruptor');
 });
 
-ok('Ecos nascem com campos de papel (roleCd, roleT, roleFx)',()=>{
-  assert(src.includes('roleCd:'),'makeEcho deve inicializar roleCd');
-  assert(src.includes('roleT:0'),'makeEcho deve inicializar roleT');
-  assert(src.includes('roleFx:0'),'makeEcho deve inicializar roleFx');
+ok('Ecos nascem com campos de papel (roleCd, roleT, roleFx, shieldPot)',()=>{
+  freshRun();
+  for(const slot of [1,2]){
+    const e=loneEcho(slot);
+    assert(typeof e.roleCd==='number'&&e.roleCd>0,'slot '+slot+' sem roleCd inicial');
+    assert.strictEqual(e.roleT,0,'slot '+slot+' nasce com roleT ativo');
+    assert.strictEqual(e.roleFx,0,'slot '+slot+' nasce com roleFx ativo');
+    assert.strictEqual(e.shieldPot,0,'slot '+slot+' nasce com shieldPot');
+  }
 });
 
-ok('echoRoleTick existe e processa ambos os slots',()=>{
-  assert(src.includes('function echoRoleTick'),'deve ter função echoRoleTick');
-  assert(src.includes('GUARDIÃO: barreira'),'deve ter lógica de Guardião');
-  assert(src.includes('DISRUPTOR: pulso'),'deve ter lógica de Disruptor');
+ok('GUARDIÃO (slot 1): o tick abre a barreira e concede shieldPot',()=>{
+  freshRun();
+  const e=loneEcho(1);
+  e.roleCd=0;
+  t.echoRoleTick(e,.016);
+  assert(e.roleT>0,'barreira não abriu (roleT)');
+  assert(e.shieldPot>0,'barreira não concedeu redução (shieldPot)');
+  assert(e.roleCd>0,'cooldown não rearmou depois de disparar');
 });
 
-ok('drawEchoRole existe e renderiza efeitos visuais',()=>{
-  assert(src.includes('function drawEchoRole'),'deve ter função drawEchoRole');
-  assert(src.includes('#46e0ff'),'deve usar cor do Guardião');
+ok('DISRUPTOR (slot 2): o pulso atinge, congela e corrói inimigos no raio',()=>{
+  freshRun();
+  const e=loneEcho(2);
+  const perto=loneEnemy('chaser',e.x+40,e.y);
+  const longe=t.spawnEnemy('chaser',e.x+900,e.y,1);
+  longe.spawnT=0;longe.hp=longe.maxHp=10000;
+  const hpPerto=perto.hp,hpLonge=longe.hp;
+  e.roleCd=0;
+  t.echoRoleTick(e,.016);
+  assert(perto.hp<hpPerto,'pulso não causou dano no alvo próximo');
+  assert.strictEqual(longe.hp,hpLonge,'pulso atingiu alvo fora do raio');
+  assert(perto.st&&perto.st.chillP>0,'pulso não aplicou chill');
+  assert(perto.st&&perto.st.corrT>0,'pulso não aplicou corrode');
 });
 
-ok('echoRoleTick é chamado no updateEcho',()=>{
-  assert(src.includes('echoRoleTick(e,dt)'),'updateEcho deve chamar echoRoleTick');
+ok('ECHO_ROLE publica identidade dos dois papéis e drawEchoRole roda',()=>{
+  freshRun();
+  assert.strictEqual(t.ECHO_ROLE[1].id,'guardian');
+  assert.strictEqual(t.ECHO_ROLE[2].id,'disruptor');
+  for(const slot of [1,2])
+    assert(/^#[0-9a-f]{6}$/i.test(t.ECHO_ROLE[slot].c),
+      'slot '+slot+' sem cor de papel');
+  /* o render é puramente visual: o contrato testável é não lançar */
+  for(const slot of [1,2]){
+    const e=loneEcho(slot);e.roleT=2;e.roleFx=.5;
+    assert.doesNotThrow(()=>t.drawEchoRole(e),'drawEchoRole lançou no slot '+slot);
+  }
 });
 
-ok('Guardião reduz dano em damagePlayer',()=>{
-  assert(src.includes('e.shieldPot'),'damagePlayer deve ler shieldPot do Guardião');
-  assert(src.includes('e.slot===1&&e.roleT>0'),'deve verificar slot e timer ativo');
+ok('updateEcho encaminha o papel (barreira abre pelo update, não só pelo tick)',()=>{
+  freshRun();
+  const e=loneEcho(1);
+  e.roleCd=0;
+  t.updateEcho(e,.016);
+  assert(e.roleT>0,'updateEcho não acionou o papel do Guardião');
 });
 
-ok('Papéis desativam em tier 0 (desconfiança)',()=>{
-  assert(src.includes('trustTier(e)===0'),'deve verificar tier de confiança');
+ok('Guardião com barreira ativa reduz o dano sofrido pelo jogador',()=>{
+  freshRun();
+  const pl=t.getPlayer();
+  const medir=()=>{pl.hp=pl.maxHp=1000;pl.shield=0;pl.dashT=0;pl.invT=0;
+    t.damagePlayer(100);return 1000-pl.hp;};
+  t.setEchoes([]);
+  const semEco=medir();
+  const e=loneEcho(1);
+  e.roleCd=0;t.echoRoleTick(e,.016);
+  const comEco=medir();
+  t.setEchoes([]);
+  assert(semEco>0&&comEco>0,'dano precisa chegar ao jogador nos dois casos');
+  assert(comEco<semEco,'barreira não reduziu: com='+comEco+' sem='+semEco);
 });
 
-ok('Papéis desativam quando Eco está hostil',()=>{
-  const fn=src.substring(src.indexOf('function echoRoleTick'),src.indexOf('function echoRoleTick')+600);
-  assert(fn.includes('e.hostile'),'deve verificar estado hostil');
+ok('Papel suspenso em desconfiança total (tier 0) e com Eco hostil',()=>{
+  freshRun();
+  for(const cenario of ['tier0','hostil']){
+    const e=loneEcho(1);
+    e.roleCd=0;
+    if(cenario==='tier0'){e.trust=0;assert.strictEqual(t.trustTier(e),0,'tier deveria ser 0');}
+    else e.hostile=true;
+    t.echoRoleTick(e,.016);
+    assert.strictEqual(e.roleT,0,'papel abriu mesmo com '+cenario);
+    assert.strictEqual(e.shieldPot,0,'shieldPot concedido com '+cenario);
+  }
 });
 
-ok('Disruptor aplica chill e corrode',()=>{
-  const fn=src.substring(src.indexOf('DISRUPTOR: pulso'),src.indexOf('DISRUPTOR: pulso')+500);
-  assert(fn.includes("'chill'"),'deve aplicar chill');
-  assert(fn.includes("'corrode'"),'deve aplicar corrode');
+/* ====================== MICRO-RESSONÂNCIA ======================
+   AUDIT-FIX-E: o contrato é observável em damageEnemy — alternância
+   jogador↔Eco dentro da janela rende bônus, fora dela não rende, e a
+   Ressonância plena tem precedência. Nada disto depende do texto-fonte. */
+/* prepara um alvo com o último golpe vindo do Eco há `atras` segundos */
+function alvoMicro(atras){
+  const e=loneEnemy('chaser',420,400);
+  const now=t.getRunTime();
+  e.lastTag='p';e.lastTagT=now;        // bloqueia a Ressonância plena
+  e.microCd=0;e.resoCd=0;
+  if(atras!==null){e.microTag='e1';e.microT=now-atras;}
+  return e;
+}
+function golpeDoJogador(e,d){
+  const pl=t.getPlayer();
+  t.setCurAttacker(pl);
+  const v=withRandom(.99,()=>dealt(e,d,pl.x,pl.y,false,false));
+  t.setCurAttacker(null);
+  return v;
+}
+
+ok('Micro-Ressonância dá +22% quando jogador e Eco alternam na janela',()=>{
+  freshRun();t.setRunTime(100);
+  const base=golpeDoJogador(alvoMicro(null),100);
+  const micro=golpeDoJogador(alvoMicro(1.0),100);
+  assert(base>0,'golpe de controle não causou dano');
+  assert(Math.abs(micro/base-1.22)<1e-6,
+    'bônus deixou de ser +22%: razão '+(micro/base));
 });
 
-/* ====================== MICRO-RESSONÂNCIA ====================== */
-ok('Micro-Ressonância existe no código',()=>{
-  assert(src.includes('MICRO-RESSONÂNCIA'),'deve ter seção de Micro-Ressonância');
-  assert(src.includes('microTag'),'deve usar microTag');
-  assert(src.includes('microCd'),'deve usar microCd');
+ok('Micro-Ressonância respeita a janela (>=0.5s e <1.6s)',()=>{
+  freshRun();t.setRunTime(100);
+  const base=golpeDoJogador(alvoMicro(null),100);
+  assert.strictEqual(golpeDoJogador(alvoMicro(2.4),100),base,
+    'disparou acima de 1.6s');
+  assert.strictEqual(golpeDoJogador(alvoMicro(.2),100),base,
+    'disparou abaixo de 0.5s (janela da Ressonância plena)');
 });
 
-ok('Micro-Ressonância dá bônus de dano +22%',()=>{
-  assert(src.includes('d*=1.22'),'deve multiplicar dano por 1.22');
+ok('Micro-Ressonância não dispara junto com a Ressonância plena',()=>{
+  freshRun();t.setRunTime(100);
+  const e=alvoMicro(1.0);
+  e.lastTag='e1';e.lastTagT=t.getRunTime()-.1;   // plena elegível
+  golpeDoJogador(e,100);
+  assert.strictEqual(e.microCd,0,
+    'Micro-Ressonância disparou no mesmo golpe da plena (double-dip)');
 });
 
-ok('Micro-Ressonância tem janela de 1.6s',()=>{
-  assert(src.includes('<1.6'),'janela deve ser menor que 1.6s');
-});
-
-ok('Micro-Ressonância não dispara junto com Ressonância plena',()=>{
-  const block=src.substring(src.indexOf('SINCRONIA TEMPORAL'),src.indexOf('SINCRONIA TEMPORAL')+1500);
-  assert(block.includes('resoFired'),'deve rastrear se Ressonância disparou');
-  assert(block.includes('!resoFired'),'Micro deve verificar que Ressonância não disparou');
-});
-
-ok('MicroCd é decrementado no loop',()=>{
-  assert(src.includes('microCd-=dt'),'microCd deve ser decrementado');
+ok('Micro-Ressonância entra em cooldown e o cooldown escoa no loop',()=>{
+  freshRun();t.setRunTime(100);
+  const e=alvoMicro(1.0);
+  golpeDoJogador(e,100);
+  assert(e.microCd>0,'cooldown não armou após o bônus');
+  /* enquanto o cooldown corre, não há segundo bônus */
+  const base=golpeDoJogador(alvoMicro(null),100);
+  e.microTag='e1';e.microT=t.getRunTime()-1.0;
+  assert.strictEqual(golpeDoJogador(e,100),base,'bônus repetiu sob cooldown');
+  const antes=e.microCd;
+  t.setEnemies([e]);
+  t.updateResonance(.2);
+  assert(e.microCd<antes,'updateResonance não escoa o cooldown');
 });
 
 /* ====================== SENTINELA (MINIBOSS) ====================== */
 /* PR13.5 B5-B: a Sentinela passou a ter POSTURAS (updateSentinel); os
    estados legados shieldUpState/reflectState continuam sendo escritos a
    partir da postura para o renderer e para damageEnemy. */
-ok('Sentinela tem shieldUp funcional',()=>{
-  assert(src.includes('function updateSentinel('),'deve ter updater próprio (B5-B)');
-  assert(src.includes("e.shieldUpState=ms.stance==='guard'?'active'"),'estado ativo derivado da postura GUARDA');
-  assert(src.includes("(ms.stance==='open'?'vulnerable':null)"),'estado vulnerável derivado da postura ABERTURA');
-  assert(src.includes("e.shieldUpState==='vulnerable'"),'renderer/damageEnemy leem o estado vulnerável');
+ok('SENTINELA: a postura dita os estados de escudo e reflexão',()=>{
+  freshRun();
+  const pl=t.getPlayer();
+  const b=loneMini('sentinel');
+  b.ms.stance='neutral';b.ms.stanceT=0;
+  t.updateSentinel(b,.016,pl);
+  assert.strictEqual(b.ms.stance,'guard','neutra deveria virar GUARDA');
+  assert.strictEqual(b.shieldUpState,'active','GUARDA não ativou o escudo');
+  assert.strictEqual(b.reflectState,'active','GUARDA não ativou a reflexão');
+  b.ms.stanceT=0;
+  t.updateSentinel(b,.016,pl);
+  assert.strictEqual(b.ms.stance,'open','GUARDA deveria abrir');
+  assert.strictEqual(b.shieldUpState,'vulnerable','ABERTURA não expôs a janela');
+  assert.strictEqual(b.reflectState,null,'reflexão continuou fora da GUARDA');
 });
 
-ok('Sentinela tem reflect funcional',()=>{
-  assert(src.includes("e.reflectState=ms.stance==='guard'?'active':null"),'reflexão ativa na GUARDA');
-  assert(src.includes("e.reflectState==='active'"),'renderer lê a reflexão ativa');
-  assert(src.includes("pr.team='enemy';pr.color='#8ff6ff'"),'devolve projéteis do jogador');
+ok('SENTINELA: em GUARDA devolve os projéteis do jogador',()=>{
+  freshRun();
+  const pl=t.getPlayer();
+  const b=loneMini('sentinel');
+  b.ms.stance='guard';b.ms.stanceT=9;
+  const pr={x:b.x+10,y:b.y,vx:300,vy:0,r:5,dmg:10,life:3,type:'orb',team:'player',color:'#fff'};
+  t.setProjectiles([pr]);
+  t.updateSentinel(b,.016,pl);
+  assert.strictEqual(pr.team,'enemy','projétil não trocou de lado');
+  assert.strictEqual(pr.owner,b,'projétil devolvido sem dono');
+  assert(pr.vx<0,'projétil não inverteu a direção');
+  t.setProjectiles([]);
 });
 
-ok('Sentinela tem redução de dano no damageEnemy',()=>{
-  assert(src.includes("shieldUpState==='active'")&&src.includes('d*=.25'),
-    'escudo ativo deve reduzir dano');
-  assert(src.includes("shieldUpState==='vulnerable'")&&src.includes('d*=1.30'),
-    'vulnerável deve aumentar dano');
+ok('SENTINELA: escudo ativo reduz o dano e a janela aberta o amplifica',()=>{
+  freshRun();
+  t.setCurAttacker(null);
+  const medir=st=>{
+    const b=loneMini('sentinel');
+    b.hp=b.maxHp=200000;b.plates=0;b.shieldUpState=st;b.sleepDmgRed=0;
+    return withRandom(.99,()=>dealt(b,1000,b.x-100,b.y));
+  };
+  const neutro=medir(null),ativo=medir('active'),aberto=medir('vulnerable');
+  assert(Math.abs(ativo/neutro-0.25)<1e-6,'escudo ativo deixou de reduzir 75%: '+(ativo/neutro));
+  assert(Math.abs(aberto/neutro-1.30)<1e-6,'janela deixou de amplificar 30%: '+(aberto/neutro));
 });
 
 /* ====================== COLOSSO (SONO/VIGÍLIA) ====================== */
-ok('Colosso tem fases dormente/desperto',()=>{
-  assert(src.includes("e.sleepPhase==='dormant'"),'deve ter fase dormente');
-  assert(src.includes("ms.sleep==='awake'")&&src.includes("e.sleepPhase=ms.sleep"),'deve ter fase desperta (B5-B: ms.sleep espelhado em e.sleepPhase)');
+ok('COLOSSO: alterna dormente/desperto e espelha a fase na entidade',()=>{
+  freshRun();
+  const pl=t.getPlayer();
+  const b=loneMini('colossus');
+  b.ms.sleep='awake';b.ms.sleepT=0;
+  t.updateColossus(b,.016,pl);
+  assert.strictEqual(b.ms.sleep,'dormant','desperto deveria adormecer');
+  assert.strictEqual(b.sleepPhase,'dormant','fase não espelhada na entidade');
+  assert(b.sleepDmgRed>0,'dormência não trouxe redução de dano');
+  b.ms.sleepT=0;
+  t.updateColossus(b,.016,pl);
+  assert.strictEqual(b.ms.sleep,'awake','dormente deveria despertar');
+  assert.strictEqual(b.sleepDmgRed,0,'redução sobreviveu ao despertar');
 });
 
-ok('Colosso dormente tem redução de dano',()=>{
-  assert(src.includes('sleepDmgRed'),'deve ter campo de redução');
-  assert(src.includes('e.sleepDmgRed'),'damageEnemy deve ler sleepDmgRed');
+ok('COLOSSO: dormente sofre menos dano',()=>{
+  freshRun();
+  t.setCurAttacker(null);
+  const medir=red=>{
+    const b=loneMini('colossus');
+    b.hp=b.maxHp=200000;b.plates=0;b.shieldUpState=null;b.sleepDmgRed=red;
+    return withRandom(.99,()=>dealt(b,1000,b.x-100,b.y));
+  };
+  const acordado=medir(0),dormindo=medir(.60);
+  assert(Math.abs(dormindo/acordado-0.40)<1e-6,
+    'dormência deixou de reduzir 60%: '+(dormindo/acordado));
 });
 
-ok('Colosso desperta com quake',()=>{
-  const block=src.substring(src.indexOf('function updateColossus('),src.indexOf('function updateColossus(')+1400);
-  assert(block.includes("ms.sleep==='dormant'&&ms.sleepT<=0")&&block.includes('R2=340'),'transição dormente→desperto deve ter quake (R 340)');
+ok('COLOSSO: o despertar solta um quake que fere quem está perto',()=>{
+  freshRun();
+  const pl=t.getPlayer();
+  pl.hp=pl.maxHp=5000;pl.shield=0;pl.dashT=0;pl.invT=0;
+  const b=loneMini('colossus');
+  b.x=pl.x+60;b.y=pl.y;                  // dentro do raio do quake
+  b.ms.sleep='dormant';b.ms.sleepT=0;
+  t.updateColossus(b,.016,pl);
+  assert(pl.hp<5000,'quake do despertar não atingiu o jogador colado');
+  /* fora do raio (>340) o mesmo despertar não fere */
+  pl.hp=5000;
+  const b2=loneMini('colossus');
+  b2.x=pl.x+900;b2.y=pl.y;
+  b2.ms.sleep='dormant';b2.ms.sleepT=0;
+  t.updateColossus(b2,.016,pl);
+  assert.strictEqual(pl.hp,5000,'quake atingiu alvo fora do raio');
 });
 
 /* ====================== ARAUTO (FRATURAS) ====================== */
 /* B5-B: as fraturas viraram PRESSÁGIOS (hazards kind 'omen', com cap e escalada) */
-ok('Arauto tem fraturas temporais',()=>{
-  assert(src.includes('function updateHerald('),'deve ter updater próprio');
-  assert(src.includes("kind:'omen'"),'deve criar marcas de ruptura (omen)');
-  assert(src.includes('ms.omenCd'),'deve ter cooldown de presságio');
-});
-
-ok('Fraturas do Arauto detonam com dano',()=>{
-  const start=src.indexOf('function updateHerald(');
-  const block=src.substring(start,start+1800);
-  assert(block.includes('damagePlayer'),'presságios devem causar dano');
-  assert(block.includes("'chill'"),'presságios devem aplicar slow');
+ok('ARAUTO: o presságio marca a arena e detona com dano + lentidão',()=>{
+  freshRun();
+  const pl=t.getPlayer();
+  pl.hp=pl.maxHp=5000;pl.shield=0;pl.dashT=0;pl.invT=0;
+  const b=loneMini('herald');
+  b.x=pl.x+400;b.y=pl.y;
+  b.ms.omenCd=0;b.burstCd=99;b.summonCd=99;b.chargeCd=99;
+  withRandom(.5,()=>t.updateHerald(b,.016,pl));
+  const omens=(b.hazards||[]).filter(h=>h.kind==='omen');
+  assert(omens.length>0,'nenhum presságio criado');
+  /* o presságio é telegrafado: não fere enquanto o fuse corre */
+  t.mbHazardsTick(b,.1,pl);
+  assert.strictEqual(pl.hp,5000,'presságio feriu antes de detonar');
+  /* posiciona o jogador sob a marca e deixa o fuse terminar */
+  pl.x=omens[0].x;pl.y=omens[0].y;
+  t.mbHazardsTick(b,5,pl);
+  assert(pl.hp<5000,'presságio não causou dano ao detonar');
+  assert(pl.st&&pl.st.chillP>0,'presságio não aplicou lentidão');
 });
 
 /* ====================== LORE_WORLD / CODEX ====================== */
@@ -627,15 +903,21 @@ ok('LORE_WORLD tem pelo menos 5 dossiês extra',()=>{
   assert(t.LORE_WORLD.extra.length>=5,'deve ter pelo menos 5 dossiês');
 });
 
-ok('Codex tem tab de lore (ARQUIVO ÔMEGA)',()=>{
-  assert(src.includes("id:'lore'"),'CX_TABS deve ter lore');
-  assert(src.includes('ARQUIVO ÔMEGA'),'tab deve ser chamada ARQUIVO ÔMEGA');
+ok('Codex publica a aba ARQUIVO ÔMEGA em CX_TABS',()=>{
+  const tab=t.CX_TABS.find(x=>x.id==='lore');
+  assert(tab,'CX_TABS perdeu a aba lore');
+  assert.strictEqual(tab.nm,'ARQUIVO ÔMEGA','o rótulo da aba mudou');
 });
 
-ok('Codex renderiza lore sem erro',()=>{
-  assert(src.includes("codexTab==='lore'"),'deve ter branch de renderização');
-  assert(src.includes('LORE_WORLD.full'),'deve iterar sobre full');
-  assert(src.includes('LORE_WORLD.extra'),'deve iterar sobre extra');
+ok('Codex ARQUIVO ÔMEGA renderiza todo o LORE_WORLD',()=>{
+  t.setCodexTab('lore');
+  t.renderCodexBody();
+  const h=t.getCodexHtml();
+  assert(h.indexOf(t.LORE_WORLD.short)>=0,'texto de abertura ausente');
+  for(const sec of t.LORE_WORLD.full)
+    assert(h.indexOf(sec.t)>=0,'registro ausente no Codex: '+sec.t);
+  for(const x of t.LORE_WORLD.extra)
+    assert(h.indexOf(x.t)>=0,'dossiê ausente no Codex: '+x.t);
 });
 
 /* ====================== MÓDULOS HISTÓRICOS ====================== */
@@ -661,68 +943,212 @@ ok('AGULHA RESSONANTE (su_dotcrit) existe',()=>{
   assert(item,'su_dotcrit deve existir em ITEMS');
 });
 
-ok('healChance tem consumidor em killEnemy',()=>{
-  assert(src.includes('player.healChance'),'killEnemy deve ler healChance');
-  assert(src.includes('healAmount'),'deve usar healAmount');
+ok('DADO VICIADO: healChance cura de verdade no abate',()=>{
+  freshRun();
+  const pl=t.getPlayer();
+  pl.maxHp=200;pl.hp=100;pl.healChance=.5;pl.healAmount=14;
+  const e=loneEnemy('chaser');
+  t.setCurAttacker(pl);
+  withRandom(.01,()=>t.killEnemy(e));
+  t.setCurAttacker(null);
+  assert(pl.hp>100,'abate não curou dentro da chance de healChance');
+  /* sem sorte, nenhuma cura */
+  pl.hp=100;
+  const e2=loneEnemy('chaser');
+  t.setCurAttacker(pl);
+  withRandom(.99,()=>t.killEnemy(e2));
+  t.setCurAttacker(null);
+  assert.strictEqual(pl.hp,100,'curou fora da chance');
+  delete pl.healChance;delete pl.healAmount;
 });
 
-ok('critHeal tem consumidor em damageEnemy',()=>{
-  assert(src.includes('player.critHeal'),'damageEnemy deve ler critHeal');
+ok('BISTURI SIMBIÓTICO: critHeal cura no crítico (e só no crítico)',()=>{
+  freshRun();
+  const pl=t.getPlayer();
+  pl.maxHp=200;pl.hp=100;pl.critHeal=4;
+  const e=loneEnemy('chaser');
+  t.setCurAttacker(pl);
+  withRandom(.99,()=>t.damageEnemy(e,10,pl.x,pl.y,false,false));
+  assert.strictEqual(pl.hp,100,'acerto normal curou');
+  withRandom(.99,()=>t.damageEnemy(e,10,pl.x,pl.y,true,false));
+  t.setCurAttacker(null);
+  assert(pl.hp>100,'crítico não curou com critHeal');
+  delete pl.critHeal;
 });
 
-ok('execThreshold tem consumidor em damageEnemy',()=>{
-  assert(src.includes('player.execThreshold'),'damageEnemy deve ler execThreshold');
-  assert(src.includes('EXECUTADO'),'deve ter feedback de execução');
+ok('PROTOCOLO DE EXECUÇÃO: execThreshold finaliza alvo abaixo do limiar',()=>{
+  freshRun();
+  const pl=t.getPlayer();
+  pl.maxHp=200;pl.hp=100;pl.execThreshold=.12;
+  const e=loneEnemy('chaser');
+  e.maxHp=1000;e.hp=100;
+  t.setCurAttacker(pl);
+  withRandom(.99,()=>t.damageEnemy(e,95,pl.x,pl.y,false,false));
+  t.setCurAttacker(null);
+  assert.strictEqual(e.hp,0,'alvo sob o limiar não foi executado');
+  assert(pl.hp>100,'execução não devolveu vida');
+  delete pl.execThreshold;
 });
 
-ok('dotCrit tem consumidor em damageEnemy',()=>{
-  assert(src.includes('player.dotCrit'),'damageEnemy deve ler dotCrit');
+ok('AGULHA RESSONANTE: dotCrit amplifica o dano contínuo',()=>{
+  freshRun();
+  const pl=t.getPlayer();
+  t.setCurAttacker(pl);
+  const medir=dc=>{
+    if(dc)pl.dotCrit=dc;else delete pl.dotCrit;
+    const e=loneEnemy('chaser');
+    return withRandom(.01,()=>dealt(e,100,pl.x,pl.y,false,true));
+  };
+  const base=medir(0),crit=medir(1);
+  t.setCurAttacker(null);
+  delete pl.dotCrit;
+  assert(base>0,'DoT de controle não causou dano');
+  assert(Math.abs(crit/base-1.8)<1e-6,'crítico de DoT deixou de ser ×1.8: '+(crit/base));
 });
 
 /* ====================== BOSS ADAPTATIVO ====================== */
-ok('Boss usa analyzeEchoData para adaptar comportamento',()=>{
-  assert(src.includes('bossIntel=a'),'spawnBoss deve salvar análise');
-  assert(src.includes('a.mode'),'deve usar mode para adaptar');
+ok('Boss guarda a análise dos Ecos ao nascer (bossIntel com modo)',()=>{
+  freshRun();
+  t.setBossIntel(null);
+  t.spawnBoss();
+  const intel=t.getBossIntel();
+  assert(intel,'spawnBoss não registrou bossIntel');
+  assert(typeof intel.mode==='string'&&intel.mode,'bossIntel sem modo de adaptação');
+  assert(t.getBoss(),'spawnBoss não colocou o chefe em jogo');
 });
 
-ok('Boss adapta ondas de choque a jogadores que dasham muito',()=>{
-  assert(src.includes('dashAdapt'),'deve ter adaptação por dash');
-  assert(src.includes('bossIntel.dashes'),'deve ler contagem de dashes');
+ok('Boss adapta o ritmo a quem dasha muito (contrato exposto em DEV.bossDebug)',()=>{
+  /* AUDIT-FIX-E: em vez de procurar a variável dashAdapt no texto-fonte,
+     lemos o relatório real que o jogo publica sobre a adaptação. */
+  freshRun();
+  t.setBossIntel({mode:'ranged',total:9,closeW:1,longW:8,dashes:9});
+  const muito=t.DEV.bossDebug();
+  assert(muito,'DEV.bossDebug não respondeu');
+  assert.strictEqual(muito.dashes,9,'contagem de dashes não chegou ao relatório');
+  assert(muito.dashAdapt<0,'jogador que dasha muito não recebeu adaptação');
+  t.setBossIntel({mode:'ranged',total:9,closeW:1,longW:8,dashes:0});
+  assert.strictEqual(t.DEV.bossDebug().dashAdapt,0,
+    'adaptação disparou sem histórico de dash');
+  t.setBossIntel(null);
 });
 
 /* ====================== SHIELD INTEGRITY ====================== */
-ok('Guardião não quebra Shield do player',()=>{
-  const block=src.substring(src.indexOf('GUARDIÃO (Eco·01)'),src.indexOf('GUARDIÃO (Eco·01)')+400);
-  assert(!block.includes('shield=0'),'não deve zerar shield');
+ok('Guardião não consome o Shield do jogador para abrir a barreira',()=>{
+  freshRun();
+  const pl=t.getPlayer();
+  pl.shield=25;
+  const e=loneEcho(1);
+  e.roleCd=0;
+  t.echoRoleTick(e,.016);
+  assert(e.roleT>0,'cenário inválido: a barreira não abriu');
+  assert.strictEqual(pl.shield,25,'barreira consumiu o Shield do jogador');
 });
 
-ok('Disruptor não interfere com Shield dos Echos',()=>{
-  const block=src.substring(src.indexOf('DISRUPTOR: pulso'),src.indexOf('DISRUPTOR: pulso')+600);
-  assert(!block.includes('shield=0'),'não deve zerar shield do Echo');
+ok('Disruptor não consome o Shield do próprio Eco no pulso',()=>{
+  freshRun();
+  const e=loneEcho(2);
+  e.shield=20;
+  loneEnemy('chaser',e.x+40,e.y);
+  t.setEchoes([e]);
+  e.roleCd=0;
+  t.echoRoleTick(e,.016);
+  assert.strictEqual(e.shield,20,'pulso consumiu o Shield do Eco');
 });
 
 /* ====================== IDENTIDADE DOS MINIBOSSES ====================== */
 /* B5-B: cada mini-chefe tem updater próprio; as habilidades históricas
    continuam existindo dentro dele. */
-ok('Fornalha tem rastro de fogo',()=>{
-  assert(src.includes('function updateFurnace(')&&src.includes("kind:'fire'"),'deve ter rastro incendiário (zonas de fogo)');
+ok('FORNALHA: em movimento deixa zonas de fogo que queimam o jogador',()=>{
+  freshRun();
+  const pl=t.getPlayer();
+  pl.hp=pl.maxHp=5000;pl.shield=0;pl.dashT=0;pl.invT=0;
+  const b=loneMini('furnace');
+  b.x=pl.x+300;b.y=pl.y;b.vx=200;b.vy=0;   // "moved" > 18
+  b.ms.trailT=0;b.ms.novaCd=99;
+  withRandom(.5,()=>t.updateFurnace(b,.016,pl));
+  const fogo=(b.hazards||[]).filter(h=>h.kind==='fire');
+  assert(fogo.length>0,'Fornalha não deixou rastro de fogo');
+  /* o jogador dentro da zona queima no tick seguinte da Fornalha */
+  pl.x=fogo[0].x;pl.y=fogo[0].y;
+  t.mbHazardsTick(b,.5,pl);
+  assert.strictEqual(b.ms.fireIn,true,'zona não marcou o jogador dentro');
+  b.ms.fireHitT=0;
+  withRandom(.99,()=>t.updateFurnace(b,.016,pl));
+  assert(pl.hp<5000,'rastro de fogo não causou dano');
+  assert(pl.st&&pl.st.burnT>0,'rastro de fogo não aplicou burn');
 });
 
-ok('Matriz gera swarms',()=>{
-  assert(src.includes('function updateBrood(')&&src.includes("mbSummon(e,'swarm'"),'deve gerar enxame');
+ok('MATRIZ: prolifera enxame e só regenera com crias vivas',()=>{
+  freshRun();
+  const pl=t.getPlayer();
+  const b=loneMini('brood');
+  b.hp=b.maxHp*.5;
+  b.ms.spawnCd=0;
+  withRandom(.5,()=>t.updateBrood(b,.016,pl));
+  const crias=t.getEnemies().filter(e=>e.type==='swarm'&&!e.dead);
+  assert(crias.length>0,'Matriz não gerou enxame');
+  /* a regen é avaliada no tick seguinte, quando as crias já contam */
+  b.ms.spawnCd=99;
+  const hp=b.hp;
+  withRandom(.5,()=>t.updateBrood(b,1,pl));
+  assert.strictEqual(b.ms.regenOn,true,'regen desligada com crias vivas');
+  assert(b.hp>hp,'Matriz não regenerou com o enxame vivo');
+  /* matar as crias corta a regen — é o counterplay declarado */
+  for(const c of crias)c.dead=true;
+  const hp2=b.hp;
+  withRandom(.5,()=>t.updateBrood(b,1,pl));
+  assert.strictEqual(b.ms.regenOn,false,'regen continuou sem crias');
+  assert.strictEqual(b.hp,hp2,'Matriz regenerou sem crias vivas');
 });
 
-ok('Duelista tem teleporte',()=>{
-  const b=src.substring(src.indexOf('function updateDuelist('),src.indexOf('function updateColossus('));
-  assert(b.includes('e.x=clamp(p.x+Math.cos(a)*rr'),'deve ter blink para o flanco');
+ok('DUELISTA: faz blink para o flanco a 70–130 px do jogador',()=>{
+  freshRun();
+  const pl=t.getPlayer();
+  const b=loneMini('duelist');
+  b.x=pl.x+600;b.y=pl.y+600;
+  b.ms.slashT=0;b.telegraphT=0;b.skillCd=0;
+  withRandom([.5,.5,.5,.5],()=>t.updateDuelist(b,.016,pl));
+  const d=Math.hypot(b.x-pl.x,b.y-pl.y);
+  assert(d>=60&&d<=140,'blink fora da faixa de flanco: '+d.toFixed(1));
+  assert(b.telegraphT>0,'blink não abriu telegrafia antes do golpe');
 });
 
-ok('Oráculo tem maldição',()=>{
-  assert(src.includes('function updateOracle(')&&src.includes("'status.oracle_curse.damage'"),'deve ter curse');
+ok('ORÁCULO: as zonas de previsão ferem e aplicam lentidão ao ativar',()=>{
+  freshRun();
+  const pl=t.getPlayer();
+  pl.hp=pl.maxHp=5000;pl.shield=0;pl.dashT=0;pl.invT=0;
+  const b=loneMini('oracle');
+  b.x=pl.x+400;b.y=pl.y;
+  b.ms.predCd=0;b.ms.curseCd=99;
+  withRandom(.5,()=>t.updateOracle(b,.016,pl));
+  const zonas=(b.hazards||[]).filter(h=>h.kind==='pred');
+  assert(zonas.length>0,'Oráculo não marcou zona de previsão');
+  t.mbHazardsTick(b,.1,pl);
+  assert.strictEqual(pl.hp,5000,'zona feriu antes de ativar');
+  pl.x=zonas[0].x;pl.y=zonas[0].y;
+  t.mbHazardsTick(b,5,pl);
+  assert(pl.hp<5000,'zona de previsão não causou dano ao ativar');
+  assert(pl.st&&pl.st.chillP>0,'zona de previsão não aplicou lentidão');
 });
 
-ok('Sanguesuga tem dreno',()=>{
-  assert(src.includes('function updateLeech(')&&src.includes('ms.siphonT'),'deve ter dreno (siphon)');
+ok('SANGUESSUGA: o dreno tira vida do jogador e cura o mini-chefe',()=>{
+  freshRun();
+  const pl=t.getPlayer();
+  pl.hp=pl.maxHp=5000;pl.shield=0;pl.dashT=0;pl.invT=0;
+  const b=loneMini('leech');
+  b.x=pl.x+120;b.y=pl.y;b.hp=b.maxHp*.5;
+  b.ms.siphonCd=0;b.ms.siphonT=0;
+  withRandom(.99,()=>t.updateLeech(b,.016,pl));
+  assert(b.ms.siphonT>0,'dreno não iniciou com o jogador no alcance');
+  const hpB=b.hp;
+  b.ms.tickT=0;
+  withRandom(.99,()=>t.updateLeech(b,.016,pl));
+  assert(pl.hp<5000,'dreno não feriu o jogador');
+  assert(b.hp>hpB,'dreno não curou o mini-chefe');
+  /* sair do alcance rompe o fio — é o counterplay declarado */
+  pl.x=b.x+2000;
+  withRandom(.99,()=>t.updateLeech(b,.016,pl));
+  assert.strictEqual(b.ms.siphonT,0,'dreno sobreviveu fora do alcance');
 });
 
 /* ====================== RESULTADO ====================== */
