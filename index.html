@@ -19287,14 +19287,48 @@ function renderMetaShop(){
    da Alpha (echoMeta.v1 / echoProg.v1 / echoChar.v2 / echoChar.v1 /
    echoRuns.v1), o conteúdo é movido UMA VEZ para o SAVE 1 e as chaves
    antigas são removidas — nunca duplica nem re-migra.
+
+   AUDIT-FIX-C2 · RECUPERAÇÃO DE SAVE ILEGÍVEL (política conservadora)
+   -------------------------------------------------------------------
+   O boot NUNCA descarta em silêncio a única cópia de um save que não
+   conseguiu ler. Duas situações distintas:
+
+   1. echoSave.v3 presente mas ilegível (JSON truncado, lixo, shape/versão
+      fora do contrato). Antes de o boot criar uma raiz nova e sobrescrever
+      a chave, o blob BRUTO é copiado byte-a-byte para
+
+        echoSave.v3.corruptBackup
+
+      · a chave de backup é VERSIONADA junto com o save (v3): um formato
+        futuro terá a sua própria chave e não colide com esta;
+      · POLÍTICA: MANTER O PRIMEIRO. O backup é escrito apenas se ainda não
+        existir. Uma segunda corrupção não destrói o blob preservado antes —
+        é o mais antigo que tem a maior chance de conter save real;
+      · se a cópia falhar (cota/storage indisponível), smCommit() se recusa a
+        gravar até conseguir preservar — nunca sobrescreve antes do backup;
+      · o jogo NUNCA lê o backup de volta: é material de diagnóstico e
+        recuperação manual, fora do fluxo automático. Não há loop de
+        recuperação — o boot segue com uma raiz nova e funcional.
+
+   2. Chave legada presente mas ilegível. A migração só remove a chave que
+      conseguiu REALMENTE ler e converter. Legado ilegível fica intocado no
+      localStorage e nunca vira dado inventado; se nada for legível, a
+      migração não acontece e nenhuma chave é apagada.
+
+   Nada disso altera o formato, a versão ou a leitura de um save VÁLIDO.
    ===================================================================== */
 const SM_KEY='echoSave.v3';
 const SM_VERSION=3;
+/* cópia de resgate do echoSave.v3 ilegível (ver AUDIT-FIX-C2 acima) */
+const SM_CORRUPT_KEY='echoSave.v3.corruptBackup';
 const SM_LEGACY_KEYS=['echoMeta.v1','echoProg.v1','echoChar.v2','echoChar.v1','echoRuns.v1'];
 let smRoot=null;              // raiz carregada do echoSave.v3
 let curSlot=0;                // slot ativo (0 = nenhum — só antes do boot)
 let activeRun=null;           // espelho de smRoot.slots[curSlot].run
 let smRestoring=false;        // spawnWave executando dentro de resumeRun
+/* blob corrompido detectado no boot que ainda NÃO foi preservado (a cópia
+   falhou). Enquanto não for null, smCommit() não sobrescreve echoSave.v3. */
+let smCorruptPending=null;
 
 function smClone(o){return o==null?null:JSON.parse(JSON.stringify(o));}
 function smDefaultSlot(){
@@ -19311,10 +19345,31 @@ function smCommit(){
      futuro esquecer o guard próprio. Todos os caminhos de persistência
      (prog, meta, echoes, checkpoint, slot) passam por aqui. */
   if(sandboxRun||sandboxMode)return false;
+  /* AUDIT-FIX-C2: enquanto um echoSave.v3 ilegível não tiver sido preservado,
+     a única cópia existente NÃO é sobrescrita. Tenta preservar de novo a cada
+     gravação — a falha anterior costuma ser cota temporária. */
+  if(smCorruptPending!==null){
+    if(!smPreserveCorruptRoot(smCorruptPending))return false;
+    smCorruptPending=null;
+  }
   /* AUDIT-FIX-C (bug): falha de escrita (cota/storage indisponível) agora é
      reportada. Antes smCommit() devolvia true mesmo sem ter gravado nada. */
   try{localStorage.setItem(SM_KEY,JSON.stringify(smRoot));}catch(e){return false;}
   return true;
+}
+/* AUDIT-FIX-C2: guarda o blob bruto de um echoSave.v3 ilegível.
+   Devolve true quando echoSave.v3 pode ser sobrescrito com segurança:
+   · não há nada recuperável a preservar (chave vazia); ou
+   · o backup já existe — política MANTER O PRIMEIRO, não sobrescreve; ou
+   · a cópia byte-a-byte acabou de ser gravada.
+   Devolve false apenas quando o storage impediu a cópia. */
+function smPreserveCorruptRoot(raw){
+  if(typeof raw!=='string'||!raw)return true;
+  try{
+    if(localStorage.getItem(SM_CORRUPT_KEY)!==null)return true;
+    localStorage.setItem(SM_CORRUPT_KEY,raw);
+    return true;
+  }catch(e){return false;}
 }
 /* ---- PR 10.5.2: GERÊNCIA DE DADOS DO SLOT (Configurações → Dados) ----
    Duas ações destrutivas com confirmação obrigatória:
@@ -19414,18 +19469,31 @@ function smSanitizeSlot(s){
 }
 
 /* ---------------- migração da Alpha (uma única vez) ---------------- */
+/* AUDIT-FIX-C2: índice de operador legado. Só aceita um inteiro decimal
+   explícito — `'lixo'|0` daria 0 em silêncio, o que seria INVENTAR dado a
+   partir de um legado inválido. Devolve null quando não é legível. */
+function smLegacyCharIdx(raw){
+  if(raw===null||raw===undefined)return null;
+  const t=String(raw).trim();
+  if(!/^-?\d+$/.test(t))return null;
+  const n=parseInt(t,10);
+  return Number.isFinite(n)?n:null;
+}
 function smMigrateLegacy(){
   try{
     const hasLegacy=SM_LEGACY_KEYS.some(k=>localStorage.getItem(k)!==null);
     if(!hasLegacy)return null;                 // instalação nova: nada a migrar
+    /* AUDIT-FIX-C2: só entra em `consumed` a chave cujo conteúdo foi REALMENTE
+       lido e convertido. Chave ilegível nunca é apagada por uma migração que
+       não conseguiu aproveitá-la — fica intocada para inspeção/resgate. */
+    const consumed=[];
     const slot=smDefaultSlot();
-    slot.touched=true;                         // save existente = memória usada
     /* meta-progresso */
     try{
       const r=localStorage.getItem(META_KEY);
       if(r){const m=JSON.parse(r);
         /* política da migração preservada: legado ilegível → slot.meta null */
-        if(m&&typeof m==='object')slot.meta=metaFromObject(m);
+        if(m&&typeof m==='object'){slot.meta=metaFromObject(m);consumed.push(META_KEY);}
       }
     }catch(e){}
     /* progressão + unlocks */
@@ -19439,14 +19507,20 @@ function smMigrateLegacy(){
           for(const k in base)if(p[k]!==undefined)base[k]=p[k];
           if(!Array.isArray(base.seen))base.seen=[];
           slot.prog=base;
+          consumed.push(PROG_KEY);
         }}
     }catch(e){}
-    /* operador selecionado (v2; aceita v1 com remapeamento de índice) */
+    /* operador selecionado (v2; aceita v1 com remapeamento de índice).
+       Cada chave legível é consumida por si — v2 tem precedência no valor,
+       mas um v1 ilegível continua preservado. */
     try{
-      const c2=localStorage.getItem(CHAR_KEY),c1=localStorage.getItem(CHAR_KEY_OLD);
-      if(c2!==null)slot.char=clamp(c2|0,0,CHARS.length-1);
-      else if(c1!==null){
-        const m=CHAR_LEGACY_IDX[c1|0];
+      const n2=smLegacyCharIdx(localStorage.getItem(CHAR_KEY));
+      const n1=smLegacyCharIdx(localStorage.getItem(CHAR_KEY_OLD));
+      if(n2!==null)consumed.push(CHAR_KEY);
+      if(n1!==null)consumed.push(CHAR_KEY_OLD);
+      if(n2!==null)slot.char=clamp(n2,0,CHARS.length-1);
+      else if(n1!==null){
+        const m=CHAR_LEGACY_IDX[n1];
         slot.char=clamp(m==null?0:m,0,CHARS.length-1);
       }
     }catch(e){}
@@ -19454,17 +19528,29 @@ function smMigrateLegacy(){
     try{
       const r=localStorage.getItem(LS_KEY);
       if(r){const q=JSON.parse(r);
-        if(Array.isArray(q))
+        if(Array.isArray(q)){
           slot.echoes=q.filter(x=>x&&!x.dev&&Array.isArray(x.trail)&&x.trail.length>4)
             .slice(0,2);
-      }
+          consumed.push(LS_KEY);
+        }}
     }catch(e){}
+    /* AUDIT-FIX-C2: nenhuma chave legível ⇒ NÃO há migração. Não cria save a
+       partir de lixo e não apaga nada; o boot segue com uma raiz nova. */
+    if(!consumed.length)return null;
+    slot.touched=true;                         // save existente = memória usada
     slot.run=null;                             // a Alpha não tinha run ativa
     const root=smNewRoot();
     root.lastSlot=1;
     root.slots[1]=slot;
-    localStorage.setItem(SM_KEY,JSON.stringify(root));  // grava ANTES de apagar
-    for(const k of SM_LEGACY_KEYS){try{localStorage.removeItem(k);}catch(e){}}
+    /* AUDIT-FIX-C2: idem smCommit — um echoSave.v3 ilegível ainda não
+       preservado não é sobrescrito nem pela migração. */
+    if(smCorruptPending!==null){
+      if(!smPreserveCorruptRoot(smCorruptPending))return null;
+      smCorruptPending=null;
+    }
+    /* grava ANTES de apagar: se a escrita falhar, o legado fica intacto */
+    try{localStorage.setItem(SM_KEY,JSON.stringify(root));}catch(e){return null;}
+    for(const k of consumed){try{localStorage.removeItem(k);}catch(e){}}
     console.log('[ECHO] Save da Alpha migrado para o SAVE 1 (echoSave.v3).');
     return root;
   }catch(e){return null;}                      // próxima inicialização tenta de novo
@@ -19479,8 +19565,10 @@ function smBoot(){
 }
 function smLoadRoot(){
   smRoot=null;
+  smCorruptPending=null;
+  let raw=null;
+  try{raw=localStorage.getItem(SM_KEY);}catch(e){raw=null;}
   try{
-    const raw=localStorage.getItem(SM_KEY);
     if(raw){
       const r=JSON.parse(raw);
       if(r&&typeof r==='object'&&r.version===SM_VERSION&&
@@ -19492,6 +19580,10 @@ function smLoadRoot(){
       }
     }
   }catch(e){smRoot=null;}                      // v3 corrompido: não explode
+  /* AUDIT-FIX-C2: a chave existia mas não deu uma raiz utilizável (JSON
+     quebrado, lixo, shape/versão fora do contrato). O blob bruto é preservado
+     ANTES de o boot criar uma raiz nova por cima. */
+  if(!smRoot&&raw)smCorruptPending=smPreserveCorruptRoot(raw)?null:raw;
   if(!smRoot)smRoot=smMigrateLegacy()||smNewRoot();
 }
 
