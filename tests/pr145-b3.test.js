@@ -25,7 +25,8 @@ function fresh(){
   const p=T.getPlayer();p.coins=9999;T.applyMoral();T.applyMoralTuning(p);return p;
 }
 function give(id){const p=T.getPlayer();T.grantItemInternal(p,T.itemById(id),true);return p;}
-const SRC=require('fs').readFileSync(require('path').join(__dirname,'..','index.html'),'utf8');
+const {readGameHtml}=require('./harness/load-game');
+const SRC=readGameHtml();
 
 console.log('\nECHO — PR14.5 · B3 · CALIBRAÇÕES / FACÇÃO / REWORKS');
 console.log('---------------------------------------------');

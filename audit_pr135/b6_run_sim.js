@@ -37,7 +37,7 @@ const ENEMY_BUDGET=46;
 
 /* EDEFS extraído do source (não é exportado pelo harness) */
 const EDEFS=(function(){
-  const src=require('fs').readFileSync(path.join(ROOT,'index.html'),'utf8').replace(/\r\n?/g,'\n');
+  const src=require('../tests/harness/load-game').readGameHtml();
   const i=src.indexOf('const EDEFS={');
   const body=src.slice(i);
   let depth=0,end=-1;

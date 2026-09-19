@@ -16,10 +16,9 @@
 const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert');
 
 const ROOT=path.join(__dirname,'..');
-const html=fs.readFileSync(path.join(ROOT,'index.html'),'utf8');
-const m=html.match(/<script>([\s\S]*?)<\/script>/);
-if(!m)throw new Error('script não encontrado em index.html');
-let src=m[1];
+const {readGameSource,runGameSource}=require('./harness/load-game');
+const GAME_SRC=readGameSource();
+let src=GAME_SRC;
 
 /* expõe símbolos top-level (const/let não viram props do global) */
 src+=';globalThis.__t={'+
@@ -132,7 +131,7 @@ function bootGame(seed){
   const ls=makeLocalStorage(seed);
   const sandbox=makeSandbox(ls);
   const ctx=vm.createContext(sandbox);
-  vm.runInContext(src,ctx,{timeout:20000});
+  runGameSource(src,ctx,{timeout:20000});
   const t=vm.runInContext('__t',ctx);
   t._ls=ls;
   return t;
@@ -154,7 +153,7 @@ console.log('---------------------------------------------');
 
 /* ==================== VERIFICAÇÃO SINTÁTICA ==================== */
 ok('index.html: script passa em verificação sintática (vm.Script)',()=>{
-  new vm.Script(m[1]);
+  new vm.Script(GAME_SRC);
 });
 
 /* =====================================================================

@@ -21,10 +21,9 @@
 const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert');
 
 const ROOT=path.join(__dirname,'..');
-const html=fs.readFileSync(path.join(ROOT,'index.html'),'utf8');
-const m=html.match(/<script>([\s\S]*?)<\/script>/);
-if(!m)throw new Error('script não encontrado em index.html');
-const RAWSRC=m[1];
+const {readGameSource,runGameSource}=require('./harness/load-game');
+const GAME_SRC=readGameSource();
+const RAWSRC=GAME_SRC;
 let src=RAWSRC;
 /* código sem comentários — evita que uma frase de documentação passe ou
    reprove um teste estrutural */
@@ -144,7 +143,7 @@ const sandbox={console,Math:MathF,Date,parseInt,parseFloat,isNaN,setTimeout,clea
   performance:{now:()=>Date.now()}
 };
 const ctx=vm.createContext(sandbox);
-vm.runInContext(src,ctx,{timeout:15000});
+runGameSource(src,ctx,{timeout:15000});
 const t=vm.runInContext('__t',ctx);
 MathF._rng=()=>0.4242;
 

@@ -33,10 +33,10 @@
 const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert');
 
 const ROOT=path.join(__dirname,'..');
-const html=fs.readFileSync(path.join(ROOT,'index.html'),'utf8');
-const mm=html.match(/<script>([\s\S]*?)<\/script>/);
-if(!mm)throw new Error('script não encontrado em index.html');
-let src=mm[1];
+const {readGameHtml,readGameSource,runGameSource}=require('./harness/load-game');
+const html=readGameHtml();
+const GAME_SRC=readGameSource();
+let src=GAME_SRC;
 src+=';globalThis.__t={'+
   /* Tooltip */
   'tipShow,tipHide,tipMove,bindTip,hideActiveTooltip,tooltipBlockedByModal,'+
@@ -137,7 +137,7 @@ function runGame(env){
     document:env.document,window:env.window,localStorage:env.localStorage,
     navigator:env.navigator,performance:{now:()=>Date.now()}};
   const ctx=vm.createContext(sandbox);
-  vm.runInContext(src,ctx,{timeout:30000});
+  runGameSource(src,ctx,{timeout:30000});
   return {t:vm.runInContext('__t',ctx),ctx,env};}
 
 const MAIN=runGame(makeEnv());

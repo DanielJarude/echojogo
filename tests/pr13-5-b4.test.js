@@ -9,6 +9,7 @@
 const assert=require('assert');
 const vm=require('vm');
 const {sandbox,T}=require('../audit_pr135/harness.js');
+const {readGameHtml}=require('./harness/load-game');
 const X=code=>vm.runInContext(code,sandbox);
 let passed=0,failed=0;
 const near=(a,b,eps=1e-6)=>Math.abs(a-b)<=eps;
@@ -328,7 +329,7 @@ ok('B4-25: DEV.attunement() inerte fora do DEV; em DEV lista módulo/afinidade/m
   assert.strictEqual(X('DEV.attunement("nao-existe")'),null);
   assert.strictEqual(JSON.stringify([p.sm,T.getMoral()]),before,'inspector puro');
   X('DEV_MODE=false');
-  const html=require('fs').readFileSync(require('path').join(__dirname,'..','index.html'),'utf8');
+  const html=readGameHtml();
   assert.ok(/attunement\(id\)\{\s*if\(!DEV_MODE\)return null;/.test(html),'guarda DEV na fonte');
 });
 

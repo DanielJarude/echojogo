@@ -17,11 +17,10 @@
 const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert');
 
 const ROOT=path.join(__dirname,'..');
-const html=fs.readFileSync(path.join(ROOT,'index.html'),'utf8');
-const m=html.match(/<script>([\s\S]*?)<\/script>/);
-if(!m)throw new Error('script não encontrado em index.html');
-let src=m[1];
-const RAWSRC=m[1];
+const {readGameSource,runGameSource}=require('./harness/load-game');
+const GAME_SRC=readGameSource();
+let src=GAME_SRC;
+const RAWSRC=GAME_SRC;
 
 src+=';globalThis.__t={'+
   'EV_KINDS,EV_LABEL,EV_FAMILIES,EV_LEGACY_FAMILY,RARITY_META,'+
@@ -152,7 +151,7 @@ const sandbox={console,Math:MathF,Date,parseInt,parseFloat,isNaN,setTimeout,clea
   document,window,localStorage,navigator,
   performance:{now:()=>Date.now()}};
 const ctx=vm.createContext(sandbox);
-vm.runInContext(src,ctx,{timeout:15000});
+runGameSource(src,ctx,{timeout:15000});
 const t=vm.runInContext('__t',ctx);
 MathF._rng=null;   // sorteios reais por padrão
 

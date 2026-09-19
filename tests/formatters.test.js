@@ -11,10 +11,10 @@
 const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert');
 
 const ROOT=path.join(__dirname,'..');
-const html=fs.readFileSync(path.join(ROOT,'index.html'),'utf8');
-const m=html.match(/<script>([\s\S]*?)<\/script>/);
-if(!m)throw new Error('script não encontrado em index.html');
-let src=m[1];
+const {readGameHtml,readGameSource,runGameSource}=require('./harness/load-game');
+const html=readGameHtml();
+const GAME_SRC=readGameSource();
+let src=GAME_SRC;
 
 /* expõe os símbolos top-level */
 src+=';globalThis.__t={fmtNum,fmtStat,fmtPct,fmtCompact,fmtTime,fmtSec,'+
@@ -92,7 +92,7 @@ const sandbox={
 sandbox.globalThis=sandbox;
 sandbox.window.requestAnimationFrame=sandbox.requestAnimationFrame;
 vm.createContext(sandbox);
-vm.runInContext(src,sandbox,{filename:'index.html'});
+runGameSource(src,sandbox);
 const T=sandbox.__t;
 
 let passed=0,failed=0;

@@ -11,6 +11,7 @@
 const assert=require('assert');
 const vm=require('vm');
 const {sandbox,T}=require('../audit_pr135/harness.js');
+const {readGameHtml}=require('./harness/load-game');
 const X=code=>vm.runInContext(code,sandbox);
 let passed=0,failed=0;
 const near=(a,b,eps=1e-6)=>Math.abs(a-b)<=eps;
@@ -439,7 +440,7 @@ ok('B2-25: DEV helpers inert em release; em DEV funcionam; forceBuildProfile nã
   X('DEV_MODE=false');
 });
 ok('B2-26: seção BUILD PROFILE no inspector DEV (fonte) e guarda !DEV_MODE em todos os helpers novos',()=>{
-  const html=require('fs').readFileSync(require('path').join(__dirname,'..','index.html'),'utf8');
+  const html=readGameHtml();
   assert.ok(html.indexOf('BUILD PROFILE')>=0,'título da seção');
   for(const fn of ['buildProfileInfo','buildProfileExplain','forceBuildProfile','shopWeightsDebug'])
     assert.ok(new RegExp(fn+'\\([^\\)]*\\)\\{\\s*if\\(!DEV_MODE\\)return (null|false);').test(html),'guarda DEV em '+fn);

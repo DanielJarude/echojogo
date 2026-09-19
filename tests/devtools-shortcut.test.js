@@ -19,8 +19,8 @@ const fs = require('fs'), path = require('path'), vm = require('vm'), assert = r
 const ROOT = path.join(__dirname, '..');
 const mainJs = fs.readFileSync(path.join(ROOT, 'main.js'), 'utf8');
 const preloadJs = fs.readFileSync(path.join(ROOT, 'preload.js'), 'utf8');
-const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-const rawSrc = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+const {readGameSource,runGameSource}=require('./harness/load-game');
+const rawSrc = readGameSource();
 
 let passed = 0, failed = 0;
 function ok(label, fn) {
@@ -233,7 +233,7 @@ function bootRenderer() {
     'isDevMode:()=>DEV_MODE,isTainted:()=>devTainted,getState:()=>state};';
   const sandbox = { console: { log() {}, warn() {}, error() {} }, Math, Date, parseInt, parseFloat, isNaN, setTimeout, clearTimeout, requestAnimationFrame: () => 0, Uint8ClampedArray, Array, Object, Number, String, Boolean, RegExp, Error, Map, Set, Promise, Proxy, Reflect, JSON, Symbol, isFinite, document, window, localStorage, navigator, performance: { now: () => Date.now() } };
   const ctx = vm.createContext(sandbox);
-  vm.runInContext(rawSrc + EXP, ctx, { timeout: 20000 });
+  runGameSource(rawSrc + EXP, ctx, { timeout: 20000 });
   const t = vm.runInContext('__t', ctx);
   t._sent = sent;
   return t;

@@ -12,6 +12,7 @@
 const assert=require('assert');
 const vm=require('vm');
 const {sandbox,T}=require('../audit_pr135/harness.js');
+const {readGameHtml}=require('./harness/load-game');
 const X=code=>vm.runInContext(code,sandbox);
 let passed=0,failed=0;
 function near(a,b,eps=1e-6){return Math.abs(a-b)<=eps;}
@@ -193,7 +194,7 @@ ok('FIX-3: morte do jogador registra melee/ranged no runData (runData espelha pl
   const src=X('onPlayerDeath?onPlayerDeath.toString():""')||'';
   const s2=X('(function(){try{return sDie.toString()}catch(e){return ""}})()');
   const all=X('(function(){var out="";for(var k in globalThis){}return "";})()');
-  const html=require('fs').readFileSync(require('path').join(__dirname,'..','index.html'),'utf8');
+  const html=readGameHtml();
   const i=html.indexOf('const runData={dur:runTime,trail:recorder');
   assert.ok(i>0,'runData encontrado');
   const blk=html.slice(i,i+700);
@@ -309,7 +310,7 @@ ok('FIX-5: simulação curta — Greed (moral 10 + iman+usura) compra ≥ Neutra
 /* ================= 6. ESCASSEZ ================= */
 ok('FIX-6: ESCASSEZ — desconto do 1º reroll é proporcional (piso 7), não fixo em 7',()=>{
   const f=X('fractureShopRerollCost');
-  const html=require('fs').readFileSync(require('path').join(__dirname,'..','index.html'),'utf8');
+  const html=readGameHtml();
   assert.ok(html.indexOf('const FRACTURE_SCAR_REROLL_K=.70;')>=0);
   /* sem tema ativo: valor intacto */
   assert.strictEqual(f(30),30);

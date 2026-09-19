@@ -23,10 +23,10 @@ const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('ass
 const REG=require('./suite-registry');
 
 const ROOT=path.join(__dirname,'..');
-const html=fs.readFileSync(path.join(ROOT,'index.html'),'utf8');
-const m=html.match(/<script>([\s\S]*?)<\/script>/);
-if(!m)throw new Error('script não encontrado em index.html');
-let src=m[1];
+const {readGameHtml,readGameSource,runGameSource}=require('./harness/load-game');
+const html=readGameHtml();
+const GAME_SRC=readGameSource();
+let src=GAME_SRC;
 /* exporta globais do jogo + API PR 12 para o teste */
 src+=';globalThis.__t={'+
   'FACTION_IDS,FRACTIONS,FRACTION_BY_ID,FACTION_STATES,RES_SYM,'+
@@ -192,7 +192,7 @@ function runGame(env,noTimers){
     document:env.document,window:env.window,localStorage:env.localStorage,
     navigator:env.navigator,performance:{now:()=>Date.now()}};
   const ctx=vm.createContext(sandbox);
-  vm.runInContext(src,ctx,{timeout:30000});
+  runGameSource(src,ctx,{timeout:30000});
   const t=vm.runInContext('__t',ctx);
   t._ls=env.localStorage;
   t._env=env;
@@ -278,7 +278,7 @@ console.log('---------------------------------------------');
 /* ============ [0] ESTRUTURA E CONTEÚDO ============ */
 console.log('\n[0] ESTRUTURA E CONTEÚDO');
 ok('index.html: script passa em verificação sintática (vm.Script)',()=>{
-  new vm.Script(m[1]);
+  new vm.Script(GAME_SRC);
 });
 ok('4 facções com identidade completa (filosofia/métodos/contradição/Echo/Fratura)',()=>{
   assert.strictEqual(t.FACTION_IDS.length,4);
@@ -1008,7 +1008,7 @@ ok('sem loop infinito de resíduos: fontes de abate são por-onda caps e contrat
   t.setEchoes([]);
 });
 ok('morrer/vitória não converte saldo em meta (nenhum writer de meta na limpeza)',()=>{
-  const srcText=m[1];
+  const srcText=GAME_SRC;
   const i=srcText.indexOf('function fracKitRunEnd');
   const seg=srcText.slice(i,i+400);
   assert.ok(!/prog\.|meta\.|mem:/.test(seg),'limpeza da run não escreve meta/prog');
@@ -2468,7 +2468,7 @@ ok('B6: economia — nenhuma recompensa GENÉRICA de Resíduos por inimigo comum
      elas 'killEnemy') só para registrar QUEM o bloco embrulha — não é
      fonte de ⧗. A declaração sai do recorte para a varredura continuar
      valendo apenas para o código de economia. */
-  const src=m[1].replace(/lcPatch\('[^']*',\[[^\]]*\],/g,'lcPatch(');
+  const src=GAME_SRC.replace(/lcPatch\('[^']*',\[[^\]]*\],/g,'lcPatch(');
   const forbidden=[
     "addResidues(1,'kill'","addResidues(2,'kill'","addResidues(1,'enemy'",
     "addResidues(n,'kill'","src:'kill'","'killEnemy'","src:'enemy'"];
@@ -2541,7 +2541,7 @@ ok('B6: penalidade expirada NÃO reaparece — e tempo com o jogo fechado não c
   assert.strictEqual(O.getPlayer().tempT,0);
 });
 ok('B6: source guards — cp.frac presente no checkpoint real e sem duplicação de definições críticas',()=>{
-  const src=m[1];
+  const src=GAME_SRC;
   /* smBuildCheckpoint serializa o estado PR12 (campo frac) */
   const ib=src.indexOf('function smBuildCheckpoint');
   const bloco=src.slice(ib,ib+1600);
