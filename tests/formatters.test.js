@@ -219,11 +219,33 @@ test('index.html: tooltips/HUD/Codex usam fmt* (sem toFixed espalhado na UI)',()
     assert(chunk.indexOf('.toFixed(')<0,'toFixed em zona de UI: '+z);
   }
 });
-test('index.html: nenhum Math.round cru em números de dano (usa fmtStat)',()=>{
-  assert(html.indexOf("floatText(e.x,e.y-e.r-8,'✦ '+Math.round(d)")<0,
-    'damage number antigo (Math.round) ainda presente');
-  assert(html.indexOf('dmgNumShow(e,d,true)')>=0,'crítico deve usar dmgNumShow');
-  assert(html.indexOf('dmgNumShow(e,d,false)')>=0,'acerto direto deve usar dmgNumShow');
+test('números de dano saem por fmtStat, nunca por Math.round cru',()=>{
+  /* AUDIT-FIX-E2B: antes isto procurava o snippet antigo e as duas chamadas
+     `dmgNumShow(e,d,true/false)` no texto de index.html. Agora o número é
+     PRODUZIDO: dmgNumShow escreve em `ftexts`, e o que está lá tem de ser a
+     saída de fmtStat — um Math.round cru falharia em qualquer decimal. */
+  const X=code=>vm.runInContext(code,sandbox);
+  const ftexts=X('ftexts');
+  const cfg=X('cfg');
+  const cfgAntes=cfg.dmgnum;
+  cfg.dmgnum=2;                                  // FULL: todo acerto mostra número
+  const alvo={x:100,y:100,r:10,maxHp:1000};
+  const texto=(d,crit)=>{ftexts.length=0;X('dmgNumShow')(alvo,d,crit);
+    assert(ftexts.length>0,'dmgNumShow não produziu número (d='+d+',crit='+crit+')');
+    return String(ftexts[ftexts.length-1].txt);};
+  try{
+    for(const d of [7,42.4,42.6,1234.5,99999]){
+      const direto=texto(d,false);
+      assert.strictEqual(direto,T.fmtStat(d),
+        'acerto direto não saiu por fmtStat (Math.round cru?): '+direto);
+      const crit=texto(d,true);
+      assert(crit.indexOf('✦')>=0,'crítico perdeu o símbolo: '+crit);
+      assert(crit.indexOf(T.fmtStat(d))>=0,'crítico não usou fmtStat: '+crit);
+    }
+    /* crítico e acerto direto são visualmente distintos (§17) */
+    assert.notStrictEqual(texto(500,true),texto(500,false),
+      'crítico e acerto direto produzem o mesmo número');
+  }finally{cfg.dmgnum=cfgAntes;ftexts.length=0;}
 });
 
 console.log('---------------------------------------------');

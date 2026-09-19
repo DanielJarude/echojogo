@@ -439,11 +439,26 @@ ok('B2-25: DEV helpers inert em release; em DEV funcionam; forceBuildProfile nã
   assert.strictEqual(X('DEV.buildProfileInfo')().override,null);
   X('DEV_MODE=false');
 });
-ok('B2-26: seção BUILD PROFILE no inspector DEV (fonte) e guarda !DEV_MODE em todos os helpers novos',()=>{
-  const html=readGameHtml();
-  assert.ok(html.indexOf('BUILD PROFILE')>=0,'título da seção');
-  for(const fn of ['buildProfileInfo','buildProfileExplain','forceBuildProfile','shopWeightsDebug'])
-    assert.ok(new RegExp(fn+'\\([^\\)]*\\)\\{\\s*if\\(!DEV_MODE\\)return (null|false);').test(html),'guarda DEV em '+fn);
+ok('B2-26: guarda !DEV_MODE em todos os helpers novos do inspector DEV',()=>{
+  /* AUDIT-FIX-E2B: antes era uma regex exigindo a guarda escrita numa forma
+     exata (`){if(!DEV_MODE)return null;`) — reescrever a guarda de um jeito
+     equivalente quebrava o teste, e uma guarda que não funcionasse passava.
+     Agora cada helper é CHAMADO com o DEV desligado e com o DEV ligado. */
+  fresh();
+  X('DEV_MODE=false');
+  for(const fn of ['buildProfileInfo','buildProfileExplain','forceBuildProfile','shopWeightsDebug']){
+    const r=X('DEV.'+fn)();
+    assert.ok(r===null||r===false,'sem DEV_MODE, DEV.'+fn+' devolveu '+JSON.stringify(r));
+  }
+  X('DEV_MODE=true');
+  for(const fn of ['buildProfileInfo','shopWeightsDebug']){
+    const r=X('DEV.'+fn)();
+    assert.ok(r!==null&&r!==false,'com DEV_MODE, DEV.'+fn+' precisa responder');
+  }
+  /* buildProfileExplain exige um id real de módulo */
+  assert.ok(X('DEV.buildProfileExplain')(T.ITEMS[0].id),
+    'com DEV_MODE, DEV.buildProfileExplain precisa responder');
+  X('DEV_MODE=false');
 });
 
 /* ============ 8. HÍBRIDOS ============ */

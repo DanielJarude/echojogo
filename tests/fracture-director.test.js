@@ -223,6 +223,7 @@ function runGame(env,noTimers){
   const t=vm.runInContext('__t',ctx);
   t._ls=env.localStorage;
   t._env=env;
+  t._ctx=ctx;          /* AUDIT-FIX-E2B: permite espiar os globais deste boot */
   return {t,ctx,env};
 }
 const MAIN=runGame(makeEnv({}),false);
@@ -301,6 +302,59 @@ function playWaves(B,from,to){
     B.spawnWave(n);
   }
   return B.fractureGetIntensity();
+}
+
+/* =====================================================================
+   AUDIT-FIX-E2B — TRIPWIRE DE ACOPLAMENTO E ORDEM
+   ---------------------------------------------------------------------
+   Vários contratos desta suíte eram verificados lendo o TEXTO do corpo de
+   uma função ("o corpo de diffHp não contém 'fracture'", "o offset de
+   fractureShapeWave é menor que o de waveCompFit"). Isso quebra quando
+   alguém renomeia uma variável local, move um comentário ou reordena
+   declarações — e não quebra quando o acoplamento entra por um caminho
+   indireto, que é justamente o caso perigoso.
+
+   Todo símbolo observado aqui é `function` de topo do index.html, logo vive
+   como propriedade do global do vm: dá para registrar a CHAMADA real sem
+   tocar em produção. `espiar` devolve a sequência de chamadas na ordem em
+   que aconteceram — serve tanto para "nunca chamou" quanto para "chamou
+   nesta ordem". Restaura os originais mesmo se o corpo lançar.
+   ===================================================================== */
+function espiar(ctx,nomes,fn){
+  const orig={},chamadas=[];
+  for(const n of nomes){
+    const f=ctx[n];
+    if(typeof f!=='function')throw new Error('símbolo não observável no global do vm: '+n);
+    orig[n]=f;
+    ctx[n]=function(){chamadas.push(n);return f.apply(this,arguments);};
+  }
+  try{fn();}finally{for(const n of nomes)ctx[n]=orig[n];}
+  return chamadas;
+}
+/* Toda a API do Diretor, descoberta do próprio global — uma função nova
+   `fracture*` entra na vigilância sozinha, sem editar esta lista. */
+function apiDiretor(ctx){
+  const api=Object.keys(ctx).filter(k=>/^fracture/.test(k)&&typeof ctx[k]==='function');
+  assert.ok(api.length>=100,'API do Diretor não foi encontrada no global ('+api.length+')');
+  return api;
+}
+const DIR_API=apiDiretor(MAIN.ctx);
+/* `espiar` com a API inteira do Diretor: devolve quem foi chamado. */
+function semDiretor(fn){return [...new Set(espiar(MAIN.ctx,DIR_API,fn))];}
+/* Avalia uma expressão no escopo do jogo. `enemies`/`miniBoss` são `let` de
+   topo: não viram propriedade do global, mas seguem visíveis para scripts
+   seguintes do mesmo contexto. Evita inchar o bridge `__t` só para o teste. */
+const Xm=code=>vm.runInContext(code,MAIN.ctx);
+const TIPOS_INIMIGO=Xm('Object.keys(EDEFS)');
+/* `Math` é propriedade do global do vm, então dá para trocar por um objeto
+   que herda tudo e só instrumenta `random` — sem tocar no Math do processo. */
+function contaRandom(fn){
+  const orig=MAIN.ctx.Math;let n=0;
+  const espiado=Object.create(orig);
+  espiado.random=function(){n++;return orig.random();};
+  MAIN.ctx.Math=espiado;
+  try{fn();}finally{MAIN.ctx.Math=orig;}
+  return n;
 }
 
 console.log('\nECHO — PR 13 · Diretor de Fratura (Bloco 1 · Fundação)');
@@ -649,17 +703,27 @@ ok('Intensidade NÃO é "inimigo com mais HP": nenhum multiplicador de combate r
      testada do jeito certo. O que PRECISA continuar valendo para sempre é
      que o Diretor nunca vira "inimigo com mais HP": nenhuma escala de
      HP/dano/velocidade pode consultá-lo. */
-  for(const fn of ['diffHp','diffDmg','diffSpd','eliteChance']){
-    const i=src.indexOf('function '+fn+'(');
-    assert.ok(i>0,'função '+fn+' presente');
-    /* corpo inteiro, não janela fixa (ver B4-60) */
-    const corpo=src.slice(i,src.indexOf('\nfunction ',i+10));
-    assert.ok(!/fracture/.test(corpo),
-      fn+' não pode referenciar o Diretor de Fratura');
+  /* AUDIT-FIX-E2B: antes isto era regex sobre o corpo das funções. Agora a
+     prova é de execução e de VALOR — o tripwire pega acoplamento indireto
+     (que a regex não via) e a invariância numérica pega leitura direta de
+     `fractureRun.intensity` (que o tripwire não veria). */
+  const ESCALAS=['diffHp','diffDmg','diffSpd','eliteChance'];
+  const WV=[1,5,10,15,19,20];
+  beginRun(t,1);
+  const usou=semDiretor(()=>{for(const n of WV)for(const fn of ESCALAS)t[fn](n);});
+  assert.deepStrictEqual(usou,[],'escala de combate consultou o Diretor: '+usou.join(','));
+  /* mesmos números sem Diretor, com Diretor LATENTE e com Diretor em RUPTURA,
+     em todos os Temas: nenhuma escala pode depender do estado da Fratura. */
+  t.setFx(null);
+  const base={};for(const fn of ESCALAS)base[fn]=WV.map(n=>t[fn](n));
+  beginRun(t,1);
+  for(const th of THEMES)for(const inten of [0,50,100]){
+    t.fractureForceTheme(th,'teste');
+    t.fractureSetIntensity(inten,'teste');
+    for(const fn of ESCALAS)
+      assert.strictEqual(J(WV.map(n=>t[fn](n))),J(base[fn]),
+        fn+' mudou com '+th+'@'+inten+' — o Diretor virou "inimigo com mais HP"');
   }
-  assert.ok(src.indexOf('diffHp(n)*fracture')<0);
-  assert.ok(src.indexOf('*fractureGetIntensity')<0,
-    'nenhum multiplicador pode escalar pela Intensidade');
 });
 
 /* ============ [4] EVENT BUS ============ */
@@ -1433,18 +1497,20 @@ ok('onda 20 / chefe final ficam FORA do reshape',()=>{
      regressão inexistente. Agora a verificação é COMPORTAMENTAL. */
   assert.strictEqual(t.MAX_WAVE,20);
 
-  /* 1) fonte: o despacho do chefe vem ANTES da consulta à composição.
-        Comparação de posições relativas dentro da função inteira — sem
-        janela de tamanho fixo e sem número de linha. */
-  const ini=src.indexOf('function spawnWave(');
-  assert.ok(ini>=0,'spawnWave localizada');
-  const corpo=src.slice(ini,src.indexOf('\nfunction ',ini+10));
-  const pBoss=corpo.search(/n\s*>=\s*MAX_WAVE|n\s*>=\s*20|n\s*===\s*MAX_WAVE/);
-  const pComp=corpo.indexOf('waveComp(');
-  assert.ok(pBoss>=0,'spawnWave despacha a onda final para o chefe');
-  assert.ok(pComp>=0,'spawnWave consulta waveComp para as demais ondas');
-  assert.ok(pBoss<pComp,
-    'o despacho do chefe (offset '+pBoss+') precede waveComp (offset '+pComp+')');
+  /* 1) AUDIT-FIX-E2B: antes isto comparava OFFSETS de texto dentro de
+        spawnWave. Agora é a execução que prova o despacho: na onda final,
+        waveComp nem chega a ser consultada (o ramo do chefe retorna antes);
+        nas demais, é consultada. Imune a comentário, ordem textual e
+        renomeação de variável local. */
+  beginRun(t,1);
+  t.setWave(t.MAX_WAVE);
+  const naFinal=espiar(MAIN.ctx,['waveComp'],()=>t.spawnWave(t.MAX_WAVE));
+  assert.deepStrictEqual(naFinal,[],
+    'a onda final consultou waveComp — o despacho do chefe deixou de vir antes');
+  beginRun(t,1);
+  t.setWave(10);
+  const naComum=espiar(MAIN.ctx,['waveComp'],()=>t.spawnWave(10));
+  assert.deepStrictEqual(naComum,['waveComp'],'onda comum consulta waveComp');
 
   /* 2) runtime: waveComp(20) é idêntico à base ajustada para TODOS os Temas,
         mesmo com Intensidade máxima e assinatura forçada na onda 20. */
@@ -1484,43 +1550,44 @@ ok('entidades DINÂMICAS (spawner/splitter) estão documentadas fora do teto',()
 /* ============ [13] B2.2 — COMPOSIÇÃO BASE PURA ============ */
 console.log('\n[13] B2.2 · waveCompBase É PURA E É O PONTO DE PARTIDA');
 ok('pipeline obrigatório: waveComp = fit(shape(base))',()=>{
-  /* Corpo INTEIRO da função, não uma janela de tamanho fixo: a versão
-     anterior lia 700 caracteres e bastava um comentário mais longo no começo
-     de waveComp para empurrar fractureShapeWave para fora e acusar uma
-     regressão inexistente. */
-  const i=src.indexOf('function waveComp(');
-  assert.ok(i>=0,'waveComp localizada');
-  const corpo=src.slice(i,src.indexOf('\nfunction ',i+10));
-  assert.ok(/waveCompBase\s*\(/.test(corpo),'waveComp chama waveCompBase');
-  assert.ok(/fractureShapeWave\s*\(/.test(corpo),'waveComp chama fractureShapeWave');
-  assert.ok(/waveCompFit\s*\(/.test(corpo),'waveComp chama waveCompFit');
-
-  /* A ordem é verificada no CAMINHO REAL das ondas comuns, não pela primeira
-     ocorrência textual. waveComp tem um guard de onda final que também chama
-     waveCompFit (devolve a base para n>=MAX_WAVE); comparar primeiros índices
-     faria esse guard parecer "teto antes do shaping". */
-  const g=corpo.search(/if\s*\(\s*\(?\s*n\s*\|?\s*0?\)?\s*>=\s*MAX_WAVE/);
-  assert.ok(g>=0,'waveComp protege a onda final antes de moldar');
-  const caminho=corpo.slice(g);
-  assert.ok(caminho.indexOf('fractureShapeWave')>=0,'shaping presente no caminho');
-  assert.ok(caminho.indexOf('waveCompFit')>=0,'fit presente no caminho');
-  assert.ok(caminho.indexOf('fractureShapeWave')<caminho.lastIndexOf('waveCompFit'),
-    'no caminho real, o teto é aplicado DEPOIS do shaping');
-  assert.ok(corpo.indexOf('waveCompBase')<corpo.indexOf('fractureShapeWave'),
-    'a base vem ANTES do shaping');
-  /* a assinatura de encontro fica entre o shaping e o fit (B4.3) */
-  assert.ok(caminho.indexOf('fractureShapeWave')<caminho.indexOf('fractureApplySignature'),
-    'a assinatura entra depois do shaping do Tema');
-  assert.ok(caminho.indexOf('fractureApplySignature')<caminho.lastIndexOf('waveCompFit'),
-    'a assinatura entra antes do ajuste ao budget');
+  /* AUDIT-FIX-E2B: a ordem do pipeline era inferida de OFFSETS de texto
+     dentro do corpo de waveComp — frágil (um comentário movia tudo) e
+     imprecisa (havia que descontar à mão o guard da onda final, que também
+     chama waveCompFit). Agora a ordem observada é a ordem REAL das chamadas. */
+  const PIPE=['waveCompBase','fractureShapeWave','fractureApplySignature','waveCompFit'];
+  beginRun(t,1);
+  t.fractureForceTheme('collapse','teste');
+  t.fractureSetIntensity(100,'teste');
+  const ordem=espiar(MAIN.ctx,PIPE,()=>t.waveComp(10));
+  for(const fn of PIPE)assert.ok(ordem.indexOf(fn)>=0,'waveComp não chamou '+fn);
+  /* primeira ocorrência de cada etapa define a ordem do pipeline; o fit pode
+     repetir (ajuste iterativo), por isso o teto usa a ÚLTIMA ocorrência. */
+  const pBase=ordem.indexOf('waveCompBase'),
+        pShape=ordem.indexOf('fractureShapeWave'),
+        pSig=ordem.indexOf('fractureApplySignature'),
+        pFit=ordem.lastIndexOf('waveCompFit');
+  assert.ok(pBase<pShape,'a base vem ANTES do shaping: '+ordem.join(' → '));
+  assert.ok(pShape<pSig,'a assinatura entra depois do shaping do Tema: '+ordem.join(' → '));
+  assert.ok(pSig<pFit,'a assinatura entra antes do ajuste ao budget: '+ordem.join(' → '));
+  /* o guard da onda final não molda nada: base → fit e mais nada */
+  const ordem20=espiar(MAIN.ctx,PIPE,()=>t.waveComp(t.MAX_WAVE));
+  assert.ok(ordem20.indexOf('fractureShapeWave')<0&&ordem20.indexOf('fractureApplySignature')<0,
+    'a onda final foi moldada: '+ordem20.join(' → '));
+  assert.ok(ordem20.indexOf('waveCompBase')>=0&&ordem20.indexOf('waveCompFit')>=0,
+    'a onda final ainda passa por base+fit: '+ordem20.join(' → '));
 });
 ok('waveCompBase é pura e não conhece o Diretor',()=>{
   const a=J(t.waveCompBase(10)),b=J(t.waveCompBase(10));
   assert.strictEqual(a,b,'duas chamadas iguais');
-  const corpo=src.slice(src.indexOf('function waveCompBase('),
-    src.indexOf('function waveCompFit('));
-  assert.ok(!/fracture/.test(corpo),'base não referencia o Diretor');
-  assert.ok(!/Math\.random/.test(corpo),'base não usa Math.random');
+  /* AUDIT-FIX-E2B: pureza provada por execução — nenhuma chamada ao Diretor
+     e nenhum consumo de aleatoriedade, em toda a faixa de ondas. */
+  beginRun(t,1);
+  t.fractureForceTheme('anomaly','teste');
+  t.fractureSetIntensity(100,'teste');
+  const tocou=semDiretor(()=>{for(let n=1;n<=t.MAX_WAVE;n++)t.waveCompBase(n);});
+  assert.deepStrictEqual(tocou,[],'waveCompBase consultou o Diretor: '+tocou.join(','));
+  assert.strictEqual(contaRandom(()=>{for(let n=1;n<=t.MAX_WAVE;n++)t.waveCompBase(n);}),0,
+    'waveCompBase consumiu aleatoriedade');
   /* não muta o argumento nem devolve referência interna */
   const x=t.waveCompBase(7);x.chaser=999;
   assert.notStrictEqual(t.waveCompBase(7).chaser,999,'objeto novo a cada chamada');
@@ -1595,11 +1662,23 @@ ok('nenhuma tag vira chave de ENEMY_TAG_DEFS solta (catálogo íntegro)',()=>{
   assert.strictEqual(Object.keys(t.ENEMY_TAG_DEFS).length,t.ENEMY_TAGS.length);
 });
 ok('updateEnemy NÃO depende de tags: nenhum if gigante Tema→inimigo',()=>{
-  const i=src.indexOf('function updateEnemy(');
-  const corpo=src.slice(i,src.indexOf('\nfunction ',i+10));
-  assert.ok(!/enemyTags\s*\(/.test(corpo),'updateEnemy não lê enemyTags');
-  assert.ok(!/fractureGetTheme|fractureRun|fractureThemeById/.test(corpo),
-    'updateEnemy não consulta o Diretor');
+  /* AUDIT-FIX-E2B: antes era regex sobre o corpo de updateEnemy. Agora os
+     inimigos são ATUALIZADOS de verdade, em todos os Temas, com o tripwire
+     ligado — pega também acoplamento que entra por função intermediária. */
+  beginRun(t,1);
+  const p=t.getPlayer();p.x=600;p.y=400;p.hp=1e9;p.maxHp=1e9;
+  for(const th of THEMES){
+    t.fractureForceTheme(th,'teste');
+    t.fractureSetIntensity(100,'teste');
+    Xm('enemies=[]');
+    let ex=0;
+    for(const k of TIPOS_INIMIGO)Xm('spawnEnemy')(k,420+(ex++)*40,380,10);
+    const alvos=Xm('enemies').slice();
+    assert.ok(alvos.length>0,'inimigos criados para '+th);
+    const usou=[...new Set(espiar(MAIN.ctx,DIR_API.concat(['enemyTags']),
+      ()=>{for(let f=0;f<30;f++)for(const e of alvos)t.updateEnemy(e,1/60);}))];
+    assert.deepStrictEqual(usou,[],th+': updateEnemy consultou '+usou.join(','));
+  }
   /* e o jogo inteiro não tem switch de Tema decidindo inimigo */
   const jogo=GAME_SRC;
   assert.ok(!/switch\s*\(\s*fracture(GetTheme|Run)/.test(jogo),
@@ -1621,11 +1700,31 @@ ok('tags dos MINIBOSS são metadado; AI/stats continuam intactos',()=>{
     assert.ok(Number.isFinite(mb.plates)&&mb.plates>0,mb.id+'.plates intacto');
     assert.ok(mb.sk&&typeof mb.sk==='object',mb.id+'.sk intacto');
   }
-  const jogo=GAME_SRC;
-  const i=jogo.indexOf('function spawnMiniBoss(');
-  const corpo=jogo.slice(i,jogo.indexOf('\nfunction ',i+10));
-  assert.ok(!/fractureMiniWeight|fractureEventBiasMul/.test(corpo),
-    'spawnMiniBoss não aplica viés aos stats (só seleciona)');
+  /* AUDIT-FIX-E2B: provado por execução. Duas partes:
+       · com um `def` já escolhido, spawnMiniBoss NÃO reseleciona (não chama
+         pickMiniBoss/fracturePickMiniBoss) — ele só instancia;
+       · os stats do bicho nascido são idênticos com e sem Diretor, em todos
+         os Temas e na Intensidade máxima — nenhum viés escapa para o balance.
+     Nota: `fractureOnMiniSpawn` (emissão) consulta `fractureMiniWeight` para o
+     sinal de alinhamento do B4.5, e isso é de PROJETO; a regex antiga sobre o
+     corpo de spawnMiniBoss não via essa chamada porque ela mora um nível
+     abaixo. O contrato real é sobre os STATS, e é esse que se verifica aqui. */
+  beginRun(t,1);
+  const defs=t.MINIBOSS.slice();
+  const stats=b=>[b.mb.id,Math.round(b.maxHp),Math.round(b.spd),b.r,b.plates,b.plateMax].join('|');
+  const limpa=()=>{Xm('enemies=[]');Xm('miniBoss=null');};
+  const semFx=[];t.setFx(null);
+  for(const d of defs){limpa();semFx.push(stats(t.spawnMiniBoss(12,d)));}
+  beginRun(t,1);
+  for(const th of THEMES){
+    t.fractureForceTheme(th,'teste');
+    t.fractureSetIntensity(100,'teste');
+    const comFx=[];
+    const usou=[...new Set(espiar(MAIN.ctx,['fracturePickMiniBoss','pickMiniBoss'],
+      ()=>{for(const d of defs){limpa();comFx.push(stats(t.spawnMiniBoss(12,d)));}}))];
+    assert.deepStrictEqual(usou,[],th+': spawnMiniBoss reselecionou via '+usou.join(','));
+    assert.strictEqual(J(comFx),J(semFx),th+': stats do mini-chefe mudaram com o Diretor');
+  }
 });
 ok('B2.14 valia no B2; no B3 scoreEvent ganha UM termo temático e nada mais',()=>{
   /* Este teste afirmava que scoreEvent não conhecia o Diretor. Isso era
@@ -1636,16 +1735,38 @@ ok('B2.14 valia no B2; no B3 scoreEvent ganha UM termo temático e nada mais',()
          decidindo sozinhos antes dele);
        · ele é multiplicativo e devolve 1 sem Diretor — ou seja, não
          substitui regra nenhuma. */
-  const i=src.indexOf('function scoreEvent(');
-  const corpo=src.slice(i,src.indexOf('\nfunction ',i+10));
-  const posFracture=corpo.indexOf('fractureEventBiasMul');
-  assert.ok(posFracture>0,'scoreEvent aplica o viés temático (B3.2)');
-  for(const regra of ['lastFamily','evFamRecent','ctx.seen','MORAL_BALANCE','ctx.coins'])
-    assert.ok(corpo.indexOf(regra)>=0&&corpo.indexOf(regra)<posFracture,
-      regra+' continua sendo aplicado ANTES do termo do Diretor');
-  assert.ok(/w\*=fractureEventBiasMul/.test(corpo),'é multiplicativo, não substitui');
-  assert.ok(corpo.indexOf('return Math.max(.01,w)')>posFracture,
-    'o piso .01 continua sendo a última palavra (nada vira impossível)');
+  /* AUDIT-FIX-E2B: antes isto comparava offsets de texto dentro de scoreEvent
+     ('lastFamily' aparece antes de 'fractureEventBiasMul'...). A propriedade
+     "último termo, multiplicativo, com piso" é verificável por VALOR, e o
+     valor prova a ordem: se o viés não fosse o último fator, a identidade
+     score = max(.01, score_sem_tema × viés) não fecharia. Aqui ela é checada
+     para TODOS os eventos em TODOS os Temas — a versão textual cobria um. */
+  const A=bootFx({});beginRun(A,1);playWaves(A,1,8);
+  let comVies=0,comPiso=0;
+  for(const th of THEMES){
+    A.fractureForceTheme(th,'teste');
+    A.fractureSetIntensity(100,'teste');
+    const ctx=A.buildEventContext();
+    const mulCtx=A.fractureEvCtx(A.fractureWaveCtx());
+    for(const d of A.ALL_RUN_EVENTS){
+      const f=A.getFx(),tema=f.theme;
+      f.theme=null;const semTema=A.scoreEvent(d,ctx);f.theme=tema;
+      const comTema=A.scoreEvent(d,ctx);
+      const mul=A.fractureEventBiasMul(d,mulCtx);
+      assert.ok(Math.abs(comTema-Math.max(.01,semTema*mul))<1e-6,
+        th+'/'+d.id+': score ('+comTema+') ≠ max(.01, '+semTema+' × '+mul+')');
+      if(Math.abs(mul-1)>1e-9)comVies++;
+      if(semTema*mul<.01)comPiso++;
+    }
+  }
+  assert.ok(comVies>0,'nenhum evento sofreu viés temático — o termo do B3.2 sumiu');
+  /* o piso .01 é a última palavra: força um score negativo e confirma */
+  A.fractureForceTheme('hunt','teste');
+  const ctxP=A.buildEventContext();
+  const alvo=A.ALL_RUN_EVENTS[0];
+  const orig=alvo.w;alvo.w=-1e6;
+  try{assert.ok(A.scoreEvent(alvo,ctxP)>=.01,'o piso .01 continua sendo a última palavra');}
+  finally{alvo.w=orig;}
 });
 
 /* ============ [15] B2.4/B2.5 — PERFIS DOS 6 TEMAS ============ */
@@ -1895,10 +2016,22 @@ ok('stage é FUNÇÃO da intensidade: não existe segunda progressão',()=>{
   }
 });
 ok('stage não vira fonte própria de intensidade (sobe só junto com ela)',()=>{
-  const corpo=src.slice(src.indexOf('function fractureThemeWeight('),
-    src.indexOf('function fractureArchBias('));
-  assert.ok(/fractureStageOf|ctx\.stage/.test(corpo),'lê o stage');
-  assert.ok(!/Math\.random/.test(corpo),'sem aleatoriedade');
+  /* AUDIT-FIX-E2B: "lê o stage" e "sem aleatoriedade" provados por execução —
+     o peso acompanha o estágio e nao consome Math.random. */
+  beginRun(t,1);
+  const ctxW=i=>ctxOf('collapse',i,5);
+  /* o estágio participa de verdade: mesma Intensidade, estágios diferentes
+     ⇒ pesos diferentes, na proporção de FRACTURE_STAGE_MUL. */
+  const ESTAGIOS=Object.keys(t.FRACTURE_STAGE_MUL);
+  assert.ok(ESTAGIOS.length>1,'há mais de um estágio');
+  const pesoCom=st=>t.fractureThemeWeight(Object.assign(ctxW(50),{stage:st}));
+  for(const st of ESTAGIOS)
+    assert.ok(Math.abs(pesoCom(st)-Math.min(1,.5*t.FRACTURE_STAGE_MUL[st]))<1e-9,
+      'peso em '+st+' não segue FRACTURE_STAGE_MUL — o estágio deixou de participar');
+  assert.ok(new Set(ESTAGIOS.map(pesoCom)).size>1,
+    'todos os estágios dão o mesmo peso — o estágio virou decorativo');
+  assert.strictEqual(contaRandom(()=>{for(let i=0;i<=100;i++)t.fractureThemeWeight(ctxW(i));}),0,
+    'fractureThemeWeight consumiu aleatoriedade');
   /* intensidade nunca é calculada A PARTIR do stage (o inverso é o certo) */
   const jogo=GAME_SRC;
   assert.ok(!/intensity\s*=[^;=]*fractureStageOf/.test(jogo),
@@ -1954,16 +2087,26 @@ ok('eliteChance e makeElite preservados (B2.12): elite sai da base, sem tema',()
           assert.strictEqual(sh.elite,t.waveCompBase(n).elite,
             id+' w'+n+': elite alterado pelo Tema');
         }
-  const corpo=src.slice(src.indexOf('function fractureShapeWave('),
-    src.indexOf('/* ---------------- API de waveProfile'));
-  assert.ok(!/eliteChance/.test(corpo),'shaping não toca em eliteChance');
-  assert.ok(!/makeElite/.test(corpo),'shaping não chama makeElite');
+  /* AUDIT-FIX-E2B: provado por execução — o shaping não chama nem consulta
+     a mecânica de elite, em nenhum Tema/Intensidade/onda. */
+  beginRun(t,1);
+  for(const th of THEMES)for(const inten of [0,50,100]){
+    t.fractureForceTheme(th,'teste');
+    t.fractureSetIntensity(inten,'teste');
+    const usou=[...new Set(espiar(MAIN.ctx,['eliteChance','makeElite'],
+      ()=>{for(const n of [6,10,15,19])t.fractureShapeWave(t.waveCompBase(n),n,t.fractureWaveCtx());}))];
+    assert.deepStrictEqual(usou,[],th+'@'+inten+': shaping tocou em '+usou.join(','));
+  }
 });
 ok('nenhum Tema aumenta eliteChance',()=>{
-  const jogo=GAME_SRC;
-  const i=jogo.indexOf('function eliteChance(');
-  const corpo=jogo.slice(i,jogo.indexOf('\n',i+10));
-  assert.ok(!/fracture/.test(corpo),'eliteChance não referencia o Diretor');
+  /* AUDIT-FIX-E2B: antes era regex numa janela de UMA linha a partir da
+     declaração — quebraria se a função virasse multilinha. Agora: nenhuma
+     chamada ao Diretor durante a execução. */
+  beginRun(t,1);
+  t.fractureForceTheme('collapse','teste');
+  t.fractureSetIntensity(100,'teste');
+  const tocou=semDiretor(()=>{for(let n=1;n<=t.MAX_WAVE;n++)t.eliteChance(n);});
+  assert.deepStrictEqual(tocou,[],'eliteChance consultou o Diretor: '+tocou.join(','));
   for(const n of [1,5,10,15,19,20]){
     const esperado=n<5?0:Math.min(.30,(n-4)*.028);
     assert.ok(Math.abs(t.eliteChance(n)-esperado)<1e-9,'eliteChance('+n+')');
@@ -2012,18 +2155,31 @@ ok('jitter determinístico: mesma (seed,wave) repete; seeds distintas variam',()
   }
 });
 ok('NENHUM Math.random solto no caminho de composição',()=>{
-  const jogo=GAME_SRC;
-  const ini=jogo.indexOf('BLOCO 2 — SHAPING DE COMPOSIÇÃO');
-  const fim=jogo.indexOf('/* ---------------- ciclo de vida da run');
-  assert.ok(ini>0&&fim>ini,'bloco de shaping delimitado');
-  const bloco=jogo.slice(ini,fim);
-  assert.ok(!/Math\.random/.test(bloco),'shaping sem Math.random');
-  for(const fn of ['waveCompBase','waveCompFit','waveCompTotal','fractureArchBias',
-    'fractureThemeWeight','fractureWaveCtx']){
-    const i=jogo.indexOf('function '+fn+'(');
-    const corpo=jogo.slice(i,jogo.indexOf('\nfunction ',i+10));
-    assert.ok(!/Math\.random/.test(corpo),fn+' sem Math.random');
+  /* AUDIT-FIX-E2B: antes era busca por 'Math.random' no texto do bloco. Agora
+     o consumo de aleatoriedade é MEDIDO durante a execução de todo o caminho
+     de composição — pega também `(0,Math).random()`, alias e chamada indireta,
+     que a busca textual deixava passar. */
+  beginRun(t,1);
+  const CAMINHO=()=>{
+    for(const n of [1,6,10,15,19,20]){
+      const base=t.waveCompBase(n);
+      t.waveCompFit(base,t.ENEMY_BUDGET);
+      t.waveCompTotal(base);
+      const c=t.fractureWaveCtx();
+      t.fractureThemeWeight(c);
+      t.waveComp(n);            /* cobre fractureShapeWave → fractureArchBias */
+    }
+  };
+  for(const th of THEMES)for(const inten of [0,50,100]){
+    t.fractureForceTheme(th,'teste');
+    t.fractureSetIntensity(inten,'teste');
+    assert.strictEqual(contaRandom(CAMINHO),0,
+      th+'@'+inten+': o caminho de composição consumiu Math.random');
   }
+  /* determinismo é a consequência observável: mesma entrada, mesma saída */
+  t.fractureForceTheme('anomaly','teste');t.fractureSetIntensity(100,'teste');
+  for(const n of [6,10,15,19])
+    assert.strictEqual(J(t.waveComp(n)),J(t.waveComp(n)),'waveComp('+n+') não é determinística');
 });
 ok('fractureWaveRng é função pura de (seed,wave)',()=>{
   const seq=(s,n)=>{const r=t.fractureWaveRng(s,n);return [r(),r(),r()].join(',');};
@@ -2238,15 +2394,29 @@ console.log('\n[22] B2.15/B2.16/B2.17 · ISOLAMENTO, DEV E SANDBOX');
 ok('facções/Echo/Personality/Relationship NÃO determinam composição',()=>{
   /* waveComp só recebe n. Se qualquer um desses sistemas influenciasse, o
      caminho conteria uma referência a eles. */
-  const i=src.indexOf('function waveComp(');
-  const corpo=src.slice(i,src.indexOf('\nfunction ',i+10));
-  for(const proibido of ['fracRun','fracStateOf','echoes','personality',
-    'relationship','echoDis','FACTION'])
-    assert.ok(corpo.indexOf(proibido)<0,'waveComp não consulta '+proibido);
-  const bloco=src.slice(src.indexOf('function fractureShapeWave('),
-    src.indexOf('/* ---------------- API de waveProfile'));
-  for(const proibido of ['fracRun','fracStateOf','echoes','FACTION','echoDis'])
-    assert.ok(bloco.indexOf(proibido)<0,'shaping não consulta '+proibido);
+  /* AUDIT-FIX-E2B: a versão textual procurava nomes proibidos no corpo de
+     waveComp/fractureShapeWave. Agora o teste MEXE nesses sistemas e exige
+     que a composição não se mova — cobre também consulta indireta. */
+  const A=bootFx({});beginRun(A,1);playWaves(A,1,8);
+  A.fractureForceTheme('siege','teste');
+  A.fractureSetIntensity(100,'teste');
+  const ONDAS=[6,10,15,19];
+  const comp=()=>ONDAS.map(n=>J(A.waveComp(n))).join('\n');
+  const shape=()=>ONDAS.map(n=>J(A.fractureShapeWave(A.waveCompBase(n),n,A.fractureWaveCtx()))).join('\n');
+  const base={comp:comp(),shape:shape()};
+  const Xa=code=>vm.runInContext(code,A._ctx);
+  /* facções */
+  for(const f of Xa('FACTION_IDS'))Xa('fracApplyDelta')(f,40,'teste-e2b');
+  assert.strictEqual(comp(),base.comp,'facções mudaram a composição');
+  assert.strictEqual(shape(),base.shape,'facções mudaram o shaping');
+  /* Echo: confiança e dissonância no extremo */
+  for(const e of A.getEchoes()){if('trust' in e)e.trust=0;if('dis' in e)e.dis=100;}
+  assert.strictEqual(comp(),base.comp,'Echo mudou a composição');
+  assert.strictEqual(shape(),base.shape,'Echo mudou o shaping');
+  /* moral */
+  Xa('moral={comp:60,greed:-40,viol:80}');Xa('applyMoral')();
+  assert.strictEqual(comp(),base.comp,'moral mudou a composição');
+  assert.strictEqual(shape(),base.shape,'moral mudou o shaping');
 });
 ok('DEV: fx:comp mostra BASE × FINAL e NÃO contamina a run',()=>{
   t.DEV_on();
@@ -2455,15 +2625,30 @@ ok('composições extremas: nenhuma onda fica vazia ou sem tipo nenhum',()=>{
 /* ============ [24] REGRESSÕES DO BLOCO 2 ============ */
 console.log('\n[24] REGRESSÕES · O BLOCO 2 NÃO PODE TER TOCADO EM NADA ALÉM DISSO');
 ok('HP/dano/velocidade de inimigo NÃO mudam por Tema',()=>{
-  const jogo=GAME_SRC;
-  for(const fn of ['diffHp','diffDmg','diffSpd']){
-    const i=jogo.indexOf('function '+fn+'(');
-    /* corpo inteiro, não janela fixa (ver B4-60) */
-    const corpo=jogo.slice(i,jogo.indexOf('\nfunction ',i+10));
-    assert.ok(!/fracture/.test(corpo),fn+' sem Diretor');
+  /* AUDIT-FIX-E2B: a versão textual olhava só o corpo de diffHp/diffDmg/diffSpd.
+     Aqui o inimigo NASCE de verdade e comparam-se os stats reais com e sem
+     Diretor — cobre também qualquer multiplicador aplicado depois da fórmula. */
+  const perfil=()=>{
+    Xm('enemies=[]');
+    let k=0;const out=[];
+    for(const tipo of TIPOS_INIMIGO){
+      for(const n of [1,5,10,15,19]){
+        Xm('spawnEnemy')(tipo,420+(k++%9)*30,380,n);
+        const e=Xm('enemies')[Xm('enemies').length-1];
+        out.push([tipo,n,Math.round(e.maxHp*1e3),Math.round(e.dmg*1e3),Math.round(e.spd*1e3)].join('|'));
+      }
+    }
+    return out.join('\n');
+  };
+  beginRun(t,1);t.setFx(null);
+  const semDir=perfil();
+  beginRun(t,1);
+  for(const th of THEMES)for(const inten of [0,50,100]){
+    t.fractureForceTheme(th,'teste');
+    t.fractureSetIntensity(inten,'teste');
+    assert.strictEqual(perfil(),semDir,
+      th+'@'+inten+': HP/dano/velocidade do inimigo mudaram com o Diretor');
   }
-  assert.ok(jogo.indexOf('hpMul*fracture')<0);
-  assert.ok(jogo.indexOf('dmg*fractureGet')<0);
 });
 ok('filtro de segurança de pickMiniBoss intacto (com e sem Diretor)',()=>{
   /* O que NÃO podia mudar é o FILTRO de HP: duelist (hp .70) some a partir
@@ -2506,11 +2691,21 @@ ok('pool de eventos cresceu só com os 12 novos e as réguas antigas continuam n
   /* scoreEvent agora tem o termo do Diretor (B3.2) — o que não pode mudar
      é que ele NÃO decide elegibilidade: bloqueios continuam exclusivos de
      eventBlockReason. */
-  const jogo=GAME_SRC;
-  const i=jogo.indexOf('function eventBlockReason(');
-  const corpo=jogo.slice(i,jogo.indexOf('\nfunction ',i+10));
-  assert.ok(!/fracture/.test(corpo),
-    'eventBlockReason não pode bloquear por Tema (nada de hard lock)');
+  /* AUDIT-FIX-E2B: provado por execução — eventBlockReason não chama o
+     Diretor e devolve exatamente o mesmo veredito com e sem Fratura. */
+  const A=bootFx({});beginRun(A,1);playWaves(A,1,8);
+  const ctx=A.buildEventContext();
+  const veredito=()=>A.ALL_RUN_EVENTS.map(d=>String(A.eventBlockReason(d,ctx))).join('|');
+  const fx=A.getFx(),tema=fx.theme;
+  fx.theme=null;const semTema=veredito();fx.theme=tema;
+  for(const th of THEMES){
+    A.fractureForceTheme(th,'teste');
+    A.fractureSetIntensity(100,'teste');
+    const usou=[...new Set(espiar(A._ctx,apiDiretor(A._ctx),()=>{
+      assert.strictEqual(veredito(),semTema,th+': eventBlockReason mudou o veredito por Tema');
+    }))];
+    assert.deepStrictEqual(usou,[],th+': eventBlockReason consultou '+usou.join(','));
+  }
 });
 ok('SM_VERSION não mudou e o save antigo continua carregando',()=>{
   assert.strictEqual(t.SM_VERSION,3,'SM_VERSION preservado');
@@ -3128,21 +3323,53 @@ ok('B3-46: Sandbox recusa gravar checkpoint',()=>{
   A.sandboxExit();
 });
 ok('B3-47: a seção de Sandbox do Bloco 3 existe e só lê',()=>{
-  const jogo=GAME_SRC;
-  const i=jogo.indexOf('function fractureSandboxSection(');
-  const seg=jogo.slice(i,jogo.indexOf('\nfunction ',i+10));
-  assert.ok(seg.indexOf('fractureB3InspectorLines')>=0,
-    'Sandbox mostra eventos/miniboss/ressonância/escassez');
-  assert.ok(!/fractureOnEventChosen|fractureOnMiniKill|addResidues\(/.test(seg),
-    'Sandbox não emite evento nem dá resíduo');
+  /* AUDIT-FIX-E2B: em vez de ler o corpo da função, a seção é RENDERIZADA
+     com tripwire nos mutadores — e o estado do Diretor é comparado byte a
+     byte antes/depois para provar que a leitura não tem efeito colateral. */
+  const A=bootFx({});
+  A.sandboxOpenSetup();A.getSandboxCfg().char=0;A.sandboxStart();
+  A.setWave(6);A.spawnWave(6);
+  const doc=A._env.document;
+  const sbBody=doc.getElementById('sb-body');sbBody.innerHTML='';sbBody.children.length=0;
+  /* O mock cria elemento sob demanda e NUNCA devolve null, então o guard de
+     idempotência de fractureSandboxSection ('já montei esta seção?') via um
+     stub e saía cedo — a seção nunca chegava a ser montada. Aqui o mock
+     passa a responder null para esse id enquanto a seção não existir de
+     verdade na árvore, que é o comportamento do DOM real. */
+  const getOrig=doc.getElementById;
+  doc.getElementById=id=>(id==='frac2-sb-section'
+    ?findByTree(doc.body,id)
+    :getOrig.call(doc,id));
+  const antes=J(A.fractureRunPack());
+  let usou;
+  try{
+    usou=[...new Set(espiar(A._ctx,['fractureOnEventChosen','fractureOnMiniKill',
+      'fractureOnMiniSpawn','addResidues','spendResidues','fractureAddIntensity',
+      'fractureSetIntensity','fractureEmit'],()=>{A.fractureSandboxSection();}))];
+  }finally{doc.getElementById=getOrig;}
+  assert.deepStrictEqual(usou,[],'a seção de Sandbox mutou o estado via '+usou.join(','));
+  assert.strictEqual(J(A.fractureRunPack()),antes,'a seção de Sandbox alterou a run');
+  const sec=findByTree(sbBody,'frac2-sb-section');
+  assert.ok(sec,'a seção não foi montada no Sandbox');
+  assert.ok(/DIRETOR DE FRATURA/.test(sec.innerHTML),'a seção mostra o Diretor');
+  A.sandboxExit();
 });
 
 console.log('\n[31] B3 · REGRESSÃO (48-51)');
 ok('B3-48: eventBlockReason continua sendo a única porta de bloqueio',()=>{
-  const jogo=GAME_SRC;
-  const i=jogo.indexOf('function eventBlockReason(');
-  const seg=jogo.slice(i,jogo.indexOf('\nfunction ',i+10));
-  assert.ok(!/fracture/.test(seg),'eventBlockReason não conhece o Diretor');
+  /* AUDIT-FIX-E2B: o Diretor pondera (scoreEvent), nunca barra. Observável:
+     um evento que o Tema empurra para baixo ao máximo continua ELEGÍVEL. */
+  const A=bootFx({});beginRun(A,1);playWaves(A,1,8);
+  const ctx=A.buildEventContext();
+  const livres=A.ALL_RUN_EVENTS.filter(d=>!A.eventBlockReason(d,ctx));
+  assert.ok(livres.length>0,'há eventos elegíveis para o controle');
+  for(const th of THEMES){
+    A.fractureForceTheme(th,'teste');
+    A.fractureSetIntensity(100,'teste');
+    for(const d of livres)
+      assert.ok(!A.eventBlockReason(d,ctx),
+        th+': '+d.id+' passou a ser BLOQUEADO pelo Tema — o Diretor virou porta de bloqueio');
+  }
 });
 ok('B3-49: o Diretor é influência — nenhum "if theme === X return" no Bloco 3',()=>{
   const jogo=GAME_SRC;
@@ -3620,12 +3847,20 @@ ok('B4-27: oportunidade rara NÃO toca evento comum — só rare/anomalous',()=>
   assert.strictEqual(A.fractureRareOppMul(null),1,'null é neutro');
 });
 ok('B4-28: gate não altera HP nem dano — só pesos e frequência',()=>{
-  const jogo=GAME_SRC;
-  const i=jogo.indexOf('const FRACTURE_STAGE_GATES=');
-  assert.ok(i>0,'tabela localizada');
-  const bloco=jogo.slice(i,jogo.indexOf('};',i)+2);
-  assert.ok(!/hp|dmg|damage|vida|dano/i.test(bloco),
-    'nenhum campo de HP/dano na tabela de gates');
+  /* AUDIT-FIX-E2B: a tabela é exportada — percorrer o OBJETO em vez de
+     casar regex no texto pega campo aninhado e nome montado em runtime. */
+  const G=t.FRACTURE_STAGE_GATES;
+  assert.ok(G&&typeof G==='object','tabela de gates exportada');
+  const PROIBIDO=/^(hp|maxhp|dmg|damage|dano|vida|spd|speed|armor|plates)$/i;
+  const visitar=(o,caminho)=>{
+    for(const k of Object.keys(o)){
+      assert.ok(!PROIBIDO.test(k),'campo de combate na tabela de gates: '+caminho+k);
+      const v=o[k];
+      if(v&&typeof v==='object')visitar(v,caminho+k+'.');
+    }
+  };
+  visitar(G,'');
+  assert.ok(Object.keys(G).length>0,'tabela de gates não pode estar vazia');
 });
 ok('B4-29: RUPTURA é alcançável — o teto da run supera 80',()=>{
   const A=bootFx({});beginRun(A,1);
@@ -3718,13 +3953,26 @@ ok('B4-36: o HUD nunca expõe número de Intensidade nem id cru',()=>{
   }
 });
 ok('B4-37: os cinco motivos de revelação têm texto narrativo',()=>{
-  const A=bootFx({});
-  const jogo=GAME_SRC;
-  const i=jogo.indexOf('const FRACTURE_REVEAL_TEXT=');
-  assert.ok(i>0,'tabela localizada');
-  const bloco=jogo.slice(i,jogo.indexOf('};',i)+2);
-  for(const k of ['signature','miniboss','evento','intensidade','tempo'])
-    assert.ok(bloco.indexOf(k+':')>=0,'motivo '+k+' tem texto');
+  /* AUDIT-FIX-E2B: em vez de procurar as chaves no texto da tabela, cada
+     motivo é REVELADO de verdade e a narrativa que chega ao jogador (o
+     toast) é capturada — prova que a tabela está ligada à revelação e que
+     nenhum motivo cai no texto genérico de fallback. */
+  const vistos=new Map();
+  for(const motivo of ['signature','miniboss','evento','intensidade','tempo']){
+    const A=bootFx({});beginRun(A,1);
+    A.fractureForceTheme('siege','teste');
+    const toasts=[];
+    const orig=A._ctx.toast;
+    A._ctx.toast=function(txt){toasts.push(String(txt));return orig.apply(this,arguments);};
+    try{A.fractureReveal(motivo,A.FRACTURE_REVEAL_MIN_WAVE);}
+    finally{A._ctx.toast=orig;}
+    assert.ok(A.fractureIsRevealed(),motivo+': não revelou');
+    const txt=toasts.filter(x=>x&&x.length>0).pop();
+    assert.ok(txt&&txt.length>0,'motivo '+motivo+' não produziu narrativa');
+    vistos.set(motivo,txt);
+  }
+  assert.strictEqual(new Set(vistos.values()).size,vistos.size,
+    'motivos compartilham a mesma narrativa: '+J([...vistos]));
 });
 ok('B4-38: revelação respeita a onda mínima',()=>{
   const A=bootFx({});beginRun(A,1);
@@ -3913,29 +4161,39 @@ ok('B4-50: a aba do Diretor existe no Codex e o corpo renderiza',()=>{
 /* ---------------- ECHO E FACÇÕES (B4.13 / B4.14) ---------------- */
 ok('B4-51: reações de facção são narrativas — nunca chamam factionEmit',()=>{
   const A=bootFx({});beginRun(A,1);
-  const jogo=GAME_SRC;
-  const i=jogo.indexOf('function fractureFactionRemark(');
-  assert.ok(i>0,'função localizada');
-  const corpo=jogo.slice(i,jogo.indexOf('\nfunction ',i+10));
-  assert.ok(corpo.indexOf('factionEmit')<0,
-    'fractureFactionRemark não emite afinidade');
-  assert.ok(corpo.indexOf('changeEchoTrust')<0,'não muda Trust');
   /* sem Tema revelado, não há reação */
   assert.strictEqual(A.fractureFactionRemark(),null,'oculto: sem reação');
   A.fractureReveal('dev',6);
-  const r=A.fractureFactionRemark();
+  /* AUDIT-FIX-E2B: "narrativa, nunca mecânica" provado por execução — nem
+     chamada aos mutadores, nem mudança observável na grade de facções. */
+  const antesFac=J(A.fracRunPack?A.fracRunPack():A.getFracRun&&A.getFracRun());
+  let r;
+  const usou=[...new Set(espiar(A._ctx,['factionEmit','changeEchoTrust','fracApplyDelta'],
+    ()=>{r=A.fractureFactionRemark();}))];
+  assert.deepStrictEqual(usou,[],'fractureFactionRemark chamou '+usou.join(','));
   assert.ok(r&&typeof r.text==='string'&&r.text.length>0,'reação narrativa');
+  assert.strictEqual(J(A.fracRunPack?A.fracRunPack():A.getFracRun&&A.getFracRun()),antesFac,
+    'a reação narrativa alterou o estado de facção');
 });
 ok('B4-52: proibido Tema determinar afinidade de facção',()=>{
   const jogo=GAME_SRC;
   /* o padrão vetado pelo escopo: theme === 'x' → facção +N */
   const proibido=/theme\s*===?\s*['"][a-z]+['"][^;]{0,80}factionEmit/;
   assert.ok(!proibido.test(jogo),'nenhum atalho Tema → factionEmit');
-  const i=jogo.indexOf('const FRACTURE_FACTION_REMARKS=');
-  assert.ok(i>0,'tabela de falas existe');
-  const bloco=jogo.slice(i,jogo.indexOf('\n};',i)+3);
-  assert.ok(!/[+-]\d/.test(bloco.replace(/rgba?\([^)]*\)/g,'')),
-    'tabela de falas não carrega números de afinidade');
+  /* AUDIT-FIX-E2B: a tabela é exportada — percorrê-la como DADO é mais
+     exato que a regex antiga, que tinha de descontar rgba(...) à mão e ainda
+     assim confundiria '+2' dentro de uma frase com um delta de afinidade. */
+  const R=t.FRACTURE_FACTION_REMARKS;
+  assert.ok(R&&typeof R==='object','tabela de falas exportada');
+  const visitar=(o,caminho)=>{
+    for(const k of Object.keys(o)){
+      const v=o[k];
+      assert.ok(typeof v!=='number',
+        'fala carrega número (delta de afinidade?) em '+caminho+k+' = '+v);
+      if(v&&typeof v==='object')visitar(v,caminho+k+'.');
+    }
+  };
+  visitar(R,'');
 });
 ok('B4-53: cada Tema tem fala de facção e cada um tem as 4 facções cobertas',()=>{
   const A=bootFx({});
@@ -4185,15 +4443,20 @@ ok('B4-64: spawnWave continua despachando a onda final antes de waveComp',()=>{
      do chefe para DEPOIS da consulta à composição, a onda do PARADOXO passa
      a ser remodelada pelo Diretor. Verificação por posição relativa dentro da
      função inteira — sem janela fixa. */
-  const ini=src.indexOf('function spawnWave(');
-  const corpo=src.slice(ini,src.indexOf('\nfunction ',ini+10));
-  const pBoss=corpo.search(/n\s*>=\s*MAX_WAVE|n\s*>=\s*20|n\s*===\s*MAX_WAVE/);
-  const pComp=corpo.indexOf('waveComp(');
-  assert.ok(pBoss>=0&&pComp>=0,'os dois caminhos existem');
-  assert.ok(pBoss<pComp,'despacho do chefe precede a composição');
-  /* o despacho precisa sair da função — senão a composição rodaria igual */
-  const ramo=corpo.slice(pBoss,corpo.indexOf('\n',pBoss));
-  assert.ok(/return/.test(ramo),'o despacho do chefe retorna (não continua)');
+  /* AUDIT-FIX-E2B: o mesmo invariante, provado pela execução em vez de por
+     offsets de texto. "Despachar antes e retornar" observa-se como "a onda
+     final não consulta a composição, nem sequer o estágio base". */
+  beginRun(t,1);
+  t.setWave(t.MAX_WAVE);
+  const final=espiar(MAIN.ctx,['waveComp','waveCompBase','fractureShapeWave','fractureApplySignature'],
+    ()=>t.spawnWave(t.MAX_WAVE));
+  assert.deepStrictEqual(final,[],
+    'a onda final passou pelo pipeline de composição: '+final.join(' → '));
+  beginRun(t,1);
+  t.setWave(19);
+  const penult=espiar(MAIN.ctx,['waveComp'],()=>t.spawnWave(19));
+  assert.deepStrictEqual(penult,['waveComp'],
+    'controle: a onda 19 continua passando pela composição');
 });
 
 ok('B4-65: waveComp da onda final é imune a Tema, Intensidade e assinatura',()=>{
