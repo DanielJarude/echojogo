@@ -197,9 +197,12 @@ ok('B2-01: o Director existe — bloco PR15·b2, config centralizada e boot apó
     'pr15MemPack','pr15MemUnpack','pr15MemSnapshot','pr15MemoryKitBoot','pr15MemWaveBusy',
     'pr15MemCooldownBusy','pr15MemSanitize','pr15MemSeedFor','pr15MemRunKey'])
     assert.strictEqual(typeof T[fn],'function',fn+' ausente');
-  const i1=SRCN.indexOf('pr15TemporalKitBoot();');
-  const i2=SRCN.indexOf('pr15MemoryKitBoot();');
-  assert.ok(i1>0&&i2>i1,'pr15MemoryKitBoot() vem depois de pr15TemporalKitBoot()');
+  /* AUDIT-FIX-D: a ordem de boot deixou de ser uma sequência de chamadas
+     soltas (LIFECYCLE_KITS + lcBootKit). Em vez de procurar o texto das
+     chamadas, lê a ordem REAL registrada pelo registro de patches. */
+  const kits=JSON.parse(X('JSON.stringify(lcPatchReport().kits)'));
+  const i1=kits.indexOf('temporal'),i2=kits.indexOf('memory');
+  assert.ok(i1>=0&&i2>i1,'o kit do B2 boota depois do kit do B1');
   /* configuração centralizada: os números não estão espalhados pelo código */
   const antes=stripComments(SRCN.slice(0,SRCN.indexOf('PR15_MEM_CFG=')));
   const depois=stripComments(SRCN.slice(SRCN.indexOf('/* ==================== PR15·fim b2')));

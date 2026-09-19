@@ -162,8 +162,11 @@ ok('B4-01 bloco B4 existe entre os marcadores e boota por último',()=>{
   assert.ok(SRCN.indexOf('PR15·fim b4')>SRCN.indexOf('PR15·b4 — INTENÇÃO'),
     'marcador de fim vem depois do início');
   assert.ok(B4SRC.indexOf('PR15·fim b3')<0,'o recorte não invade o B3');
-  const iB3=SRCN.indexOf('pr15PresenceKitBoot();'),iB4=SRCN.indexOf('pr15IntentKitBoot();');
-  assert.ok(iB3>0&&iB4>0&&iB4>iB3,'o kit do B4 boota depois do B3');
+  /* AUDIT-FIX-D: ordem de boot lida do registro de patches, não do texto
+     das chamadas (que viraram a tabela LIFECYCLE_KITS). */
+  const kits=JSON.parse(X('JSON.stringify(lcPatchReport().kits)'));
+  const iB3=kits.indexOf('presence'),iB4=kits.indexOf('intent');
+  assert.ok(iB3>=0&&iB4>iB3,'o kit do B4 boota depois do B3');
   assert.strictEqual(T.PR15_INTENT_CFG.version,1);
 });
 ok('B4-02 as três famílias de intenção existem e são exatamente 3',()=>{

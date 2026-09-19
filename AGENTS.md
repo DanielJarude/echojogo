@@ -27,10 +27,11 @@ History uses scoped milestone prefixes such as `PR15.5-F3-ASSETS:` and `AUDIT-FI
 Consult `.github/copilot-instructions.md`. Preserve save compatibility, deterministic systems, and approved portraits. Keep Anchored Replay independent of Echo mechanics. Inspect consumers and harnesses before removing symbols; avoid unrelated refactors or balance changes.
 ## Current Engineering State
 
-- Current baseline: 78 suites, 4939 checks, 0 failures.
+- Current baseline: 81 suites, 5035 checks, 0 failures (the 78/4939 figure predated AUDIT-FIX-C/C2/D).
 - AUDIT-FIX-A is complete: tests no longer depend on Git history.
 - `index.html` has approximately 39k LOC, including approximately 38k JavaScript lines in one script.
-- There are 132 monkey-patch wrappers across 8 kits. This is architectural debt, not a current bug by itself. Do not add wrappers without strong justification.
+- There are 138 monkey-patch wrappers across 8 kits (the older count of 132 missed six multi-line captures). This is architectural debt, not a current bug by itself. Do not add wrappers without strong justification.
+- Since AUDIT-FIX-D every wrapper block installs through the `lcPatch(id, targets, fn)` registry: 71 blocks, stable ids, explicit boot order in `LIFECYCLE_KITS`, and install failures recorded instead of swallowed. Inspect with `lcPatchReport()` / `DEV.lifecyclePatches()`; the contract is frozen in `tests/audit-fix-d-lifecycle-patches.test.js`. A new wrapper belongs inside an `lcPatch` block, never in a bare `try{}catch(e){}`.
 
 ## Audit Cleanup Roadmap
 
@@ -47,7 +48,7 @@ Exclude from B1: test-only APIs, `ENEMY_VISUAL_PROFILES`, `weaponVisualProfile`,
 
 - **AUDIT-FIX-B2:** investigate test-only APIs and the visual foundation.
 - **AUDIT-FIX-C:** unify meta loading.
-- **AUDIT-FIX-D:** reduce lifecycle/monkey-patch risks.
+- **AUDIT-FIX-D — complete:** all 71 wrapper-install blocks (138 wrappers) migrated to the `lcPatch` registry; boot order made explicit. Still open for a D2: kit-level boot is fail-fast (a throw outside `lcPatch` still aborts the remaining kits), and two non-patch install calls in `fracKitBoot` (`fracRegEvents`, `fracHudChip`) still swallow silently.
 - **AUDIT-FIX-E:** replace fragile source-text tests with behavioral contracts.
 - **AUDIT-FIX-F:** incrementally modularize `index.html`.
 

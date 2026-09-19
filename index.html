@@ -29938,11 +29938,75 @@ function fracRegEvents(){
   if(Array.isArray(CX_TABS)&&!CX_TABS.some(t=>t.id==='factions'))
     CX_TABS.push({id:'factions',nm:'FACÇÕES'});
 }
+/* =====================================================================
+   AUDIT-FIX-D — REGISTRO DE PATCHES DE LIFECYCLE
+   ---------------------------------------------------------------------
+   Os 8 kits abaixo instalam 138 wrappers sobre funções de produção
+   (startRun, resumeRun, onPlayerDeath, smClearSlotSave, sandbox*, …).
+   Até aqui cada bloco de instalação era um `try{…}catch(e){}` MUDO: se um
+   bloco lançasse no meio, os wrappers seguintes DELE não entravam e nada
+   registrava a falha — o jogo bootava aparentemente normal, sem o kit.
+
+   lcPatch() NÃO muda o que os wrappers fazem nem a ordem em que rodam.
+   Ele só dá a cada bloco um id estável, guarda a ordem REAL de instalação,
+   recusa instalar o mesmo id duas vezes e GRAVA a exceção em vez de
+   engoli-la. A exceção continua contida: o boot nunca aborta.
+
+   ORDEM (não-óbvia, vale para todos os kits): o último wrapper instalado
+   é o MAIS EXTERNO. Logo o código que roda ANTES do original executa na
+   ordem INVERSA de instalação, e o que roda DEPOIS do original executa na
+   ordem de instalação. lcPatchReport() mostra a ordem real.
+   ===================================================================== */
+const LC_PATCHES=new Map();        // id → registro
+const LC_PATCH_LIST=[];            // registros na ordem real de instalação
+const LC_KIT_ORDER=[];             // kits na ordem real de boot
+let lcPatchKit='';                 // kit em instalação (preenchido por lcBootKit)
+
+/* Instala UM bloco de patches. `targets` declara as funções de produção
+   que o bloco embrulha — é o que torna o mapa de wrappers inspecionável
+   (lcPatchTargets/lcPatchReport) em vez de só legível no source. */
+function lcPatch(id,targets,install){
+  const fullId=(lcPatchKit?lcPatchKit+'#':'')+id;
+  const prev=LC_PATCHES.get(fullId);
+  if(prev){prev.blocked++;return false;}          // idempotente: nunca 2×
+  const rec={id:fullId,kit:lcPatchKit,order:LC_PATCH_LIST.length,
+    targets:Array.isArray(targets)?targets.slice():[],
+    ok:false,error:null,blocked:0};
+  LC_PATCHES.set(fullId,rec);LC_PATCH_LIST.push(rec);
+  try{install();rec.ok=true;}
+  catch(e){rec.error=String((e&&e.message)||e);}
+  return rec.ok;
+}
+/* Boota um kit com a instalação atribuída a ele. O guard `.done` de cada
+   kit continua valendo; isto é a segunda camada (por id de patch). */
+function lcBootKit(name,boot){
+  if(typeof boot!=='function')return false;
+  if(LC_KIT_ORDER.indexOf(name)<0)LC_KIT_ORDER.push(name);
+  const prev=lcPatchKit;lcPatchKit=name;
+  try{boot();}finally{lcPatchKit=prev;}
+  return true;
+}
+/* Quem embrulha uma função de produção, na ordem real de instalação. */
+function lcPatchTargets(name){
+  return LC_PATCH_LIST.filter(r=>r.targets.indexOf(name)>=0).map(r=>r.id);
+}
+/* Relatório completo — usado pelos testes e pelo painel DEV. */
+function lcPatchReport(){
+  const failed=LC_PATCH_LIST.filter(r=>!r.ok);
+  return {total:LC_PATCH_LIST.length,
+    installed:LC_PATCH_LIST.length-failed.length,
+    wrappers:LC_PATCH_LIST.reduce((n,r)=>n+r.targets.length,0),
+    failed:failed.map(r=>({id:r.id,error:r.error})),
+    blocked:LC_PATCH_LIST.filter(r=>r.blocked>0).map(r=>({id:r.id,n:r.blocked})),
+    kits:LC_KIT_ORDER.slice(),
+    patches:LC_PATCH_LIST.map(r=>({id:r.id,kit:r.kit,order:r.order,
+      targets:r.targets.slice(),ok:r.ok,error:r.error}))};
+}
 function fracKitBoot(){
   if(fracKitBoot.done)return;fracKitBoot.done=true;
   try{fracRegEvents();}catch(e){}
   /* ---------- 1. save/slot: descobertas de facção seguem o slot ---------- */
-  try{
+  lcPatch('slot',['smBoot','activateSlot','smClearSlotSave'],function(){
     const _sb=smBoot;smBoot=function(){const r=_sb.apply(this,arguments);
       try{fracDiscLoad();}catch(e){}return r;};
     const _as=activateSlot;activateSlot=function(i){const r=_as.apply(this,arguments);
@@ -29958,9 +30022,9 @@ function fracKitBoot(){
       const r=_cs.apply(this,arguments);
       try{fracRun=null;fracDisc=fracDiscClean(null);}catch(e){}
       return r;};
-  }catch(e){}
+  });
   /* ---------- 2. início/retomada/fim de run ---------- */
-  try{
+  lcPatch('run',['startRun','resumeRun','onPlayerDeath','onVictory','showVictory'],function(){
     const _st=startRun;startRun=function(opts){
       /* B5: run nova nasce com PR 12 ZERADO ANTES do primeiro checkpoint —
          o cp 'início' nunca carrega estado mecânico da run anterior. */
@@ -29997,9 +30061,9 @@ function fracKitBoot(){
       fracKitRunEnd();
       return r;
     };
-  }catch(e){}
+  });
   /* ---------- 3. morte do Eco (Lápide) + Refúgio no Ruído ---------- */
-  try{
+  lcPatch('echodeath',['damageEcho','dissolveEcho'],function(){
     const _de=damageEcho;damageEcho=function(e,d){
       const wasAlive=!!(e&&e.alive);
       const hostile=wasAlive&&e.hostile;
@@ -30050,9 +30114,9 @@ function fracKitBoot(){
       }
       return r;
     };
-  }catch(e){}
+  });
   /* ---------- 4. abates: pkill/ekill/elite/miniboss/boss ---------- */
-  try{
+  lcPatch('kill',['killEnemy'],function(){
     const _ke=killEnemy;killEnemy=function(en){
       const att=curAttacker;
       const r=_ke.apply(this,arguments);
@@ -30084,9 +30148,9 @@ function fracKitBoot(){
       }catch(_e){}
       return r;
     };
-  }catch(e){}
+  });
   /* ---------- 5. contenção/reintegração de ruptura ---------- */
-  try{
+  lcPatch('dissonance',['echoSetDis'],function(){
     const _sd=echoSetDis;echoSetDis=function(e,st){
       const before=e&&e.dis?e.dis.st:null;
       const r=_sd.apply(this,arguments);
@@ -30112,9 +30176,9 @@ function fracKitBoot(){
       }
       return r;
     };
-  }catch(e){}
+  });
   /* ---------- 6. passivos por frame (refresh dinâmico + Vínculo Recíproco) ---------- */
-  try{
+  lcPatch('echoupdate',['updateEcho'],function(){
     const _ue=updateEcho;updateEcho=function(e,dt){
       if(fracRun&&e&&e.eqFx){
         try{
@@ -30128,9 +30192,9 @@ function fracKitBoot(){
       }
       return r;
     };
-  }catch(e){}
+  });
   /* ---------- 7. fechar a loja: Bens Penhorados + aba padrão OPERADOR ---------- */
-  try{
+  lcPatch('shop',['closeShop'],function(){
     const _cs=closeShop;closeShop=function(){
       if(fracRun){
         try{
@@ -30144,25 +30208,25 @@ function fracKitBoot(){
       fracTab='op';
       return r;
     };
-  }catch(e){}
+  });
   /* ---------- 8. Registro de Combate (TAB): resumo ECHO EQUIPMENT ---------- */
-  try{
+  lcPatch('sheet',['sheetRender'],function(){
     const _sr=sheetRender;sheetRender=function(f){
       const r=_sr.apply(this,arguments);
       fracSheetEqSummary();
       return r;
     };
-  }catch(e){}
+  });
   /* ---------- 9. HUD: chip de Resíduos (só quando relevante) ---------- */
-  try{
+  lcPatch('hud',['updateHUD'],function(){
     const _uh=updateHUD;updateHUD=function(f){
       const r=_uh.apply(this,arguments);
       fracHudChip();
       return r;
     };
-  }catch(e){}
+  });
   /* ---------- 10. Codex: corpo da aba FACÇÕES ---------- */
-  try{
+  lcPatch('codex',['renderCodexBody'],function(){
     const _rc=renderCodexBody;renderCodexBody=function(){
       if(codexTab==='factions'){
         try{fracCodexBody();}catch(e){
@@ -30173,9 +30237,9 @@ function fracKitBoot(){
       }
       return _rc.apply(this,arguments);
     };
-  }catch(e){}
+  });
   /* ---------- 11. DEV MODE: inspetor + comandos fr:* ---------- */
-  try{
+  lcPatch('dev',['devCommand','devRender'],function(){
     const _dc=devCommand;devCommand=function(c){
       if(typeof c==='string'&&c.indexOf('fr:')===0){
         return fracDevCommand(c.slice(3));
@@ -30187,9 +30251,9 @@ function fracKitBoot(){
       fracDevSection();
       return r;
     };
-  }catch(e){}
+  });
   /* ---------- 12. Sandbox: seção FACÇÕES / ECHO (estado temporário) ---------- */
-  try{
+  lcPatch('sandbox',['sandboxExit','sandboxStart','sandboxRestart','sandboxEndToSetup','sandboxCloseSetup'],function(){
     const _sr2=(typeof sbRender==='function')?sbRender:null;
     if(_sr2){
       sbRender=function(){
@@ -30229,7 +30293,7 @@ function fracKitBoot(){
       try{fracSandboxTearDown();}catch(e){}
       return r;
     };
-  }catch(e){}
+  });
   try{fracHudChip();}catch(e){}
 }
 /* estado transiente da run: reset ao iniciar nova run */
@@ -33883,15 +33947,15 @@ function fractureDevCommand(c){
 function fractureKitBoot(){
   if(fractureKitBoot.done)return;fractureKitBoot.done=true;
   /* ---------- 1. checkpoint: cp.fracture ---------- */
-  try{
+  lcPatch('checkpoint',['smBuildCheckpoint'],function(){
     const _bc=smBuildCheckpoint;smBuildCheckpoint=function(reason,waveOverride){
       const cp=_bc.apply(this,arguments);
       try{if(cp&&typeof cp==='object')cp.fracture=fractureRunPack();}catch(e){}
       return cp;
     };
-  }catch(e){}
+  });
   /* ---------- 2. slot: nada vaza entre Save 1/2/3 ---------- */
-  try{
+  lcPatch('slot',['activateSlot','smClearSlotSave'],function(){
     const _as=activateSlot;activateSlot=function(i){
       const r=_as.apply(this,arguments);
       try{fractureForgetRun();}catch(e){}
@@ -33902,12 +33966,12 @@ function fractureKitBoot(){
       try{fractureForgetRun();}catch(e){}
       return r;
     };
-  }catch(e){}
+  });
   /* ---------- 3. início de run: seleção ÚNICA antes do 1º checkpoint ----
      fractureBeginRun roda ANTES do corpo de startRun para que o
      checkpoint 'início' já carregue o Tema — Continue na onda 1 devolve
      exatamente o mesmo Tema. */
-  try{
+  lcPatch('run',['startRun','resumeRun','onPlayerDeath','onVictory','showVictory'],function(){
     const _st=startRun;startRun=function(opts){
       try{fractureBeginRun();}catch(e){}
       return _st.apply(this,arguments);
@@ -33935,17 +33999,17 @@ function fractureKitBoot(){
       try{fractureEndRun('vitoria');}catch(e){}
       return r;
     };
-  }catch(e){}
+  });
   /* ---------- 6. ondas: hook único (fronteira de onda) ---------- */
-  try{
+  lcPatch('wave',['spawnWave'],function(){
     const _sw=spawnWave;spawnWave=function(n){
       const r=_sw.apply(this,arguments);
       try{fractureOnWaveStart(n);}catch(e){}
       return r;
     };
-  }catch(e){}
+  });
   /* ---------- 7. Sandbox (R5): contexto próprio, nada persiste ---------- */
-  try{
+  lcPatch('sandbox',['sandboxStart','sandboxRestart','sandboxEndToSetup','sandboxExit','sandboxCloseSetup'],function(){
     const _ss=sandboxStart;sandboxStart=function(){
       const r=_ss.apply(this,arguments);
       if(r){try{fractureSandboxContextStart();}catch(e){}}
@@ -33971,9 +34035,9 @@ function fractureKitBoot(){
       try{fractureSandboxTearDown();}catch(e){}
       return r;
     };
-  }catch(e){}
+  });
   /* ---------- 8. DEV MODE: inspetor + comandos fx:* ---------- */
-  try{
+  lcPatch('dev',['devCommand','devRender'],function(){
     const _dc=devCommand;devCommand=function(c){
       if(typeof c==='string'&&c.indexOf('fx:')===0)return fractureDevCommand(c.slice(3));
       return _dc.apply(this,arguments);
@@ -33983,17 +34047,17 @@ function fractureKitBoot(){
       try{fractureDevSection();}catch(e){}
       return r;
     };
-  }catch(e){}
+  });
   /* ---------- 9. B4: chip de Fratura no HUD ---------- */
-  try{
+  lcPatch('hud',['updateHUD'],function(){
     const _uh=updateHUD;updateHUD=function(f){
       const r=_uh.apply(this,arguments);
       try{fractureHudChip();}catch(e){}
       return r;
     };
-  }catch(e){}
+  });
   /* ---------- 10. B4: aba FRATURA no Codex ---------- */
-  try{
+  lcPatch('codex',['renderCodexBody'],function(){
     if(Array.isArray(CX_TABS)&&!CX_TABS.some(t=>t.id==='fracture'))
       CX_TABS.push({id:'fracture',nm:'FRATURA'});
     const _rc=renderCodexBody;renderCodexBody=function(){
@@ -34006,7 +34070,7 @@ function fractureKitBoot(){
       }
       return _rc.apply(this,arguments);
     };
-  }catch(e){}
+  });
 }
 /* ==================== PR13·fim fx1.js ==================== */
 /* Marcador de FIM do bloco do Diretor de Fratura. Existe de propósito:
@@ -34466,15 +34530,15 @@ function factionPresenceDevSection(){
 function factionPresenceKitBoot(){
   if(factionPresenceKitBoot.done)return;factionPresenceKitBoot.done=true;
   /* 1. checkpoint: cp.presence */
-  try{
+  lcPatch('checkpoint',['smBuildCheckpoint'],function(){
     const _bc=smBuildCheckpoint;smBuildCheckpoint=function(reason,waveOverride){
       const cp=_bc.apply(this,arguments);
       try{if(cp&&typeof cp==='object')cp.presence=factionPresencePack();}catch(e){}
       return cp;
     };
-  }catch(e){}
+  });
   /* 2. slot: nada vaza entre Save 1/2/3 */
-  try{
+  lcPatch('slot',['activateSlot','smClearSlotSave'],function(){
     const _as=activateSlot;activateSlot=function(i){
       const r=_as.apply(this,arguments);
       try{factionPresenceForgetRun();}catch(e){}
@@ -34485,9 +34549,9 @@ function factionPresenceKitBoot(){
       try{factionPresenceForgetRun();}catch(e){}
       return r;
     };
-  }catch(e){}
+  });
   /* 3. início de run: estado fresco ANTES do 1º checkpoint */
-  try{
+  lcPatch('run',['startRun','resumeRun','onPlayerDeath','onVictory','showVictory'],function(){
     const _st=startRun;startRun=function(opts){
       try{factionPresenceBeginRun();}catch(e){}
       return _st.apply(this,arguments);
@@ -34513,11 +34577,11 @@ function factionPresenceKitBoot(){
       try{factionPresenceEndRun();}catch(e){}
       return r;
     };
-  }catch(e){}
+  });
   /* 6. ondas: agenda (só intenção) na fronteira de onda. Gated no Sandbox:
      lá o estado é isolado e não precisa agendar reação de run real. Durante
      resumeRun (smRestoring) NÃO agenda: a onda retomada já foi consolidada. */
-  try{
+  lcPatch('wave',['spawnWave'],function(){
     const _sw=spawnWave;spawnWave=function(n){
       const r=_sw.apply(this,arguments);
       try{
@@ -34529,9 +34593,9 @@ function factionPresenceKitBoot(){
       }catch(e){}
       return r;
     };
-  }catch(e){}
+  });
   /* 7. Sandbox: contexto próprio, nada persiste */
-  try{
+  lcPatch('sandbox',['sandboxStart','sandboxRestart','sandboxEndToSetup','sandboxExit','sandboxCloseSetup'],function(){
     const _ss=sandboxStart;sandboxStart=function(){
       const r=_ss.apply(this,arguments);
       if(r){try{factionPresenceSandboxContextStart();}catch(e){}}
@@ -34557,15 +34621,15 @@ function factionPresenceKitBoot(){
       try{factionPresenceSandboxTearDown();}catch(e){}
       return r;
     };
-  }catch(e){}
+  });
   /* 8. DEV MODE: seção read-only no painel */
-  try{
+  lcPatch('dev',['devRender'],function(){
     const _dr=devRender;devRender=function(){
       const r=_dr.apply(this,arguments);
       try{factionPresenceDevSection();}catch(e){}
       return r;
     };
-  }catch(e){}
+  });
 }
 /* ==================== PR14·fim fp1.js ==================== */
 
@@ -35394,7 +35458,7 @@ function factionPresencePhysicalKitBoot(){
   /* 1. ondas: ativa a intenção agendada (fp.scheduled) em entidade física.
      Gated: não durante restore (a onda retomada é reconstruída) nem no
      Sandbox (lá o estado é isolado e o B2 nem agenda). */
-  try{
+  lcPatch('wave',['spawnWave'],function(){
     const _sw=spawnWave;spawnWave=function(n){
       const r=_sw.apply(this,arguments);
       try{
@@ -35405,27 +35469,27 @@ function factionPresencePhysicalKitBoot(){
       }catch(e){}
       return r;
     };
-  }catch(e){}
+  });
   /* 2. update: engatado no updateAllies (só roda em state==='play'). */
-  try{
+  lcPatch('update',['updateAllies'],function(){
     const _ua=updateAllies;updateAllies=function(dt){
       const r=_ua.apply(this,arguments);
       try{factionPresenceUpdateEntity(dt);}catch(e){}
       try{fpIndicatorTick(dt);}catch(e){}
       return r;
     };
-  }catch(e){}
+  });
   /* 3. draw: engatado no drawWorldExtras (world-space). */
-  try{
+  lcPatch('draw',['drawWorldExtras'],function(){
     const _dw=drawWorldExtras;drawWorldExtras=function(){
       const r=_dw.apply(this,arguments);
       try{factionPresenceDrawEntity();}catch(e){}
       return r;
     };
-  }catch(e){}
+  });
   /* 4. cleanup total (B3-S): morte/vitória/novo run/slot limpam a entidade.
      O estado LÓGICO já é limpo pelo kit B2; aqui garantimos o corpo físico. */
-  try{
+  lcPatch('run',['startRun','onPlayerDeath','onVictory','showVictory','activateSlot','smClearSlotSave'],function(){
     const _st=startRun;startRun=function(){
       try{factionPresenceEntityClear();}catch(e){}
       return _st.apply(this,arguments);
@@ -35445,18 +35509,18 @@ function factionPresencePhysicalKitBoot(){
     const _cs=smClearSlotSave;smClearSlotSave=function(){
       const r=_cs.apply(this,arguments);try{factionPresenceEntityClear();}catch(e){}return r;
     };
-  }catch(e){}
+  });
   /* 5. Continue: reconstrói a entidade física da presença ativa (B3-T).
      Roda DEPOIS do unpack do B2 (que já restaurou fp.active). */
-  try{
+  lcPatch('run2',['resumeRun'],function(){
     const _rs=resumeRun;resumeRun=function(){
       const r=_rs.apply(this,arguments);
       try{factionPresenceEntityClear();factionPresenceRebuildEntity();}catch(e){}
       return r;
     };
-  }catch(e){}
+  });
   /* 6. Sandbox: nada persiste; entidade some ao sair/reiniciar o laboratório. */
-  try{
+  lcPatch('sandbox',['sandboxStart','sandboxRestart','sandboxEndToSetup','sandboxExit'],function(){
     const _ss=sandboxStart;sandboxStart=function(){
       const r=_ss.apply(this,arguments);try{factionPresenceEntityClear();}catch(e){}return r;
     };
@@ -35469,9 +35533,9 @@ function factionPresencePhysicalKitBoot(){
     const _sx=sandboxExit;sandboxExit=function(){
       const r=_sx.apply(this,arguments);try{factionPresenceEntityClear();}catch(e){}return r;
     };
-  }catch(e){}
+  });
   /* 7. DEV: seção read-only + comandos fp:force:* */
-  try{
+  lcPatch('dev',['devCommand','devRender'],function(){
     const _dc=devCommand;devCommand=function(c){
       if(typeof c==='string'&&c.indexOf('fp:')===0)return factionPresencePhysDevCommand(c.slice(3));
       return _dc.apply(this,arguments);
@@ -35479,7 +35543,7 @@ function factionPresencePhysicalKitBoot(){
     const _dr=devRender;devRender=function(){
       const r=_dr.apply(this,arguments);try{factionPresencePhysDevSection();}catch(e){}return r;
     };
-  }catch(e){}
+  });
 }
 /* ==================== PR14·fim fp2.js ==================== */
 
@@ -36140,7 +36204,7 @@ function pr15TemporalKitBoot(){
      anterior (fracture/facção) — por isso a assinatura é calculada ANTES
      do original (estado vivo: tema/seed do Diretor ainda presentes) e
      anexada DEPOIS, sobre echoQueue[0] (o runData recem-criado). */
-  try{
+  lcPatch('run',['onPlayerDeath'],function(){
     const _d=onPlayerDeath;
     onPlayerDeath=function(){
       if(state!=='play'||sandboxRun)return _d.apply(this,arguments);
@@ -36170,36 +36234,36 @@ function pr15TemporalKitBoot(){
       try{pr15ResetCause();}catch(e){}
       return r;
     };
-  }catch(e){}
+  });
   /* 2. ABORTAR RUN — sinaliza não-morte-real no contexto run-scoped
      (consumido pelo wrapper de onPlayerDeath; causa nunca reaproveitada). */
-  try{
+  lcPatch('run2',['abortRun'],function(){
     const _a=abortRun;
     abortRun=function(){
       if(state!=='paused')return _a.apply(this,arguments);
       try{pr15Ctx.abort=true;pr15Ctx.pending=null;}catch(e){}
       return _a.apply(this,arguments);
     };
-  }catch(e){}
+  });
   /* 3. run nova / Continue / vitória / troca de slot — contexto zerado. */
-  try{
+  lcPatch('run3',['startRun','resumeRun','onVictory'],function(){
     const _s=startRun;startRun=function(o){try{pr15ResetCause();}catch(e){}return _s.apply(this,arguments);};
     const _rs=resumeRun;resumeRun=function(){try{pr15ResetCause();}catch(e){}return _rs.apply(this,arguments);};
     const _ov=onVictory;onVictory=function(){const r=_ov.apply(this,arguments);try{pr15ResetCause();}catch(e){}return r;};
-  }catch(e){}
+  });
   /* 4. loadEchoes — sanitização tolerante sobre as cópias (nunca lança,
      nunca destrói o arquivo; registro irrecuperável sai só da memória). */
-  try{
+  lcPatch('echoload',['loadEchoes'],function(){
     const _le=loadEchoes;
     loadEchoes=function(){
       const r=_le.apply(this,arguments);
       if(!Array.isArray(r))return r;
       try{return r.map(pr15SanitizeRecord).filter(Boolean);}catch(e){return r;}
     };
-  }catch(e){}
+  });
   /* 5. activateSlot — mesma sanitização na fila em memória do slot +
      reset do contexto de causa (nunca vaza entre slots). */
-  try{
+  lcPatch('slot',['activateSlot'],function(){
     const _as=activateSlot;
     activateSlot=function(i){
       const r=_as.apply(this,arguments);
@@ -36210,17 +36274,17 @@ function pr15TemporalKitBoot(){
       }catch(e){}
       return r;
     };
-  }catch(e){}
+  });
   /* 6. smClearSlotSave — contexto zerado junto com o slot. */
-  try{
+  lcPatch('slot2',['smClearSlotSave'],function(){
     const _cs=smClearSlotSave;smClearSlotSave=function(){
       const r=_cs.apply(this,arguments);try{pr15ResetCause();}catch(e){}return r;
     };
-  }catch(e){}
+  });
   /* 7. EVENTOS — dano autoinfligido por escolha de evento (evOpt) é
      atribuído a 'event' com confiança: pendente run-scoped aplicado ao
      PRÓXIMO dano real dentro da escolha; limpo ao sair da escolha. */
-  try{
+  lcPatch('event',['evOpt'],function(){
     const _eo=evOpt;
     evOpt=function(nm,ds,vec,extra,dis,fn,impacts){
       const wfn=(typeof fn==='function')?function(){
@@ -36230,16 +36294,16 @@ function pr15TemporalKitBoot(){
       }:fn;
       return _eo.call(this,nm,ds,vec,extra,dis,wfn,impacts);
     };
-  }catch(e){}
+  });
   /* 8. DEV.pr15* — leitura, com guarda !DEV_MODE (inertes em release). */
-  try{
+  lcPatch('dev',[],function(){
     if(typeof DEV!=='undefined'&&DEV&&typeof DEV==='object'){
       DEV.pr15History=pr15DevHistory;
       DEV.pr15Signature=pr15DevSignature;
       DEV.pr15Validity=pr15DevValidity;
       DEV.pr15DeathCause=pr15DevDeathCause;
     }
-  }catch(e){}
+  });
 }
 /* ==================== PR15·fim b1 ==================== */
 
@@ -36744,15 +36808,15 @@ function pr15MemSandboxTearDown(){
 function pr15MemoryKitBoot(){
   if(pr15MemoryKitBoot.done)return;pr15MemoryKitBoot.done=true;
   /* 1. checkpoint: cp.pr15mem */
-  try{
+  lcPatch('checkpoint',['smBuildCheckpoint'],function(){
     const _bc=smBuildCheckpoint;smBuildCheckpoint=function(reason,waveOverride){
       const cp=_bc.apply(this,arguments);
       try{if(cp&&typeof cp==='object')cp.pr15mem=pr15MemPack();}catch(e){}
       return cp;
     };
-  }catch(e){}
+  });
   /* 2. slot: nada vaza entre Save 1/2/3 */
-  try{
+  lcPatch('slot',['activateSlot','smClearSlotSave'],function(){
     const _as=activateSlot;activateSlot=function(i){
       const r=_as.apply(this,arguments);
       try{pr15MemForgetRun();}catch(e){}
@@ -36763,11 +36827,11 @@ function pr15MemoryKitBoot(){
       try{pr15MemForgetRun();}catch(e){}
       return r;
     };
-  }catch(e){}
+  });
   /* 3. início de run: plano ANTES do 1º checkpoint, usando o histórico
      ATUAL (N-1/N-2 das runs anteriores — a morte desta run só entra na
      fila no fim, pelas regras do B1). */
-  try{
+  lcPatch('run',['startRun','resumeRun','onPlayerDeath','onVictory','showVictory','abortRun'],function(){
     const _st=startRun;startRun=function(opts){
       try{pr15MemBeginRun(Array.isArray(echoQueue)?echoQueue:[]);}catch(e){pr15MemRun=null;}
       return _st.apply(this,arguments);
@@ -36801,20 +36865,20 @@ function pr15MemoryKitBoot(){
       try{pr15MemEndRun();}catch(e){}
       return r;
     };
-  }catch(e){}
+  });
   /* 6. ondas: resolve agendamentos na fronteira de onda. Gate duplo:
      Sandbox (estado isolado) e ausência de estado. Roda DEPOIS do corpo de
      spawnWave — a mesma janela que o scheduler de Presença de Facção usa —
      para enxergar a presença agendada para esta onda. */
-  try{
+  lcPatch('wave',['spawnWave'],function(){
     const _sw=spawnWave;spawnWave=function(n){
       const r=_sw.apply(this,arguments);
       try{pr15MemOnWave(n);}catch(e){}
       return r;
     };
-  }catch(e){}
+  });
   /* 7. Sandbox: contexto próprio, nada persiste */
-  try{
+  lcPatch('sandbox',['sandboxStart','sandboxRestart','sandboxEndToSetup','sandboxExit','sandboxCloseSetup'],function(){
     const _ss=sandboxStart;sandboxStart=function(){
       const r=_ss.apply(this,arguments);
       if(r){try{pr15MemSandboxContextStart();}catch(e){}}
@@ -36840,16 +36904,16 @@ function pr15MemoryKitBoot(){
       try{pr15MemSandboxTearDown();}catch(e){}
       return r;
     };
-  }catch(e){}
+  });
   /* 8. DEV.pr15Memory* — leitura + força diagnóstica, guardados */
-  try{
+  lcPatch('dev',[],function(){
     if(typeof DEV!=='undefined'&&DEV&&typeof DEV==='object'){
       DEV.pr15MemoryState=pr15DevMemoryState;
       DEV.pr15MemoryCandidates=pr15DevMemoryCandidates;
       DEV.pr15MemorySchedule=pr15DevMemorySchedule;
       DEV.pr15MemoryForce=pr15DevMemoryForce;
     }
-  }catch(e){}
+  });
 }
 /* ==================== PR15·fim b2 ==================== */
 
@@ -37708,49 +37772,49 @@ function pr15PresSandboxTearDown(){
 function pr15PresenceKitBoot(){
   if(pr15PresenceKitBoot.done)return;pr15PresenceKitBoot.done=true;
   /* 1. ondas: reage ao descriptor consumido pelo B2 nesta onda */
-  try{
+  lcPatch('wave',['spawnWave'],function(){
     const _sw=spawnWave;spawnWave=function(n){
       const r=_sw.apply(this,arguments);
       try{pr15PresOnWave(n);}catch(e){}
       return r;
     };
-  }catch(e){}
+  });
   /* 2. update dedicado — engatado em updateAllies (só roda em state==='play') */
-  try{
+  lcPatch('update',['updateAllies'],function(){
     const _ua=updateAllies;updateAllies=function(dt){
       const r=_ua.apply(this,arguments);
       try{pr15PresUpdate(dt);}catch(e){}
       return r;
     };
-  }catch(e){}
+  });
   /* 3. renderer dedicado — engatado em drawWorldExtras (world-space) */
-  try{
+  lcPatch('draw',['drawWorldExtras'],function(){
     const _dw=drawWorldExtras;drawWorldExtras=function(){
       const r=_dw.apply(this,arguments);
       try{pr15PresDraw();}catch(e){}
       return r;
     };
-  }catch(e){}
+  });
   /* 4. checkpoint: cp.pr15presence */
-  try{
+  lcPatch('checkpoint',['smBuildCheckpoint'],function(){
     const _bc=smBuildCheckpoint;smBuildCheckpoint=function(reason,waveOverride){
       const cp=_bc.apply(this,arguments);
       try{if(cp&&typeof cp==='object')cp.pr15presence=pr15PresPack();}catch(e){}
       return cp;
     };
-  }catch(e){}
+  });
   /* 5. Continue: restaura registro e reconstrói o corpo (sem reiniciar TTL).
      Roda DEPOIS do unpack do B2 porque este kit boota depois dele. */
-  try{
+  lcPatch('run',['resumeRun'],function(){
     const _rs=resumeRun;resumeRun=function(){
       const r=_rs.apply(this,arguments);
       try{pr15PresUnpack((typeof hasActiveRun==='function'&&hasActiveRun())?activeRun:null);
           pr15PresRebuild();}catch(e){}
       return r;
     };
-  }catch(e){}
+  });
   /* 6. ciclo de vida da run: nova run, morte, vitória e abort limpam tudo */
-  try{
+  lcPatch('run2',['startRun','onPlayerDeath','onVictory','showVictory','abortRun'],function(){
     const _st=startRun;startRun=function(opts){
       try{pr15PresReset();}catch(e){}
       return _st.apply(this,arguments);
@@ -37767,18 +37831,18 @@ function pr15PresenceKitBoot(){
     const _ab=abortRun;abortRun=function(){
       const r=_ab.apply(this,arguments);try{pr15PresReset();}catch(e){}return r;
     };
-  }catch(e){}
+  });
   /* 7. slots: nada vaza entre Save 1/2/3 */
-  try{
+  lcPatch('slot',['activateSlot','smClearSlotSave'],function(){
     const _as=activateSlot;activateSlot=function(i){
       const r=_as.apply(this,arguments);try{pr15PresReset();}catch(e){}return r;
     };
     const _cs=smClearSlotSave;smClearSlotSave=function(){
       const r=_cs.apply(this,arguments);try{pr15PresReset();}catch(e){}return r;
     };
-  }catch(e){}
+  });
   /* 8. Sandbox: contexto próprio, nada persiste */
-  try{
+  lcPatch('sandbox',['sandboxStart','sandboxRestart','sandboxEndToSetup','sandboxExit','sandboxCloseSetup'],function(){
     const _ss=sandboxStart;sandboxStart=function(){
       const r=_ss.apply(this,arguments);
       if(r){try{pr15PresSandboxContextStart();}catch(e){}}
@@ -37796,16 +37860,16 @@ function pr15PresenceKitBoot(){
     const _sc=sandboxCloseSetup;sandboxCloseSetup=function(){
       const r=_sc.apply(this,arguments);try{pr15PresSandboxTearDown();}catch(e){}return r;
     };
-  }catch(e){}
+  });
   /* 9. DEV.pr15Presence* — guardados, inertes em release */
-  try{
+  lcPatch('dev',[],function(){
     if(typeof DEV!=='undefined'&&DEV&&typeof DEV==='object'){
       DEV.pr15PresenceState=pr15DevPresenceState;
       DEV.pr15PresenceSpawn=pr15DevPresenceSpawn;
       DEV.pr15PresenceEnd=pr15DevPresenceEnd;
       DEV.pr15PresenceVisual=pr15DevPresenceVisual;
     }
-  }catch(e){}
+  });
 }
 /* ==================== PR15·fim b3 ==================== */
 
@@ -39694,67 +39758,67 @@ function pr15IntentKitBoot(){
   /* 1. materialização: anexa intenção + variante + anúncio.
      Cobre os três caminhos (Director, Continue e DEV) porque os três
      chamam pr15PresSpawn pelo nome. */
-  try{
+  lcPatch('spawn',['pr15PresSpawn'],function(){
     const _sp=pr15PresSpawn;pr15PresSpawn=function(enc,opts){
       const p=_sp.apply(this,arguments);
       try{if(p)pr15IntentAttach(p,enc,opts||{});}catch(e){}
       return p;
     };
-  }catch(e){}
+  });
   /* 2. cleanup: o estado de intenção morre com o corpo */
-  try{
+  lcPatch('presend',['pr15PresEnd'],function(){
     const _en=pr15PresEnd;pr15PresEnd=function(reason){
       try{pr15IntentClear((typeof pr15Presence!=='undefined')?pr15Presence:null);}catch(e){}
       return _en.apply(this,arguments);
     };
-  }catch(e){}
+  });
   /* 3. update: DEPOIS do pr15PresUpdate do B3 */
-  try{
+  lcPatch('update',['updateAllies'],function(){
     const _ua=updateAllies;updateAllies=function(dt){
       const r=_ua.apply(this,arguments);
       try{pr15IntentUpdate(dt);}catch(e){}
       return r;
     };
-  }catch(e){}
+  });
   /* 4. renderer: DEPOIS do pr15PresDraw do B3 */
-  try{
+  lcPatch('draw',['drawWorldExtras'],function(){
     const _dw=drawWorldExtras;drawWorldExtras=function(){
       const r=_dw.apply(this,arguments);
       try{pr15IntentDraw();}catch(e){}
       return r;
     };
-  }catch(e){}
+  });
   /* 5. indicador off-screen (passagem screen-space, depois do restore) */
-  try{
+  lcPatch('draw2',['render'],function(){
     const _rd=render;render=function(){
       const r=_rd.apply(this,arguments);
       try{pr15IntentEdge();}catch(e){}
       return r;
     };
-  }catch(e){}
+  });
   /* 6. checkpoint: cp.pr15intent (campo próprio; B2/B3 intocados) */
-  try{
+  lcPatch('checkpoint',['smBuildCheckpoint'],function(){
     const _bc=smBuildCheckpoint;smBuildCheckpoint=function(reason,waveOverride){
       const cp=_bc.apply(this,arguments);
       try{if(cp&&typeof cp==='object')cp.pr15intent=pr15IntentPack();}catch(e){}
       return cp;
     };
-  }catch(e){}
+  });
   /* 7. Continue: o REGISTRO é restaurado ANTES de chamar o wrapper do B3
      — porque é o B3 quem reconstrói o corpo (pr15PresRebuild →
      pr15PresSpawn → pr15IntentAttach). Se o registro viesse depois, a
      anexação não encontraria `act` e RE-ROLARIA a intenção. O reancoramento
      dos contadores acontece depois, quando o corpo já existe. */
-  try{
+  lcPatch('run',['resumeRun'],function(){
     const _rs=resumeRun;resumeRun=function(){
       try{pr15IntentUnpack((typeof hasActiveRun==='function'&&hasActiveRun())?activeRun:null);}catch(e){}
       const r=_rs.apply(this,arguments);
       try{pr15IntentRebuild();}catch(e){}
       return r;
     };
-  }catch(e){}
+  });
   /* 8. ciclo de vida da run */
-  try{
+  lcPatch('run2',['startRun','onPlayerDeath','onVictory','showVictory','abortRun'],function(){
     const _st=startRun;startRun=function(opts){
       try{pr15IntentReset();}catch(e){}
       return _st.apply(this,arguments);
@@ -39771,18 +39835,18 @@ function pr15IntentKitBoot(){
     const _ab=abortRun;abortRun=function(){
       const r=_ab.apply(this,arguments);try{pr15IntentReset();}catch(e){}return r;
     };
-  }catch(e){}
+  });
   /* 9. slots */
-  try{
+  lcPatch('slot',['activateSlot','smClearSlotSave'],function(){
     const _as=activateSlot;activateSlot=function(i){
       const r=_as.apply(this,arguments);try{pr15IntentReset();}catch(e){}return r;
     };
     const _cs=smClearSlotSave;smClearSlotSave=function(){
       const r=_cs.apply(this,arguments);try{pr15IntentReset();}catch(e){}return r;
     };
-  }catch(e){}
+  });
   /* 10. Sandbox */
-  try{
+  lcPatch('sandbox',['sandboxStart','sandboxRestart','sandboxEndToSetup','sandboxExit','sandboxCloseSetup'],function(){
     const _ss=sandboxStart;sandboxStart=function(){
       const r=_ss.apply(this,arguments);
       if(r){try{pr15IntentSandboxContextStart();}catch(e){}}
@@ -39808,9 +39872,9 @@ function pr15IntentKitBoot(){
       try{pr15IntentSandboxTearDown();}catch(e){}
       return r;
     };
-  }catch(e){}
+  });
   /* 11. DEV.pr15Intent* — guardados, inertes em release */
-  try{
+  lcPatch('dev',[],function(){
     if(typeof DEV!=='undefined'&&DEV&&typeof DEV==='object'){
       DEV.pr15IntentState=pr15DevIntentState;
       DEV.pr15IntentExplain=pr15DevIntentExplain;
@@ -39823,22 +39887,22 @@ function pr15IntentKitBoot(){
       DEV.pr15IntentApplyEffects=pr15DevIntentToggleApply;
       DEV.pr15IntentDevSection=pr15DevIntentSection;
     }
-  }catch(e){}
+  });
   /* 12. B4-FIX #1 — memória sintética: o resolve do B3 passa a reconhECER o
      registro sintético, mas SOMENTE em DEV e SOMENTE para aquele id.
      Qualquer outro id segue o caminho real do B3 sem alteração (o bloco B3
      não é editado; isto é um wrapper aditivo, como os demais deste kit). */
-  try{
+  lcPatch('resolve',['pr15PresResolveMemory'],function(){
     const _prm=pr15PresResolveMemory;
     pr15PresResolveMemory=function(memId){
       if(DEV_MODE&&pr15DevMem&&String(memId)===String(pr15DevMem.id))
         return {rec:pr15DevMem,idx:0,source:pr15DevMemSrc};
       return _prm.apply(this,arguments);
     };
-  }catch(e){}
+  });
   /* 13. B4-FIX #1 — seção no painel DEV + comandos 'i:*'.
      Mesmo padrão do PR14 (factionPresencePhysicalKitBoot, passo 7). */
-  try{
+  lcPatch('dev2',['devCommand'],function(){
     if(typeof devCommand==='function'){
       const _dc=devCommand;devCommand=function(c){
         if(typeof c==='string'&&c.indexOf('i:')===0)
@@ -39846,8 +39910,8 @@ function pr15IntentKitBoot(){
         return _dc.apply(this,arguments);
       };
     }
-  }catch(e){}
-  try{
+  });
+  lcPatch('dev3',['devRender'],function(){
     if(typeof devRender==='function'){
       const _dr=devRender;devRender=function(){
         const r=_dr.apply(this,arguments);
@@ -39855,16 +39919,16 @@ function pr15IntentKitBoot(){
         return r;
       };
     }
-  }catch(e){}
+  });
   /* 14. B4-FIX #1 — a memória sintética nunca sobrevive ao sandbox */
-  try{
+  lcPatch('sandbox2',['sandboxStart','sandboxExit'],function(){
     const _s0=sandboxStart;sandboxStart=function(){
       const r=_s0.apply(this,arguments);pr15DevMem=null;return r;
     };
     const _s1=sandboxExit;sandboxExit=function(m){
       const r=_s1.apply(this,arguments);pr15DevMem=null;return r;
     };
-  }catch(e){}
+  });
 }
 /* ==================== PR15·fim b4 ==================== */
 
@@ -40104,6 +40168,8 @@ DEV.temporalActionState=function(){
   if(!DEV_MODE&&!sandboxRun)return null;
   return temporalActionInspect();
 };
+/* AUDIT-FIX-D: inspeção read-only dos patches de lifecycle instalados. */
+DEV.lifecyclePatches=function(){return lcPatchReport();};
 DEV.temporalReplayCooldownZero=function(){
   if(!DEV_MODE&&!sandboxRun)return false;
   temporalReplayCooldown=0;return true;
@@ -40112,14 +40178,22 @@ DEV.temporalReplayCooldownZero=function(){
 /* =====================================================================
    BOOT
    ===================================================================== */
-fracKitBoot();
-fractureKitBoot();   // PR 13: Diretor de Fratura (fundação)
-factionPresenceKitBoot();   // PR 14: Presença de Facção (fundação B2)
-factionPresencePhysicalKitBoot();   // PR 14: Presença física na arena (B3)
-pr15TemporalKitBoot();            // PR15·b1: Memória Temporal — assinatura de run (fundação de dados)
-pr15MemoryKitBoot();              // PR15·b2: Director de Memórias Temporais (decisão + agendamento)
-pr15PresenceKitBoot();            // PR15·b3: Presença Temporal Física (entidade + ciclo de vida)
-pr15IntentKitBoot();              // PR15·b4: Intenção + interação + significado (bloco final do PR15)
+/* AUDIT-FIX-D: a ordem de boot dos kits deixou de ser uma sequência de
+   chamadas soltas e passou a ser esta tabela. A ordem importa: quem boota
+   depois instala o wrapper MAIS EXTERNO (ver lcPatch, §REGISTRO). Mudar a
+   ordem aqui muda a ordem de execução dos 138 wrappers — não reordene sem
+   revalidar `tests/audit-fix-d-lifecycle-patches.test.js`. */
+const LIFECYCLE_KITS=[
+  ['frac',    fracKitBoot],                   // PR 12: facções, Codex e Lápide
+  ['fracture',fractureKitBoot],               // PR 13: Diretor de Fratura (fundação)
+  ['facpres', factionPresenceKitBoot],        // PR 14: Presença de Facção (fundação B2)
+  ['facphys', factionPresencePhysicalKitBoot],// PR 14: Presença física na arena (B3)
+  ['temporal',pr15TemporalKitBoot],           // PR15·b1: Memória Temporal — assinatura de run
+  ['memory',  pr15MemoryKitBoot],             // PR15·b2: Director de Memórias (decisão + agendamento)
+  ['presence',pr15PresenceKitBoot],           // PR15·b3: Presença Temporal Física (entidade + ciclo)
+  ['intent',  pr15IntentKitBoot]              // PR15·b4: Intenção + interação + significado
+];
+for(const kit of LIFECYCLE_KITS)lcBootKit(kit[0],kit[1]);
 
 /* ---- expõe o namespace no console apenas em build de desenvolvimento ---- */
 if(IS_DEV_BUILD){
